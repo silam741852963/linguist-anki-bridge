@@ -1,0 +1,174 @@
+/* Stylesheet for Linguist Anki Bridge TUI */
+
+Screen {
+    background: $bg;
+    color: $fg;
+}
+
+#sidebar {
+    width: 30;
+    background: $bg;
+    padding: 1 2;
+    dock: left;
+}
+
+#main-content {
+    background: $bg;
+    padding: 1 3;
+}
+
+.status-indicator {
+    padding: 0 1;
+    margin-bottom: 1;
+    text-style: bold;
+}
+
+.status-online {
+    color: #4caf50; /* Green */
+}
+
+.status-offline {
+    color: #f44336; /* Red */
+}
+
+Header {
+    background: $accent;
+    color: $bg;
+    text-style: bold;
+}
+
+Footer {
+    background: $selection-bg;
+    color: $fg;
+}
+
+Button {
+    background: $selection-bg;
+    color: $fg;
+    border: tall $active-border;
+    margin: 1 1;
+}
+
+Button:hover {
+    background: $accent;
+    color: $bg;
+    border: tall $accent;
+}
+
+Button.-active {
+    background: $accent;
+    color: $bg;
+    border: tall $accent;
+}
+
+Input {
+    background: $bg;
+    color: $fg;
+    border: tall $active-border;
+    margin-bottom: 1;
+}
+
+Input:focus {
+    border: tall $accent;
+}
+
+DataTable {
+    background: $bg;
+    color: $fg;
+    border: tall $active-border;
+}
+
+DataTable > .datatable--header {
+    background: $selection-bg;
+    color: $accent;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: $accent;
+    color: $bg;
+}
+
+TabbedContent {
+    background: $bg;
+}
+
+Tabs {
+    background: $selection-bg;
+    border-bottom: tall $active-border;
+}
+
+Tab {
+    color: $fg;
+    padding: 0 2;
+}
+
+Tab:hover {
+    background: $selection-bg;
+    color: $accent;
+    text-style: bold;
+}
+
+Tab.-active {
+    background: $bg;
+    color: $accent;
+    text-style: bold;
+}
+
+/* Custom Modal Dialog Styles */
+#modal-container {
+    background: rgba(0,0,0,0.6);
+    align: center middle;
+}
+
+#modal-dialog {
+    width: 70;
+    height: 35;
+    background: $selection-bg;
+    border: tall $accent;
+    padding: 1 2;
+}
+
+.preview-box {
+    background: $bg;
+    border: solid $active-border;
+    padding: 1;
+    margin-bottom: 1;
+    height: 10;
+}
+
+#lbl-app-title {
+    text-align: center;
+}
+
+#btn-toggle-dry-run {
+    margin-top: 2;
+}
+
+#btn-configure-decks {
+    margin-top: 1;
+}
+
+#btn-quit {
+    margin-top: 2;
+}
+
+/* Utility Classes */
+.h-22 { height: auto; }
+.mt-1 { margin-top: 1; }
+.w-50 { width: 50%; }
+.pr-1 { padding-right: 1; }
+.pl-1 { padding-left: 1; }
+.h-18 { height: 18; }
+.align-right-middle { align: right middle; }
+.h-3 { height: auto; }
+.my-1 { margin: 1 0; }
+.ml-2 { margin-left: 2; align: left middle; }
+.p-1 { padding: 1; }
+.mb-1 { margin-bottom: 1; }
+.w-40 { width: 40; }
+.w-60 { width: 60; }
+.mb-2 { margin-bottom: 2; }
+.h-15 { height: 15; }
+.bg-bg { background: $bg; }
+.mt-2 { margin-top: 2; }
