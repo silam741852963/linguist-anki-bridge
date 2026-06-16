@@ -1,36 +1,217 @@
-/* Stylesheet for Linguist Anki Bridge TUI */
+/* Stylesheet for Linguist Anki Bridge - Lazygit Theme */
 
 Screen {
     background: $bg;
     color: $fg;
 }
 
-#sidebar {
-    width: 30;
-    background: $bg;
-    padding: 1 2;
-    dock: left;
+#left-column {
+    width: 38%;
+    height: 100%;
 }
 
-#main-content {
-    background: $bg;
-    padding: 1 3;
+#right-column {
+    width: 62%;
+    height: 100%;
 }
 
-.status-indicator {
+/* Pane containers */
+.pane {
+    border: solid $active-border;
+    background: $bg;
+    margin: 0 1;
     padding: 0 1;
-    margin-bottom: 1;
+}
+
+.pane:focus-within, .pane:focus {
+    border: double $accent;
+}
+
+.pane-title {
+    color: $accent;
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 0;
+    background: $selection-bg;
+    width: 100%;
+    padding: 0 1;
+}
+
+/* Pane-specific heights */
+#panel-status {
+    height: 14;
+}
+
+#panel-decks {
+    height: 11;
+}
+
+#panel-queue {
+    height: 1fr;
+}
+
+#panel-details {
+    height: 100%;
+    padding: 0;
+}
+
+#details-comparison {
+    height: 3fr;
+    border-bottom: solid $active-border;
+    padding: 1 2;
+}
+
+#details-logs {
+    height: 1fr;
+    background: $bg;
+    color: #4caf50;
+    padding: 1 2;
+}
+
+/* Status Labels & Input Elements */
+#lbl-model-title {
+    text-style: italic;
+    margin-top: 1;
+}
+
+#select-active-model {
+    background: $bg;
+    border: tall $active-border;
+    margin-bottom: 0;
+    height: 3;
+}
+
+#select-active-model:focus {
+    border: tall $accent;
+}
+
+#lbl-dry-run-val {
+    text-style: bold;
+    margin-top: 1;
+    text-align: center;
+}
+
+/* ListView inside Decks Panel */
+#list-decks {
+    background: $bg;
+}
+
+#list-decks ListItem {
+    padding: 0 1;
+}
+
+#list-decks ListItem:hover {
+    background: $selection-bg;
+    color: $accent;
+}
+
+#list-decks ListItem.-active {
+    background: $accent;
+    color: $bg;
     text-style: bold;
 }
 
-.status-online {
-    color: #4caf50; /* Green */
+/* DataTable inside Queue Panel */
+DataTable {
+    background: $bg;
+    color: $fg;
+    border: none;
 }
 
-.status-offline {
-    color: #f44336; /* Red */
+DataTable > .datatable--header {
+    background: $selection-bg;
+    color: $accent;
+    text-style: bold;
 }
 
+DataTable > .datatable--cursor {
+    background: $accent;
+    color: $bg;
+    text-style: bold;
+}
+
+/* Input Dialog / Popup Modals */
+#modal-dialog-small {
+    width: 50;
+    height: 12;
+    background: $selection-bg;
+    border: double $accent;
+    padding: 1 2;
+    align: center middle;
+}
+
+#modal-title {
+    text-style: bold;
+    color: $accent;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#dialog-input {
+    background: $bg;
+    color: $fg;
+    border: tall $active-border;
+    margin-bottom: 1;
+}
+
+#dialog-input:focus {
+    border: tall $accent;
+}
+
+/* Modal List Dialog */
+#modal-dialog-list {
+    width: 60;
+    height: 20;
+    background: $selection-bg;
+    border: double $accent;
+    padding: 1 2;
+    align: center middle;
+}
+
+#choices-list {
+    background: $bg;
+    border: solid $active-border;
+    height: 14;
+}
+
+#choices-list ListItem {
+    padding: 0 1;
+}
+
+#choices-list ListItem:hover {
+    background: $selection-bg;
+    color: $accent;
+}
+
+#choices-list ListItem.-active {
+    background: $accent;
+    color: $bg;
+    text-style: bold;
+}
+
+/* Setup lang list */
+#setup-langs-list {
+    background: $bg;
+    border: solid $active-border;
+    margin-top: 1;
+}
+
+#setup-langs-list ListItem {
+    padding: 0 1;
+}
+
+#setup-langs-list ListItem:hover {
+    background: $selection-bg;
+    color: $accent;
+}
+
+#setup-langs-list ListItem.-active {
+    background: $accent;
+    color: $bg;
+    text-style: bold;
+}
+
+/* Header & Footer Override */
 Header {
     background: $accent;
     color: $bg;
@@ -46,7 +227,7 @@ Button {
     background: $selection-bg;
     color: $fg;
     border: tall $active-border;
-    margin: 1 1;
+    margin: 0 1;
 }
 
 Button:hover {
@@ -55,120 +236,8 @@ Button:hover {
     border: tall $accent;
 }
 
-Button.-active {
-    background: $accent;
-    color: $bg;
-    border: tall $accent;
-}
-
-Input {
-    background: $bg;
-    color: $fg;
-    border: tall $active-border;
-    margin-bottom: 1;
-}
-
-Input:focus {
-    border: tall $accent;
-}
-
-DataTable {
-    background: $bg;
-    color: $fg;
-    border: tall $active-border;
-}
-
-DataTable > .datatable--header {
-    background: $selection-bg;
-    color: $accent;
-    text-style: bold;
-}
-
-DataTable > .datatable--cursor {
-    background: $accent;
-    color: $bg;
-}
-
-TabbedContent {
-    background: $bg;
-}
-
-Tabs {
-    background: $selection-bg;
-    border-bottom: tall $active-border;
-}
-
-Tab {
-    color: $fg;
-    padding: 0 2;
-}
-
-Tab:hover {
-    background: $selection-bg;
-    color: $accent;
-    text-style: bold;
-}
-
-Tab.-active {
-    background: $bg;
-    color: $accent;
-    text-style: bold;
-}
-
-/* Custom Modal Dialog Styles */
-#modal-container {
-    background: rgba(0,0,0,0.6);
-    align: center middle;
-}
-
-#modal-dialog {
-    width: 70;
-    height: 35;
-    background: $selection-bg;
-    border: tall $accent;
-    padding: 1 2;
-}
-
-.preview-box {
-    background: $bg;
-    border: solid $active-border;
-    padding: 1;
-    margin-bottom: 1;
-    height: 10;
-}
-
-#lbl-app-title {
-    text-align: center;
-}
-
-#btn-toggle-dry-run {
-    margin-top: 2;
-}
-
-#btn-configure-decks {
+/* Utility layout helper */
+.mt-1 {
     margin-top: 1;
 }
 
-#btn-quit {
-    margin-top: 2;
-}
-
-/* Utility Classes */
-.h-22 { height: auto; }
-.mt-1 { margin-top: 1; }
-.w-50 { width: 50%; }
-.pr-1 { padding-right: 1; }
-.pl-1 { padding-left: 1; }
-.h-18 { height: 18; }
-.align-right-middle { align: right middle; }
-.h-3 { height: auto; }
-.my-1 { margin: 1 0; }
-.ml-2 { margin-left: 2; align: left middle; }
-.p-1 { padding: 1; }
-.mb-1 { margin-bottom: 1; }
-.w-40 { width: 40; }
-.w-60 { width: 60; }
-.mb-2 { margin-bottom: 2; }
-.h-15 { height: 15; }
-.bg-bg { background: $bg; }
-.mt-2 { margin-top: 2; }

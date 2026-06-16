@@ -2,10 +2,17 @@ import logging
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.screen import Screen
-from textual.widgets import Label, Select, Button, Header, Footer
+from textual.widgets import Label, ListView, ListItem, Header, Footer
 from linguist_anki_bridge.anki import AnkiConnectClient
+from linguist_anki_bridge.tui.screens import SelectionListModal
 
 class SetupScreen(Screen):
+    BINDINGS = [
+        ("s", "save_setup", "Save Settings"),
+        ("q", "quit_setup", "Cancel/Quit"),
+        ("escape", "quit_setup", "Cancel/Quit"),
+    ]
+
     def __init__(self, config_manager, on_complete_callback):
         super().__init__()
         self.config_manager = config_manager
@@ -15,9 +22,19 @@ class SetupScreen(Screen):
         self.anki_client = AnkiConnectClient(url=config_manager.config["anki"]["url"])
         self.deck_choices = []
         self.anki_online = False
+        
+        # Temporary configuration state
+        self.temp_decks = {
+            "japanese": config_manager.config["decks"]["japanese"]["deck_name"],
+            "english": config_manager.config["decks"]["english"]["deck_name"],
+            "taiwanese": config_manager.config["decks"]["taiwanese"]["deck_name"],
+            "german": config_manager.config["decks"]["german"]["deck_name"],
+        }
+        
         try:
-            decks = self.anki_client.get_decks()
-            self.deck_choices = [(d, d) for d in decks]
+            self.deck_choices = self.anki_client.get_decks()
+            # Allow deselecting / None option
+            self.deck_choices.insert(0, "[None / Unmapped]")
             self.anki_online = True
         except Exception as e:
             logging.error(f"SetupScreen failed to query Anki: {e}")
@@ -27,72 +44,81 @@ class SetupScreen(Screen):
         yield Header(show_clock=True)
         
         with Vertical(id="main-content"):
-            yield Label("[bold accent]Linguist Anki Bridge - First-Run Setup Wizard[/]", id="setup-title")
-            yield Label("\nWelcome! Please map your local Anki decks to the languages you want to learn.")
-            yield Label("[yellow]Note: You must map at least one language deck to continue.[/]\n")
+            yield Label("[bold accent]Linguist Anki Bridge - Keyboard-Only Setup Wizard[/]", id="setup-title")
+            yield Label("\nUse arrow keys to navigate. Press [bold]Enter[/] to select mapping for language.")
+            yield Label("Press [bold]s[/] to Save configuration, or [bold]q[/]/[bold]Esc[/] to Quit.\n")
             
             if not self.anki_online:
                 yield Label("[bold red]ERROR: Local Anki / AnkiConnect is offline![/]")
-                yield Label("Please make sure Anki Desktop is running and the AnkiConnect add-on is installed.")
-                yield Label("Then restart this application.\n")
-                yield Button("Quit Setup", id="btn-quit-setup")
+                yield Label("Please make sure Anki Desktop is running and AnkiConnect add-on is installed.")
+                yield Label("Then press 'q' or 'Esc' to exit, start Anki, and relaunch this tool.\n")
             else:
-                # Japanese Deck Select
-                yield Label("[bold]Japanese Deck Mapping[/]")
-                yield Select(self.deck_choices, id="select-deck-japanese", prompt="Select Japanese Deck (Optional)")
+                yield ListView(
+                    ListItem(Label(""), id="setup-japanese"),
+                    ListItem(Label(""), id="setup-english"),
+                    ListItem(Label(""), id="setup-taiwanese"),
+                    ListItem(Label(""), id="setup-german"),
+                    id="setup-langs-list"
+                )
                 
-                # English Deck Select
-                yield Label("\n[bold]English Deck Mapping[/]")
-                yield Select(self.deck_choices, id="select-deck-english", prompt="Select English Deck (Optional)")
-                
-                # Taiwanese Deck Select
-                yield Label("\n[bold]Taiwanese (Hokkien/Mandarin) Deck Mapping[/]")
-                yield Select(self.deck_choices, id="select-deck-taiwanese", prompt="Select Taiwanese Deck (Optional)")
-                
-                # German Deck Select
-                yield Label("\n[bold]German Deck Mapping[/]")
-                yield Select(self.deck_choices, id="select-deck-german", prompt="Select German Deck (Optional)")
-                
-                # Action Buttons
-                with Horizontal(classes="mt-2"):
-                    yield Button("Save and Continue", variant="success", id="btn-save-setup")
-                    yield Button("Quit", variant="error", id="btn-quit-setup")
-                    
         yield Footer()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-quit-setup":
+    def on_mount(self) -> None:
+        if self.anki_online:
+            self.update_list_labels()
+            self.query_one("#setup-langs-list", ListView).focus()
+
+    def update_list_labels(self):
+        # Update text labels inside ListItems
+        def get_desc(lang: str, val: str) -> str:
+            val_str = f"[green]{val}[/]" if val else "[yellow][Unmapped / Configured Later][/]"
+            return f"{lang.capitalize()}: {val_str}"
+
+        self.query_one("#setup-japanese Label").update(get_desc("japanese", self.temp_decks["japanese"]))
+        self.query_one("#setup-english Label").update(get_desc("english", self.temp_decks["english"]))
+        self.query_one("#setup-taiwanese Label").update(get_desc("taiwanese", self.temp_decks["taiwanese"]))
+        self.query_one("#setup-german Label").update(get_desc("german", self.temp_decks["german"]))
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        if not event.item or not event.item.id:
+            return
+            
+        lang_key = event.item.id.replace("setup-", "")
+        # Trigger deck selection modal
+        self.app.push_screen(
+            SelectionListModal(f"Map {lang_key.capitalize()} Target Deck", self.deck_choices),
+            lambda choice: self.on_deck_chosen(lang_key, choice)
+        )
+
+    def on_deck_chosen(self, lang_key: str, choice: str):
+        if not choice:
+            return
+            
+        if choice == "[None / Unmapped]":
+            self.temp_decks[lang_key] = None
+        else:
+            self.temp_decks[lang_key] = choice
+            
+        self.update_list_labels()
+        self.notify(f"Mapped {lang_key.capitalize()} to deck '{choice}'")
+
+    def action_save_setup(self) -> None:
+        # Check at least one selected
+        if not any(self.temp_decks.values()):
+            self.notify("Error: You must map at least one language deck to save!", severity="error")
+            return
+            
+        # Write back to config_manager
+        for lang_key, val in self.temp_decks.items():
+            self.config_manager.config["decks"][lang_key]["deck_name"] = val
+            
+        self.config_manager.save()
+        self.notify("Setup saved successfully!", severity="information")
+        self.on_complete_callback()
+
+    def action_quit_setup(self) -> None:
+        if not self.config_manager.is_setup_completed():
+            # Force quit app if cancelled and not configured
             self.app.exit()
-            
-        elif event.button.id == "btn-save-setup":
-            # Extract chosen decks
-            sel_ja = self.query_one("#select-deck-japanese", Select).value
-            sel_en = self.query_one("#select-deck-english", Select).value
-            sel_tw = self.query_one("#select-deck-taiwanese", Select).value
-            sel_de = self.query_one("#select-deck-german", Select).value
-            
-            # Textual's Select.BLANK needs to be converted to None for yaml serialization
-            sel_ja = None if sel_ja == Select.BLANK else sel_ja
-            sel_en = None if sel_en == Select.BLANK else sel_en
-            sel_tw = None if sel_tw == Select.BLANK else sel_tw
-            sel_de = None if sel_de == Select.BLANK else sel_de
-            
-            # Check at least one selected
-            if not any([sel_ja, sel_en, sel_tw, sel_de]):
-                self.app.bell()
-                # Display warning label or notify
-                self.notify("You must select at least one deck!", severity="error")
-                return
-                
-            # Update config
-            self.config_manager.config["decks"]["japanese"]["deck_name"] = sel_ja
-            self.config_manager.config["decks"]["english"]["deck_name"] = sel_en
-            self.config_manager.config["decks"]["taiwanese"]["deck_name"] = sel_tw
-            self.config_manager.config["decks"]["german"]["deck_name"] = sel_de
-            
-            # Save config
-            self.config_manager.save()
-            
-            # Complete
-            self.notify("Setup saved successfully!", severity="information")
+        else:
             self.on_complete_callback()

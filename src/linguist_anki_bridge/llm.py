@@ -119,3 +119,24 @@ class OllamaClient:
         
         res = self._post("/api/generate", payload)
         return json.loads(res.get("response", "{}"))
+
+    def generate_ocr_from_image(self, base64_image_data: str, model_name: str = None) -> str:
+        model = model_name or self.model or "llama3.2-vision"
+        prompt = (
+            "Transcribe the text in this image exactly as it is, without any commentary, conversational intro/outro, "
+            "or formatting. Just output the extracted text."
+        )
+        
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "images": [base64_image_data],
+            "stream": False
+        }
+        
+        try:
+            res = self._post("/api/generate", payload)
+            return res.get("response", "").strip()
+        except Exception as e:
+            logging.error(f"Ollama vision query failed: {e}")
+            raise

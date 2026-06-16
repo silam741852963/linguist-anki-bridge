@@ -64,6 +64,12 @@ DEFAULT_CONFIG = {
         "system_prompt_vocab": DEFAULT_SYSTEM_PROMPTS["vocabulary"],
         "system_prompt_grammar": DEFAULT_SYSTEM_PROMPTS["grammar"]
     },
+    "ocr": {
+        "method": "tesseract",
+        "ollama_model": "llama3.2-vision",
+        "ollama_url": "http://localhost:11434",
+        "preprocess": True
+    },
     "dry_run": True,
     "decks": {
         "japanese": {
