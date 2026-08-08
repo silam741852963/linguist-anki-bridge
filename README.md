@@ -11,7 +11,7 @@ Automates legacy card modernization (screenshot OCR -> Ollama annotations) and n
 - **TUI & CLI**: Beautiful terminal user interface themed with Omarchy system colors (optional).
 - **Legacy Card Modernization**: Run multi-language OCR on screenshot images inside Anki cards and generate context/meanings via local Ollama.
 - **New Vocab Ingestion**: Ingest words interactively or via CSV (`word,language,type,note`). Passes custom contextual notes to Ollama.
-- **Grammar Modernization (夕暮れの詞)**: Extracts grammar from textbook screenshots (OCR) or grammar web pages (Crawl4AI) and builds standardized cards.
+- **Grammar Modernization**: Extracts grammar from textbook screenshots (OCR) or grammar web pages (Crawl4AI) and builds standardized cards.
 - **Safety First**: Dry-run mode and previews are enabled by default. In write mode, each affected deck must be backed up successfully before its batch is changed.
 
 ## Installation
