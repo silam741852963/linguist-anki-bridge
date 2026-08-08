@@ -1,24 +1,46 @@
+import re
+import base64
 import json
+import html as html_lib
 import logging
 import asyncio
 import os
 import csv
+import urllib.request
+import urllib.parse
+import io
 from bs4 import BeautifulSoup
+from rich.markup import escape
+
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical, Horizontal, ScrollableContainer
-from textual.screen import ModalScreen
-from textual.widgets import Label, Button, Input, Static, TextArea, ListView, ListItem
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Label, Button, Input, Static, TextArea, ListView, ListItem, RichLog, Rule, Footer
 from rich.table import Table
 from rich.panel import Panel
 from rich.console import Group
 from rich.text import Text
 
+from linguist_anki_bridge.tts import generate_tts_base64
+from linguist_anki_bridge.utils import create_deck_backup, get_media_cache_dir
 from linguist_anki_bridge.anki import AnkiConnectClient
 from linguist_anki_bridge.ocr import OcrEngine
 from linguist_anki_bridge.llm import OllamaClient
 from linguist_anki_bridge.scraper import Crawl4AiScraper
-from linguist_anki_bridge.tts import generate_tts_base64
-from linguist_anki_bridge.utils import create_deck_backup
+from linguist_anki_bridge.card_model import (
+    CardDocument,
+    MediaAsset,
+    build_card_document as _build_card_document,
+    commit_card_document,
+    format_anki_grammar_html as _format_anki_grammar_html,
+    format_dictionary_meaning_html as _format_dictionary_meaning_html,
+    format_injection_context_html as _format_injection_context_html,
+    format_llm_annotations_html as _format_llm_annotations_html,
+    map_document_fields,
+)
+from linguist_anki_bridge.card_templates import japanese_vocab_template
+from linguist_anki_bridge.snapshots import SnapshotManager
 
 # --- INPUT DIALOG ---
 class InputDialog(ModalScreen[str]):
@@ -26,7 +48,7 @@ class InputDialog(ModalScreen[str]):
         super().__init__()
         self.dialog_title = title
         self.placeholder = placeholder
-        
+
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-dialog-small"):
             yield Label(f"[bold accent]{self.dialog_title}[/]", id="modal-title")
@@ -34,27 +56,171 @@ class InputDialog(ModalScreen[str]):
             with Horizontal(classes="mt-1"):
                 yield Button("OK", variant="success", id="btn-ok")
                 yield Button("Cancel", variant="error", id="btn-cancel")
-                
+
     def on_mount(self) -> None:
         self.query_one("#dialog-input", Input).focus()
-                
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-ok":
             val = self.query_one("#dialog-input", Input).value.strip()
             self.dismiss(val)
         else:
             self.dismiss("")
-            
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.dismiss(event.value.strip())
 
-# --- DETAILS PANE ---
-class DetailsPane(ScrollableContainer):
-    can_focus = True
+
+class SnapshotManagementScreen(Screen):
+    """Inspect and revert every recorded write for one expression."""
+
+    BINDINGS = [
+        Binding("escape", "close", "Back", priority=True),
+        Binding("r", "revert", "Revert Snapshot"),
+        Binding("enter", "revert", "Revert Snapshot"),
+    ]
+
+    def __init__(self, manager: SnapshotManager, anki_client, word: str):
+        super().__init__()
+        self.manager = manager
+        self.anki_client = anki_client
+        self.word = word
+        self.snapshots: list[dict] = []
+        self.selected_index = 0
 
     def compose(self) -> ComposeResult:
+        yield Label(f"[bold accent]● SNAPSHOTS — {escape(self.word)}[/]", classes="pane-title")
+        with Horizontal():
+            with Vertical(classes="pane"):
+                yield ListView(id="snapshot-list")
+            with ScrollableContainer(classes="pane"):
+                yield Static(Text(""), id="snapshot-details")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.snapshots = self.manager.list_for_word(self.word)
+        listing = self.query_one("#snapshot-list", ListView)
+        if not self.snapshots:
+            listing.append(ListItem(Label("No snapshots for this word."), id="snapshot-empty"))
+            self.query_one("#snapshot-details", Static).update(Text("Commit or dry-run this word to create a snapshot."))
+            return
+        for index, item in enumerate(self.snapshots):
+            label = (
+                f"{item.get('created_at', '')}  "
+                f"{str(item.get('mode', '')).title()}  [{item.get('status', '')}]"
+            )
+            listing.append(ListItem(Label(label), id=f"snapshot-{index}"))
+        listing.index = 0
+        listing.focus()
+        self._show(0)
+
+    def _show(self, index: int) -> None:
+        if not (0 <= index < len(self.snapshots)):
+            return
+        self.selected_index = index
+        record = self.snapshots[index]
+        original = record.get("original_note") or {}
+        lines = [
+            f"Snapshot: {record.get('id', '')}",
+            f"Created: {record.get('created_at', '')}",
+            f"Word: {record.get('word', '')}",
+            f"Mode: {record.get('mode', '')}",
+            f"Deck key: {record.get('deck_key', '')}",
+            f"Status: {record.get('status', '')}",
+            f"Dry run: {'Yes' if record.get('dry_run') else 'No'}",
+            f"Original note: {original.get('note_id') or 'None (new injection)'}",
+            f"Result note: {record.get('result_note_id') or 'None'}",
+            f"Note type: {original.get('model_name') or '—'}",
+            f"Tags: {', '.join(original.get('tags') or []) or '—'}",
+            "",
+            "ORIGINAL FIELDS",
+            "───────────────",
+        ]
+        fields = original.get("fields") or {}
+        lines.extend(f"{name}:\n{value}" for name, value in fields.items())
+        lines += [
+            "",
+            "TRACKED MEDIA",
+            "─────────────",
+            *(
+                f"{name}: {'stored previous content' if data else 'did not exist before write'}"
+                for name, data in (record.get("media_before") or {}).items()
+            ),
+            "",
+            "PROCESSED CARD DATA",
+            "───────────────────",
+            json.dumps(record.get("processed") or {}, ensure_ascii=False, indent=2),
+        ]
+        if record.get("error"):
+            lines += ["", f"ERROR: {record['error']}"]
+        self.query_one("#snapshot-details", Static).update(Text("\n".join(lines)))
+
+    def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        if event.list_view.id != "snapshot-list" or not event.item or not event.item.id:
+            return
+        if event.item.id.startswith("snapshot-") and event.item.id != "snapshot-empty":
+            self._show(int(event.item.id.rsplit("-", 1)[1]))
+
+    def action_close(self) -> None:
+        self.app.pop_screen()
+
+    def action_revert(self) -> None:
+        if not self.snapshots:
+            self.notify("No snapshot selected.", severity="warning")
+            return
+        self.run_worker(self._revert_selected(), exclusive=True)
+
+    async def _revert_selected(self) -> None:
+        record = self.snapshots[self.selected_index]
+        try:
+            message = await asyncio.get_running_loop().run_in_executor(
+                None, self.manager.revert, record["id"], self.anki_client
+            )
+            self.snapshots[self.selected_index] = self.manager.get(record["id"]) or record
+            self._show(self.selected_index)
+            self.notify(message, severity="information")
+        except Exception as exc:
+            self.notify(f"Snapshot revert failed: {exc}", severity="error")
+
+# --- PREVIEW PANE ---
+class PreviewPane(ScrollableContainer):
+    can_focus = True
+    BINDINGS = [
+        Binding("tab", "next_pane", "Next Pane", priority=True),
+        Binding("shift+tab", "prev_pane", "Previous Pane", priority=True),
+        ("w", "edit_word", "Edit Word"),
+        ("m", "edit_meaning", "Edit Meaning"),
+        ("k", "edit_kanji", "Edit Kanji"),
+        ("v", "select_audio", "Select Audio"),
+        ("i", "select_image", "Select Image"),
+        ("x", "classify_image", "Confirm Image Class"),
+        ("r", "manage_snapshots", "Snapshots"),
+    ]
+    def action_edit_word(self) -> None:
+        self.app.action_edit_word()
+    def action_edit_meaning(self) -> None:
+        self.app.action_edit_meaning()
+    def action_edit_kanji(self) -> None:
+        self.app.action_edit_kanji()
+    def action_select_audio(self) -> None:
+        self.app.action_select_audio()
+    def action_select_image(self) -> None:
+        self.app.action_select_image()
+    def action_classify_image(self) -> None:
+        self.app.action_confirm_image_classification()
+    def action_manage_snapshots(self) -> None:
+        self.app.action_manage_snapshots()
+    def action_next_pane(self) -> None:
+        self.app.action_next_pane()
+    def action_prev_pane(self) -> None:
+        self.app.action_prev_pane()
+
+    def compose(self) -> ComposeResult:
+        yield Label("[bold accent]● PREVIEW [4][/]", classes="pane-title")
         yield Static("", id="details-comparison")
-        yield Static("", id="details-logs")
+        yield Static("", id="details-dict-scrape")
+        yield Static("", id="details-llm")
+        yield Static("", id="details-kanji-scrape")
 
     def update_content(self, markup: str) -> None:
         self.update_comparison(markup)
@@ -63,309 +229,318 @@ class DetailsPane(ScrollableContainer):
         try:
             self.query_one("#details-comparison", Static).update(markup)
         except Exception as e:
-            logging.error(f"Failed to update DetailsPane comparison: {e}")
-            
-    def update_logs(self, markup: str) -> None:
+            logging.error(f"Failed to update PreviewPane comparison: {e}")
+
+    def update_dict_scrape(self, markup) -> None:
         try:
-            self.query_one("#details-logs", Static).update(markup)
+            self.query_one("#details-dict-scrape", Static).update(markup)
         except Exception as e:
-            logging.error(f"Failed to update DetailsPane logs: {e}")
+            logging.error(f"Failed to update PreviewPane dict scrape: {e}")
+
+    def update_kanji_scrape(self, markup) -> None:
+        try:
+            self.query_one("#details-kanji-scrape", Static).update(markup)
+        except Exception as e:
+            logging.error(f"Failed to update PreviewPane kanji scrape: {e}")
+
+    def update_llm(self, markup) -> None:
+        try:
+            self.query_one("#details-llm", Static).update(markup)
+        except Exception as e:
+            logging.error(f"Failed to update PreviewPane LLM details: {e}")
+
+# --- LOG PANE ---
+class PaneRichLog(RichLog):
+    BINDINGS = list(RichLog.BINDINGS) + [
+        Binding("tab", "next_pane", "Next Pane", priority=True),
+        Binding("shift+tab", "prev_pane", "Previous Pane", priority=True),
+    ]
+
+    def action_next_pane(self) -> None:
+        self.app.action_next_pane()
+
+    def action_prev_pane(self) -> None:
+        self.app.action_prev_pane()
+
+
+class LogPane(Vertical):
+    can_focus = True
+    BINDINGS = [
+        ("o", "date_select", "Date Log Select"),
+        ("c", "copy_log_clipboard", "Copy Log")
+    ]
+    def action_date_select(self) -> None:
+        self.app.action_date_select()
+    def action_copy_log_clipboard(self) -> None:
+        self.app.action_copy_log_clipboard()
+
+    def compose(self) -> ComposeResult:
+        yield Label("[bold accent]● LOG [5][/]", classes="pane-title")
+        yield PaneRichLog(id="details-logs", markup=True, highlight=True, max_lines=1000)
 
 # --- HTML FORMATTERS ---
-def format_anki_meaning_html(definition: str, nuances: str, examples: list) -> str:
-    html = f"<div><b>Definition:</b> {definition}</div>"
+def format_llm_annotations_html(nuances: str, examples: list) -> str:
+    """Render only the two fields that vocabulary LLM generation is allowed to own."""
+    return _format_llm_annotations_html(nuances, examples)
+    output = ""
     if nuances:
-        html += f"<div style='margin-top: 5px; font-style: italic; color: #888;'><b>Nuance:</b> {nuances}</div>"
+        output += (
+            "<div data-source='llm' style='margin-top:6px;font-style:italic;color:#888'>"
+            f"<b>Nuance:</b> {html_lib.escape(str(nuances))}</div>"
+        )
     if examples:
-        html += "<div style='margin-top: 10px;'><b>Examples:</b><ol style='margin: 5px 0; padding-left: 20px;'>"
+        output += (
+            "<div data-source='llm' style='margin-top:10px'><b>Examples:</b>"
+            "<ol style='margin:5px 0;padding-left:20px'>"
+        )
         for ex in examples:
-            sentence = ex.get("sentence", "")
-            translation = ex.get("translation", "")
-            html += f"<li style='margin-bottom: 3px;'><b>{sentence}</b><br/><span style='color: #666; font-size: 0.9em;'>{translation}</span></li>"
-        html += "</ol></div>"
-    return html
+            if not isinstance(ex, dict):
+                continue
+            sentence = html_lib.escape(str(ex.get("sentence", "")))
+            translation = html_lib.escape(str(ex.get("translation", "")))
+            output += (
+                f"<li style='margin-bottom:3px'><b>{sentence}</b><br/>"
+                f"<span style='color:#666;font-size:.9em'>{translation}</span></li>"
+            )
+        output += "</ol></div>"
+    return output
+
+def format_dictionary_meaning_html(scraped: dict, target_word: str,
+                                   nuances: str, examples: list) -> str:
+    """Render parsed dictionary data verbatim, annotating only the exact entry with LLM output."""
+    return _format_dictionary_meaning_html(scraped, target_word, nuances, examples)
 
 def format_anki_grammar_html(grammar_point: str, meaning: str, rules: str, examples: list) -> str:
-    html = f"<div><b>Grammar Point:</b> <span style='font-size: 1.2em; color: #e68e0d;'>{grammar_point}</span></div>"
-    html += f"<div style='margin-top: 5px;'><b>Meaning:</b> {meaning}</div>"
-    if rules:
-        html += f"<div style='margin-top: 5px;'><b>Structure/Rules:</b> <pre style='background: #f4f4f4; padding: 5px; border-radius: 3px; font-family: monospace;'>{rules}</pre></div>"
-    if examples:
-        html += "<div style='margin-top: 10px;'><b>Examples:</b><ol style='margin: 5px 0; padding-left: 20px;'>"
-        for ex in examples:
-            sentence = ex.get("sentence", "")
-            translation = ex.get("translation", "")
-            html += f"<li style='margin-bottom: 3px;'><b>{sentence}</b><br/><span style='color: #666; font-size: 0.9em;'>{translation}</span></li>"
-        html += "</ol></div>"
-    return html
+    return _format_anki_grammar_html(grammar_point, meaning, rules, examples)
 
-# --- DATA PROCESSING LOGIC ---
-async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note_info, is_grammar=False, log_cb=None) -> dict:
-    def log(msg):
-        logging.info(msg)
-        if log_cb:
-            log_cb(msg)
 
-    word = note_info.get("fields", {}).get("Word", {}).get("value", "")
-    picture_html = note_info.get("fields", {}).get("Picture", {}).get("value", "")
-    
-    filename = ocr_engine.extract_image_filename(picture_html)
-    if not filename:
-        log(f"No screenshot image filename found in fields for word '{word}'.")
-        return {
-            "word": word,
-            "filename": None,
-            "ocr_text": "",
-            "classification": "No Image",
-            "scraped": {"found": False},
-            "llm_response": None
-        }
-        
-    log(f"Extracted image filename: '{filename}' for word '{word}'")
-    
-    # Retrieve media base64
-    log(f"Retrieving media file '{filename}' from Anki...")
-    loop = asyncio.get_running_loop()
-    base64_data = await loop.run_in_executor(None, anki_client.retrieve_media_file, filename)
-    
-    # OCR
-    lang_cfg = "jpn+eng+vie"
-    if is_grammar:
-        lang_cfg = app_config["decks"]["japanese"]["ocr_langs"]
-    log(f"Performing OCR on '{filename}' using language config '{lang_cfg}'...")
-    ocr_text = await loop.run_in_executor(None, ocr_engine.perform_ocr, base64_data, lang_cfg, app_config.get("ocr", {}))
-    log(f"OCR complete. Extracted {len(ocr_text)} characters.")
-    
-    # Classify image
-    is_dict = ocr_engine.is_dictionary_screenshot(ocr_text)
-    classification = "dictionary" if is_dict else "visual_recall"
-    log(f"Image classification: '{classification}' (Dictionary screen: {is_dict})")
-    
-    # Dictionary lookup for modernization transparency
-    scraped = {"found": False}
-    lang_key = None
-    note_deck = note_info.get("deckName", "")
-    for k, cfg in app_config.get("decks", {}).items():
-        if cfg.get("deck_name") == note_deck:
-            lang_key = k
-            break
-    if not lang_key:
-        lang_key = "japanese"
-        
-    if not is_grammar:
-        log(f"Querying dictionary scraper for '{word}' ({lang_key})...")
-        try:
-            if lang_key == "japanese":
-                scraped = await scraper.scrape_jisho(word)
-            elif lang_key == "english":
-                scraped = await scraper.scrape_cambridge(word)
-            elif lang_key == "taiwanese":
-                scraped = await scraper.scrape_moedict(word)
-            elif lang_key == "german":
-                scraped = await scraper.scrape_dict_cc(word)
-            
-            if scraped.get("found"):
-                log(f"Scraper lookup successful. Reading: '{scraped.get('reading', '')}'.")
-            else:
-                log("Scraper lookup found no matches.")
-        except Exception as e:
-            log(f"Dictionary scrape failed: {e}")
-            
-    return {
-        "word": word,
-        "filename": filename,
-        "ocr_text": ocr_text,
-        "classification": classification,
-        "scraped": scraped,
-        "llm_response": None
-    }
-
-async def process_ingest_item(scraper, llm_client, word_info: dict, lang_key: str, app_config: dict, log_cb=None) -> dict:
-    def log(msg):
-        logging.info(msg)
-        if log_cb:
-            log_cb(msg)
-
-    word = word_info["word"]
-    note_ctx = word_info.get("note", "")
-    word_type = word_info.get("type", "")
-    
-    # Scrape
-    log(f"Scraping standard dictionaries for '{word}' ({lang_key})...")
-    scraped = {"found": False}
-    if lang_key == "japanese":
-        scraped = await scraper.scrape_jisho(word)
-    elif lang_key == "english":
-        scraped = await scraper.scrape_cambridge(word)
-    elif lang_key == "taiwanese":
-        scraped = await scraper.scrape_moedict(word)
-    elif lang_key == "german":
-        scraped = await scraper.scrape_dict_cc(word)
-        
-    found = scraped.get("found", False)
-    definition = scraped.get("definition", "")
-    reading = scraped.get("reading", "")
-    is_conjugated = scraped.get("is_conjugated", False)
-    suggestion = scraped.get("suggestion", "")
-    
-    if found:
-        log(f"Dictionary match found. Reading: '{reading}'.")
-    else:
-        log("No dictionary match found.")
-    
-    loop = asyncio.get_running_loop()
-    # Spelling correction suggestion using LLM if dictionary missed it or for other languages
-    if not found and llm_client.model:
-        log(f"Querying Ollama to check if '{word}' is conjugated or misspelled...")
-        lemma_data = await loop.run_in_executor(None, llm_client.lemmatize_word, word, lang_key)
-        if lemma_data.get("suggestion"):
-            suggestion = lemma_data["suggestion"]
-            is_conjugated = True
-            log(f"Ollama suggested base form: '{suggestion}' (Conjugated: True)")
-            
-    # Generate definition/examples via LLM using context notes if available
-    llm_response = {}
-    if found or suggestion:
-        target_word = suggestion if suggestion else word
-        prompt_system = app_config["llm"]["system_prompt_vocab"]
-        context_str = f"Context note: {note_ctx}. Type: {word_type}." if note_ctx else f"Type: {word_type}."
-        log(f"Querying local Ollama model '{llm_client.model}' for vocabulary definition and examples...")
-        try:
-            llm_response = await loop.run_in_executor(
-                None, llm_client.generate_card_content, target_word, context_str, lang_key.capitalize(), prompt_system
-            )
-            log("Ollama response received successfully.")
-        except Exception as e:
-            log(f"Ollama query failed: {e}. Falling back to scraped definition.")
-            # Fallback to scraped dictionary definition
-            llm_response = {
-                "definition": definition,
-                "nuances": f"Pronounced as: {reading}" if reading else "",
-                "examples": []
-            }
-    else:
-        log("No dictionary match and no LLM suggestion. Using default not-found card values.")
-        llm_response = {
-            "definition": "Not found in standard dictionary.",
-            "nuances": "Please check spelling.",
-            "examples": []
-        }
-        
-    # gTTS audio generation
-    audio_b64 = None
-    try:
-        log(f"Generating TTS audio pronunciation for '{suggestion if suggestion else word}'...")
-        audio_b64 = await loop.run_in_executor(None, generate_tts_base64, suggestion if suggestion else word, lang_key)
-        log("TTS audio generation completed.")
-    except Exception as e:
-        log(f"TTS generation failed: {e}")
-        
-    return {
-        "word": word,
-        "scraped": scraped,
-        "suggestion": suggestion,
-        "is_conjugated": is_conjugated,
-        "llm_response": llm_response,
-        "audio_b64": audio_b64
-    }
-
-def commit_card_modernization(anki_client, note_info, processed_data, lang_key, app_config) -> bool:
-    deck_cfg = app_config["decks"].get(lang_key)
-    if not deck_cfg:
-        return False
-        
-    target_field = deck_cfg["fields"]["meaning_text"]
-    img_field = deck_cfg["fields"]["meaning_image"]
-    
-    # Generate HTML content
-    llm_res = processed_data["llm_response"]
-    if lang_key == "grammar":
-        html = format_anki_grammar_html(
-            llm_res.get("grammar_point", processed_data["word"]),
-            llm_res.get("meaning", ""),
-            llm_res.get("rules", ""),
-            llm_res.get("examples", [])
-        )
-    else:
-        html = format_anki_meaning_html(
-            llm_res.get("definition", ""),
-            llm_res.get("nuances", ""),
-            llm_res.get("examples", [])
-        )
-        
-    # Update note
-    fields = {target_field: html}
-    if processed_data["classification"] == "dictionary":
-        # Clear the image!
-        fields[img_field] = ""
-        
-    anki_client.update_note_fields(note_info["noteId"], fields)
-    return True
-
-def commit_card_ingestion(anki_client, processed_data, lang_key, app_config) -> bool:
-    deck_cfg = app_config["decks"].get(lang_key)
-    if not deck_cfg:
-        return False
-        
-    deck_name = deck_cfg["deck_name"]
-    model_name = deck_cfg["note_type"]
-    fields_map = deck_cfg["fields"]
-    
-    word = processed_data["suggestion"] if processed_data["suggestion"] else processed_data["word"]
-    llm_res = processed_data["llm_response"]
-    
-    # Store audio first if generated
-    audio_filename = f"tts_{lang_key}_{word.replace(' ', '_')}.mp3"
-    if processed_data["audio_b64"]:
-        anki_client.store_media_file(audio_filename, processed_data["audio_b64"])
-        
-    # Format meaning HTML
-    html = format_anki_meaning_html(
-        llm_res.get("definition", ""),
-        llm_res.get("nuances", ""),
-        llm_res.get("examples", [])
+def format_injection_context_html(type_tag: str = "", note: str = "") -> str:
+    """Render user-authored injection context without giving it to the dictionary parser."""
+    return _format_injection_context_html(type_tag, note)
+    rows = []
+    if type_tag:
+        rows.append(f"<div><b>Learning focus:</b> {html_lib.escape(str(type_tag))}</div>")
+    if note:
+        rows.append(f"<div><b>Personal context:</b> {html_lib.escape(str(note))}</div>")
+    if not rows:
+        return ""
+    return (
+        "<aside data-source='user' style='margin-top:12px;border-top:1px dashed #888;"
+        "padding-top:8px'>" + "".join(rows) + "</aside>"
     )
-    
-    fields = {
-        fields_map["expression"]: word,
-        fields_map["meaning_text"]: html,
-    }
-    if processed_data["audio_b64"]:
-        fields[fields_map["audio"]] = f"[sound:{audio_filename}]"
-        
-    anki_client.add_note(deck_name, model_name, fields)
-    return True
 
-# --- SELECTION LIST MODAL ---
-class SelectionListModal(ModalScreen[str]):
-    def __init__(self, title: str, choices: list):
-        super().__init__()
-        self.modal_title = title
-        self.choices = choices
-        
-    def compose(self) -> ComposeResult:
-        with Vertical(id="modal-dialog-list"):
-            yield Label(f"[bold accent]{self.modal_title}[/]", id="modal-title")
-            items = [ListItem(Label(c), id=f"choice-{idx}") for idx, c in enumerate(self.choices)]
-            yield ListView(*items, id="choices-list")
-            
-    def on_mount(self) -> None:
-        self.query_one("#choices-list", ListView).focus()
-        
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        if event.item and event.item.id:
-            idx = int(event.item.id.replace("choice-", ""))
-            self.dismiss(self.choices[idx])
-            
-    def key_escape(self) -> None:
-        self.dismiss("")
 
-# --- COMPARISON RENDERERS ---
-from pathlib import Path
+def build_card_document(processed_data: dict, lang_key: str, mode: str) -> CardDocument:
+    """Build the canonical card represented by a processing result."""
+    return _build_card_document(processed_data, lang_key, mode)
+    if mode not in {"modernize", "inject"}:
+        raise ValueError(f"Unknown card mode: {mode}")
+
+    original_word = str(processed_data.get("word", "") or "").strip()
+    expression = (
+        str(processed_data.get("suggestion") or original_word).strip()
+        if mode == "inject" else original_word
+    )
+    llm_result = processed_data.get("llm_response") or {}
+    is_grammar = lang_key.endswith("grammar")
+    if is_grammar:
+        meaning_html = format_anki_grammar_html(
+            llm_result.get("grammar_point", expression),
+            llm_result.get("meaning", ""),
+            llm_result.get("rules", ""),
+            llm_result.get("examples", []),
+        )
+    else:
+        meaning_html = format_dictionary_meaning_html(
+            processed_data.get("scraped", {}),
+            expression,
+            llm_result.get("nuances", ""),
+            llm_result.get("examples", []),
+        )
+    if mode == "inject":
+        meaning_html += format_injection_context_html(
+            processed_data.get("type_tag", ""), processed_data.get("source_note", "")
+        )
+
+    media: list[MediaAsset] = []
+    obsolete_media: list[str] = []
+    image_html_parts: list[str] = []
+    new_image_name = processed_data.get("new_image_filename", "")
+    new_image_data = processed_data.get("new_image_b64")
+    if new_image_name and new_image_data:
+        media.append(MediaAsset(new_image_name, new_image_data))
+        image_html_parts.append(f"<img src='{html_lib.escape(new_image_name, quote=True)}'/>")
+        if mode == "modernize":
+            obsolete_media.extend(processed_data.get("orig_filenames", []))
+    elif mode == "modernize":
+        renamed_images = processed_data.get("renamed_images", [])
+        for image in renamed_images:
+            filename = image.get("new_name", "")
+            data = image.get("b64")
+            if filename and data:
+                media.append(MediaAsset(filename, data))
+                image_html_parts.append(f"<img src='{html_lib.escape(filename, quote=True)}'/>")
+                original_name = image.get("original_name")
+                if original_name and original_name != filename:
+                    obsolete_media.append(original_name)
+        if not image_html_parts:
+            existing = processed_data.get("filename", "")
+            if existing and processed_data.get("classification") != "dictionary":
+                image_html_parts.append(f"<img src='{html_lib.escape(existing, quote=True)}'/>")
+            elif processed_data.get("classification") == "dictionary":
+                obsolete_media.extend(processed_data.get("orig_filenames", []))
+
+    audio_name = processed_data.get("audio_filename", "")
+    audio_data = processed_data.get("audio_b64")
+    audio_html: str | None = "" if mode == "inject" else None
+    if audio_name and audio_data:
+        media.append(MediaAsset(audio_name, audio_data))
+        reading = processed_data.get("scraped", {}).get("reading", "")
+        has_kanji = any("\u4e00" <= char <= "\u9fff" for char in expression)
+        sound = f"[sound:{audio_name}]"
+        audio_html = (
+            f"{html_lib.escape(str(reading))} {sound}"
+            if lang_key.startswith("japanese") and has_kanji and reading else sound
+        )
+
+    issues = list(processed_data.get("issues", []))
+    if not expression:
+        issues.append("Expression is empty")
+    # Injection is an authoring workflow: dictionary data is preferred, but a
+    # user may intentionally inject a new word with OCR/context only.  The
+    # template boundary still validates the required expression/meaning fields
+    # at commit time, so absence of a scrape must not make every inject card
+    # uncommittable.
+
+    type_tag = safe_media_stem(str(processed_data.get("type_tag", "")), "")
+    tags = ["linguist-injected"]
+    if type_tag:
+        tags.append(f"linguist::{type_tag}")
+    return CardDocument(
+        expression=expression,
+        values={
+            "meaning_image": "".join(image_html_parts),
+            "meaning_text": meaning_html,
+            "kanji_construction": processed_data.get("kanji_construction", ""),
+            "audio": audio_html,
+        },
+        media=media,
+        obsolete_media=obsolete_media,
+        issues=list(dict.fromkeys(issues)),
+        tags=tags if mode == "inject" else [],
+    )
+
+# --- HELPER FUNCTIONS ---
+def clean_html_for_tui(html: str) -> str:
+    if not html:
+        return ""
+    # Format simple blocks nicely
+    h = html.replace("<div>", "").replace("</div>", "\n").replace("<br>", "\n").replace("<br/>", "\n")
+    h = h.replace("<p>", "").replace("</p>", "\n").replace("<li>", "\n- ").replace("</li>", "")
+    h = BeautifulSoup(h, "html.parser").get_text().strip()
+    return escape(h)
+
+def meaning_summary_for_tui(value: str) -> str:
+    """Preserve dictionary entry boundaries while converting card HTML to text."""
+    if not value:
+        return ""
+    soup = BeautifulSoup(str(value), "html.parser")
+    sections = soup.find_all("section")
+    if not sections:
+        return clean_html_for_tui(value)
+    rendered = []
+    for section in sections:
+        for br in section.find_all("br"):
+            br.replace_with("\n")
+        text = re.sub(r"\n{3,}", "\n\n", section.get_text("\n").strip())
+        rendered.append(text)
+    return escape("\n─────────────────────────\n".join(rendered))
+
+def kanji_summary_for_tui(value: str) -> str:
+    """Readable Kanji text with embedded stroke-order payloads abbreviated."""
+    if not value:
+        return ""
+    abbreviated = re.sub(
+        r"data:image/(?:gif|png|webp);base64,[A-Za-z0-9+/=,\s]+",
+        "[Stroke-order image]",
+        str(value),
+        flags=re.IGNORECASE,
+    )
+    soup = BeautifulSoup(abbreviated, "html.parser")
+    for image in soup.find_all("img"):
+        image.replace_with("[Stroke-order image]")
+    sections = soup.select("section[data-kanji]")
+    if sections:
+        blocks = [re.sub(r"\n{3,}", "\n\n", section.get_text("\n").strip()) for section in sections]
+        return escape("\n═════════════════════════\n".join(blocks))
+    text = re.sub(r"\n{3,}", "\n\n", soup.get_text("\n").strip())
+    # Compatibility with cached pre-section Kanji HTML.
+    text = re.sub(r"\n(?=Kanji\s+[\u4e00-\u9fff])", "\n═════════════════════════\n", text)
+    return escape(text)
+
+def get_file_extension(filename: str) -> str:
+    if "." in filename:
+        return filename.split(".")[-1]
+    return "jpg"
+
+def safe_media_stem(value: str, fallback: str = "media") -> str:
+    cleaned = re.sub(r"[^\w\-]+", "_", value or "", flags=re.UNICODE).strip("_")
+    return cleaned[:80] or fallback
+
+def indexed_media_filename(prefix: str, word: str, extension: str, index: int = 0, scope: str = "") -> str:
+    parts = [prefix]
+    if scope:
+        parts.append(safe_media_stem(scope, "media"))
+    parts.extend((safe_media_stem(word, "media"), str(index)))
+    return f"{'_'.join(parts)}.{extension.lstrip('.')}"
+
+def audio_extension(source: str) -> str:
+    if not source or source == "tts":
+        return "mp3"
+    suffix = Path(urllib.parse.urlparse(source).path).suffix.lower().lstrip(".")
+    return suffix if suffix in {"mp3", "ogg", "wav", "m4a"} else "mp3"
+
+def extract_image_filenames(html: str) -> list[str]:
+    if not html:
+        return []
+    soup = BeautifulSoup(html, "html.parser")
+    filenames = []
+    for img in soup.find_all("img"):
+        src = img.get("src", "")
+        if src and not src.startswith("http"):
+            filenames.append(src)
+    return filenames
+
+def clean_word_field(word: str, app_config: dict) -> str:
+    if not word:
+        return ""
+    # Clean HTML tags first
+    from bs4 import BeautifulSoup
+    word = BeautifulSoup(word, "html.parser").get_text().strip()
+
+    filters = app_config.get("filters", {})
+    if filters.get("remove_parentheses", True):
+        import re
+        word = re.sub(r"\([^\)]*\)", "", word)
+        word = re.sub(r"（[^）]*）", "", word)
+        word = word.strip()
+
+    if filters.get("clean_word_only", False):
+        import re
+        word = "".join(re.findall(r"[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\u3005a-zA-Z0-9\s]+", word)).strip()
+
+    return word
 
 def find_anki_media_path(filename: str) -> str:
     if not filename:
         return ""
+    from pathlib import Path
+
+    # Check the application cache first.
+    temp_path = get_media_cache_dir() / filename
+    if temp_path.exists():
+        return str(temp_path)
+
     paths = [
         Path.home() / ".local/share/Anki2/User 1/collection.media",
         Path.home() / ".var/app/net.ankiweb.Anki/data/Anki2/User 1/collection.media",
@@ -377,247 +552,1544 @@ def find_anki_media_path(filename: str) -> str:
             return str(full_path)
     return ""
 
-def render_image_to_ansi(image_path: str, max_width: int = 100) -> str:
-    try:
-        from PIL import Image
-        img = Image.open(image_path)
-        img = img.convert("RGB")
-        
-        # Calculate size
-        w, h = img.size
-        # Character aspect ratio is roughly 2:1 (vertical:horizontal)
-        # But we render 2 pixels vertically per character block, so pixel aspect ratio in the grid is 1:1
-        aspect = h / w
-        target_width = min(max_width, w)
-        target_height = int(target_width * aspect)
-        # Ensure height is even
-        if target_height % 2 != 0:
-            target_height += 1
-        if target_height <= 0:
-            target_height = 2
-            
-        img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
-        pixels = img.load()
-        
-        ansi_lines = []
-        for y in range(0, target_height, 2):
-            line_parts = []
-            for x in range(target_width):
-                top_color = pixels[x, y]
-                bot_color = pixels[x, y+1]
-                
-                tr, tg, tb = top_color
-                br, bg, bb = bot_color
-                
-                # ANSI sequence for top pixel as background (48), bottom pixel as foreground (38)
-                part = f"\x1b[48;2;{tr};{tg};{tb}m\x1b[38;2;{br};{bg};{bb}m▄"
-                line_parts.append(part)
-            # Reset at the end of the line
-            line_parts.append("\x1b[0m")
-            ansi_lines.append("".join(line_parts))
-            
-        return "\n".join(ansi_lines)
-    except Exception as e:
-        return f"[red]Failed to render image: {e}[/]"
+async def fetch_web_image(word: str, log_cb=None, suffix: str = "") -> tuple[str, str]:
+    def log(msg):
+        logging.info(msg)
+        if log_cb:
+            log_cb(msg)
 
-def make_side_by_side_comparison(word: str, note_id: str, original_fields: dict, processed_data: dict, is_grammar: bool, committed: bool = False) -> Table:
-    table = Table.grid(expand=True)
-    table.add_column(ratio=1)
-    table.add_column(ratio=1)
-    
-    before_text = f"[bold yellow]Word/Phrase:[/] {word}\n"
-    before_text += f"[bold yellow]Note ID:[/] {note_id}\n\n"
-    before_text += "[bold underline]Original Fields & Content:[/]\n"
-    filename = ""
-    for field_name, val in original_fields.items():
-        val_clean = val.get("value", "")
-        if field_name == "Picture" or "<img" in val_clean:
-            import re
-            match = re.search(r'<img\s+[^>]*src=["\']([^"\']+)["\']', val_clean)
-            if match:
-                filename = match.group(1)
-        val_clean = val_clean.replace("<div>", "").replace("</div>", "\n").replace("<br>", "\n").replace("<br/>", "\n")
-        val_clean = BeautifulSoup(val_clean, "html.parser").get_text()
-        if len(val_clean) > 250:
-            val_clean = val_clean[:250] + "..."
-        before_text += f"- [bold]{field_name}[/]: {val_clean.strip()}\n"
-        
-    before_renderables = [Text.from_markup(before_text)]
-    
-    if filename:
-        media_path = find_anki_media_path(filename)
-        if media_path:
-            before_renderables.append(Text.from_markup(f"\n[bold green]Original Image:[/] [link=file://{media_path}]{filename}[/link]"))
-            ansi_art = render_image_to_ansi(media_path, max_width=100)
-            if ansi_art and not ansi_art.startswith("[red]"):
-                before_renderables.append(Text.from_markup("\n[bold green]Legacy Screenshot Card Image:[/]"))
-                before_renderables.append(Text.from_ansi(ansi_art))
-        else:
-            before_renderables.append(Text.from_markup(f"\n[bold green]Original Image Found:[/] {filename}"))
-            
-    before_panel = Panel(Group(*before_renderables), title="BEFORE (Current Card)", border_style="yellow")
-    
-    if not committed:
-        if processed_data:
-            classification = processed_data.get("classification")
-            class_color = "yellow" if classification == "dictionary" else "green"
-            class_str = "Dictionary Screenshot (Will REPLACE with text)" if classification == "dictionary" else "Visual Recall Image (Will KEEP image)"
-            
-            after_text = f"[yellow]● Preview of Extracted Data (Pending Commit)[/]\n\n"
-            after_text += f"[bold green]Image Action:[/] [{class_color}]{class_str}[/]\n\n"
-            
-            ocr_txt = processed_data.get("ocr_text", "").strip()
-            if ocr_txt:
-                after_text += "[bold underline]OCR Extracted Text:[/]\n"
-                if len(ocr_txt) > 250:
-                    ocr_txt = ocr_txt[:250] + "..."
-                after_text += f"```\n{ocr_txt}```\n\n"
-                
-            scraped = processed_data.get("scraped")
-            if scraped and scraped.get("found"):
-                after_text += "[bold underline]Scraped Dictionary Metadata:[/]\n"
-                after_text += f"- [bold]Dictionary Entry[/]: {scraped.get('word')}\n"
-                after_text += f"- [bold]Reading/Pronunciation[/]: {scraped.get('reading', '')}\n"
-                after_text += f"- [bold]Raw Definition[/]: {scraped.get('definition', '')}\n"
-                
-            after_text += "\n[italic yellow]Press 'c' to run local Ollama and commit this card.[/]"
-            after_panel = Panel(after_text, title="AFTER (Modernized Preview) - PREVIEW", border_style="yellow")
-        else:
-            after_text = (
-                "\n"
-                "[yellow]● Pending Commit[/]\n\n"
-                "Modernized card preview (Ollama suggestion, OCR extraction, and field updates) will be generated and displayed here after committing.\n\n"
-                "Press [bold]c[/] to commit this card."
+    search_word = re.sub(r"[^\w\s\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]", "", word).strip()
+    if not search_word:
+        return None, ""
+
+    query_str = search_word
+    if suffix:
+        query_str += " " + suffix.strip()
+
+    loop = asyncio.get_running_loop()
+    user_agent = "LinguistAnkiBridge/1.0 (language-learning card image replacement)"
+
+    async def get_json(url: str) -> dict:
+        request = urllib.request.Request(url, headers={"User-Agent": user_agent})
+        payload = await loop.run_in_executor(None, lambda: urllib.request.urlopen(request, timeout=6.0).read())
+        return json.loads(payload.decode("utf-8"))
+
+    async def download_candidate(url: str, provider: str) -> tuple[str, str]:
+        if not url or url.lower().endswith(".svg"):
+            return None, ""
+        request = urllib.request.Request(url, headers={"User-Agent": user_agent})
+        payload = await loop.run_in_executor(None, lambda: urllib.request.urlopen(request, timeout=10.0).read())
+        # Reject API error pages and broken thumbnails before they reach Anki.
+        from PIL import Image, ImageStat
+        with Image.open(io.BytesIO(payload)) as image:
+            image.verify()
+        with Image.open(io.BytesIO(payload)) as image:
+            sample = image.convert("RGBA")
+            # Composite alpha onto white, then encode a baseline RGB JPEG.
+            # This avoids CMYK/ICC/alpha decoder differences in lightweight
+            # Linux image viewers while matching what Anki displays.
+            background = Image.new("RGBA", sample.size, "white")
+            background.alpha_composite(sample)
+            sample = background.convert("RGB")
+            sample.thumbnail((256, 256))
+            luminance = sample.convert("L")
+            pixels = list(luminance.get_flattened_data())
+            mean_light = sum(pixels) / max(1, len(pixels))
+            dark_ratio = sum(value < 18 for value in pixels) / max(1, len(pixels))
+            contrast = ImageStat.Stat(luminance).stddev[0]
+            if mean_light < 28 or dark_ratio > 0.82 or contrast < 4:
+                raise ValueError(
+                    f"low-quality image (brightness={mean_light:.1f}, dark={dark_ratio:.0%}, contrast={contrast:.1f})"
+                )
+        with Image.open(io.BytesIO(payload)) as image:
+            rgba = image.convert("RGBA")
+            background = Image.new("RGBA", rgba.size, "white")
+            background.alpha_composite(rgba)
+            normalized = io.BytesIO()
+            background.convert("RGB").save(
+                normalized, format="JPEG", quality=90, optimize=False,
+                progressive=False, subsampling=0,
             )
-            after_panel = Panel(after_text, title="AFTER (Modernized Preview) - PENDING", border_style="yellow")
-    elif not processed_data or not processed_data.get("llm_response"):
-        after_text = (
-            "\n"
-            "[yellow]● Running OCR & Local Ollama Analysis...[/]\n"
-            "Processing screenshot to extract text, determine action (Keep/Replace), and structure nuances/examples.\n"
-        )
-        after_panel = Panel(after_text, title="AFTER (Modernized Preview) - LOADING", border_style="yellow")
-    else:
-        llm_res = processed_data["llm_response"]
-        classification = processed_data["classification"]
-        filename = processed_data.get("filename") or filename
-        
-        class_color = "yellow" if classification == "dictionary" else "green"
-        class_str = "Dictionary Screenshot (Will REPLACE with text)" if classification == "dictionary" else "Visual Recall Image (Will KEEP image)"
-        
-        after_text = ""
-        media_path = find_anki_media_path(filename) if filename else ""
-        if media_path:
-            after_text += f"[bold green]Image Action:[/] [{class_color}]{class_str}[/]\n"
-            after_text += f"[bold green]Image File:[/] [link=file://{media_path}]{filename}[/link]\n\n"
-        else:
-            after_text += f"[bold green]Image Action:[/] [{class_color}]{class_str}[/] ({filename})\n\n"
-            
-        after_text += "[bold underline]OCR Extracted Text:[/]\n"
-        ocr_txt = processed_data.get("ocr_text", "").strip()
-        if not ocr_txt:
-            ocr_txt = "[No text found]"
-        if len(ocr_txt) > 250:
-            ocr_txt = ocr_txt[:250] + "..."
-        after_text += f"```\n{ocr_txt}```\n\n"
-        
-        after_text += "[bold underline]Ollama Suggestion Preview:[/]\n"
-        if is_grammar:
-            after_text += f"- **Grammar Point**: {llm_res.get('grammar_point', '')}\n"
-            after_text += f"- **Meaning**: {llm_res.get('meaning', '')}\n"
-            after_text += f"- **Rules**: {llm_res.get('rules', '')}\n"
-        else:
-            after_text += f"- **Definition**: {llm_res.get('definition', '')}\n"
-            after_text += f"- **Nuance**: {llm_res.get('nuances', '')}\n"
-            
-        examples = llm_res.get("examples", [])
-        if examples:
-            after_text += "- **Examples**:\n"
-            for idx, ex in enumerate(examples[:2], 1):
-                after_text += f"  {idx}. {ex.get('sentence')} -> {ex.get('translation')}\n"
-                
-        after_panel = Panel(after_text, title="AFTER (Modernized Preview)", border_style="green")
-        
-    table.add_row(before_panel, after_panel)
-    return table
+        normalized_payload = normalized.getvalue()
+        filename = indexed_media_filename(provider, search_word, "jpg")
+        return base64.b64encode(normalized_payload).decode("utf-8"), filename
 
-def make_ingest_side_by_side(word_info: dict, processed_data: dict) -> Table:
-    table = Table.grid(expand=True)
-    table.add_column(ratio=1)
-    table.add_column(ratio=1)
-    
-    input_text = f"[bold yellow]Word/Phrase:[/] {word_info['word']}\n"
-    input_text += f"[bold yellow]Language:[/] {word_info.get('language', '').upper()}\n"
-    if word_info.get("type_tag"):
-        input_text += f"[bold yellow]Type tag:[/] {word_info['type_tag']}\n"
-    if word_info.get("note"):
-        input_text += f"[bold yellow]Context Note:[/] {word_info['note']}\n"
-        
-    if "raw_text" in word_info:
-        input_text += f"[bold yellow]Crawl Source length:[/] {len(word_info['raw_text'])} chars\n"
-        # Extract plain text content snippet for preview
-        raw = word_info["raw_text"]
-        if "<html>" in raw or "<div" in raw or "<p" in raw:
+    # Search multiple results and languages. The former single-result English
+    # query frequently selected an unrelated page and stopped immediately.
+    for language in ("ja", "en"):
+        language_query = search_word if language == "ja" else (suffix.strip() or search_word)
+        url = (
+            f"https://{language}.wikipedia.org/w/api.php?action=query&format=json&generator=search&"
+            f"gsrsearch={urllib.parse.quote(language_query)}&gsrlimit=6&prop=pageimages&"
+            "piprop=thumbnail|original&pithumbsize=640"
+        )
+        log(f"Searching {language}.wikipedia.org for illustrative images of '{language_query}'...")
+        try:
+            pages = (await get_json(url)).get("query", {}).get("pages", {})
+            for page in sorted(pages.values(), key=lambda value: value.get("index", 999)):
+                image_url = page.get("thumbnail", {}).get("source") or page.get("original", {}).get("source")
+                if not image_url:
+                    log(f"No pageimage found for Wikipedia page '{page.get('title')}'. Trying the next result.")
+                    continue
+                try:
+                    result = await download_candidate(image_url, "wiki")
+                    if result[0]:
+                        log(f"Downloaded replacement image from Wikipedia page '{page.get('title')}' as '{result[1]}'.")
+                        return result
+                except Exception as candidate_error:
+                    log(f"Rejected Wikipedia image candidate '{page.get('title')}': {candidate_error}")
+        except Exception as error:
+            log(f"{language}.wikipedia.org image search failed: {error}")
+
+    # Wikimedia Commons searches actual media files rather than encyclopedia
+    # pages and is a useful fallback for verbs or concepts without a pageimage.
+    commons_query = suffix.strip() or query_str
+    commons_url = (
+        "https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&"
+        f"gsrsearch={urllib.parse.quote(commons_query)}&gsrnamespace=6&gsrlimit=10&"
+        "prop=imageinfo&iiprop=url|mime&iiurlwidth=640"
+    )
+    log(f"Searching Wikimedia Commons media for '{commons_query}'...")
+    try:
+        pages = (await get_json(commons_url)).get("query", {}).get("pages", {})
+        for page in sorted(pages.values(), key=lambda value: value.get("index", 999)):
+            info = next(iter(page.get("imageinfo", [])), {})
+            if str(info.get("mime", "")).lower() not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+                continue
+            image_url = info.get("thumburl") or info.get("url")
             try:
-                from bs4 import BeautifulSoup
-                cleaned = BeautifulSoup(raw, "html.parser").get_text()
-            except Exception:
-                cleaned = raw
-        else:
-            cleaned = raw
-        # Remove empty lines & strip
-        cleaned = "\n".join([line.strip() for line in cleaned.splitlines() if line.strip()])
-        snippet = cleaned[:500] + "..." if len(cleaned) > 500 else cleaned
-        input_text += f"\n[bold underline]Cleaned Crawl Content (Snippet):[/]\n```\n{snippet}\n```\n"
-        
-    if processed_data and "scraped" in processed_data:
-        scraped = processed_data["scraped"]
-        if scraped.get("found"):
-            input_text += "\n[bold underline]Scraped Dictionary Metadata:[/]\n"
-            input_text += f"- [bold]Dictionary Entry[/]: {scraped.get('word')}\n"
-            input_text += f"- [bold]Reading/Pronunciation[/]: {scraped.get('reading', '')}\n"
-            input_text += f"- [bold]Raw Definition[/]: {scraped.get('definition', '')}\n"
-            if scraped.get("is_common"):
-                input_text += f"- [bold]Common Word[/]: Yes\n"
-            if scraped.get("audio_url"):
-                input_text += f"- [bold]Audio Link[/]: {scraped.get('audio_url')}\n"
-                
-    input_panel = Panel(input_text, title="INPUT DATA", border_style="yellow")
-    
-    if not processed_data:
-        output_text = (
-            "\n"
-            "[yellow]● Scraping Dictionary & Querying Local Ollama...[/]\n"
-            "Running anti-bot scrapers via Crawl4AI and requesting custom nuances/examples from local LLM.\n"
+                result = await download_candidate(image_url, "commons")
+                if result[0]:
+                    log(f"Downloaded replacement image from Wikimedia Commons as '{result[1]}'.")
+                    return result
+            except Exception as candidate_error:
+                log(f"Rejected Wikimedia Commons candidate '{page.get('title')}': {candidate_error}")
+    except Exception as error:
+        log(f"Wikimedia Commons image search failed: {error}")
+
+    log(f"No usable illustrative image found for '{query_str}'. The original image will be preserved.")
+    return None, ""
+
+async def fetch_audio_base64_if_any(word: str, base_lang: str, scraped: dict, log_cb=None) -> tuple[str, str]:
+    def log(msg):
+        logging.info(msg)
+        if log_cb:
+            log_cb(msg)
+
+    audio_url = scraped.get("audio_url")
+    audio_b64 = None
+    if audio_url and audio_url.startswith("//"):
+        audio_url = "https:" + audio_url
+
+    if audio_url:
+        log(f"Attempting to download audio from {audio_url}...")
+        try:
+            req = urllib.request.Request(audio_url, headers={"User-Agent": "Mozilla/5.0"})
+            loop = asyncio.get_running_loop()
+            audio_data = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=5.0).read())
+            audio_b64 = base64.b64encode(audio_data).decode("utf-8")
+            log("Audio downloaded successfully from source.")
+            return audio_b64, audio_url
+        except Exception as e:
+            log(f"Failed to download audio from source: {e}. Falling back to TTS...")
+
+    try:
+        log(f"Generating TTS audio pronunciation for '{word}'...")
+        loop = asyncio.get_running_loop()
+        audio_b64 = await loop.run_in_executor(None, generate_tts_base64, word, base_lang)
+        log("TTS audio generation completed.")
+        return audio_b64, "tts"
+    except Exception as e:
+        log(f"TTS generation failed: {e}")
+        return None, ""
+
+async def fetch_kanji_construction_if_needed(word: str, scraper, app_config: dict, log_cb=None, llm_client=None) -> str:
+    word = clean_word_field(word, app_config)
+    def log(msg):
+        logging.info(msg)
+        if log_cb:
+            log_cb(msg)
+
+    kanji_cfg = app_config.get("kanji", {})
+    if not kanji_cfg.get("enabled", True):
+        return ""
+
+    kanji_chars = [c for c in word if "\u4e00" <= c <= "\u9fff"]
+    if not kanji_chars:
+        return ""
+
+    log(f"Detected Kanji characters: {kanji_chars}. Fetching construction...")
+
+    source_lang = str(kanji_cfg.get("source_lang", "english") or "english").strip().lower()
+    url_template = kanji_cfg.get("url_template")
+    schema = kanji_cfg.get("schema")
+
+    # Self-healing logic for mixed config
+    if source_lang == "english":
+        if not url_template or "hvdic.thivien.net" in url_template:
+            url_template = "https://jisho.org/search/{char}%23kanji"
+            schema = None
+        if not schema or schema.get("name") != "jisho_kanji":
+            schema = {
+                "name": "jisho_kanji",
+                "baseSelector": ".kanji",
+                "fields": [
+                    {"name": "meanings", "selector": ".kanji-details__main-meanings", "type": "text"},
+                    {"name": "strokes", "selector": ".kanji-details__stroke_count strong", "type": "text"},
+                    {"name": "radical", "selector": ".radicals span", "type": "text"},
+                    {"name": "parts", "selector": ".parts a", "type": "text"}
+                ]
+            }
+    else: # vietnamese
+        if not url_template or "jisho.org" in url_template:
+            url_template = "https://hvdic.thivien.net/whv/{char}"
+            schema = None
+        if not schema or schema.get("name") != "hvdic_kanji":
+            schema = {
+                "name": "hvdic_kanji",
+                "baseSelector": ".hvres",
+                "fields": [
+                    {"name": "spell", "selector": ".hvres-spell", "type": "text"},
+                    {"name": "chi_tiet", "selector": ".hvres-details", "type": "text"},
+                    {"name": "nghia", "selector": ".hvres-meaning", "type": "text"}
+                ]
+            }
+
+    results = []
+    for char in kanji_chars:
+        try:
+            char_info = await scraper.scrape_kanji_details(char, url_template, schema)
+            if char_info:
+                results.append(char_info)
+                continue
+            log(f"Kanji source returned no details for '{char}'.")
+        except Exception as e:
+            log(f"Kanji source failed for '{char}': {e}")
+
+        # Try a source independent from the failed primary. English Jisho
+        # failures use the KANJIDIC-backed JSON API; Vietnamese HVDic failures
+        # first use Jisho so configured output remains as rich as possible.
+        fallback_sources = (
+            [("KanjiAPI", "https://kanjiapi.dev/v1/kanji/{char}", {"name": "kanjiapi"}),
+             ("HVDic", "https://hvdic.thivien.net/whv/{char}", {"name": "hvdic_kanji"})]
+            if source_lang == "english" else
+            [("Jisho", "https://jisho.org/search/{char}%23kanji", {"name": "jisho_kanji"}),
+             ("KanjiAPI", "https://kanjiapi.dev/v1/kanji/{char}", {"name": "kanjiapi"})]
         )
-        output_panel = Panel(output_text, title="GENERATED CARD PREVIEW - LOADING", border_style="yellow")
+        for fallback_name, fallback_url, fallback_schema in fallback_sources:
+            try:
+                log(f"Falling back to {fallback_name} Kanji details for '{char}'...")
+                fallback = await scraper.scrape_kanji_details(
+                    char, fallback_url, fallback_schema,
+                )
+                if fallback:
+                    results.append(fallback)
+                    break
+                log(f"{fallback_name} also returned no Kanji details for '{char}'.")
+            except Exception as fallback_error:
+                log(f"{fallback_name} Kanji fallback failed for '{char}': {fallback_error}")
+
+    return "<br/>".join(results)
+
+def dictionary_llm_context(scraped: dict, ocr_text: str = "") -> str:
+    """Provide the LLM only parsed dictionary evidence and the raw OCR result."""
+    if scraped and scraped.get("llm_context"):
+        parsing = scraped["llm_context"]
     else:
-        scraped = processed_data["scraped"]
-        is_conj = processed_data["is_conjugated"]
-        llm_res = processed_data["llm_response"]
-        
-        spell_status = "[bold green]Dictionary Base Form[/]"
-        if is_conj:
-            spell_status = f"[bold yellow]Conjugated! Suggestion base: '{processed_data['suggestion']}'[/]"
-        elif not scraped.get("found"):
-            spell_status = "[bold red]Not found in standard dictionary![/]"
-            
-        output_text = f"[bold green]Spelling/Validation:[/] {spell_status}\n\n"
-        output_text += f"**Scraped Definition**: {scraped.get('definition', '[None]')}\n\n"
-        output_text += "[bold underline]Ollama Card Preview:[/]\n"
-        output_text += f"- **Definition**: {llm_res.get('definition', '')}\n"
-        output_text += f"- **Nuance/Notes**: {llm_res.get('nuances', '')}\n"
-        
-        examples = llm_res.get("examples", [])
-        if examples:
-            output_text += "- **Examples**:\n"
-            for idx, ex in enumerate(examples[:2], 1):
-                output_text += f"  {idx}. {ex.get('sentence')} -> {ex.get('translation')}\n"
-                
-        output_text += f"- **TTS Audio status**: {'[green]Generated[/]' if processed_data['audio_b64'] else '[red]None[/]'}\n"
-        output_panel = Panel(output_text, title="GENERATED CARD PREVIEW", border_style="green")
-        
-    table.add_row(input_panel, output_panel)
+        parsed_fields = {
+            key: value
+            for key, value in (scraped or {}).items()
+            if key not in {"llm_context", "audio_url"}
+        }
+        parsing = json.dumps(parsed_fields, ensure_ascii=False, indent=2)
+    return (
+        "EXACT DICTIONARY PARSING (authoritative; do not rewrite it):\n"
+        f"{parsing}\n\n"
+        "RAW OCR RESULT (supporting context only):\n"
+        f"{ocr_text or '(no OCR text available)'}"
+    )
+
+# --- DATA PROCESSING LOGIC ---
+async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note_info, is_grammar=False, log_cb=None, llm_client=None, deck_key=None) -> dict:
+    def log(msg):
+        logging.info(msg)
+        if log_cb:
+            log_cb(msg)
+
+    note_deck = note_info.get("deckName", "")
+    lang_key = deck_key
+    if not lang_key:
+        for k, cfg in app_config.get("decks", {}).items():
+            if cfg.get("deck_name") == note_deck:
+                lang_key = k
+                break
+    if not lang_key:
+        lang_key = "japanese_vocab"
+
+    base_lang = lang_key.split("_")[0]
+    translation_lang = app_config.get("llm", {}).get("translation_language", "English")
+    word_field = app_config["decks"].get(lang_key, {}).get("fields", {}).get("expression", "Word")
+    note_fields = note_info.get("fields", {})
+    word = note_info.get("_linguist_expression", "")
+    if not word:
+        word = note_fields.get(word_field, {}).get("value", "")
+    if not word:
+        for candidate in ("Expression", "Word", "Front", "Vocabulary"):
+            if note_fields.get(candidate, {}).get("value"):
+                word = note_fields[candidate]["value"]
+                break
+    word = clean_word_field(word, app_config)
+
+    picture_field = app_config["decks"].get(lang_key, {}).get("fields", {}).get("meaning_image", "Picture")
+    picture_html = note_fields.get(picture_field, {}).get("value", "")
+    if not picture_html:
+        for candidate in ("Picture", "Image", "Meaning Image", "MeaningImage"):
+            value = note_fields.get(candidate, {}).get("value", "")
+            if "<img" in value.lower():
+                picture_html = value
+                break
+    if not picture_html:
+        picture_html = next(
+            (
+                field.get("value", "") for field in note_fields.values()
+                if "<img" in str(field.get("value", "")).lower()
+            ),
+            "",
+        )
+
+    # Extract original images
+    orig_filenames = extract_image_filenames(picture_html)
+    fallback_fn = ocr_engine.extract_image_filename(picture_html)
+    if fallback_fn and fallback_fn not in orig_filenames:
+        orig_filenames.append(fallback_fn)
+
+    filename = orig_filenames[0] if orig_filenames else ""
+    classification = "visual_recall"
+    classification_result = {}
+    ocr_text = ""
+    retrieved_media = {}
+
+    if filename:
+        log(f"Extracted main image filename: '{filename}' for word '{word}'")
+        log(f"Retrieving media file '{filename}' from Anki...")
+        loop = asyncio.get_running_loop()
+        base64_data = await loop.run_in_executor(None, anki_client.retrieve_media_file, filename)
+        retrieved_media[filename] = base64_data
+
+        lang_cfg = app_config.get("decks", {}).get(lang_key, {}).get("ocr_langs", "jpn+eng+vie")
+        log(f"Performing OCR on '{filename}' using language config '{lang_cfg}'...")
+        ocr_text = await loop.run_in_executor(None, ocr_engine.perform_ocr, base64_data, lang_cfg, app_config.get("ocr", {}), log)
+        log(f"OCR complete. Extracted {len(ocr_text)} characters.")
+
+        log("Classifying image using OCR, layout, and visual structure...")
+        classifier_config = {
+            **app_config.get("image_classification", {}),
+            "ocr": app_config.get("ocr", {}),
+        }
+        classification_result = await loop.run_in_executor(
+            None,
+            ocr_engine.classify_image,
+            base64_data,
+            ocr_text,
+            lang_cfg,
+            classifier_config,
+            llm_client,
+        )
+        classification = classification_result["classification"]
+        log(
+            f"Image classification: '{classification}' "
+            f"(dictionary probability={classification_result['probability']:.2f}, "
+            f"source={classification_result['source']})"
+        )
+        if classification == "uncertain":
+            log("Image classification is uncertain; preserving the original image until user confirmation in Preview.")
+    else:
+        log(f"No screenshot image filename found in fields for word '{word}'.")
+        classification = "No Image"
+
+    # Rename original images and copy them to the application media cache.
+    renamed_images = []
+    temp_dir = get_media_cache_dir()
+
+    import re
+    import base64
+    clean_word_for_fn = safe_media_stem(word, "word")
+
+    for idx, orig_fn in enumerate(orig_filenames):
+        try:
+            b64_data = retrieved_media.get(orig_fn)
+            if b64_data is None:
+                log(f"Retrieving media file '{orig_fn}' from Anki for renaming...")
+                loop = asyncio.get_running_loop()
+                b64_data = await loop.run_in_executor(None, anki_client.retrieve_media_file, orig_fn)
+                retrieved_media[orig_fn] = b64_data
+            else:
+                log(f"Reusing cached media file '{orig_fn}' for renaming...")
+            if b64_data:
+                ext = get_file_extension(orig_fn)
+                new_fn = indexed_media_filename("img", clean_word_for_fn, ext, idx, lang_key)
+
+                # Save a local preview copy.
+                with open(temp_dir / new_fn, "wb") as f:
+                    f.write(base64.b64decode(b64_data))
+
+                renamed_images.append({
+                    "original_name": orig_fn,
+                    "new_name": new_fn,
+                    "b64": b64_data
+                })
+                log(f"Cached '{orig_fn}' as '{new_fn}'.")
+        except Exception as e:
+            log(f"Failed to retrieve/rename '{orig_fn}': {e}")
+
+    scraped = {"found": False}
+    if not is_grammar:
+        dict_cfg = app_config.get("dictionary", {})
+        preset = dict_cfg.get("preset", base_lang)
+
+        if preset == "custom":
+            url_template = dict_cfg.get("url_template", "")
+            schema = dict_cfg.get("schema", {})
+            log(f"Querying custom dictionary scraper for '{word}'...")
+            try:
+                scraped = await scraper.scrape_custom_dict(word, url_template, schema)
+            except Exception as e:
+                log(f"Custom dictionary scrape failed: {e}")
+        else:
+            active_dict = preset if preset in ["jisho", "cambridge", "moedict", "dict_cc"] else base_lang
+            log(f"Querying standard dictionary '{active_dict}' for '{word}'...")
+            try:
+                if active_dict == "japanese" or active_dict == "jisho":
+                    scraped = await scraper.scrape_jisho(
+                        word,
+                        retry_count=dict_cfg.get("retry_count", 3),
+                        backoff=dict_cfg.get("retry_backoff_seconds", 0.6),
+                        browser_fallback=dict_cfg.get("browser_fallback", True),
+                    )
+                elif active_dict == "english" or active_dict == "cambridge":
+                    scraped = await scraper.scrape_cambridge(word)
+                elif active_dict == "taiwanese" or active_dict == "moedict":
+                    scraped = await scraper.scrape_moedict(word)
+                elif active_dict == "german" or active_dict == "dict_cc":
+                    scraped = await scraper.scrape_dict_cc(word)
+
+                if scraped.get("found"):
+                    log(f"Scraper lookup successful. Reading: '{scraped.get('reading', '')}'.")
+                else:
+                    log("Scraper lookup found no matches.")
+            except Exception as e:
+                log(f"Dictionary scrape failed: {e}")
+
+    llm_response = {}
+    if not is_grammar:
+        target_word = scraped.get("word") if scraped.get("word") else word
+        prompt_system = app_config["llm"]["system_prompt_vocab"]
+        log(f"Querying local Ollama model '{getattr(llm_client, 'model', None)}' for nuance and examples...")
+        try:
+            loop = asyncio.get_running_loop()
+            llm_response = await loop.run_in_executor(
+                None, llm_client.generate_card_content, target_word, dictionary_llm_context(scraped, ocr_text), base_lang.capitalize(), translation_lang, prompt_system
+            )
+            log("Ollama response received successfully.")
+        except Exception as e:
+            log(f"Ollama nuance/example generation failed: {e}. Keeping dictionary parsing only.")
+            llm_response = {
+                "nuances": "",
+                "examples": []
+            }
+    else:
+        target_word = word
+        prompt_system = app_config["llm"]["system_prompt_grammar"]
+        log(f"Querying local Ollama model '{getattr(llm_client, 'model', None)}' for grammar explanation...")
+        try:
+            loop = asyncio.get_running_loop()
+            llm_response = await loop.run_in_executor(
+                None, llm_client.generate_grammar_content, word, translation_lang, prompt_system
+            )
+            log("Ollama response received successfully.")
+        except Exception as e:
+            log(f"Ollama query failed: {e}.")
+            llm_response = {
+                "grammar_point": word,
+                "meaning": "Grammar explanation not found.",
+                "rules": "",
+                "examples": []
+            }
+
+    kanji_construction = await fetch_kanji_construction_if_needed(
+        scraped.get("word") if scraped.get("word") else word,
+        scraper, app_config, log_cb, llm_client
+    )
+
+    new_image_b64 = None
+    new_image_filename = ""
+    img_search_cfg = app_config.get("image_search", {})
+    enabled_for_empty = img_search_cfg.get("enabled_for_empty", True)
+    suffix = img_search_cfg.get("suffix", "")
+    if not suffix and scraped.get("entries"):
+        exact = scraped["entries"][0]
+        visual_terms = []
+        for sense in exact.get("senses", []):
+            visual_terms.extend(sense.get("definitions", []))
+            if len(visual_terms) >= 3:
+                break
+        suffix = " ".join(str(term) for term in visual_terms[:3])
+
+    if classification == "dictionary" or (classification == "No Image" and enabled_for_empty):
+        log(f"Card has dictionary screenshot or no image. Fetching illustrative image from internet for '{word}'...")
+        new_image_b64, new_image_filename = await fetch_web_image(word, log_cb, suffix)
+        if new_image_b64 and new_image_filename:
+            try:
+                with open(temp_dir / new_image_filename, "wb") as f:
+                    f.write(base64.b64decode(new_image_b64))
+                log(f"Cached illustrative web image as '{new_image_filename}'.")
+            except Exception as e:
+                log(f"Failed to cache web image: {e}")
+
+    audio_b64 = None
+    audio_filename = ""
+    if not is_grammar:
+        audio_b64, audio_src = await fetch_audio_base64_if_any(target_word, base_lang, scraped, log_cb)
+        if audio_b64:
+            audio_filename = indexed_media_filename(
+                "audio", target_word, audio_extension(audio_src), scope=lang_key
+            )
+            try:
+                with open(temp_dir / audio_filename, "wb") as f:
+                    f.write(base64.b64decode(audio_b64))
+                log(f"Cached audio as '{audio_filename}'.")
+            except Exception as e:
+                log(f"Failed to cache audio: {e}")
+
+    return {
+        "word": word,
+        "filename": filename,
+        "orig_filenames": orig_filenames,
+        "renamed_images": renamed_images,
+        "ocr_text": ocr_text,
+        "classification": classification,
+        "classification_result": classification_result,
+        "scraped": scraped,
+        "llm_response": llm_response,
+        "kanji_construction": kanji_construction,
+        "new_image_b64": new_image_b64,
+        "new_image_filename": new_image_filename,
+        "audio_b64": audio_b64,
+        "audio_filename": audio_filename
+    }
+
+async def process_inject_item(scraper, llm_client, word_info: dict, lang_key: str, app_config: dict, log_cb=None) -> dict:
+    """Enrich one explicit injection request for the canonical card builder.
+
+    This function deliberately returns source data rather than Anki field
+    names.  ``build_card_document(..., mode="inject")`` is the sole boundary
+    that turns this result into a template-aware card.
+    """
+    def log(msg):
+        logging.info(msg)
+        if log_cb:
+            log_cb(msg)
+
+    word = word_info["word"]
+    if word:
+        word = BeautifulSoup(word, "html.parser").get_text().strip()
+
+    ocr_text = word_info.get("ocr_text", "")
+    author_context = {
+        "type_tag": str(word_info.get("type_tag", "") or "").strip(),
+        "source_note": str(
+            word_info.get("source_note", word_info.get("note", "")) or ""
+        ).strip(),
+    }
+
+    loop = asyncio.get_running_loop()
+    is_grammar = lang_key.endswith("grammar")
+    base_lang = lang_key.split("_")[0]
+    translation_lang = app_config.get("llm", {}).get("translation_language", "English")
+
+    if is_grammar:
+        llm_response = {}
+        raw_text = word_info.get("raw_text", "")
+        prompt_system = app_config["llm"]["system_prompt_grammar"]
+        log(f"Querying local Ollama model '{getattr(llm_client, 'model', None)}' for grammar explanation...")
+        try:
+            llm_response = await loop.run_in_executor(
+                None, llm_client.generate_grammar_content, raw_text if raw_text else word, translation_lang, prompt_system
+            )
+            log("Ollama response received successfully.")
+        except Exception as e:
+            log(f"Ollama query failed: {e}.")
+            llm_response = {
+                "grammar_point": word,
+                "meaning": "Failed to parse grammar explanation.",
+                "rules": "",
+                "examples": []
+            }
+
+        kanji_construction = await fetch_kanji_construction_if_needed(word, scraper, app_config, log_cb, llm_client)
+
+        return {
+            **author_context,
+            "word": word,
+            "scraped": {"found": True, "definition": "Grammar explanation"},
+            "suggestion": "",
+            "is_conjugated": False,
+            "llm_response": llm_response,
+            "audio_b64": None,
+            "audio_filename": "",
+            "kanji_construction": kanji_construction,
+            "new_image_b64": None,
+            "new_image_filename": ""
+        }
+
+    dict_cfg = app_config.get("dictionary", {})
+    preset = dict_cfg.get("preset", base_lang)
+
+    scraped = {"found": False}
+    if preset == "custom":
+        url_template = dict_cfg.get("url_template", "")
+        schema = dict_cfg.get("schema", {})
+        log(f"Scraping custom dictionary for '{word}'...")
+        try:
+            scraped = await scraper.scrape_custom_dict(word, url_template, schema)
+        except Exception as e:
+            log(f"Custom dictionary scrape failed: {e}")
+    else:
+        active_dict = preset if preset in ["jisho", "cambridge", "moedict", "dict_cc"] else base_lang
+        log(f"Scraping standard dictionary '{active_dict}' for '{word}'...")
+        try:
+            if active_dict == "japanese" or active_dict == "jisho":
+                scraped = await scraper.scrape_jisho(
+                    word,
+                    retry_count=dict_cfg.get("retry_count", 3),
+                    backoff=dict_cfg.get("retry_backoff_seconds", 0.6),
+                    browser_fallback=dict_cfg.get("browser_fallback", True),
+                )
+            elif active_dict == "english" or active_dict == "cambridge":
+                scraped = await scraper.scrape_cambridge(word)
+            elif active_dict == "taiwanese" or active_dict == "moedict":
+                scraped = await scraper.scrape_moedict(word)
+            elif active_dict == "german" or active_dict == "dict_cc":
+                scraped = await scraper.scrape_dict_cc(word)
+        except Exception as e:
+            log(f"Dictionary scrape failed: {e}")
+
+    found = scraped.get("found", False)
+    reading = scraped.get("reading", "")
+    is_conjugated = scraped.get("is_conjugated", False)
+    suggestion = scraped.get("suggestion", "")
+
+    if found:
+        log(f"Dictionary match found. Reading: '{reading}'.")
+    else:
+        log("No dictionary match found.")
+
+    if not found and getattr(llm_client, "model", None):
+        log(f"Querying Ollama to check if '{word}' is conjugated or misspelled...")
+        lemma_data = await loop.run_in_executor(None, llm_client.lemmatize_word, word, base_lang)
+        if lemma_data.get("suggestion"):
+            suggestion = lemma_data["suggestion"]
+            is_conjugated = True
+            log(f"Ollama suggested base form: '{suggestion}' (Conjugated: True)")
+
+    target_word = suggestion if suggestion else word
+
+    async def generate_llm_annotations():
+        if not (found or suggestion):
+            log("No dictionary match and no LLM suggestion. Using default not-found card values.")
+            return {"nuances": "", "examples": []}
+        prompt_system = app_config["llm"]["system_prompt_vocab"]
+        context_str = dictionary_llm_context(scraped, ocr_text)
+        log(f"Querying local Ollama model '{getattr(llm_client, 'model', None)}' for nuance and examples...")
+        try:
+            response = await loop.run_in_executor(
+                None, llm_client.generate_card_content, target_word, context_str, base_lang.capitalize(), translation_lang, prompt_system
+            )
+            log("Ollama response received successfully.")
+            return response
+        except Exception as e:
+            log(f"Ollama nuance/example generation failed: {e}. Keeping dictionary parsing only.")
+            return {"nuances": "", "examples": []}
+
+    async def fetch_injection_image():
+        log(f"Fetching illustrative image from Wikipedia for injection word '{target_word}'...")
+        suffix = app_config.get("image_search", {}).get("suffix", "")
+        return await fetch_web_image(target_word, log_cb, suffix)
+
+    # These jobs are independent after dictionary resolution. Running them in
+    # parallel avoids serial browser, model, image, and TTS wait time.
+    llm_response, kanji_construction, image_result, audio_result = await asyncio.gather(
+        generate_llm_annotations(),
+        fetch_kanji_construction_if_needed(target_word, scraper, app_config, log_cb, llm_client),
+        fetch_injection_image(),
+        fetch_audio_base64_if_any(target_word, base_lang, scraped, log_cb),
+    )
+    new_image_b64, new_image_filename = image_result
+    audio_b64, audio_src = audio_result
+    audio_filename = ""
+    if audio_b64:
+        audio_filename = indexed_media_filename(
+            "audio", target_word, audio_extension(audio_src), scope=lang_key
+        )
+
+    return {
+        **author_context,
+        "word": word,
+        "scraped": scraped,
+        "suggestion": suggestion,
+        "is_conjugated": is_conjugated,
+        "llm_response": llm_response,
+        "ocr_text": ocr_text,
+        "audio_b64": audio_b64,
+        "audio_filename": audio_filename,
+        "kanji_construction": kanji_construction,
+        "new_image_b64": new_image_b64,
+        "new_image_filename": new_image_filename
+    }
+
+
+# Compatibility for integrations using the pre-template terminology.
+process_ingest_item = process_inject_item
+
+def commit_card_modernization(
+    anki_client, note_info, processed_data, lang_key, app_config,
+    media_before: dict[str, str | None] | None = None,
+) -> int:
+    """Update an existing card through the managed template contract."""
+    deck_cfg = app_config.get("decks", {}).get(lang_key)
+    if not deck_cfg:
+        raise ValueError(f"Unknown deck key: {lang_key}")
+    if lang_key == "japanese_vocab":
+        spec = japanese_vocab_template()
+        deck_cfg = {**deck_cfg, "note_type": spec.model_name, "fields": spec.field_mapping()}
+    document = build_card_document(processed_data, lang_key, "modernize")
+    return commit_card_document(
+        anki_client, document, deck_cfg, "modernize", note_info,
+        media_before=media_before,
+    )
+
+
+def commit_card_injection(
+    anki_client, processed_data, lang_key, app_config,
+    media_before: dict[str, str | None] | None = None,
+) -> int:
+    """Create a new card using the managed Japanese template contract."""
+    deck_cfg = app_config.get("decks", {}).get(lang_key)
+    if not deck_cfg:
+        raise ValueError(f"Unknown deck key: {lang_key}")
+    if lang_key == "japanese_vocab":
+        spec = japanese_vocab_template()
+        deck_cfg = {
+            **deck_cfg,
+            "note_type": spec.model_name,
+            "fields": spec.field_mapping(),
+        }
+    document = build_card_document(processed_data, lang_key, "inject")
+    return commit_card_document(
+        anki_client, document, deck_cfg, "inject", media_before=media_before,
+    )
+
+
+# Backward-compatible API for callers created before “inject” became canonical.
+commit_card_ingestion = commit_card_injection
+
+class SelectionListModal(ModalScreen[str]):
+    def __init__(self, title: str, choices: list):
+        super().__init__()
+        self.modal_title = title
+        self.choices = choices
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog-list"):
+            yield Label(f"[bold accent]{self.modal_title}[/]", id="modal-title")
+            items = [ListItem(Label(c), id=f"choice-{idx}") for idx, c in enumerate(self.choices)]
+            yield ListView(*items, id="choices-list")
+
+    def on_mount(self) -> None:
+        self.query_one("#choices-list", ListView).focus()
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        if event.item and event.item.id:
+            idx = int(event.item.id.replace("choice-", ""))
+            self.dismiss(self.choices[idx])
+
+    def key_escape(self) -> None:
+        self.dismiss("")
+
+def make_parallel_comparison(original_fields: dict, processed_data: dict, deck_cfg: dict, is_grammar: bool) -> Table:
+    """Compare the actual legacy schema with the managed target schema."""
+    table = Table(expand=True, show_lines=True)
+    table.add_column("Anki Field", style="bold cyan", width=20)
+    table.add_column("Before (Current Value)", style="dim white", ratio=1)
+    table.add_column("After (Proposed Value)", style="green", ratio=1)
+
+    fields = deck_cfg.get("fields") or {}
+    kanji_field = fields.get("kanji_construction")
+    meaning_field = fields.get("meaning_text")
+
+    def display(field_name: str, value: str) -> str:
+        if field_name == kanji_field or "kanji" in field_name.lower():
+            return kanji_summary_for_tui(value)
+        if field_name == meaning_field:
+            return meaning_summary_for_tui(value)
+        images = extract_image_filenames(value)
+        return escape(", ".join(images)) if images else clean_html_for_tui(value)
+
+    target_fields = {}
+    if processed_data:
+        lang_key = "japanese_grammar" if is_grammar else "japanese_vocab"
+        document = build_card_document(processed_data, lang_key, "modernize")
+        target_fields = map_document_fields(document, deck_cfg)
+
+    field_names = list(original_fields)
+    field_names.extend(name for name in target_fields if name not in original_fields)
+    for field_name in field_names:
+        before_raw = original_fields.get(field_name, {}).get("value", "")
+        before = display(field_name, before_raw) if field_name in original_fields else "[dim]—[/]"
+        if not processed_data:
+            after = "[dim]—[/]"
+        elif field_name not in target_fields:
+            after = "[dim](Not in managed template)[/]"
+        else:
+            proposed = display(field_name, target_fields[field_name])
+            after = (
+                "[dim white](Unchanged)[/]"
+                if before_raw and display(field_name, before_raw) == proposed
+                else proposed or "[dim red](Cleared)[/]"
+            )
+        table.add_row(field_name, before or "[dim](Empty)[/]", after)
+    return table
+
+def make_inject_comparison_table(processed_data: dict, deck_cfg: dict) -> Table:
+    table = Table(expand=True, show_lines=True)
+    table.add_column("Anki Field Name", style="bold cyan", width=18)
+    table.add_column("Proposed Value", style="green", ratio=1)
+
+    fields_map = deck_cfg.get("fields", {})
+    word = processed_data.get("suggestion") if (processed_data and processed_data.get("suggestion")) else (processed_data.get("word", "") if processed_data else "")
+    llm_res = processed_data.get("llm_response") if processed_data else None
+    is_grammar = deck_cfg.get("deck_name", "").lower().find("grammar") != -1 or (processed_data and processed_data.get("scraped", {}).get("definition") == "Grammar explanation")
+    base_lang = deck_cfg.get("deck_name", "").lower().split(" ")[0] if deck_cfg.get("deck_name") else "japanese"
+
+    for purpose, field_name in fields_map.items():
+        if not field_name:
+            continue
+
+        val = "(Press 'p' to process preview)"
+        if processed_data and llm_res:
+            if purpose == "expression":
+                val = escape(word)
+            elif purpose == "meaning_image":
+                img_filename = processed_data.get("new_image_filename")
+                if img_filename:
+                    val = escape(f"[Image: {img_filename}]")
+                else:
+                    val = "(No Image)"
+            elif purpose == "meaning_text":
+                if is_grammar:
+                    m_html = format_anki_grammar_html(
+                        llm_res.get("grammar_point", word),
+                        llm_res.get("meaning", ""),
+                        llm_res.get("rules", ""),
+                        llm_res.get("examples", [])
+                    )
+                else:
+                    m_html = format_dictionary_meaning_html(
+                        processed_data.get("scraped", {}),
+                        word,
+                        llm_res.get("nuances", ""),
+                        llm_res.get("examples", [])
+                    )
+                val = meaning_summary_for_tui(m_html)
+            elif purpose == "kanji_construction":
+                kanji_html = processed_data.get("kanji_construction", "")
+                val = kanji_summary_for_tui(kanji_html) if kanji_html else "(No Kanji Details)"
+            elif purpose == "audio":
+                audio_filename = processed_data.get("audio_filename")
+                if audio_filename:
+                    has_kanji = any("\u4e00" <= c <= "\u9fff" for c in word)
+                    reading = processed_data.get("scraped", {}).get("reading", "")
+                    if reading and has_kanji:
+                        val = escape(f"{reading} [sound:{audio_filename}]")
+                    else:
+                        val = escape(f"[sound:{audio_filename}]")
+                else:
+                    val = "(No Audio)"
+        elif processed_data:
+            if purpose == "expression":
+                val = escape(word)
+            else:
+                val = "(Awaiting Ollama analysis...)"
+        table.add_row(field_name, val)
+
     return table
 
 
+make_ingest_comparison_table = make_inject_comparison_table
+
+# --- ADVANCED MODALS ---
+from textual import events
+from pathlib import Path
+
+class BottomRightPaletteModal(ModalScreen[str]):
+    def __init__(self, title: str, choices: list[tuple[str, str]]):
+        super().__init__()
+        self.modal_title = title
+        self.choices = choices
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-bottom-right-palette"):
+            yield Label(f"[bold accent]{self.modal_title}[/]", id="modal-title")
+            items = []
+            for idx, (label, val) in enumerate(self.choices):
+                items.append(ListItem(Label(f"{idx + 1}. {label}"), id=f"choice-{idx}"))
+            yield ListView(*items, id="choices-list")
+
+    def on_mount(self) -> None:
+        self.query_one("#choices-list", ListView).focus()
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        if event.item and event.item.id:
+            idx = int(event.item.id.replace("choice-", ""))
+            self.dismiss(self.choices[idx][1])
+
+    def key_escape(self) -> None:
+        self.dismiss("")
+
+    def key_1(self) -> None: self.select_idx(0)
+    def key_2(self) -> None: self.select_idx(1)
+    def key_3(self) -> None: self.select_idx(2)
+    def key_4(self) -> None: self.select_idx(3)
+    def key_5(self) -> None: self.select_idx(4)
+    def key_6(self) -> None: self.select_idx(5)
+    def key_7(self) -> None: self.select_idx(6)
+    def key_8(self) -> None: self.select_idx(7)
+    def key_9(self) -> None: self.select_idx(8)
+
+    def select_idx(self, idx: int) -> None:
+        if idx < len(self.choices):
+            self.dismiss(self.choices[idx][1])
+
+class SpacebarMenuModal(ModalScreen[str]):
+    BINDINGS = [
+        Binding("i", "choose_inject", "Manual Input", priority=True),
+        Binding("s", "choose_settings", "Settings", priority=True),
+        Binding("space", "choose_search", "Search", priority=True),
+        Binding("escape", "cancel", "Cancel", priority=True),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__(id="screen-spacebar-menu")
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-bottom-right-palette"):
+            yield Label("[bold accent]Bridge Palette Menu[/]", id="modal-title")
+            yield Label("[bold]i[/] - Manual Input")
+            yield Label("[bold]s[/] - Settings")
+            yield Label("[bold]space[/] - Universal Pane Search")
+
+    def on_mount(self) -> None:
+        pass
+
+    def action_choose_inject(self) -> None:
+        self.dismiss("inject")
+
+    def action_choose_settings(self) -> None:
+        self.dismiss("settings")
+
+    def action_choose_search(self) -> None:
+        self.dismiss("search")
+
+    def action_cancel(self) -> None:
+        self.dismiss("")
+
+class FieldEditModal(ModalScreen[str]):
+    def __init__(self, field_name: str, current_value: str):
+        super().__init__()
+        self.field_name = field_name
+        self.current_value = current_value
+        self.mode = "normal"
+        self.search_mode = False
+        self.command_mode = False
+        self.search_pattern = ""
+        self.search_matches = []
+        self.current_match_idx = 0
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-edit-field"):
+            yield Label(f"[bold accent]Edit Field: {self.field_name}[/]")
+            with Horizontal(id="field-search-top"):
+                yield Input(placeholder="Press / to search or : for a command", id="field-search-input")
+                yield Label("[NORMAL]", id="field-search-status")
+            yield Rule()
+            yield TextArea(self.current_value, id="edit-textarea")
+            yield Label("[dim]NORMAL: i insert · arrows move · / search · :w save · :q cancel[/]", classes="modal-footer-hint")
+
+    def on_mount(self) -> None:
+        ta = self.query_one("#edit-textarea", TextArea)
+        ta.read_only = True
+        ta.focus()
+        lines = ta.text.splitlines()
+        ta.cursor_location = (len(lines) - 1, len(lines[-1]) if lines else 0)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "field-search-input":
+            value = event.value.strip()
+            if self.command_mode:
+                if value in {"w", "wq", "x"}:
+                    self.dismiss(self.query_one("#edit-textarea", TextArea).text)
+                elif value in {"q", "q!"}:
+                    self.dismiss(None)
+                else:
+                    self.notify(f"Unknown command: {value}", severity="warning")
+                    self.enter_normal_mode()
+            else:
+                self.perform_field_search(value)
+
+    def update_editor_mode(self) -> None:
+        status = self.query_one("#field-search-status", Label)
+        if self.search_mode and self.search_matches:
+            status.update(f"[SEARCH {self.current_match_idx + 1}/{len(self.search_matches)}]")
+        else:
+            status.update(f"[{self.mode.upper()}]")
+
+    def enter_normal_mode(self) -> None:
+        self.mode = "normal"
+        self.search_mode = False
+        self.command_mode = False
+        self.search_pattern = ""
+        self.search_matches = []
+        search = self.query_one("#field-search-input", Input)
+        search.value = ""
+        search.placeholder = "Press / to search or : for a command"
+        ta = self.query_one("#edit-textarea", TextArea)
+        ta.read_only = True
+        ta.focus()
+        self.update_editor_mode()
+
+    def enter_prompt_mode(self, command: bool) -> None:
+        self.command_mode = command
+        self.mode = "command" if command else "search"
+        search = self.query_one("#field-search-input", Input)
+        search.value = ""
+        search.placeholder = ":w save · :q cancel" if command else "/pattern, then Enter"
+        search.focus()
+        self.update_editor_mode()
+
+    def perform_field_search(self, pattern: str) -> None:
+        self.search_pattern = pattern
+        status_lbl = self.query_one("#field-search-status", Label)
+        if not pattern:
+            self.search_mode = False
+            self.search_matches = []
+            status_lbl.update("")
+            return
+
+        ta = self.query_one("#edit-textarea", TextArea)
+        text = ta.text
+        self.search_matches = []
+        lines = text.splitlines()
+        for r, line in enumerate(lines):
+            start = 0
+            while True:
+                idx = line.lower().find(pattern.lower(), start)
+                if idx == -1:
+                    break
+                self.search_matches.append((r, idx))
+                start = idx + len(pattern)
+
+        if self.search_matches:
+            self.search_mode = True
+            self.command_mode = False
+            self.mode = "search"
+            self.current_match_idx = 0
+            ta.focus()
+            self.focus_search_match()
+        else:
+            self.search_mode = False
+            status_lbl.update("[SEARCH: no matches]")
+            self.notify("No matches found in text.")
+
+    def focus_search_match(self) -> None:
+        if not self.search_matches:
+            return
+        coord = self.search_matches[self.current_match_idx]
+        ta = self.query_one("#edit-textarea", TextArea)
+        ta.cursor_location = coord
+        from textual.widgets.text_area import Selection
+        end_coord = (coord[0], coord[1] + len(self.search_pattern))
+        ta.selection = Selection(coord, end_coord)
+
+        status_lbl = self.query_one("#field-search-status", Label)
+        self.update_editor_mode()
+
+    def search_next(self) -> None:
+        if not self.search_matches:
+            return
+        self.current_match_idx = (self.current_match_idx + 1) % len(self.search_matches)
+        self.focus_search_match()
+
+    def search_prev(self) -> None:
+        if not self.search_matches:
+            return
+        self.current_match_idx = (self.current_match_idx - 1) % len(self.search_matches)
+        self.focus_search_match()
+
+    def exit_field_search_mode(self) -> None:
+        ta = self.query_one("#edit-textarea", TextArea)
+        from textual.widgets.text_area import Selection
+        ta.selection = Selection(ta.selection.start, ta.selection.start)
+        self.enter_normal_mode()
+
+    def move_normal_cursor(self, key: str) -> None:
+        ta = self.query_one("#edit-textarea", TextArea)
+        row, column = ta.cursor_location
+        lines = ta.text.splitlines() or [""]
+        if key == "left":
+            column = max(0, column - 1)
+        elif key == "right":
+            column = min(len(lines[row]), column + 1)
+        elif key == "down":
+            row = min(len(lines) - 1, row + 1)
+            column = min(column, len(lines[row]))
+        elif key == "up":
+            row = max(0, row - 1)
+            column = min(column, len(lines[row]))
+        elif key == "0":
+            column = 0
+        ta.cursor_location = (row, column)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            event.prevent_default()
+            if self.search_mode:
+                self.exit_field_search_mode()
+            else:
+                self.enter_normal_mode()
+        elif self.mode == "normal" and event.key == "i":
+            event.prevent_default()
+            self.mode = "insert"
+            self.query_one("#edit-textarea", TextArea).read_only = False
+            self.update_editor_mode()
+        elif self.mode == "normal" and event.key == "a":
+            event.prevent_default()
+            ta = self.query_one("#edit-textarea", TextArea)
+            row, column = ta.cursor_location
+            ta.cursor_location = (row, min(len((ta.text.splitlines() or [""])[row]), column + 1))
+            ta.read_only = False
+            self.mode = "insert"
+            self.update_editor_mode()
+        elif self.mode == "normal" and (event.character == "/" or event.key == "slash"):
+            event.prevent_default()
+            self.enter_prompt_mode(False)
+        elif self.mode == "normal" and (event.character == ":" or event.key == "colon"):
+            event.prevent_default()
+            self.enter_prompt_mode(True)
+        elif self.mode == "normal" and event.key in {"left", "down", "up", "right", "home"}:
+            event.prevent_default()
+            self.move_normal_cursor("0" if event.key == "home" else event.key)
+        elif event.key == "n":
+            if self.search_mode:
+                if self.focused and self.focused.id == "field-search-input":
+                    return
+                event.prevent_default()
+                self.search_next()
+        elif event.key == "p":
+            if self.search_mode:
+                if self.focused and self.focused.id == "field-search-input":
+                    return
+                event.prevent_default()
+                self.search_prev()
+
+class LogViewerModal(ModalScreen[None]):
+    def __init__(self, date_str: str, file_path: Path):
+        super().__init__()
+        self.date_str = date_str
+        self.file_path = file_path
+        self.matches = []
+        self.current_match_idx = 0
+        self.search_pattern = ""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-log-viewer"):
+            yield Label(f"[bold accent]Log History Viewer: {self.date_str}[/]")
+            with Horizontal(id="log-viewer-top"):
+                yield Input(placeholder="Search pattern...", id="log-search-input")
+                yield Label("0 matches", id="log-search-status")
+            yield Rule()
+            yield TextArea(read_only=True, id="log-viewer-textarea")
+
+    def on_mount(self) -> None:
+        try:
+            with open(self.file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            ta = self.query_one("#log-viewer-textarea", TextArea)
+            ta.text = content
+            lines = content.splitlines()
+            ta.cursor_location = (len(lines) - 1, 0)
+        except Exception as e:
+            self.query_one("#log-viewer-textarea", TextArea).text = f"Failed to load log file: {e}"
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "log-search-input":
+            self.search_pattern = event.value.strip()
+            self.recalculate_matches()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "log-search-input":
+            self.query_one("#log-viewer-textarea", TextArea).focus()
+
+    def recalculate_matches(self) -> None:
+        pattern = self.search_pattern
+        status_lbl = self.query_one("#log-search-status", Label)
+        if not pattern:
+            self.matches = []
+            status_lbl.update("0 matches")
+            return
+
+        ta = self.query_one("#log-viewer-textarea", TextArea)
+        text = ta.text
+        self.matches = []
+        lines = text.splitlines()
+        for r, line in enumerate(lines):
+            start = 0
+            while True:
+                idx = line.lower().find(pattern.lower(), start)
+                if idx == -1:
+                    break
+                self.matches.append((r, idx))
+                start = idx + len(pattern)
+
+        if self.matches:
+            self.current_match_idx = 0
+            self.focus_match()
+        else:
+            status_lbl.update("0 matches")
+
+    def focus_match(self) -> None:
+        if not self.matches:
+            return
+        coord = self.matches[self.current_match_idx]
+        ta = self.query_one("#log-viewer-textarea", TextArea)
+        ta.cursor_location = coord
+        from textual.widgets.text_area import Selection
+        end_coord = (coord[0], coord[1] + len(self.search_pattern))
+        ta.selection = Selection(coord, end_coord)
+
+        status_lbl = self.query_one("#log-search-status", Label)
+        status_lbl.update(f"[{self.current_match_idx + 1}/{len(self.matches)}]")
+
+    def action_next_match(self) -> None:
+        if not self.matches:
+            return
+        self.current_match_idx = (self.current_match_idx + 1) % len(self.matches)
+        self.focus_match()
+
+    def action_prev_match(self) -> None:
+        if not self.matches:
+            return
+        self.current_match_idx = (self.current_match_idx - 1) % len(self.matches)
+        self.focus_match()
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "n":
+            if self.focused and self.focused.id == "log-search-input":
+                return
+            event.prevent_default()
+            self.action_next_match()
+        elif event.key == "p":
+            if self.focused and self.focused.id == "log-search-input":
+                return
+            event.prevent_default()
+            self.action_prev_match()
+        elif event.key == "escape":
+            event.prevent_default()
+            self.dismiss()
+
+class UniversalSearchModal(ModalScreen[str]):
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-universal-search"):
+            yield Label("[bold accent]Universal Search[/]")
+            yield Label("[dim]Enter query to search in focused pane, Enter to submit[/]\n")
+            yield Input(placeholder="Search text...", id="search-input")
+
+    def on_mount(self) -> None:
+        self.query_one("#search-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        self.dismiss(event.value.strip())
+
+    def key_escape(self) -> None:
+        self.dismiss("")
+
+class LoadingScreen(Screen):
+    BINDINGS = [
+        ("q", "quit", "Quit App")
+    ]
+
+    def __init__(self, app_inst) -> None:
+        super().__init__()
+        self.app_inst = app_inst
+        self.step_statuses = {
+            "anki": "Pending",
+            "ollama": "Pending",
+            "cards": "Pending"
+        }
+        self.instructions = ""
+        self.is_checking = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="loading-container"):
+            yield Label("[bold accent]Linguist Anki Bridge[/] - System Initialization\n", id="loading-title")
+            yield Static("", id="loading-status-area")
+            yield Label("", id="loading-instructions")
+            yield Label("\\[q] Quit", id="loading-keys-hint")
+
+    def on_mount(self) -> None:
+        self.check_worker = self.run_worker(self.run_checks())
+
+    def update_display(self) -> None:
+        status_text = ""
+
+        def format_status(status):
+            if status == "Pending":
+                return "[yellow]⏳ Pending[/]"
+            elif status == "Checking":
+                return "[cyan]🔄 Checking...[/]"
+            elif status == "Success":
+                return "[green]✔ Success[/]"
+            else:
+                return "[red]✘ Failed[/]"
+
+        status_text += f"Connecting to local AnkiConnect... {format_status(self.step_statuses['anki'])}\n"
+        status_text += f"Connecting to local Ollama... {format_status(self.step_statuses['ollama'])}\n"
+        status_text += f"Fetching initial card data... {format_status(self.step_statuses['cards'])}\n"
+
+        self.query_one("#loading-status-area", Static).update(status_text)
+
+        if self.instructions:
+            self.query_one("#loading-instructions", Label).update(f"[bold red]Instructions:[/]\n{self.instructions}")
+        else:
+            self.query_one("#loading-instructions", Label).update("")
+
+    async def run_checks(self) -> None:
+        if self.is_checking:
+            return
+        self.is_checking = True
+
+        try:
+            while True:
+                self.step_statuses = {
+                    "anki": "Checking",
+                    "ollama": "Checking",
+                    "cards": "Checking"
+                }
+                self.instructions = ""
+                self.update_display()
+
+                loop = asyncio.get_running_loop()
+
+                async def check_anki():
+                    try:
+                        anki_online = await loop.run_in_executor(None, self.app_inst.anki.is_online)
+                        if anki_online:
+                            self.step_statuses["anki"] = "Success"
+                            return True
+                    except Exception:
+                        pass
+                    self.step_statuses["anki"] = "Failed"
+                    return False
+
+                async def check_ollama():
+                    try:
+                        ollama_online = await loop.run_in_executor(None, self.app_inst.ollama.is_online)
+                        if ollama_online:
+                            self.step_statuses["ollama"] = "Success"
+                            return True
+                    except Exception:
+                        pass
+                    self.step_statuses["ollama"] = "Failed"
+                    return False
+
+                async def check_cards():
+                    try:
+                        if not self.app_inst.config_manager.config["decks"].get(self.app_inst.active_deck_key, {}).get("deck_name"):
+                            for candidate, candidate_cfg in self.app_inst.config_manager.config["decks"].items():
+                                if candidate_cfg.get("deck_name"):
+                                    self.app_inst.active_deck_key = candidate
+                                    break
+                        deck_cfg = self.app_inst.config_manager.config["decks"][self.app_inst.active_deck_key]
+                        deck_name = deck_cfg["deck_name"]
+                        field_img = deck_cfg["fields"]["meaning_image"]
+
+                        note_ids = await loop.run_in_executor(None, self.app_inst.anki.find_notes, f"deck:\"{deck_name}\"")
+                        notes = await loop.run_in_executor(None, self.app_inst.anki.get_notes_info, note_ids)
+
+                        self.app_inst.queue_items = []
+                        self.app_inst.processed_cache = {}
+
+                        for note in notes:
+                            field_val = note.get("fields", {}).get(field_img, {}).get("value", "")
+                            img_file = self.app_inst.ocr.extract_image_filename(field_val)
+                            if img_file:
+                                self.app_inst.queue_items.append({
+                                    "type": "modernize",
+                                    "deck_key": self.app_inst.active_deck_key,
+                                    "note_id": note["noteId"],
+                                    "note": note,
+                                    "word": note.get("fields", {}).get(deck_cfg["fields"].get("expression", "Word"), {}).get("value", ""),
+                                    "filename": img_file,
+                                    "status": "Ready",
+                                    "selected": False
+                                })
+
+                        if not self.app_inst.queue_items:
+                            deck_keys = [
+                                "japanese_vocab", "japanese_grammar",
+                                "english_vocab", "english_grammar",
+                                "taiwanese_vocab", "taiwanese_grammar",
+                                "german_vocab", "german_grammar"
+                            ]
+                            for key in deck_keys:
+                                if key == self.app_inst.active_deck_key:
+                                    continue
+                                d_cfg = self.app_inst.config_manager.config["decks"].get(key)
+                                if d_cfg and d_cfg.get("deck_name"):
+                                    d_name = d_cfg["deck_name"]
+                                    d_img = d_cfg["fields"]["meaning_image"]
+                                    d_ids = await loop.run_in_executor(None, self.app_inst.anki.find_notes, f"deck:\"{d_name}\"")
+                                    d_notes = await loop.run_in_executor(None, self.app_inst.anki.get_notes_info, d_ids)
+                                    for d_note in d_notes:
+                                        df_val = d_note.get("fields", {}).get(d_img, {}).get("value", "")
+                                        d_img_file = self.app_inst.ocr.extract_image_filename(df_val)
+                                        if d_img_file:
+                                            self.app_inst.queue_items.append({
+                                                "type": "modernize",
+                                                "deck_key": key,
+                                                "note_id": d_note["noteId"],
+                                                "note": d_note,
+                                                "word": d_note.get("fields", {}).get(d_cfg["fields"].get("expression", "Word"), {}).get("value", ""),
+                                                "filename": d_img_file,
+                                                "status": "Ready",
+                                                "selected": False
+                                            })
+                                    if self.app_inst.queue_items:
+                                        self.app_inst.active_deck_key = key
+                                        break
+
+                        self.app_inst.deck_queues[self.app_inst.active_deck_key] = self.app_inst.queue_items
+                        self.app_inst.rebuild_queue_table()
+                        self.app_inst.update_details()
+                        self.app_inst.initial_scan_done = True
+
+                        # A reachable deck with zero legacy cards is a valid,
+                        # ready state rather than a startup failure.
+                        self.step_statuses["cards"] = "Success"
+                        return True
+                    except Exception as e:
+                        logging.error(f"Failed to fetch initial card data: {e}")
+                    self.step_statuses["cards"] = "Failed"
+                    return False
+
+                await asyncio.gather(
+                    check_anki(),
+                    check_ollama(),
+                    check_cards(),
+                    return_exceptions=True
+                )
+                self.update_display()
+
+                anki_ok = self.step_statuses["anki"] == "Success"
+                ollama_ok = self.step_statuses["ollama"] == "Success"
+                cards_ok = self.step_statuses["cards"] == "Success"
+
+                if anki_ok and ollama_ok and cards_ok:
+                    self.app_inst.health_status = {
+                        "anki": True,
+                        "ollama": True,
+                        "jisho": True,
+                        "cambridge": True,
+                        "moedict": True,
+                        "dict_cc": True
+                    }
+                    self.app_inst.update_status_table()
+
+                    self.app_inst.run_worker(self.app_inst.health_loop())
+                    self.app_inst.run_worker(self.app_inst.load_ollama_models())
+                    self.dismiss()
+                    break
+
+                # Build specific instructions for failure
+                base_instructions = ""
+                if not anki_ok:
+                    base_instructions = (
+                        "AnkiConnect is offline. Please make sure:\n"
+                        "- Anki is open and running.\n"
+                        "- AnkiConnect add-on is installed.\n"
+                        "- Configuration url matches http://localhost:8765"
+                    )
+                elif not ollama_ok:
+                    base_instructions = (
+                        "Ollama is offline. Please make sure:\n"
+                        "- Ollama is running ('ollama serve').\n"
+                        f"- Model '{self.app_inst.ollama.model}' is installed.\n"
+                        "- Ollama service is accessible."
+                    )
+                else:
+                    base_instructions = (
+                        "Could not load initial card data from Anki.\n"
+                        "Please verify that your deck configurations match actual decks in Anki."
+                    )
+
+                for sec in range(3, 0, -1):
+                    self.instructions = base_instructions + f"\n\n[yellow]Retrying automatically in {sec} seconds...[/]"
+                    self.update_display()
+                    await asyncio.sleep(1.0)
+        finally:
+            self.is_checking = False
+
+    def action_quit(self) -> None:
+        self.app_inst.exit()
+
+class SearchNavigationScreen(Screen):
+    BINDINGS = [
+        ("n", "search_next", "Next Match"),
+        ("p", "search_prev", "Prev Match"),
+        ("escape", "exit_search", "Exit Search")
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Footer()
+
+    def on_mount(self) -> None:
+        try:
+            self.app.query_one("Header").add_class("header-search-active")
+        except Exception:
+            pass
+        self.update_header()
+
+    def on_unmount(self) -> None:
+        try:
+            self.app.query_one("Header").remove_class("header-search-active")
+        except Exception:
+            pass
+        self.app.title = "Linguist Anki Bridge"
+
+    def update_header(self) -> None:
+        if not self.app.search_matches:
+            self.app.title = f"🔍 [SEARCH: {self.app.search_query}] - No Matches"
+        else:
+            self.app.title = f"🔍 [SEARCH: {self.app.search_query}] Match {self.app.search_current_idx + 1}/{len(self.app.search_matches)}"
+
+    def action_search_next(self) -> None:
+        self.app.search_next_match()
+        self.update_header()
+
+    def action_search_prev(self) -> None:
+        self.app.search_prev_match()
+        self.update_header()
+
+    def action_exit_search(self) -> None:
+        self.app.exit_search_mode()
+        self.dismiss()

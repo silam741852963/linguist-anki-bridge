@@ -1,0 +1,29 @@
+<main class="lab-shell lab-back">
+  <header class="lab-answer">
+    <div class="lab-kicker">Japanese</div>
+    <div class="lab-expression" lang="ja">{{Expression}}</div>
+    {{#Audio}}
+    <div class="lab-reading" lang="ja">{{Audio}}</div>
+    {{/Audio}}
+  </header>
+
+  {{#Picture}}
+  <section class="lab-picture" aria-label="Meaning image">
+    {{Picture}}
+  </section>
+  {{/Picture}}
+
+  {{#Meaning}}
+  <section class="lab-panel lab-meaning">
+    <div class="lab-panel-title">Meaning &amp; usage</div>
+    <div class="lab-content">{{Meaning}}</div>
+  </section>
+  {{/Meaning}}
+
+  {{#Kanji}}
+  <section class="lab-panel lab-kanji">
+    <div class="lab-panel-title">Kanji construction</div>
+    <div class="lab-content">{{Kanji}}</div>
+  </section>
+  {{/Kanji}}
+</main>

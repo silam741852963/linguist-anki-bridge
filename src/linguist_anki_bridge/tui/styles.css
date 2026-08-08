@@ -39,7 +39,7 @@ Screen {
 
 /* Pane-specific heights */
 #panel-status {
-    height: 14;
+    height: 11;
 }
 
 #panel-decks {
@@ -50,8 +50,14 @@ Screen {
     height: 1fr;
 }
 
-#panel-details {
-    height: 100%;
+#panel-preview {
+    height: 3fr;
+    padding: 0;
+}
+
+#panel-log {
+    height: 1fr;
+    min-height: 8;
     padding: 0;
 }
 
@@ -66,29 +72,6 @@ Screen {
     background: $bg;
     color: #4caf50;
     padding: 1 2;
-}
-
-/* Status Labels & Input Elements */
-#lbl-model-title {
-    text-style: italic;
-    margin-top: 1;
-}
-
-#select-active-model {
-    background: $bg;
-    border: tall $active-border;
-    margin-bottom: 0;
-    height: 3;
-}
-
-#select-active-model:focus {
-    border: tall $accent;
-}
-
-#lbl-dry-run-val {
-    text-style: bold;
-    margin-top: 1;
-    text-align: center;
 }
 
 /* ListView inside Decks Panel */
@@ -241,3 +224,347 @@ Button:hover {
     margin-top: 1;
 }
 
+#details-comparison {
+    height: auto;
+    border-bottom: solid $active-border;
+    padding: 1 2;
+}
+
+#details-dict-scrape {
+    height: auto;
+    border-bottom: solid $active-border;
+    padding: 1 2;
+}
+
+#details-llm {
+    height: auto;
+    border-bottom: solid $active-border;
+    padding: 1 2;
+}
+
+#details-kanji-scrape {
+    height: auto;
+    border-bottom: solid $active-border;
+    padding: 1 2;
+}
+
+#details-logs {
+    height: 1fr;
+    min-height: 8;
+    background: $bg;
+    color: #4caf50;
+    padding: 0 2 1 2;
+}
+
+#lbl-logs-title {
+    background: $selection-bg;
+    color: $accent;
+    text-style: bold;
+    text-align: center;
+    width: 100%;
+    padding: 0 1;
+    border-top: solid $active-border;
+    border-bottom: solid $active-border;
+}
+
+/* Config Screen Styles */
+#config-container {
+    height: 100%;
+    padding: 1 2;
+    background: $bg;
+    color: $fg;
+}
+
+#config-title {
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+#settings-layout {
+    height: 1fr;
+}
+
+#settings-nav-pane {
+    width: 30;
+    height: 100%;
+}
+
+#settings-nav {
+    height: 1fr;
+    background: $bg;
+}
+
+#settings-nav ListItem {
+    padding: 1 1;
+}
+
+#settings-nav ListItem.-highlight,
+#settings-nav ListItem.-active {
+    background: $accent;
+    color: $bg;
+    text-style: bold;
+}
+
+#settings-content-pane {
+    width: 1fr;
+    height: 100%;
+    padding: 0;
+}
+
+#settings-content,
+.settings-section {
+    width: 100%;
+    height: 100%;
+    background: $bg;
+}
+
+.settings-section {
+    padding: 0 2 2 2;
+}
+
+.settings-section Label {
+    margin-top: 1;
+    color: $accent;
+    text-style: bold;
+}
+
+.settings-section .pane-title {
+    margin-top: 0;
+}
+
+.settings-section Input,
+.settings-section Select,
+.settings-section TextArea {
+    background: $bg;
+    color: $fg;
+    border: tall $active-border;
+}
+
+.settings-section Input:focus,
+.settings-section Select:focus,
+.settings-section TextArea:focus {
+    border: tall $accent;
+}
+
+.settings-section TextArea {
+    height: 10;
+}
+
+TabbedContent {
+    height: 1fr;
+    background: $bg;
+    margin-bottom: 1;
+}
+
+TabPane {
+    padding: 1 2;
+    background: $bg;
+}
+
+TabPane Label {
+    margin-top: 1;
+    text-style: bold;
+    color: $accent;
+}
+
+TabPane Input {
+    background: $bg;
+    border: tall $active-border;
+    color: $fg;
+    margin-bottom: 0;
+}
+
+TabPane Input:focus {
+    border: tall $accent;
+}
+
+TabPane Select {
+    background: $bg;
+    border: tall $active-border;
+    color: $fg;
+    margin-bottom: 0;
+}
+
+TabPane Select:focus {
+    border: tall $accent;
+}
+
+TabPane Switch {
+    margin: 1 0;
+}
+
+#textarea-kanji-schema {
+    height: 10;
+    border: tall $active-border;
+    background: $bg;
+    color: $fg;
+}
+
+#textarea-kanji-schema:focus {
+    border: tall $accent;
+}
+
+#lbl-generator-status {
+    margin-top: 1;
+    text-style: italic;
+}
+
+.align-middle {
+    align: left middle;
+}
+
+#input-pane-left, #input-pane-right {
+    height: 100%;
+}
+
+#table-status {
+    overflow-x: hidden;
+}
+
+#modal-bottom-right-palette {
+    align: right bottom;
+    width: 40;
+    height: auto;
+    margin-bottom: 3;
+    margin-right: 3;
+    border: double $accent;
+    background: $bg;
+    padding: 0;
+}
+
+#modal-edit-field {
+    align: center middle;
+    width: 80%;
+    height: 70%;
+    border: double $accent;
+    background: $bg;
+    padding: 1 2;
+}
+
+#edit-textarea {
+    height: 1fr;
+    border: tall $accent;
+}
+
+#field-search-top {
+    height: 3;
+    align: left middle;
+    width: 100%;
+}
+
+#field-search-input {
+    width: 1fr;
+}
+
+#field-search-status {
+    width: auto;
+    margin-left: 2;
+    margin-right: 1;
+    color: $accent;
+    text-style: bold;
+}
+
+.modal-footer-hint {
+    margin-top: 1;
+    color: $text-muted;
+}
+
+#modal-log-viewer {
+    align: center middle;
+    width: 80%;
+    height: 80%;
+    border: double $accent;
+    background: $bg;
+    padding: 1 2;
+}
+
+#log-viewer-top {
+    height: 3;
+    align: left middle;
+    width: 100%;
+}
+
+#log-search-input {
+    width: 1fr;
+}
+
+#log-search-status {
+    width: auto;
+    margin-left: 2;
+    margin-right: 1;
+    color: $accent;
+    text-style: bold;
+}
+
+#log-viewer-textarea {
+    height: 1fr;
+    border: solid $active-border;
+    background: $bg;
+}
+
+#modal-universal-search {
+    align: center middle;
+    width: 50;
+    height: auto;
+    border: double $accent;
+    background: $bg;
+    padding: 1 2;
+}
+
+ModalScreen {
+    background: rgba(0, 0, 0, 0.5);
+    align: center middle;
+}
+
+#screen-spacebar-menu {
+    align: right bottom;
+    background: rgba(0, 0, 0, 0);
+}
+
+#loading-container {
+    align: center middle;
+    width: 60;
+    height: auto;
+    border: double $accent;
+    background: $bg;
+    padding: 2 4;
+}
+
+#loading-title {
+    text-align: center;
+    width: 100%;
+}
+
+#loading-status-area {
+    margin: 1 0;
+    height: auto;
+}
+
+#loading-instructions {
+    color: $error;
+    margin-top: 1;
+    height: auto;
+}
+
+#loading-keys-hint {
+    margin-top: 2;
+    text-align: center;
+    width: 100%;
+    color: $accent;
+    text-style: bold;
+}
+
+SearchNavigationScreen {
+    background: rgba(0, 0, 0, 0);
+}
+
+LoadingScreen {
+    align: center middle;
+}
+
+Header.header-search-active {
+    background: #d32f2f;
+    color: #ffffff;
+    text-style: bold;
+}
