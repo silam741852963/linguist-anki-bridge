@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "expression": "ことにする",
+  "values": {
+    "meaning_image": "",
+    "meaning_text": "<div><b>Grammar Point:</b> <span style='font-size:1.2em;color:#e68e0d'>ことにする</span></div><div style='margin-top:5px'><b>Meaning:</b> to decide to do something</div><div style='margin-top:5px'><b>Structure/Rules:</b> <pre>Verb dictionary form + ことにする</pre></div><div data-source='llm' style='margin-top:10px'><b>Examples:</b><div style='margin-top:5px'><div style='margin-bottom:4px'><b>1. 毎日日本語を勉強することにした。</b> — <span style='color:#666;font-size:.9em'>I decided to study Japanese every day.</span></div></div></div>",
+    "kanji_construction": "",
+    "audio": null
+  },
+  "media": [],
+  "obsolete_media": [],
+  "issues": [],
+  "tags": [
+    "linguist::grammar"
+  ],
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "generated",
+        "label": "fixture grammar explanation",
+        "confidence_percent": 95
+      }
+    ]
+  }
+}

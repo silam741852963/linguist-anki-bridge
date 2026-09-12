@@ -22,6 +22,8 @@ GENERATED_FIXTURES = {
     "shared-fields": True,
     "media-replacement": False,
     "validation-issues": False,
+    "grammar": True,
+    "dictionary-preserve": True,
 }
 
 

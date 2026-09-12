@@ -1,0 +1,22 @@
+{
+  "mode": "modernize",
+  "language_key": "japanese_vocab",
+  "processed_data": {
+    "word": "進む",
+    "scraped": {
+      "found": false
+    },
+    "classification": "dictionary",
+    "filename": "dictionary.png",
+    "orig_filenames": ["dictionary.png"]
+  },
+  "provenance": {
+    "meaning_image": [
+      {
+        "source": "original",
+        "label": "unreplaced dictionary screenshot",
+        "confidence_percent": null
+      }
+    ]
+  }
+}

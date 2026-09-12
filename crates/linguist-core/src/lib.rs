@@ -8,8 +8,9 @@ mod card;
 mod jobs;
 
 pub use card::{
-    CardDocument, CardMode, FieldMapping, LogicalFields, MappingError, MediaAsset, Provenance,
-    SourceKind,
+    AudioAsset, CardBuildInput, CardDocument, CardMode, DictionaryData, ExamplePair, FieldMapping,
+    LlmResponse, LogicalFields, MappingError, MediaAsset, ProcessedCardData, Provenance,
+    RenamedImage, SourceKind, build_card_document,
 };
 pub use jobs::{BatchItemState, BatchJobState, ClaimStage};
 

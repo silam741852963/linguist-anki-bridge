@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "expression": "進む",
+  "values": {
+    "meaning_image": "<img src='dictionary.png'/>",
+    "meaning_text": "<div>Not found in standard dictionary.</div>",
+    "kanji_construction": "",
+    "audio": null
+  },
+  "media": [],
+  "obsolete_media": [],
+  "issues": [],
+  "tags": [],
+  "provenance": {
+    "meaning_image": [
+      {
+        "source": "original",
+        "label": "unreplaced dictionary screenshot",
+        "confidence_percent": null
+      }
+    ]
+  }
+}

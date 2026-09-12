@@ -1,0 +1,28 @@
+{
+  "mode": "modernize",
+  "language_key": "japanese_grammar",
+  "processed_data": {
+    "word": "ことにする",
+    "llm_response": {
+      "grammar_point": "ことにする",
+      "meaning": "to decide to do something",
+      "rules": "Verb dictionary form + ことにする",
+      "examples": [
+        {
+          "sentence": "毎日日本語を勉強することにした。",
+          "translation": "I decided to study Japanese every day."
+        }
+      ]
+    },
+    "type_tag": "grammar"
+  },
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "generated",
+        "label": "fixture grammar explanation",
+        "confidence_percent": 95
+      }
+    ]
+  }
+}
