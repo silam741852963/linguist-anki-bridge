@@ -1,5 +1,7 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+target/
+.qmlls.ini
 *.py[cod]
 *$py.class
 

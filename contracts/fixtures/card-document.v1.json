@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "expression": "食べる",
+  "values": {
+    "meaning_image": "<img src='linguist-taberu.jpg'/>",
+    "meaning_text": "to eat; to consume",
+    "kanji_construction": "食 · eat, food",
+    "audio": "たべる [sound:linguist-taberu.mp3]"
+  },
+  "media": [],
+  "obsolete_media": [],
+  "issues": [],
+  "tags": ["linguist-reviewed"],
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "dictionary",
+        "label": "Jisho",
+        "confidence_percent": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linguist-anki-bridge.local/contracts/v1/card-document.schema.json",
+  "title": "Linguist Card Document v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "expression", "values", "media", "obsolete_media", "issues", "tags", "provenance"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "expression": { "type": "string" },
+    "values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["meaning_image", "meaning_text", "kanji_construction", "audio"],
+      "properties": {
+        "meaning_image": { "type": ["string", "null"] },
+        "meaning_text": { "type": ["string", "null"] },
+        "kanji_construction": { "type": ["string", "null"] },
+        "audio": { "type": ["string", "null"] }
+      }
+    },
+    "media": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["filename", "data_base64"],
+        "properties": {
+          "filename": { "type": "string" },
+          "data_base64": { "type": "string" }
+        }
+      }
+    },
+    "obsolete_media": { "type": "array", "items": { "type": "string" } },
+    "issues": { "type": "array", "items": { "type": "string" } },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "label", "confidence_percent"],
+          "properties": {
+            "source": { "enum": ["original", "dictionary", "ocr", "generated", "user"] },
+            "label": { "type": "string" },
+            "confidence_percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 }
+          }
+        }
+      }
+    }
+  }
+}

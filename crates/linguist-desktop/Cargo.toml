@@ -1,0 +1,17 @@
+[package]
+name = "linguist-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+linguist-core.workspace = true
+linguist-application.workspace = true
+cxx.workspace = true
+cxx-qt.workspace = true
+cxx-qt-lib.workspace = true
+
+[build-dependencies]
+cxx-qt-build.workspace = true

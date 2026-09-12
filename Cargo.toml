@@ -1,0 +1,23 @@
+[workspace]
+members = [
+    "crates/linguist-core",
+    "crates/linguist-application",
+    "crates/linguist-desktop",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+linguist-core = { path = "crates/linguist-core" }
+linguist-application = { path = "crates/linguist-application" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.150"
+cxx = "1.0"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["full"] }
+cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
