@@ -64,11 +64,17 @@ class AnkiConnectClient:
     def get_models(self) -> list:
         return self._request("modelNames")
 
+    def get_tags(self) -> list:
+        return self._request("getTags")
+
     def get_model_fields(self, model_name: str) -> list:
         return self._request("modelFieldNames", modelName=model_name)
 
     def get_model_templates(self, model_name: str) -> dict:
         return self._request("modelTemplates", modelName=model_name)
+
+    def get_model_styling(self, model_name: str) -> dict:
+        return self._request("modelStyling", modelName=model_name)
 
     def supports_action(self, action: str) -> bool:
         """Return whether this AnkiConnect installation exposes an action."""
@@ -210,6 +216,17 @@ class AnkiConnectClient:
             ):
                 matches.append(note)
         return matches
+
+    def search_notes_in_deck(self, deck_name: str, text: str) -> list:
+        """Search every note in a deck, independent of the modernization queue."""
+        wanted = _plain_field_value(text)
+        if not deck_name or not wanted:
+            return []
+        query = (
+            f'deck:"{_anki_search_quote(deck_name)}" '
+            f'"{_anki_search_quote(wanted)}"'
+        )
+        return self.get_notes_info(self.find_notes(query))
 
     def update_note_fields(self, note_id: int, fields: dict):
         note = {

@@ -30,9 +30,11 @@ commits updates through AnkiConnect.
 | `ocr.py` | Multilingual OCR, image features, classification confidence and correction data |
 | `llm.py` | Ollama model discovery plus structured nuance/example and grammar generation |
 | `snapshots.py` | Word-level pre-write snapshots and restoration |
+| `batch_jobs.py` | SQLite/WAL job state, artifacts, retry pacing and crash recovery |
 | `markdown_text.py` | Safe Markdown editing and Anki HTML rendering |
 | `tui/app.py` | Application state, panes, queue orchestration and commands |
 | `tui/screens.py` | Processing pipelines, previews, editors, media selection and commits |
+| `tui/batch_screen.py` | Batch creation, monitoring, control and mass rollback UI |
 | `tui/setup.py` | Initial setup, settings and manual/CSV injection interfaces |
 
 The canonical `CardDocument` is the boundary between enrichment and Anki. Both
@@ -58,8 +60,9 @@ One note produces three stable card instances:
 
 The installer preserves the ordinal-zero card when upgrading the earlier
 managed one-card version, then adds Spelling and Production. Modernization can
-migrate a supported legacy note in place through AnkiConnect. Unexpected
-managed schemas are rejected before media is written.
+migrate a supported legacy note in place through AnkiConnect. Commit performs
+the same safe managed-template upgrade when necessary. Unexpected managed
+schemas are rejected before media is written.
 
 See [japanese-card-template.md](japanese-card-template.md) for review layouts
 and field mapping.

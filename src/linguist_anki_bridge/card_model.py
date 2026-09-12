@@ -250,11 +250,21 @@ def build_card_document(processed_data: dict, lang_key: str, mode: CardMode) -> 
         media.append(MediaAsset(new_name, new_data)); images.append(f"<img src='{html_lib.escape(new_name, quote=True)}'/>")
         if policy.remove_replaced_media: obsolete += processed_data.get("orig_filenames", [])
     elif policy.remove_replaced_media:
-        for image in processed_data.get("renamed_images", []):
+        renamed_images = processed_data.get("renamed_images", [])
+        has_retained_image = any(
+            image.get("classification", "uncertain") != "dictionary"
+            for image in renamed_images
+        )
+        for image in renamed_images:
             name, data = image.get("new_name", ""), image.get("b64")
+            original = image.get("original_name")
+            if image.get("classification") == "dictionary" and has_retained_image:
+                if original:
+                    obsolete.append(original)
+                continue
             if name and data:
                 media.append(MediaAsset(name, data)); images.append(f"<img src='{html_lib.escape(name, quote=True)}'/>")
-                if image.get("original_name") and image["original_name"] != name: obsolete.append(image["original_name"])
+                if original and original != name: obsolete.append(original)
         if not images:
             existing = processed_data.get("filename", "")
             if existing and processed_data.get("classification") != "dictionary": images.append(f"<img src='{html_lib.escape(existing, quote=True)}'/>")
@@ -265,12 +275,29 @@ def build_card_document(processed_data: dict, lang_key: str, mode: CardMode) -> 
                     obsolete += processed_data.get("orig_filenames", [])
                 elif existing:
                     images.append(f"<img src='{html_lib.escape(existing, quote=True)}'/>")
-    audio_name, audio_data = processed_data.get("audio_filename", ""), processed_data.get("audio_b64")
     audio = "" if policy.create_note else None
-    if audio_name and audio_data:
-        media.append(MediaAsset(audio_name, audio_data)); reading = processed_data.get("scraped", {}).get("reading", "")
+    audio_assets = list(processed_data.get("audio_assets") or [])
+    if not audio_assets and processed_data.get("audio_filename"):
+        audio_assets = [{
+            "filename": processed_data.get("audio_filename", ""),
+            "b64": processed_data.get("audio_b64"),
+            "reading": processed_data.get("scraped", {}).get("reading", ""),
+        }]
+    audio_rows: list[str] = []
+    for asset in audio_assets:
+        audio_name, audio_data = str(asset.get("filename") or ""), asset.get("b64")
+        if not audio_name:
+            continue
+        if audio_data:
+            media.append(MediaAsset(audio_name, audio_data))
+        reading = str(asset.get("reading") or "").strip()
         sound = f"[sound:{audio_name}]"
-        audio = f"{html_lib.escape(str(reading))} {sound}" if lang_key.startswith("japanese") and any("\u4e00" <= c <= "\u9fff" for c in expression) and reading else sound
+        audio_rows.append(
+            f"{html_lib.escape(reading)} {sound}"
+            if lang_key.startswith("japanese") and reading else sound
+        )
+    if audio_rows:
+        audio = "<br/>".join(audio_rows)
     issues = list(processed_data.get("issues", []))
     if not expression: issues.append("Expression is empty")
     tag = re.sub(r"[^\w\-]+", "_", str(processed_data.get("type_tag", "")), flags=re.UNICODE).strip("_")[:80]
@@ -385,19 +412,54 @@ def commit_card_document(
         model_fields=model_fields,
     )
     if target_model == JAPANESE_VOCAB_MODEL_NAME:
+        spec = japanese_vocab_template()
         try:
             installed_templates = anki_client.get_model_templates(target_model)
         except (AttributeError, NotImplementedError):
             installed_templates = None
         if isinstance(installed_templates, dict):
-            expected_templates = list(japanese_vocab_template().templates)
+            expected_templates = list(spec.templates)
             if list(installed_templates) != expected_templates:
-                raise RuntimeError(
-                    f"Managed note type '{target_model}' has card templates "
-                    f"{list(installed_templates)}, expected {expected_templates}. Run "
-                    "`python -m linguist_anki_bridge.main --install-japanese-template` "
-                    "before committing or migrating cards."
+                try:
+                    logging.info(
+                        "Upgrading managed note type '%s' from card templates %s to %s...",
+                        target_model, list(installed_templates), expected_templates,
+                    )
+                    anki_client.install_model(
+                        spec.model_name, list(spec.fields), spec.css, spec.templates,
+                    )
+                    installed_templates = anki_client.get_model_templates(target_model)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Could not automatically upgrade managed note type "
+                        f"'{target_model}' from {list(installed_templates)} to "
+                        f"{expected_templates}: {exc}. Run `python -m "
+                        "linguist_anki_bridge.main --install-japanese-template` "
+                        "with Anki open for a detailed installation error."
+                    ) from exc
+                if not isinstance(installed_templates, dict) or list(installed_templates) != expected_templates:
+                    raise RuntimeError(
+                        f"Managed note type upgrade did not produce the expected card "
+                        f"templates {expected_templates}; Anki still reports "
+                        f"{list(installed_templates or {})}."
+                    )
+                logging.info(
+                    "Managed note type '%s' upgraded successfully.", target_model,
                 )
+            elif installed_templates != spec.templates:
+                logging.info(
+                    "Refreshing managed card HTML for note type '%s'...", target_model,
+                )
+                anki_client.update_model_templates(target_model, spec.templates)
+        try:
+            installed_styling = anki_client.get_model_styling(target_model)
+        except (AttributeError, NotImplementedError):
+            installed_styling = None
+        if isinstance(installed_styling, dict) and installed_styling.get("css") != spec.css:
+            logging.info(
+                "Refreshing managed card styling for note type '%s'...", target_model,
+            )
+            anki_client.update_model_styling(target_model, spec.css)
     if migration_required:
         try:
             supported = anki_client.supports_action("updateNoteModel")

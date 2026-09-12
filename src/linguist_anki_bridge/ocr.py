@@ -19,11 +19,31 @@ class ImageClassification:
     source: str
     reason: str
     features: dict
+    needs_confirmation: bool = False
 
     def as_dict(self) -> dict:
         return asdict(self)
 
 class OcrEngine:
+    # Baseline logistic model calibrated from the repository's labelled
+    # dictionary_* and visual_recall_* corpus.  Inputs are standardized in the
+    # order returned by ``_baseline_feature_vector``.  Keeping this small model
+    # over the deterministic OCR/layout features makes inference cheap and
+    # permits user feedback to remain a second, local calibration layer.
+    _BASELINE_MEANS = (
+        1.54545455, 0.15633636, 0.68181818, 0.64623182, 0.18001727,
+        0.14048182, 0.40213455, 0.31430727, 0.55998636,
+    )
+    _BASELINE_SCALES = (
+        1.49931114, 0.08732968, 0.40931496, 0.27720170, 0.15194505,
+        0.05387307, 0.16433440, 0.14910790, 0.22126837,
+    )
+    _BASELINE_WEIGHTS = (
+        -0.03386932, 2.72293941, 2.47928581, -0.68369121,
+        -0.91972688, -4.04364271, 0.50892469, -0.64331472,
+        -0.16827450, -0.34053463,
+    )
+
     def __init__(self):
         self.feedback_path = Path.home() / ".config" / "linguist-anki-bridge" / "image-classifier-feedback.json"
 
@@ -221,6 +241,20 @@ class OcrEngine:
             score += 1
         if re.search(r"\b(?:synonym|antonym|translation|meaning|example)s?\b", text):
             score += 1
+
+        # Compact bilingual dictionary cards often contain only one Japanese
+        # example followed by a colon and its Vietnamese/English gloss.  They
+        # have too few rows for the generic layout model, but the cross-script
+        # ``source : translation`` structure is strong semantic evidence.  A
+        # plain Japanese sentence or a photograph caption does not satisfy all
+        # three requirements.
+        vietnamese = r"A-Za-zÀ-ỹĐđ"
+        bilingual_gloss = re.search(
+            rf"[\u3040-\u30ff\u3400-\u9fff][^\n:]{{1,100}}\s*[:：]\s*[{vietnamese}][{vietnamese}\s,.;'’\-]{{2,}}",
+            ocr_text,
+        )
+        if bilingual_gloss:
+            score += 2
         return score
 
     @staticmethod
@@ -311,6 +345,34 @@ class OcrEngine:
             float(features.get("dominant_colour", 0)),
         ]
 
+    @staticmethod
+    def _baseline_feature_vector(features: dict) -> list:
+        return [
+            float(features.get("ocr_score", 0)),
+            float(features.get("text_coverage", 0)),
+            min(1.0, float(features.get("token_count", 0)) / 80.0),
+            float(features.get("row_density", 0)),
+            float(features.get("alignment", 0)),
+            float(features.get("edge_density", 0)),
+            float(features.get("entropy", 0)),
+            float(features.get("colour_std", 0)),
+            float(features.get("dominant_colour", 0)),
+        ]
+
+    def _baseline_probability(self, features: dict) -> float:
+        vector = self._baseline_feature_vector(features)
+        standardized = [
+            (value - mean) / scale
+            for value, mean, scale in zip(
+                vector, self._BASELINE_MEANS, self._BASELINE_SCALES
+            )
+        ]
+        score = self._BASELINE_WEIGHTS[0] + sum(
+            weight * value
+            for weight, value in zip(self._BASELINE_WEIGHTS[1:], standardized)
+        )
+        return self._sigmoid(score)
+
     def _feedback_rows(self) -> list:
         try:
             data = json.loads(self.feedback_path.read_text(encoding="utf-8"))
@@ -356,33 +418,31 @@ class OcrEngine:
         self.feedback_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def classify_image(self, base64_image_data: str, ocr_text: str, lang_string: str = "jpn+eng+vie", config: dict = None, llm_client=None) -> dict:
-        """Safety-first cascade returning probability and an uncertain state."""
+        """Return an automatic binary decision plus a non-blocking review hint."""
         config = config or {}
-        dictionary_threshold = float(config.get("dictionary_threshold", 0.90))
-        visual_threshold = float(config.get("visual_threshold", 0.25))
+        decision_threshold = float(config.get("decision_threshold", 0.50))
+        confirmation_margin = max(0.0, float(config.get("confirmation_margin", 0.12)))
         features = self.extract_visual_features(base64_image_data, lang_string, config.get("ocr", {}))
         features["ocr_score"] = self.dictionary_evidence_score(ocr_text)
 
-        # Conservative hand-tuned prior. Sparse/empty OCR cannot become a
-        # confident visual result merely because Tesseract missed the text.
-        score = (
-            -2.2 + 1.25 * min(features["ocr_score"], 6)
-            + 4.0 * features["text_coverage"]
-            + 1.2 * min(1.0, features["token_count"] / 60.0)
-            + 0.9 * features["row_density"] + 1.0 * features["alignment"]
-            + 0.8 * features["dominant_colour"]
-            - 1.2 * features["entropy"] - 0.8 * features["colour_std"]
-        )
-        probability = self._sigmoid(score)
-        source = "ocr-layout"
+        probability = self._baseline_probability(features)
+        source = "ocr-layout-calibrated-v1"
+        # The fitted feature space contains text-bearing images. If Tesseract
+        # finds no usable token and no dictionary marker, do not extrapolate a
+        # confident dictionary result from standardized layout values alone.
+        if features["token_count"] == 0 and features["ocr_score"] == 0:
+            probability = min(probability, 0.25)
+            source += "+empty-ocr-guard"
         learned = self._learned_probability(features)
         if learned is not None:
             probability = 0.45 * probability + 0.55 * learned
-            source = "ocr-layout+local-feedback"
+            source += "+local-feedback"
+
+        needs_confirmation = abs(probability - decision_threshold) <= confirmation_margin
 
         # A vision model is an adjudicator, not a user label. Only consult it
-        # in the uncertain band and only accept very confident answers.
-        if visual_threshold < probability < dictionary_threshold and config.get("llm_adjudication", False) and llm_client:
+        # near the decision boundary and only accept very confident answers.
+        if needs_confirmation and config.get("llm_adjudication", False) and llm_client:
             try:
                 verdict = llm_client.classify_image_visual(
                     base64_image_data,
@@ -392,20 +452,21 @@ class OcrEngine:
                 if confidence >= float(config.get("llm_accept_confidence", 0.95)):
                     probability = confidence if verdict.get("classification") == "dictionary" else 1.0 - confidence
                     source += "+vision-llm"
+                    needs_confirmation = abs(probability - decision_threshold) <= confirmation_margin
             except Exception as exc:
                 logging.warning("Vision adjudication unavailable: %s", exc)
 
-        if probability >= dictionary_threshold:
-            classification = "dictionary"
-        elif probability <= visual_threshold and features["token_count"] > 0:
-            classification = "visual_recall"
-        else:
-            classification = "uncertain"
+        classification = (
+            "dictionary" if probability >= decision_threshold else "visual_recall"
+        )
         reason = (
             f"dictionary probability {probability:.2f}; OCR markers {features['ocr_score']}; "
-            f"text coverage {features['text_coverage']:.2f}; rows {features['row_count']}"
+            f"text coverage {features['text_coverage']:.2f}; rows {features['row_count']}; "
+            f"decision threshold {decision_threshold:.2f}"
         )
-        return ImageClassification(classification, probability, source, reason, features).as_dict()
+        return ImageClassification(
+            classification, probability, source, reason, features, needs_confirmation
+        ).as_dict()
 
     def classify_image_ocr(self, ocr_text: str) -> str:
         score = self.dictionary_evidence_score(ocr_text)

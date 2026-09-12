@@ -42,6 +42,26 @@ Settings → Decks & Fields → Japanese Vocabulary.
 Re-running the installer upgrades the former one-card managed note type safely:
 it renames its ordinal-zero card to **Comprehension** and adds **Spelling** and
 **Production**, preserving the existing card's scheduling. It refuses to
-delete unexpected templates. Install or refresh the template before automatic
-legacy-note migration; commits are blocked when the managed template still has
-the obsolete one-card shape.
+delete unexpected templates. A commit or automatic legacy-note migration also
+runs this safe upgrade automatically when it detects the known obsolete
+`Japanese Recognition` shape. The explicit installer remains available for
+setup and for diagnosing AnkiConnect installation errors.
+
+## Legacy expressions and pronunciation tracks
+
+Modernization splits a legacy note only when its expression field contains
+multiple explicit HTML/text lines. For example, a pronoun note containing
+`私`, `僕`, `俺`, `我`, `あたし`, and `自分` becomes six managed notes. Preview
+shows the split position and accepts `n`/`p` or Left/Right while Preview is
+focused. The first result reuses the original note ID so its scheduling remains
+stable; the additional notes inherit the original tags and each produces the
+same three managed card templates.
+
+Multiple audio files alone never trigger a split. A single expression such as
+`脅かす` therefore stays one note and retains both `おどかす` and `おびやかす`
+as ordered pronunciation tracks in the Audio field.
+
+The snapshot captured before commit records every created sibling note and all
+tracked media. Reverting the word-level snapshot deletes those siblings,
+restores the original model, fields, tags, and media, and leaves unrelated notes
+untouched. A failed partial split performs the same compensation immediately.

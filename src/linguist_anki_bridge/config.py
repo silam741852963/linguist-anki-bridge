@@ -20,8 +20,14 @@ OMARCHY_THEME_FILE = Path.home() / ".config" / "omarchy" / "current" / "theme" /
 DEFAULT_SYSTEM_PROMPTS = {
     "vocabulary": (
         "You are a helpful language learning assistant. The user provides an exact vocabulary word, "
-        "authoritative parsed dictionary data, and possibly raw OCR text. Generate only a concise "
-        "usage nuance for the exact word and three high-quality example sentences with {lang} translations.\n"
+        "authoritative parsed dictionary data, and possibly raw OCR text from dictionary screenshots. "
+        "Generate usage nuances for the exact word and examples with {lang} translations. Extract every "
+        "distinct usage nuance and every complete, usable example visible in dictionary-screenshot OCR. "
+        "Preserve each original target-language example sentence. Translate any non-{lang} explanation "
+        "or example translation into {lang}; do not copy a Vietnamese or Japanese translation into the "
+        "translation field when {lang} is English. If fewer than three examples are recoverable, generate "
+        "additional natural examples until there are at least three. Never discard screenshot examples "
+        "merely to enforce a fixed example count.\n"
         "Never generate, summarize, translate, or rewrite dictionary definitions, readings, metadata, "
         "related entries, or senses.\n"
         "Return the response in JSON format matching this schema:\n"
@@ -75,8 +81,8 @@ DEFAULT_CONFIG = {
         "preprocess": True
     },
     "image_classification": {
-        "dictionary_threshold": 0.90,
-        "visual_threshold": 0.25,
+        "decision_threshold": 0.50,
+        "confirmation_margin": 0.12,
         "llm_adjudication": True,
         "llm_accept_confidence": 0.95,
         "vision_model": "llama3.2-vision",
@@ -146,6 +152,18 @@ DEFAULT_CONFIG = {
         "retry_count": 3,
         "retry_backoff_seconds": 0.6,
         "browser_fallback": True,
+    },
+    "batch": {
+        "max_attempts": 3,
+        "retry_backoff_seconds": 5.0,
+        "commit_interval_seconds": 0.25,
+        "service_intervals": {
+            "dictionary": 1.0,
+            "ollama": 0.25,
+            "kanji": 1.0,
+            "image": 1.0,
+            "tts": 0.5,
+        },
     },
     "dry_run": True,
     "decks": {
@@ -246,6 +264,12 @@ class ConfigManager:
                 if old_key in decks and new_key not in decks:
                     decks[new_key] = decks[old_key]
                 decks.pop(old_key, None)
+        image_classification = migrated.get("image_classification")
+        if isinstance(image_classification, dict):
+            # Superseded by the calibrated binary decision threshold. Keeping
+            # these keys would expose obsolete controls in the settings view.
+            image_classification.pop("dictionary_threshold", None)
+            image_classification.pop("visual_threshold", None)
         migrated["config_version"] = 2
         return migrated
                 

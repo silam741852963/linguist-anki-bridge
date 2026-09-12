@@ -40,12 +40,15 @@ from linguist_anki_bridge.tui.screens import (
     commit_card_ingestion,
     commit_card_modernization,
     dictionary_llm_context,
+    extract_legacy_audio_entries,
+    extract_legacy_expressions,
     fetch_web_image,
     fetch_kanji_construction_if_needed,
     format_dictionary_meaning_html,
     indexed_media_filename,
     kanji_summary_for_tui,
     process_inject_item,
+    process_legacy_card,
     safe_media_stem,
 )
 
@@ -74,10 +77,16 @@ class ConfigTests(unittest.TestCase):
         migrated = ConfigManager._migrate({
             "anki": {"auto_backup_before_write": True},
             "decks": {"japanese": {"deck_name": "Old"}},
+            "image_classification": {
+                "dictionary_threshold": .9,
+                "visual_threshold": .25,
+            },
         })
         self.assertEqual(migrated["decks"]["japanese_vocab"]["deck_name"], "Old")
         self.assertNotIn("japanese", migrated["decks"])
         self.assertNotIn("auto_backup_before_write", migrated["anki"])
+        self.assertNotIn("dictionary_threshold", migrated["image_classification"])
+        self.assertNotIn("visual_threshold", migrated["image_classification"])
 
     def test_reload_resets_deleted_in_memory_values(self):
         with tempfile.TemporaryDirectory() as td:
@@ -116,6 +125,8 @@ class CardTemplateTests(unittest.TestCase):
             self.assertIn(f"{{{{{field}}}}}", spec.front + spec.back)
         self.assertIn(".nightMode", spec.css)
         self.assertIn('[data-source="llm"]', spec.css)
+        self.assertIn("flex-direction: column", spec.css)
+        self.assertIn("align-items: center", spec.css)
 
     def test_model_installer_creates_missing_model(self):
         client = AnkiConnectClient()
@@ -126,6 +137,12 @@ class CardTemplateTests(unittest.TestCase):
         })
         self.assertEqual(result, "created")
         client.create_model.assert_called_once()
+
+    def test_anki_client_reads_model_styling(self):
+        client = AnkiConnectClient()
+        client._request = Mock(return_value={"css": ".card {}"})
+        self.assertEqual(client.get_model_styling("Managed"), {"css": ".card {}"})
+        client._request.assert_called_once_with("modelStyling", modelName="Managed")
 
     def test_model_installer_updates_only_an_exact_managed_schema(self):
         client = AnkiConnectClient()
@@ -176,12 +193,15 @@ class CardTemplateTests(unittest.TestCase):
         )
         client.reposition_model_template.assert_not_called()
 
-    def test_commit_rejects_stale_managed_card_template_shape(self):
+    def test_commit_automatically_upgrades_stale_managed_card_template_shape(self):
         client = Mock()
         client.get_model_fields.return_value = list(JAPANESE_VOCAB_FIELDS)
-        client.get_model_templates.return_value = {
-            "Japanese Recognition": {"Front": "old", "Back": "old"},
-        }
+        client.get_model_templates.side_effect = [
+            {"Japanese Recognition": {"Front": "old", "Back": "old"}},
+            japanese_vocab_template().templates,
+        ]
+        client.get_model_styling.return_value = {"css": "old css"}
+        client.add_note.return_value = 42
         document = CardDocument(expression="攻撃", values={"meaning_text": "attack"})
         deck = {
             "deck_name": "Japanese",
@@ -189,10 +209,33 @@ class CardTemplateTests(unittest.TestCase):
             "fields": japanese_vocab_template().field_mapping(),
         }
 
-        with self.assertRaisesRegex(RuntimeError, "install-japanese-template"):
-            commit_card_document(client, document, deck, "inject")
+        self.assertEqual(commit_card_document(client, document, deck, "inject"), 42)
+        spec = japanese_vocab_template()
+        client.install_model.assert_called_once_with(
+            spec.model_name, list(spec.fields), spec.css, spec.templates,
+        )
+        client.add_note.assert_called_once()
+        client.update_model_styling.assert_called_once_with(spec.model_name, spec.css)
 
-        client.add_note.assert_not_called()
+    def test_commit_refreshes_managed_card_html_and_css(self):
+        client = Mock()
+        spec = japanese_vocab_template()
+        client.get_model_fields.return_value = list(spec.fields)
+        client.get_model_templates.return_value = {
+            name: {"Front": "old", "Back": "old"} for name in spec.templates
+        }
+        client.get_model_styling.return_value = {"css": "old"}
+        client.add_note.return_value = 43
+        document = CardDocument(expression="表示", values={"meaning_text": "display"})
+        deck = {
+            "deck_name": "Japanese",
+            "note_type": spec.model_name,
+            "fields": spec.field_mapping(),
+        }
+
+        self.assertEqual(commit_card_document(client, document, deck, "inject"), 43)
+        client.update_model_templates.assert_called_once_with(spec.model_name, spec.templates)
+        client.update_model_styling.assert_called_once_with(spec.model_name, spec.css)
 
     def test_exact_expression_lookup_filters_html_and_substring_candidates(self):
         client = AnkiConnectClient()
@@ -210,6 +253,19 @@ class CardTemplateTests(unittest.TestCase):
 
         self.assertEqual([note["noteId"] for note in result], [1])
         client.find_notes.assert_called_once_with('deck:"Japanese \\"Vocab\\"" "俳優"')
+
+    def test_deck_search_is_not_limited_to_modernization_candidates(self):
+        client = AnkiConnectClient()
+        client.find_notes = Mock(return_value=[42])
+        client.get_notes_info = Mock(return_value=[{
+            "noteId": 42,
+            "fields": {"Word": {"value": "国立大学"}, "Picture": {"value": ""}},
+        }])
+
+        result = client.search_notes_in_deck("Japanese", "国立大学")
+
+        self.assertEqual(result[0]["noteId"], 42)
+        client.find_notes.assert_called_once_with('deck:"Japanese" "国立大学"')
 
     def test_media_snapshot_retrieval_uses_one_multi_request(self):
         client = AnkiConnectClient()
@@ -265,8 +321,11 @@ class OllamaPromptTests(unittest.TestCase):
         self.assertEqual(result["nuances"], "formal usage")
         self.assertEqual(set(result), {"nuances", "examples"})
         self.assertTrue(payload["system"].startswith("Explain with Vietnamese translations"))
-        self.assertIn("Generate only a usage nuance", payload["system"])
+        self.assertIn("Generate only usage nuances", payload["system"])
         self.assertEqual(payload["format"]["properties"]["examples"]["minItems"], 3)
+        self.assertNotIn("maxItems", payload["format"]["properties"]["examples"])
+        self.assertIn("never truncate", payload["system"])
+        self.assertIn("translat", payload["system"].lower())
         self.assertIn("Source language: \"Japanese\"", payload["prompt"])
         self.assertIn("Vietnamese", payload["prompt"])
 
@@ -606,6 +665,95 @@ class CardDocumentTransactionTests(unittest.TestCase):
         self.assertEqual(map_document_fields(fetched, self.deck)["Picture"], "<img src='commons_進む_0.jpg'/>")
         self.assertIn("dictionary.png", fetched.obsolete_media)
 
+    def test_mixed_images_remove_only_dictionary_screenshots(self):
+        document = build_card_document({
+            "word": "猫",
+            "scraped": {"found": True, "word": "猫", "definition": "cat"},
+            "llm_response": {},
+            "classification": "mixed",
+            "orig_filenames": ["dictionary.png", "photo.jpg"],
+            "renamed_images": [
+                {
+                    "original_name": "dictionary.png", "new_name": "img_猫_0.png",
+                    "b64": base64.b64encode(b"dictionary").decode(),
+                    "classification": "dictionary",
+                },
+                {
+                    "original_name": "photo.jpg", "new_name": "img_猫_1.jpg",
+                    "b64": base64.b64encode(b"photo").decode(),
+                    "classification": "visual_recall",
+                },
+            ],
+        }, "japanese_vocab", "modernize")
+
+        picture = map_document_fields(document, self.deck)["Picture"]
+        self.assertNotIn("img_猫_0.png", picture)
+        self.assertIn("img_猫_1.jpg", picture)
+        self.assertIn("dictionary.png", document.obsolete_media)
+
+    def test_processing_classifies_every_image_separately(self):
+        immediate_loop = Mock()
+        immediate_loop.run_in_executor = AsyncMock(
+            side_effect=lambda _executor, func, *args: func(*args)
+        )
+        config = copy.deepcopy(DEFAULT_CONFIG)
+        config["decks"]["japanese_vocab"]["deck_name"] = "Japanese"
+        note = {
+            "noteId": 7,
+            "deckName": "Japanese",
+            "fields": {
+                "Word": {"value": "猫"},
+                "Picture": {"value": "<img src='dictionary.png'><img src='photo.jpg'>"},
+            },
+        }
+        anki = Mock()
+        anki.retrieve_media_file.side_effect = ["ZGljdA==", "cGhvdG8="]
+        ocr = Mock()
+        ocr.extract_image_filename.return_value = "dictionary.png"
+        ocr.perform_ocr.side_effect = ["dictionary text", "猫"]
+        ocr.classify_image.side_effect = [
+            {"classification": "dictionary", "probability": 0.96, "source": "ocr-layout", "reason": "dense text"},
+            {"classification": "visual_recall", "probability": 0.08, "source": "visual", "reason": "photo"},
+        ]
+        scraper = Mock()
+        scraper.scrape_jisho = AsyncMock(return_value={"found": False})
+        llm = Mock(model="test")
+        llm.generate_card_content.return_value = {"nuances": "", "examples": []}
+        with patch(
+            "linguist_anki_bridge.tui.screens.asyncio.get_running_loop",
+            return_value=immediate_loop,
+        ), patch(
+            "linguist_anki_bridge.tui.screens.fetch_kanji_construction_if_needed",
+            new=AsyncMock(return_value=""),
+        ), patch(
+            "linguist_anki_bridge.tui.screens.fetch_audio_base64_if_any",
+            new=AsyncMock(return_value=(None, "")),
+        ), patch(
+            "linguist_anki_bridge.tui.screens.fetch_web_image",
+            new=AsyncMock(return_value=(None, "")),
+        ) as web_image:
+            result = asyncio.run(process_legacy_card(
+                anki, ocr, scraper, config, note, llm_client=llm,
+                deck_key="japanese_vocab",
+            ))
+
+        self.assertEqual(ocr.classify_image.call_count, 2)
+        self.assertEqual([row["filename"] for row in result["classification_results"]], [
+            "dictionary.png", "photo.jpg",
+        ])
+        self.assertEqual(result["classification"], "mixed")
+        llm_context = llm.generate_card_content.call_args.args[1]
+        self.assertIn(
+            "[Image: dictionary.png; classification: dictionary]",
+            llm_context,
+        )
+        self.assertIn("dictionary text", llm_context)
+        self.assertIn(
+            "[Image: photo.jpg; classification: visual_recall]",
+            llm_context,
+        )
+        web_image.assert_not_awaited()
+
 
 class InjectProcessingTests(unittest.TestCase):
     def test_english_kanji_failure_falls_back_to_kanjiapi(self):
@@ -687,11 +835,34 @@ class InjectProcessingTests(unittest.TestCase):
 
 
 class RuntimeHelperTests(unittest.TestCase):
-    def test_image_preview_has_rule_before_dictionary_details(self):
-        source = Path("src/linguist_anki_bridge/tui/app.py").read_text(encoding="utf-8")
-        marker = '"─────────────────────────\\n\\n"'
-        self.assertIn(marker, source)
-        self.assertLess(source.index(marker), source.index("preview.update_dict_scrape(classification_markup"))
+    def test_image_preview_uses_same_section_rule_as_dictionary_details(self):
+        source = Path("src/linguist_anki_bridge/tui/screens.py").read_text(encoding="utf-8")
+        css = Path("src/linguist_anki_bridge/tui/styles.css").read_text(encoding="utf-8")
+        self.assertIn('id="details-image-classification"', source)
+        self.assertRegex(
+            css,
+            r"#details-image-classification\s*\{[^}]*border-bottom: solid \$active-border",
+        )
+        self.assertRegex(
+            css,
+            r"#details-dict-scrape\s*\{[^}]*border-bottom: solid \$active-border",
+        )
+
+    def test_cards_search_falls_back_to_complete_anki_deck(self):
+        table = Mock(id="table-queue", row_count=1)
+        table.get_row_at.return_value = ("俳優", "actor.jpg")
+        app = Mock()
+        app._search_origin_widget = table
+        app._resolve_search_target = types.MethodType(
+            AnkiBridgeApp._resolve_search_target, app,
+        )
+        app.run_worker = Mock()
+
+        AnkiBridgeApp.on_search_query_submitted(app, "国立大学")
+
+        app.run_worker.assert_called_once()
+        app.run_worker.call_args.args[0].close()
+        self.assertFalse(app.search_mode)
 
     def test_universal_search_uses_pane_focused_before_modals(self):
         table = Mock(id="table-queue", row_count=1)
@@ -743,6 +914,94 @@ class RuntimeHelperTests(unittest.TestCase):
         self.assertNotIn("<br", rendered)
 
 
+class SplitModernizationTests(unittest.TestCase):
+    def test_expression_lines_drive_split_but_audio_count_does_not(self):
+        config = copy.deepcopy(DEFAULT_CONFIG)
+        self.assertEqual(
+            extract_legacy_expressions(
+                "私<div>僕<br></div><div>俺<br></div><div>我<br></div>"
+                "<div>あたし<br>自分<br></div>", config,
+            ),
+            ["私", "僕", "俺", "我", "あたし", "自分"],
+        )
+        note = {"fields": {"Pronunciation": {"value":
+            "[sound:pronunciation_ja_脅かす.mp3]おどかす<br>"
+            "[sound:pronunciation_ja_脅かす (1).mp3]おびやかす"}}}
+        self.assertEqual(
+            [item["reading"] for item in extract_legacy_audio_entries(note)],
+            ["おどかす", "おびやかす"],
+        )
+        self.assertEqual(extract_legacy_expressions("脅かす", config), ["脅かす"])
+
+    def test_multiple_audio_assets_render_on_one_note(self):
+        document = build_card_document({
+            "word": "脅かす", "scraped": {"found": False}, "llm_response": {},
+            "audio_assets": [
+                {"filename": "a.mp3", "b64": "YQ==", "reading": "おどかす"},
+                {"filename": "b.mp3", "b64": "Yg==", "reading": "おびやかす"},
+            ],
+        }, "japanese_vocab", "modernize")
+        self.assertEqual(
+            document.values["audio"],
+            "おどかす [sound:a.mp3]<br/>おびやかす [sound:b.mp3]",
+        )
+        self.assertEqual([asset.filename for asset in document.media], ["a.mp3", "b.mp3"])
+
+    def test_single_expression_process_keeps_all_legacy_pronunciations(self):
+        note = {"fields": {
+            "Word": {"value": "脅かす"},
+            "Pronunciation": {"value":
+                "[sound:a.mp3]おどかす<br>[sound:b.mp3]おびやかす"},
+        }}
+        class Client:
+            payloads = {"a.mp3": "YQ==", "b.mp3": "Yg=="}
+            def retrieve_media_file(self, filename):
+                return self.payloads[filename]
+        client = Client()
+        expected = {"word": "脅かす"}
+        with patch(
+            "linguist_anki_bridge.tui.screens._process_legacy_card_single",
+            new=AsyncMock(return_value=expected),
+        ) as single:
+            result = asyncio.run(process_legacy_card(
+                client, Mock(), Mock(), copy.deepcopy(DEFAULT_CONFIG), note,
+                llm_client=Mock(), deck_key="japanese_vocab",
+            ))
+        self.assertEqual(result, expected)
+        child_note = single.await_args.args[4]
+        self.assertEqual(
+            [asset["reading"] for asset in child_note["_linguist_audio_assets"]],
+            ["おどかす", "おびやかす"],
+        )
+
+    def test_split_commit_reuses_original_note_and_creates_tagged_siblings(self):
+        config = copy.deepcopy(DEFAULT_CONFIG)
+        config["decks"]["japanese_vocab"]["deck_name"] = "Japanese"
+        client = Mock()
+        client.supports_action.return_value = True
+        client.get_model_fields.return_value = list(JAPANESE_VOCAB_FIELDS)
+        client.add_note.side_effect = [101, 102]
+        variants = [
+            {"word": word, "scraped": {"found": False}, "llm_response": {}}
+            for word in ("私", "僕", "俺")
+        ]
+        processed = {**variants[0], "split_results": variants}
+        note = {
+            "noteId": 7, "modelName": "Legacy", "tags": ["pronouns"],
+            "fields": {"Word": {"value": "私<br>僕<br>俺"}},
+        }
+
+        result = commit_card_modernization(
+            client, note, processed, "japanese_vocab", config, media_before={},
+        )
+
+        self.assertEqual(result, 7)
+        self.assertEqual(processed["created_note_ids"], [101, 102])
+        self.assertEqual(client.update_note_model.call_args.args[0], 7)
+        self.assertEqual(client.add_note.call_count, 2)
+        self.assertEqual(client.add_note.call_args_list[0].kwargs["tags"], ["pronouns"])
+
+
 class SnapshotManagerTests(unittest.TestCase):
     def test_modernization_snapshot_restores_fields_and_media(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -789,6 +1048,28 @@ class SnapshotManagerTests(unittest.TestCase):
                 42, "2. Picture Words", {"Word": "俳優"}, ["old-tag"],
             )
             anki.update_note_fields.assert_not_called()
+
+    def test_split_snapshot_revert_deletes_siblings_then_restores_original(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = SnapshotManager(Path(directory) / "snapshots.json")
+            snapshot_id = manager.create(
+                word="私 / 僕", mode="modernize", deck_key="japanese_vocab",
+                note={"noteId": 42, "modelName": "Legacy", "tags": ["old"],
+                      "fields": {"Word": {"value": "私<br>僕"}}},
+                processed={"word": "私", "split_count": 2}, dry_run=False,
+                media_before={},
+            )
+            manager.finalize(snapshot_id, result_note_id=42, created_note_ids=[88])
+            anki = Mock()
+            anki.get_notes_info.return_value = [{"modelName": JAPANESE_VOCAB_MODEL_NAME}]
+            anki.supports_action.return_value = True
+
+            manager.revert(snapshot_id, anki)
+
+            anki.delete_notes.assert_called_once_with([88])
+            anki.update_note_model.assert_called_once_with(
+                42, "Legacy", {"Word": "私<br>僕"}, ["old"],
+            )
 
     def test_injection_snapshot_revert_deletes_created_note(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1003,7 +1284,12 @@ class DictionaryParsingTests(unittest.TestCase):
         self.assertEqual(engine.classify_image_ocr("駅前で猫が眠っている"), "visual_recall")
         self.assertEqual(engine.classify_image_ocr(""), "visual_recall")
 
-    def test_modern_image_classifier_uses_uncertain_for_empty_ocr(self):
+    def test_compact_japanese_vietnamese_gloss_is_dictionary_evidence(self):
+        engine = OcrEngine()
+        text = "へいわ おびや\n平和を脅かす : đe dọa nền hòa bình"
+        self.assertEqual(engine.dictionary_evidence_score(text), 2)
+
+    def test_modern_image_classifier_uses_automatic_threshold_for_empty_ocr(self):
         engine = OcrEngine()
         features = {
             "text_coverage": 0.0, "token_count": 0, "row_count": 0,
@@ -1013,8 +1299,45 @@ class DictionaryParsingTests(unittest.TestCase):
         with patch.object(engine, "extract_visual_features", return_value=features), \
              patch.object(engine, "_learned_probability", return_value=None):
             result = engine.classify_image("aGVsbG8=", "", config={})
-        self.assertEqual(result["classification"], "uncertain")
+        self.assertEqual(result["classification"], "visual_recall")
         self.assertIn("probability", result)
+
+    def test_calibrated_classifier_separates_labelled_feature_corpus_at_half(self):
+        engine = OcrEngine()
+        # Frozen feature measurements from temp/dictionary_* and
+        # temp/visual_recall_*. This makes accidental calibration regressions
+        # cheap to detect without running Tesseract during every unit test.
+        rows = [
+            ("dictionary", [5, .20804, 1, 1, .09816, .16021, .24652, .19847, .81403]),
+            ("dictionary", [3, .19155, 1, .70485, .08333, .10645, .39644, .23826, .58948]),
+            ("dictionary", [1, .13772, 1, .46647, .06731, .14929, .49511, .40108, .46203]),
+            ("dictionary", [2, .15504, .9125, .86721, .12329, .06565, .25606, .15041, .67485]),
+            ("dictionary", [3, .18543, 1, 1, .11458, .09451, .36895, .18663, .5602]),
+            ("dictionary", [0, .15191, .1, .33333, .125, .24916, .39144, .33523, .58541]),
+            # temp/dictionary_6.png after bilingual-gloss OCR evidence.
+            ("dictionary", [2, .16553, .1625, .66667, .15385, .18229, .32893, .29208, .60851]),
+            ("visual_recall", [0, .37246, .025, .08081, .5, .06688, .16242, .6374, .83774]),
+            ("visual_recall", [1, .13564, 1, .70833, .12121, .14367, .2381, .25353, .79761]),
+            ("visual_recall", [1, .10763, 1, .89034, .11688, .16309, .56794, .35925, .42923]),
+            ("visual_recall", [0, .01667, .175, .55721, .5, .20992, .59266, .52432, .35704]),
+            ("visual_recall", [1, .05761, .2875, .5, .13043, .13647, .70784, .1728, .05223]),
+        ]
+        keys = (
+            "ocr_score", "text_coverage", "token_ratio", "row_density",
+            "alignment", "edge_density", "entropy", "colour_std", "dominant_colour",
+        )
+        probabilities = []
+        for label, values in rows:
+            features = dict(zip(keys, values))
+            features["token_count"] = features.pop("token_ratio") * 80
+            probability = engine._baseline_probability(features)
+            probabilities.append((label, probability))
+            if label == "dictionary":
+                self.assertGreater(probability, .5)
+            else:
+                self.assertLess(probability, .5)
+        self.assertGreaterEqual(min(p for label, p in probabilities if label == "dictionary"), .70)
+        self.assertLessEqual(max(p for label, p in probabilities if label == "visual_recall"), .41)
 
     def test_image_feedback_is_stored_as_user_training_label(self):
         engine = OcrEngine()

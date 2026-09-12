@@ -61,6 +61,11 @@ The input screen uses NORMAL/INSERT navigation: `i` or `a` enters INSERT,
 `Esc` returns to NORMAL, `j`/`k` changes fields, `h`/`l` changes tabs, `:w`
 resolves and enqueues, and `:q` cancels.
 
+For large migrations press `b` to open the durable Batch Jobs screen. Jobs can
+be created from the visible Cards list or the entire active deck, paused,
+resumed after a crash, retried, cancelled, and reverted as one operation. See
+the [batch modernization operations manual](docs/batch-modernization.md).
+
 CSV injection requires a `word` header and accepts optional `language`, `type`,
 and `note` columns. Language aliases such as `japanese` select the corresponding
 vocabulary deck; explicit deck keys may also be used.

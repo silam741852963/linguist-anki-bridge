@@ -9,6 +9,7 @@ import csv
 import urllib.request
 import urllib.parse
 import io
+import copy
 from bs4 import BeautifulSoup
 from rich.markup import escape
 
@@ -130,6 +131,7 @@ class SnapshotManagementScreen(Screen):
             f"Dry run: {'Yes' if record.get('dry_run') else 'No'}",
             f"Original note: {original.get('note_id') or 'None (new injection)'}",
             f"Result note: {record.get('result_note_id') or 'None'}",
+            f"Split sibling notes: {', '.join(map(str, record.get('created_note_ids') or [])) or 'None'}",
             f"Note type: {original.get('model_name') or '—'}",
             f"Tags: {', '.join(original.get('tags') or []) or '—'}",
             "",
@@ -195,6 +197,10 @@ class PreviewPane(ScrollableContainer):
         ("i", "select_image", "Select Image"),
         ("x", "classify_image", "Confirm Image Class"),
         ("r", "manage_snapshots", "Snapshots"),
+        Binding("n", "next_split", "Next Split", priority=True),
+        Binding("p", "previous_split", "Previous Split", priority=True),
+        Binding("right", "next_split", "", show=False, priority=True),
+        Binding("left", "previous_split", "", show=False, priority=True),
     ]
     def action_edit_word(self) -> None:
         self.app.action_edit_word()
@@ -210,20 +216,29 @@ class PreviewPane(ScrollableContainer):
         self.app.action_confirm_image_classification()
     def action_manage_snapshots(self) -> None:
         self.app.action_manage_snapshots()
+    def action_next_split(self) -> None:
+        self.app.action_next_preview_split()
+    def action_previous_split(self) -> None:
+        self.app.action_previous_preview_split()
     def action_next_pane(self) -> None:
         self.app.action_next_pane()
     def action_prev_pane(self) -> None:
         self.app.action_prev_pane()
 
     def compose(self) -> ComposeResult:
-        yield Label("[bold accent]● PREVIEW [4][/]", classes="pane-title")
+        yield Label("[bold accent]● PREVIEW [4][/]", id="preview-title", classes="pane-title")
         yield Static("", id="details-comparison")
+        yield Static("", id="details-image-classification")
         yield Static("", id="details-dict-scrape")
         yield Static("", id="details-llm")
         yield Static("", id="details-kanji-scrape")
 
     def update_content(self, markup: str) -> None:
         self.update_comparison(markup)
+
+    def update_title(self, current: int = 0, total: int = 0) -> None:
+        split = f" [bold yellow]SPLIT {current}/{total}[/]" if total > 1 else ""
+        self.query_one("#preview-title", Label).update(f"[bold accent]● PREVIEW [4][/]{split}")
 
     def update_comparison(self, markup) -> None:
         try:
@@ -236,6 +251,12 @@ class PreviewPane(ScrollableContainer):
             self.query_one("#details-dict-scrape", Static).update(markup)
         except Exception as e:
             logging.error(f"Failed to update PreviewPane dict scrape: {e}")
+
+    def update_image_classification(self, markup) -> None:
+        try:
+            self.query_one("#details-image-classification", Static).update(markup)
+        except Exception as e:
+            logging.error(f"Failed to update PreviewPane image classification: {e}")
 
     def update_kanji_scrape(self, markup) -> None:
         try:
@@ -531,6 +552,42 @@ def clean_word_field(word: str, app_config: dict) -> str:
 
     return word
 
+
+def extract_legacy_expressions(value: str, app_config: dict) -> list[str]:
+    """Extract deliberate legacy field lines without splitting inline spans.
+
+    A line break (``br``, block closing tag, or a literal newline) represents
+    a separate expression. Multiple sound tags never influence this decision,
+    which keeps words with alternate readings on one note.
+    """
+    if not value:
+        return []
+    separated = re.sub(
+        r"(?i)<br\s*/?>|</?(?:div|p|li|tr)(?:\s[^>]*)?>",
+        "\n", str(value),
+    )
+    text = BeautifulSoup(separated, "html.parser").get_text()
+    expressions: list[str] = []
+    for line in text.splitlines():
+        expression = clean_word_field(line, app_config)
+        if expression and expression not in expressions:
+            expressions.append(expression)
+    return expressions
+
+
+def extract_legacy_audio_entries(note_info: dict) -> list[dict[str, str]]:
+    """Return ordered sound/readings from any legacy field containing audio."""
+    entries: list[dict[str, str]] = []
+    for field in (note_info.get("fields") or {}).values():
+        value = str(field.get("value", "") if isinstance(field, dict) else field)
+        matches = list(re.finditer(r"\[sound:([^\]]+)\]", value, flags=re.IGNORECASE))
+        for index, match in enumerate(matches):
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(value)
+            reading_html = value[match.end():end]
+            reading = BeautifulSoup(reading_html, "html.parser").get_text(" ", strip=True)
+            entries.append({"filename": match.group(1).strip(), "reading": reading})
+    return entries
+
 def find_anki_media_path(filename: str) -> str:
     if not filename:
         return ""
@@ -810,7 +867,7 @@ def dictionary_llm_context(scraped: dict, ocr_text: str = "") -> str:
     )
 
 # --- DATA PROCESSING LOGIC ---
-async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note_info, is_grammar=False, log_cb=None, llm_client=None, deck_key=None) -> dict:
+async def _process_legacy_card_single(anki_client, ocr_engine, scraper, app_config, note_info, is_grammar=False, log_cb=None, llm_client=None, deck_key=None, rate_limiter=None) -> dict:
     def log(msg):
         logging.info(msg)
         if log_cb:
@@ -866,43 +923,78 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
     filename = orig_filenames[0] if orig_filenames else ""
     classification = "visual_recall"
     classification_result = {}
-    ocr_text = ""
+    classification_results = []
+    ocr_text = str(note_info.get("_linguist_ocr_text") or "")
     retrieved_media = {}
 
-    if filename:
-        log(f"Extracted main image filename: '{filename}' for word '{word}'")
-        log(f"Retrieving media file '{filename}' from Anki...")
+    if orig_filenames:
+        log(f"Detected {len(orig_filenames)} image(s) for word '{word}': {orig_filenames}")
         loop = asyncio.get_running_loop()
-        base64_data = await loop.run_in_executor(None, anki_client.retrieve_media_file, filename)
-        retrieved_media[filename] = base64_data
-
         lang_cfg = app_config.get("decks", {}).get(lang_key, {}).get("ocr_langs", "jpn+eng+vie")
-        log(f"Performing OCR on '{filename}' using language config '{lang_cfg}'...")
-        ocr_text = await loop.run_in_executor(None, ocr_engine.perform_ocr, base64_data, lang_cfg, app_config.get("ocr", {}), log)
-        log(f"OCR complete. Extracted {len(ocr_text)} characters.")
-
-        log("Classifying image using OCR, layout, and visual structure...")
         classifier_config = {
             **app_config.get("image_classification", {}),
             "ocr": app_config.get("ocr", {}),
         }
-        classification_result = await loop.run_in_executor(
-            None,
-            ocr_engine.classify_image,
-            base64_data,
-            ocr_text,
-            lang_cfg,
-            classifier_config,
-            llm_client,
-        )
-        classification = classification_result["classification"]
-        log(
-            f"Image classification: '{classification}' "
-            f"(dictionary probability={classification_result['probability']:.2f}, "
-            f"source={classification_result['source']})"
-        )
+        ocr_sections = []
+        for image_index, image_filename in enumerate(orig_filenames):
+            log(f"Retrieving media file '{image_filename}' from Anki...")
+            base64_data = await loop.run_in_executor(
+                None, anki_client.retrieve_media_file, image_filename
+            )
+            retrieved_media[image_filename] = base64_data
+            if not base64_data:
+                result = {
+                    "filename": image_filename,
+                    "index": image_index,
+                    "classification": "uncertain",
+                    "probability": 0.5,
+                    "source": "media-unavailable",
+                    "reason": "Anki media could not be retrieved",
+                    "ocr_text": "",
+                }
+                classification_results.append(result)
+                continue
+            log(f"Performing OCR on '{image_filename}' using language config '{lang_cfg}'...")
+            image_ocr = await loop.run_in_executor(
+                None, ocr_engine.perform_ocr, base64_data, lang_cfg,
+                app_config.get("ocr", {}), log,
+            )
+            log(f"OCR complete for '{image_filename}'. Extracted {len(image_ocr)} characters.")
+            log(f"Classifying '{image_filename}' using OCR, layout, and visual structure...")
+            result = await loop.run_in_executor(
+                None, ocr_engine.classify_image, base64_data, image_ocr,
+                lang_cfg, classifier_config, llm_client,
+            )
+            result = {
+                **result,
+                "filename": image_filename,
+                "index": image_index,
+                "ocr_text": image_ocr,
+            }
+            classification_results.append(result)
+            if image_ocr:
+                ocr_sections.append(
+                    f"[Image: {image_filename}; classification: "
+                    f"{result.get('classification', 'uncertain')}]\n{image_ocr}"
+                )
+            log(
+                f"Image '{image_filename}' classification: '{result['classification']}' "
+                f"(dictionary probability={result['probability']:.2f}, "
+                f"source={result['source']})"
+            )
+        states = [result.get("classification", "uncertain") for result in classification_results]
+        if "uncertain" in states:
+            classification = "uncertain"
+        elif states and all(state == "dictionary" for state in states):
+            classification = "dictionary"
+        elif "dictionary" in states:
+            classification = "mixed"
+        else:
+            classification = "visual_recall"
+        classification_result = classification_results[0] if classification_results else {}
+        ocr_text = "\n\n".join(ocr_sections)
         if classification == "uncertain":
-            log("Image classification is uncertain; preserving the original image until user confirmation in Preview.")
+            log("At least one image classification is uncertain; preserving it until user confirmation in Preview.")
     else:
         log(f"No screenshot image filename found in fields for word '{word}'.")
         classification = "No Image"
@@ -936,7 +1028,12 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
                 renamed_images.append({
                     "original_name": orig_fn,
                     "new_name": new_fn,
-                    "b64": b64_data
+                    "b64": b64_data,
+                    "classification": next(
+                        (result.get("classification") for result in classification_results
+                         if result.get("filename") == orig_fn),
+                        "uncertain",
+                    ),
                 })
                 log(f"Cached '{orig_fn}' as '{new_fn}'.")
         except Exception as e:
@@ -952,6 +1049,8 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
             schema = dict_cfg.get("schema", {})
             log(f"Querying custom dictionary scraper for '{word}'...")
             try:
+                if rate_limiter:
+                    await rate_limiter.wait("dictionary")
                 scraped = await scraper.scrape_custom_dict(word, url_template, schema)
             except Exception as e:
                 log(f"Custom dictionary scrape failed: {e}")
@@ -959,6 +1058,8 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
             active_dict = preset if preset in ["jisho", "cambridge", "moedict", "dict_cc"] else base_lang
             log(f"Querying standard dictionary '{active_dict}' for '{word}'...")
             try:
+                if rate_limiter:
+                    await rate_limiter.wait("dictionary")
                 if active_dict == "japanese" or active_dict == "jisho":
                     scraped = await scraper.scrape_jisho(
                         word,
@@ -986,6 +1087,8 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
         prompt_system = app_config["llm"]["system_prompt_vocab"]
         log(f"Querying local Ollama model '{getattr(llm_client, 'model', None)}' for nuance and examples...")
         try:
+            if rate_limiter:
+                await rate_limiter.wait("ollama")
             loop = asyncio.get_running_loop()
             llm_response = await loop.run_in_executor(
                 None, llm_client.generate_card_content, target_word, dictionary_llm_context(scraped, ocr_text), base_lang.capitalize(), translation_lang, prompt_system
@@ -1002,6 +1105,8 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
         prompt_system = app_config["llm"]["system_prompt_grammar"]
         log(f"Querying local Ollama model '{getattr(llm_client, 'model', None)}' for grammar explanation...")
         try:
+            if rate_limiter:
+                await rate_limiter.wait("ollama")
             loop = asyncio.get_running_loop()
             llm_response = await loop.run_in_executor(
                 None, llm_client.generate_grammar_content, word, translation_lang, prompt_system
@@ -1016,6 +1121,8 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
                 "examples": []
             }
 
+    if rate_limiter:
+        await rate_limiter.wait("kanji")
     kanji_construction = await fetch_kanji_construction_if_needed(
         scraped.get("word") if scraped.get("word") else word,
         scraper, app_config, log_cb, llm_client
@@ -1035,8 +1142,10 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
                 break
         suffix = " ".join(str(term) for term in visual_terms[:3])
 
-    if classification == "dictionary" or (classification == "No Image" and enabled_for_empty):
+    if (classification == "dictionary" or (classification == "No Image" and enabled_for_empty)) and not note_info.get("_linguist_skip_web_image"):
         log(f"Card has dictionary screenshot or no image. Fetching illustrative image from internet for '{word}'...")
+        if rate_limiter:
+            await rate_limiter.wait("image")
         new_image_b64, new_image_filename = await fetch_web_image(word, log_cb, suffix)
         if new_image_b64 and new_image_filename:
             try:
@@ -1046,9 +1155,13 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
             except Exception as e:
                 log(f"Failed to cache web image: {e}")
 
-    audio_b64 = None
-    audio_filename = ""
-    if not is_grammar:
+    legacy_audio_assets = list(note_info.get("_linguist_audio_assets") or [])
+    audio_b64 = legacy_audio_assets[0].get("b64") if legacy_audio_assets else None
+    audio_filename = legacy_audio_assets[0].get("filename", "") if legacy_audio_assets else ""
+    audio_assets = legacy_audio_assets
+    if not is_grammar and not legacy_audio_assets:
+        if rate_limiter:
+            await rate_limiter.wait("tts")
         audio_b64, audio_src = await fetch_audio_base64_if_any(target_word, base_lang, scraped, log_cb)
         if audio_b64:
             audio_filename = indexed_media_filename(
@@ -1060,6 +1173,11 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
                 log(f"Cached audio as '{audio_filename}'.")
             except Exception as e:
                 log(f"Failed to cache audio: {e}")
+            audio_assets = [{
+                "filename": audio_filename,
+                "b64": audio_b64,
+                "reading": str(scraped.get("reading") or ""),
+            }]
 
     return {
         "word": word,
@@ -1069,14 +1187,118 @@ async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note
         "ocr_text": ocr_text,
         "classification": classification,
         "classification_result": classification_result,
+        "classification_results": classification_results,
         "scraped": scraped,
         "llm_response": llm_response,
         "kanji_construction": kanji_construction,
         "new_image_b64": new_image_b64,
         "new_image_filename": new_image_filename,
         "audio_b64": audio_b64,
-        "audio_filename": audio_filename
+        "audio_filename": audio_filename,
+        "audio_assets": audio_assets,
     }
+
+
+async def process_legacy_card(anki_client, ocr_engine, scraper, app_config, note_info, is_grammar=False, log_cb=None, llm_client=None, deck_key=None, rate_limiter=None) -> dict:
+    """Modernize one legacy note, splitting only true multi-expression fields.
+
+    OCR is performed once. Each expression still receives independent
+    dictionary, LLM, Kanji, image, and audio treatment. Existing audio tracks
+    are assigned by filename (then by order), while a single expression keeps
+    every pronunciation track on the same managed note.
+    """
+    note_fields = note_info.get("fields") or {}
+    lang_key = deck_key
+    if not lang_key:
+        note_deck = note_info.get("deckName", "")
+        lang_key = next(
+            (key for key, cfg in app_config.get("decks", {}).items()
+             if cfg.get("deck_name") == note_deck),
+            "japanese_vocab",
+        )
+    word_field = app_config.get("decks", {}).get(lang_key, {}).get("fields", {}).get("expression", "Word")
+    raw_word = str((note_fields.get(word_field) or {}).get("value", ""))
+    if not raw_word:
+        for candidate in ("Expression", "Word", "Front", "Vocabulary"):
+            raw_word = str((note_fields.get(candidate) or {}).get("value", ""))
+            if raw_word:
+                break
+    expressions = extract_legacy_expressions(raw_word, app_config)
+    if is_grammar or note_info.get("_linguist_disable_split"):
+        return await _process_legacy_card_single(
+            anki_client, ocr_engine, scraper, app_config, note_info, is_grammar,
+            log_cb, llm_client, deck_key, rate_limiter,
+        )
+
+    def log(message: str) -> None:
+        logging.info(message)
+        if log_cb:
+            log_cb(message)
+
+    audio_entries = extract_legacy_audio_entries(note_info)
+    for entry in audio_entries:
+        try:
+            # AnkiConnect is local and these payload lookups are normally a few
+            # milliseconds.  Keeping the tiny ordered read here also avoids a
+            # separate executor wake-up for every pronunciation track.
+            entry["b64"] = anki_client.retrieve_media_file(entry["filename"]) or ""
+        except Exception as exc:
+            entry["b64"] = ""
+            log(f"Could not retrieve legacy audio '{entry['filename']}': {exc}")
+
+    if len(expressions) <= 1:
+        child = copy.deepcopy(note_info)
+        child["_linguist_audio_assets"] = audio_entries
+        child["_linguist_disable_split"] = True
+        return await _process_legacy_card_single(
+            anki_client, ocr_engine, scraper, app_config, child, is_grammar,
+            log_cb, llm_client, deck_key, rate_limiter,
+        )
+
+    log(f"Detected {len(expressions)} expressions in one legacy note; preparing a split preview.")
+
+    def audio_for(expression: str, index: int) -> list[dict[str, str]]:
+        exact = [entry for entry in audio_entries if expression in entry.get("filename", "")]
+        if exact:
+            return exact
+        if len(audio_entries) == len(expressions):
+            return [audio_entries[index]]
+        return []
+
+    results: list[dict] = []
+    first: dict | None = None
+    for index, expression in enumerate(expressions):
+        child = copy.deepcopy(note_info)
+        child["_linguist_expression"] = expression
+        child["_linguist_disable_split"] = True
+        child["_linguist_audio_assets"] = audio_for(expression, index)
+        if first is not None:
+            child["_linguist_ocr_text"] = first.get("ocr_text", "")
+            # Avoid repeating OCR and media retrieval. Visual mnemonic images
+            # are shared; dictionary screenshots are replaced per expression.
+            for field in child.get("fields", {}).values():
+                if isinstance(field, dict) and "<img" in str(field.get("value", "")).lower():
+                    field["value"] = ""
+            if first.get("classification") not in {"dictionary", "No Image"}:
+                child["_linguist_skip_web_image"] = True
+        result = await _process_legacy_card_single(
+            anki_client, ocr_engine, scraper, app_config, child, is_grammar,
+            log_cb, llm_client, deck_key, rate_limiter,
+        )
+        if first is None:
+            first = result
+        elif first.get("classification") not in {"dictionary", "No Image"}:
+            for key in ("filename", "orig_filenames", "renamed_images", "classification",
+                        "classification_result", "classification_results"):
+                result[key] = copy.deepcopy(first.get(key))
+        result["split_index"] = index
+        result["split_count"] = len(expressions)
+        results.append(result)
+
+    combined = dict(results[0])
+    combined["split_results"] = results
+    combined["split_count"] = len(results)
+    return combined
 
 async def process_inject_item(scraper, llm_client, word_info: dict, lang_key: str, app_config: dict, log_cb=None) -> dict:
     """Enrich one explicit injection request for the canonical card builder.
@@ -1262,11 +1484,63 @@ def commit_card_modernization(
     if lang_key == "japanese_vocab":
         spec = japanese_vocab_template()
         deck_cfg = {**deck_cfg, "note_type": spec.model_name, "fields": spec.field_mapping()}
-    document = build_card_document(processed_data, lang_key, "modernize")
-    return commit_card_document(
-        anki_client, document, deck_cfg, "modernize", note_info,
-        media_before=media_before,
-    )
+    split_results = list(processed_data.get("split_results") or [])
+    if len(split_results) <= 1:
+        document = build_card_document(processed_data, lang_key, "modernize")
+        return commit_card_document(
+            anki_client, document, deck_cfg, "modernize", note_info,
+            media_before=media_before,
+        )
+
+    # Preserve the original note id (and therefore its existing scheduling)
+    # for the first expression. The remaining expressions become managed
+    # notes with the same legacy tags and all three managed card templates.
+    original_fields = {
+        str(name): str(field.get("value", "") if isinstance(field, dict) else field)
+        for name, field in (note_info.get("fields") or {}).items()
+    }
+    original_model = str(note_info.get("modelName") or "")
+    original_tags = list(note_info.get("tags") or [])
+    original_note_id = int(note_info.get("noteId") or 0)
+    created_note_ids: list[int] = []
+    try:
+        first_document = build_card_document(split_results[0], lang_key, "modernize")
+        result_note_id = commit_card_document(
+            anki_client, first_document, deck_cfg, "modernize", note_info,
+            media_before=media_before,
+        )
+        for split_result in split_results[1:]:
+            document = build_card_document(split_result, lang_key, "modernize")
+            document.tags = list(original_tags)
+            created = commit_card_document(
+                anki_client, document, deck_cfg, "inject",
+                media_before=media_before,
+            )
+            created_note_ids.append(int(created))
+        processed_data["created_note_ids"] = created_note_ids
+        return int(result_note_id)
+    except Exception:
+        if created_note_ids:
+            try:
+                anki_client.delete_notes(created_note_ids)
+            except Exception as cleanup_exc:
+                logging.warning("Could not delete partially created split notes: %s", cleanup_exc)
+        if original_note_id and original_model:
+            try:
+                anki_client.update_note_model(
+                    original_note_id, original_model, original_fields, original_tags,
+                )
+            except Exception as restore_exc:
+                logging.error("Could not restore original note after split failure: %s", restore_exc)
+        for filename, previous in (media_before or {}).items():
+            try:
+                if previous:
+                    anki_client.store_media_file(filename, previous)
+                else:
+                    anki_client.delete_media_file(filename)
+            except Exception as media_exc:
+                logging.warning("Could not restore split media '%s': %s", filename, media_exc)
+        raise
 
 
 def commit_card_injection(
@@ -1473,6 +1747,7 @@ class BottomRightPaletteModal(ModalScreen[str]):
 class SpacebarMenuModal(ModalScreen[str]):
     BINDINGS = [
         Binding("i", "choose_inject", "Manual Input", priority=True),
+        Binding("b", "choose_batch", "Batch Jobs", priority=True),
         Binding("s", "choose_settings", "Settings", priority=True),
         Binding("space", "choose_search", "Search", priority=True),
         Binding("escape", "cancel", "Cancel", priority=True),
@@ -1485,6 +1760,7 @@ class SpacebarMenuModal(ModalScreen[str]):
         with Vertical(id="modal-bottom-right-palette"):
             yield Label("[bold accent]Bridge Palette Menu[/]", id="modal-title")
             yield Label("[bold]i[/] - Manual Input")
+            yield Label("[bold]b[/] - Batch Modernization Jobs")
             yield Label("[bold]s[/] - Settings")
             yield Label("[bold]space[/] - Universal Pane Search")
 
@@ -1496,6 +1772,9 @@ class SpacebarMenuModal(ModalScreen[str]):
 
     def action_choose_settings(self) -> None:
         self.dismiss("settings")
+
+    def action_choose_batch(self) -> None:
+        self.dismiss("batch")
 
     def action_choose_search(self) -> None:
         self.dismiss("search")

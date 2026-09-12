@@ -28,6 +28,8 @@ from linguist_anki_bridge.tui.screens import (
     LogViewerModal, UniversalSearchModal, SnapshotManagementScreen
 )
 from linguist_anki_bridge.snapshots import SnapshotManager
+from linguist_anki_bridge.batch_jobs import BatchJobStore, BatchItemSeed, ServiceRateLimiter
+from linguist_anki_bridge.tui.batch_screen import BatchJobSelectorScreen, BatchManagementScreen
 
 def get_log_days() -> list[tuple[str, Path]]:
     log_dir = Path.home() / ".config" / "linguist-anki-bridge"
@@ -245,6 +247,7 @@ class AnkiBridgeApp(App):
         ("4", "focus_preview", "Preview Pane"),
         ("5", "focus_log", "Log Pane"),
         ("space", "open_space_menu", "Palette Menu"),
+        ("b", "manage_batch_jobs", "Batch Jobs"),
     ]
 
     def __init__(self, theme=None, debug=False):
@@ -264,6 +267,7 @@ class AnkiBridgeApp(App):
         self.selected_decks = set()  # Set of checked deck keys
         self.queue_items = []
         self.active_row_idx = None
+        self.preview_split_index = 0
         self.processed_cache = {} # key: noteId (or stable injection id) -> processed source data
         self.deck_queues = {}     # key: lang_key -> list of queue items
         self.preview_task = None
@@ -282,11 +286,40 @@ class AnkiBridgeApp(App):
         self._inject_sequence = 0
         self._manual_queue_view = False
         self.snapshot_manager = SnapshotManager()
+        self.batch_store = BatchJobStore()
+        self._active_batch_job: str | None = None
 
     def cache_key_for(self, item: dict, row_idx: int):
         deck_key = item.get("deck_key") or item.get("language") or self.active_deck_key
         item_id = item.get("note_id") if item.get("type") == "modernize" else item.get("inject_id", item.get("ingest_id", row_idx))
         return deck_key, item_id
+
+    def preview_result(self, processed: dict | None) -> dict | None:
+        """Return the split variant currently selected in Preview [4]."""
+        if not processed:
+            return processed
+        variants = list(processed.get("split_results") or [])
+        if not variants:
+            self.preview_split_index = 0
+            return processed
+        self.preview_split_index = max(0, min(self.preview_split_index, len(variants) - 1))
+        return variants[self.preview_split_index]
+
+    def action_next_preview_split(self) -> None:
+        if self._focused_pane_id() != "panel-preview" or self.active_row_idx is None:
+            return
+        item = self.queue_items[self.active_row_idx]
+        root = self.processed_cache.get(self.cache_key_for(item, self.active_row_idx)) or {}
+        variants = root.get("split_results") or []
+        if variants:
+            self.preview_split_index = min(len(variants) - 1, self.preview_split_index + 1)
+            self.update_details()
+
+    def action_previous_preview_split(self) -> None:
+        if self._focused_pane_id() != "panel-preview" or self.active_row_idx is None:
+            return
+        self.preview_split_index = max(0, self.preview_split_index - 1)
+        self.update_details()
 
     def normalize_deck_key(self, value: str, default: str | None = None) -> str | None:
         key = (value or default or "").strip().lower().replace(" ", "_")
@@ -386,6 +419,17 @@ class AnkiBridgeApp(App):
             self.push_screen(LoadingScreen(self))
 
         self.update_details()
+
+    def on_unmount(self) -> None:
+        # Persist an explicit resumable state before Textual cancels workers.
+        if self._active_batch_job:
+            job = self.batch_store.get_job(self._active_batch_job)
+            if job and job.get("status") in {"running", "pausing"}:
+                self.batch_store.set_job_status(
+                    self._active_batch_job, "paused",
+                    "Application closed; resume continues from the last durable card checkpoint.",
+                )
+        self.batch_store.close()
 
     def on_setup_completed(self) -> None:
         self.pop_screen()
@@ -617,6 +661,8 @@ class AnkiBridgeApp(App):
         elif event.data_table.id == "table-queue":
             row_idx = event.cursor_row
             if row_idx is not None and row_idx < len(self.queue_items):
+                if row_idx != self.active_row_idx:
+                    self.preview_split_index = 0
                 self.active_row_idx = row_idx
                 self.update_details()
 
@@ -670,10 +716,10 @@ class AnkiBridgeApp(App):
             columns.append("Mode")
         table.add_columns(*columns)
 
-        for idx in range(len(self.queue_items)):
-            item = self.queue_items[idx]
+        from bs4 import BeautifulSoup
+        rows = []
+        for idx, item in enumerate(self.queue_items):
             if item["type"] == "modernize":
-                from bs4 import BeautifulSoup
                 clean_word = BeautifulSoup(item["word"], "html.parser").get_text().strip()
                 values = [clean_word, item.get("filename", "") or "—"]
             else:
@@ -682,10 +728,12 @@ class AnkiBridgeApp(App):
                 values = [item["word"], media]
             if self._manual_queue_view:
                 values.append("Modernize" if item["type"] == "modernize" else "Inject")
-            table.add_row(*values)
-
             if item.get("selected", False):
-                self.update_row_selection_visuals(idx, True)
+                values = [f"[green]{value}[/]" for value in values]
+            rows.append(values)
+        # One batched mutation avoids one Textual layout/message cycle per
+        # note when Cards [3] contains an entire large deck.
+        table.add_rows(rows)
 
     # --- ACTIONS & OPERATIONS ---
     def action_toggle_dry_run(self) -> None:
@@ -751,6 +799,7 @@ class AnkiBridgeApp(App):
                 f"[bold yellow]● Auto-scanning deck: '{deck_name}' for legacy cards...[/]\n\n"
                 "Querying local AnkiConnect instance to retrieve note listings. This may take a moment."
             )
+            preview.update_image_classification("")
             preview.update_dict_scrape("")
             preview.update_kanji_scrape("")
         except Exception:
@@ -759,31 +808,36 @@ class AnkiBridgeApp(App):
         try:
             loop = asyncio.get_running_loop()
             note_ids = await loop.run_in_executor(None, self.anki.find_notes, f"deck:\"{deck_name}\"")
-            notes = await loop.run_in_executor(None, self.anki.get_notes_info, note_ids)
+            notes = []
+            # Bounded AnkiConnect payloads keep large decks responsive and avoid
+            # HTTP/parser spikes while still loading every note in the deck.
+            for offset in range(0, len(note_ids), 250):
+                notes.extend(await loop.run_in_executor(
+                    None, self.anki.get_notes_info, note_ids[offset:offset + 250]
+                ))
 
             found_items = []
 
             word_field = deck_cfg.get("fields", {}).get("expression", "Word")
             for note in notes:
                 img_file = self.note_image_filename(note, field_img)
-                if img_file:
-                    found_items.append({
-                        "type": "modernize",
-                        "deck_key": lang_key,
-                        "note": note,
-                        "word": self.note_expression_value(note, word_field),
-                        "status": "Scanned",
-                        "note_id": note["noteId"],
-                        "filename": img_file,
-                        "selected": False  # Default to deselected!
-                    })
+                found_items.append({
+                    "type": "modernize",
+                    "deck_key": lang_key,
+                    "note": note,
+                    "word": self.note_expression_value(note, word_field),
+                    "status": "Scanned",
+                    "note_id": note["noteId"],
+                    "filename": img_file or "",
+                    "selected": False  # Default to deselected!
+                })
 
             self.deck_queues[lang_key] = found_items
             if self.active_deck_key == lang_key:
                 self.queue_items = found_items
                 self.rebuild_queue_table()
 
-            self.log_action(f"Scan complete. Found {len(found_items)} legacy screenshot cards.")
+            self.log_action(f"Scan complete. Loaded all {len(found_items)} notes from '{deck_name}'.")
             self.update_details()
         except Exception as e:
             self.log_action(f"Scan failed: {e}")
@@ -799,6 +853,7 @@ class AnkiBridgeApp(App):
         try:
             preview = self.query_one("#panel-preview", PreviewPane)
             preview.update_comparison("[bold yellow]● Scanning selected decks for legacy cards...[/]")
+            preview.update_image_classification("")
             preview.update_dict_scrape("")
             preview.update_kanji_scrape("")
         except Exception:
@@ -820,22 +875,25 @@ class AnkiBridgeApp(App):
                 word_field = deck_cfg.get("fields", {}).get("expression", "Word")
                 async with semaphore:
                     note_ids = await loop.run_in_executor(None, self.anki.find_notes, f"deck:\"{deck_name}\"")
-                    notes = await loop.run_in_executor(None, self.anki.get_notes_info, note_ids)
+                    notes = []
+                    for offset in range(0, len(note_ids), 250):
+                        notes.extend(await loop.run_in_executor(
+                            None, self.anki.get_notes_info, note_ids[offset:offset + 250]
+                        ))
 
                 lk_items = []
                 for note in notes:
                     img_file = self.note_image_filename(note, field_img)
-                    if img_file:
-                        lk_items.append({
-                            "type": "modernize",
-                            "deck_key": lk,
-                            "note": note,
-                            "word": self.note_expression_value(note, word_field),
-                            "status": "Scanned",
-                            "note_id": note["noteId"],
-                            "filename": img_file,
-                            "selected": False
-                        })
+                    lk_items.append({
+                        "type": "modernize",
+                        "deck_key": lk,
+                        "note": note,
+                        "word": self.note_expression_value(note, word_field),
+                        "status": "Scanned",
+                        "note_id": note["noteId"],
+                        "filename": img_file or "",
+                        "selected": False
+                    })
                 return lk, lk_items
             except Exception as e:
                 self.log_action(f"Failed to scan {lk}: {e}")
@@ -903,7 +961,7 @@ class AnkiBridgeApp(App):
 
         # Get from processed cache
         cache_key = self.cache_key_for(item, self.active_row_idx)
-        res = self.processed_cache.get(cache_key)
+        res = self.preview_result(self.processed_cache.get(cache_key))
         if res:
             if res.get("filename") and res.get("filename") not in filenames:
                 filenames.append(res.get("filename"))
@@ -931,14 +989,15 @@ class AnkiBridgeApp(App):
         filenames = []
         import re
         if audio_val:
-            match = re.search(r"\[sound:([^\]]+)\]", audio_val)
-            if match:
-                filenames.append(match.group(1))
+            filenames.extend(re.findall(r"\[sound:([^\]]+)\]", audio_val))
 
         # Get from processed cache
         cache_key = self.cache_key_for(item, self.active_row_idx)
-        res = self.processed_cache.get(cache_key)
+        res = self.preview_result(self.processed_cache.get(cache_key))
         if res:
+            for audio in res.get("audio_assets") or []:
+                if audio.get("filename") and audio["filename"] not in filenames:
+                    filenames.append(audio["filename"])
             if res.get("audio_filename") and res.get("audio_filename") not in filenames:
                 filenames.append(res.get("audio_filename"))
 
@@ -1241,12 +1300,17 @@ class AnkiBridgeApp(App):
             value = str(field.get("value", "") if isinstance(field, dict) else field)
             names.update(re.findall(r"<img[^>]+src=[\"']([^\"']+)", value, flags=re.IGNORECASE))
             names.update(re.findall(r"\[sound:([^\]]+)\]", value))
-        for key in ("filename", "new_image_filename", "audio_filename"):
-            if processed.get(key):
-                names.add(str(processed[key]))
-        for image in processed.get("renamed_images") or []:
-            if isinstance(image, dict) and image.get("new_name"):
-                names.add(str(image["new_name"]))
+        variants = list(processed.get("split_results") or [processed])
+        for variant in variants:
+            for key in ("filename", "new_image_filename", "audio_filename"):
+                if variant.get(key):
+                    names.add(str(variant[key]))
+            for image in variant.get("renamed_images") or []:
+                if isinstance(image, dict) and image.get("new_name"):
+                    names.add(str(image["new_name"]))
+            for audio in variant.get("audio_assets") or []:
+                if isinstance(audio, dict) and audio.get("filename"):
+                    names.add(str(audio["filename"]))
         return {
             name for name in names
             if name and not name.startswith(("http://", "https://", "data:"))
@@ -1394,7 +1458,11 @@ class AnkiBridgeApp(App):
                     item["status"] = "DryRun" if dry_run else "Injected"
                 await loop.run_in_executor(
                     None,
-                    lambda: self.snapshot_manager.finalize(snapshot_id, result_note_id=result_note_id),
+                    lambda: self.snapshot_manager.finalize(
+                        snapshot_id,
+                        result_note_id=result_note_id,
+                        created_note_ids=processed.get("created_note_ids") or [],
+                    ),
                 )
 
                 item["selected"] = False
@@ -1423,6 +1491,7 @@ class AnkiBridgeApp(App):
 
         # 1. Status Panel Focused (Show overall configuration details)
         if focused.id == "table-status":
+            preview.update_title()
             import shutil
             import subprocess
             active_model = self.config_manager.config["llm"]["model"] or "None"
@@ -1466,6 +1535,7 @@ class AnkiBridgeApp(App):
             else:
                 markup = f"[bold accent]DRY RUN MODE[/]\n-------------------------\n● [bold]Status[/]: {dry_run}\n"
             preview.update_comparison(markup)
+            preview.update_image_classification("")
             preview.update_dict_scrape("")
             preview.update_llm("")
             preview.update_kanji_scrape("")
@@ -1476,6 +1546,7 @@ class AnkiBridgeApp(App):
         if self.queue_items:
             if self.active_row_idx is None or self.active_row_idx >= len(self.queue_items):
                 preview.update_comparison("[bold]Select an item in the queue to preview.[/]")
+                preview.update_image_classification("")
                 preview.update_dict_scrape("")
                 preview.update_llm("")
                 preview.update_kanji_scrape("")
@@ -1483,7 +1554,13 @@ class AnkiBridgeApp(App):
 
             item = self.queue_items[self.active_row_idx]
             cache_key = self.cache_key_for(item, self.active_row_idx)
-            res = self.processed_cache.get(cache_key)
+            root_res = self.processed_cache.get(cache_key)
+            variants = list((root_res or {}).get("split_results") or [])
+            res = self.preview_result(root_res)
+            preview.update_title(
+                self.preview_split_index + 1 if variants else 0,
+                len(variants),
+            )
 
             if item["type"] == "modernize":
                 item_deck_key = item.get("deck_key", self.active_deck_key)
@@ -1506,21 +1583,41 @@ class AnkiBridgeApp(App):
 
             if res:
                 scraped = res.get("scraped")
-                classification = res.get("classification_result") or {}
-                classification_markup = ""
-                if classification:
-                    state = res.get("classification", "uncertain")
-                    probability = float(classification.get("probability", 0.5))
-                    prompt = "\n[bold yellow]Press x to confirm this image class.[/]" if state == "uncertain" else ""
-                    classification_markup = (
-                        "[bold accent]IMAGE CLASSIFICATION[/]\n-------------------------\n"
-                        f"● [bold]Result[/]: {state}\n"
-                        f"● [bold]Dictionary probability[/]: {probability:.0%}\n"
-                        f"● [bold]Evidence[/]: {classification.get('reason', '')}\n"
-                        f"● [bold]Source[/]: {classification.get('source', '')}{prompt}\n\n"
-                        "─────────────────────────\n\n"
+                classifications = res.get("classification_results") or []
+                if not classifications and res.get("classification_result"):
+                    classifications = [{
+                        **res["classification_result"],
+                        "filename": res.get("filename", "Image 1"),
+                        "classification": res.get("classification", "uncertain"),
+                    }]
+                classification_lines = [
+                    "[bold accent]IMAGE CLASSIFICATION[/]", "-------------------------"
+                ]
+                for image_index, image_result in enumerate(classifications, 1):
+                    if image_index > 1:
+                        classification_lines.extend(("", "· · · · · · · · · · · · ·"))
+                    state = image_result.get("classification", "uncertain")
+                    probability = float(image_result.get("probability", 0.5))
+                    classification_lines.extend((
+                        f"[bold]Image {image_index}: {image_result.get('filename', 'Unknown image')}[/]",
+                        f"● [bold]Result[/]: {state}",
+                        f"● [bold]Dictionary probability[/]: {probability:.0%}",
+                        f"● [bold]Evidence[/]: {image_result.get('reason', '')}",
+                        f"● [bold]Source[/]: {image_result.get('source', '')}",
+                    ))
+                    ocr_value = str(image_result.get("ocr_text", "") or "").strip()
+                    classification_lines.append(
+                        f"● [bold]OCR[/]: {ocr_value if ocr_value else '(No text extracted)'}"
                     )
-                preview.update_dict_scrape(classification_markup + dictionary_detail_markup(scraped or {}))
+                    if image_result.get("needs_confirmation") or state == "uncertain":
+                        classification_lines.append(
+                            "[bold yellow]Near the decision boundary. Press x to correct if needed; "
+                            "otherwise the automatic result above is used.[/]"
+                        )
+                if len(classification_lines) == 2:
+                    classification_lines.append("(No images to classify)")
+                preview.update_image_classification("\n".join(classification_lines))
+                preview.update_dict_scrape(dictionary_detail_markup(scraped or {}))
                 preview.update_llm(llm_detail_markup(res))
                 kanji_html = res.get("kanji_construction", "")
                 if res.get("kanji_override_markdown") is not None:
@@ -1533,15 +1630,18 @@ class AnkiBridgeApp(App):
                     kanji_markup = "[bold accent]KANJI CONSTRUCTION SCRAPE[/]\n-------------------------\n(No Kanji details extracted)"
                 preview.update_kanji_scrape(kanji_markup)
             else:
+                preview.update_image_classification("[bold accent]IMAGE CLASSIFICATION[/]\n-------------------------\n(Awaiting image analysis...)")
                 preview.update_dict_scrape("[bold accent]DICTIONARY SCRAPE DETAILS[/]\n-------------------------\n(Awaiting dictionary lookup...)")
                 preview.update_llm("[bold accent]LLM GENERATED CONTENT[/]\n-------------------------\n(Awaiting LLM generation...)")
                 preview.update_kanji_scrape("[bold accent]KANJI CONSTRUCTION SCRAPE[/]\n-------------------------\n(Awaiting Kanji construction lookup...)")
 
         # If queue is empty, and Decks is focused, show Deck mappings details
         elif focused.id == "list-decks":
+            preview.update_title()
             deck_cfg = self.config_manager.config["decks"].get(self.active_deck_key)
             if not deck_cfg:
                 preview.update_comparison("[red]Unknown deck mapping.[/]")
+                preview.update_image_classification("")
                 preview.update_dict_scrape("")
                 preview.update_kanji_scrape("")
                 return
@@ -1567,14 +1667,17 @@ class AnkiBridgeApp(App):
                 f"  - Press [bold]b[/] to create a backup export (.apkg) in your backup directory"
             )
             preview.update_comparison(markup)
+            preview.update_image_classification("")
             preview.update_dict_scrape("")
             preview.update_kanji_scrape("")
 
         else:
+            preview.update_title()
             preview.update_comparison(
                 "[bold]Queue is currently empty.[/]\n\n"
                 "Select a mapped deck to scan its cards, or open [bold]Manual Input[/] from the Space menu to stage one or more expressions."
             )
+            preview.update_image_classification("")
             preview.update_dict_scrape("")
             preview.update_kanji_scrape("")
 
@@ -1729,8 +1832,12 @@ class AnkiBridgeApp(App):
                 choices.append(("Play Current Anki Audio", f"play:{match.group(1)}"))
 
         cache_key = self.cache_key_for(item, self.active_row_idx)
-        res = self.processed_cache.get(cache_key)
-        if res and res.get("audio_filename"):
+        res = self.preview_result(self.processed_cache.get(cache_key))
+        for index, audio in enumerate((res or {}).get("audio_assets") or [], 1):
+            if audio.get("filename"):
+                label = audio.get("reading") or f"Track {index}"
+                choices.append((f"Play Proposed Audio — {label}", f"play:{audio['filename']}"))
+        if res and res.get("audio_filename") and not res.get("audio_assets"):
             choices.append(("Play Generated/TTS Audio", f"play:{res['audio_filename']}"))
 
         if not choices:
@@ -1760,10 +1867,34 @@ class AnkiBridgeApp(App):
             self.notify("No card selected.", severity="warning")
             return
         item = self.queue_items[self.active_row_idx]
-        result = self.processed_cache.get(self.cache_key_for(item, self.active_row_idx))
-        if not result or not result.get("classification_result"):
+        result = self.preview_result(
+            self.processed_cache.get(self.cache_key_for(item, self.active_row_idx))
+        )
+        if not result or not (result.get("classification_results") or result.get("classification_result")):
             self.notify("Process the card preview before classifying its image.", severity="warning")
             return
+        classifications = result.get("classification_results") or [result.get("classification_result")]
+        if len(classifications) > 1:
+            choices = [
+                (f"Image {index + 1}: {entry.get('filename', 'Unknown image')}", str(index))
+                for index, entry in enumerate(classifications)
+            ]
+            self.push_screen(
+                BottomRightPaletteModal("Select Image to Classify", choices),
+                self.on_classification_image_selected,
+            )
+            return
+        self._classification_target_index = 0
+        self._open_image_classification_choices()
+
+    def on_classification_image_selected(self, index: str) -> None:
+        try:
+            self._classification_target_index = int(index)
+        except (TypeError, ValueError):
+            return
+        self._open_image_classification_choices()
+
+    def _open_image_classification_choices(self) -> None:
         self.push_screen(
             BottomRightPaletteModal(
                 "Confirm Image Class",
@@ -1776,23 +1907,52 @@ class AnkiBridgeApp(App):
         if classification not in ("dictionary", "visual_recall") or self.active_row_idx is None:
             return
         item = self.queue_items[self.active_row_idx]
-        result = self.processed_cache.get(self.cache_key_for(item, self.active_row_idx))
+        result = self.preview_result(
+            self.processed_cache.get(self.cache_key_for(item, self.active_row_idx))
+        )
         if not result:
             return
-        image = next((entry.get("b64") for entry in result.get("renamed_images", []) if entry.get("b64")), None)
+        classifications = result.get("classification_results") or [result.get("classification_result", {})]
+        target_index = min(
+            max(0, getattr(self, "_classification_target_index", 0)),
+            max(0, len(classifications) - 1),
+        )
+        target = classifications[target_index]
+        target_filename = target.get("filename")
+        image_entry = next(
+            (entry for entry in result.get("renamed_images", [])
+             if entry.get("original_name") == target_filename),
+            None,
+        )
+        image = (image_entry or {}).get("b64")
         if image:
             try:
-                self.ocr.record_classification_feedback(image, result.get("classification_result", {}), classification)
+                self.ocr.record_classification_feedback(image, target, classification)
             except Exception as exc:
                 self.log_action(f"Could not store image classification feedback: {exc}")
-        result["classification"] = classification
-        result["classification_result"] = {
-            **result.get("classification_result", {}),
+        updated = {
+            **target,
+            "classification": classification,
             "source": "user-confirmed",
             "reason": f"Explicitly confirmed as {classification}",
             "probability": 1.0 if classification == "dictionary" else 0.0,
+            "needs_confirmation": False,
         }
-        if classification == "dictionary" and not result.get("new_image_b64"):
+        classifications[target_index] = updated
+        result["classification_results"] = classifications
+        result["classification_result"] = classifications[0]
+        if image_entry is not None:
+            image_entry["classification"] = classification
+        states = [entry.get("classification", "uncertain") for entry in classifications]
+        if "uncertain" in states:
+            result["classification"] = "uncertain"
+        elif states and all(state == "dictionary" for state in states):
+            result["classification"] = "dictionary"
+        elif "dictionary" in states:
+            result["classification"] = "mixed"
+        else:
+            result["classification"] = "visual_recall"
+        if result["classification"] == "dictionary" and not result.get("new_image_b64"):
             self.notify(
                 "Confirmed. No replacement image is cached, so the original will be preserved safely.",
                 severity="warning",
@@ -1807,7 +1967,7 @@ class AnkiBridgeApp(App):
 
         item = self.queue_items[self.active_row_idx]
         cache_key = self.cache_key_for(item, self.active_row_idx)
-        res = self.processed_cache.get(cache_key)
+        res = self.preview_result(self.processed_cache.get(cache_key))
 
         filenames = []
         if set_key == "old":
@@ -1831,8 +1991,8 @@ class AnkiBridgeApp(App):
                 # Renamed originals remain useful for visual-recall cards, but
                 # are not a proposed image when they were classified as a
                 # dictionary screenshot.
-                if res.get("classification") != "dictionary":
-                    for img in res.get("renamed_images", []):
+                for img in res.get("renamed_images", []):
+                    if img.get("classification", "uncertain") != "dictionary":
                         filenames.append(img["new_name"])
                 if res.get("new_image_filename"):
                     filenames.append(res["new_image_filename"])
@@ -1865,6 +2025,375 @@ class AnkiBridgeApp(App):
         word = BeautifulSoup(str(item.get("word", "")), "html.parser").get_text().strip()
         self.push_screen(SnapshotManagementScreen(self.snapshot_manager, self.anki, word))
 
+    def action_manage_batch_jobs(self) -> None:
+        """Open the durable job control plane."""
+        self.push_screen(BatchManagementScreen(self.batch_store))
+
+    @staticmethod
+    def _anki_query_value(value: str) -> str:
+        return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+    async def open_batch_job_selector(self) -> None:
+        """Load selector metadata without blocking the Textual event loop."""
+        mapped = [
+            (f"{cfg.get('deck_name')}  [{key}]", key)
+            for key, cfg in self.config_manager.config.get("decks", {}).items()
+            if cfg.get("deck_name")
+        ]
+        if not mapped:
+            self.notify("Map at least one deck in Settings before creating a batch.", severity="error")
+            return
+        self.notify("Loading Anki note types, card templates, and tags…")
+        loop = asyncio.get_running_loop()
+        try:
+            models, tags = await asyncio.gather(
+                loop.run_in_executor(None, self.anki.get_models),
+                loop.run_in_executor(None, self.anki.get_tags),
+            )
+        except Exception as exc:
+            self.notify(f"Could not load Anki selector metadata: {exc}", severity="error")
+            return
+        model_names = sorted(map(str, models or []))
+
+        async def load_templates(model_name: str) -> dict:
+            try:
+                return await loop.run_in_executor(None, self.anki.get_model_templates, model_name)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "Could not load card templates for %s: %s", model_name, exc
+                )
+                return {}
+
+        template_maps = await asyncio.gather(*(load_templates(name) for name in model_names))
+        template_names = sorted({str(name) for mapping in template_maps for name in mapping})
+        active = self.active_deck_key if any(value == self.active_deck_key for _, value in mapped) else mapped[0][1]
+        self.push_screen(
+            BatchJobSelectorScreen(mapped, model_names, template_names, sorted(map(str, tags or [])), active),
+            self._batch_selector_closed,
+        )
+
+    def _batch_selector_closed(self, selection: dict | None) -> None:
+        if selection:
+            self.run_worker(self._schedule_selected_batch(selection), exclusive=False)
+
+    async def _schedule_selected_batch(self, selection: dict) -> None:
+        try:
+            job_id = await self.create_modernization_job_from_selection(selection)
+            self.notify(f"Scheduled {job_id}.")
+            screen = self.screen
+            if isinstance(screen, BatchManagementScreen):
+                screen.selected_job_id = job_id
+                screen.refresh_data(force=True)
+        except Exception as exc:
+            self.notify(f"Could not create batch: {exc}", severity="error")
+
+    def _modernization_selection_query(self, selection: dict) -> tuple[str, dict]:
+        deck_key = str(selection.get("deck_key") or self.active_deck_key)
+        deck_cfg = self.config_manager.config.get("decks", {}).get(deck_key, {})
+        deck_name = str(deck_cfg.get("deck_name") or "")
+        if not deck_name:
+            raise RuntimeError(f"Deck mapping '{deck_key}' is not configured.")
+        terms = [f'deck:"{self._anki_query_value(deck_name)}"']
+        date_from_value = str(selection.get("date_from") or "").strip()
+        date_to_value = str(selection.get("date_to") or "").strip()
+        if date_from_value or date_to_value:
+            if not (date_from_value and date_to_value):
+                raise ValueError("Both From and To dates are required.")
+            date_from = datetime.date.fromisoformat(date_from_value)
+            date_to = datetime.date.fromisoformat(date_to_value)
+            today = datetime.date.today()
+            if date_from > date_to or date_to > today:
+                raise ValueError("The selected date range is invalid.")
+            # Anki's added:N is inclusive of today. Combining it with an
+            # exclusion gives an exact closed interval without downloading
+            # notes merely to inspect their timestamps.
+            terms.append(f"added:{(today - date_from).days + 1}")
+            if date_to < today:
+                terms.append(f"-added:{(today - date_to).days}")
+        if selection.get("model_name"):
+            terms.append(f'note:"{self._anki_query_value(selection["model_name"])}"')
+        if selection.get("card_template"):
+            terms.append(f'card:"{self._anki_query_value(selection["card_template"])}"')
+        terms.extend(f'tag:"{self._anki_query_value(tag)}"' for tag in selection.get("required_tags", []))
+        terms.extend(f'-tag:"{self._anki_query_value(tag)}"' for tag in selection.get("excluded_tags", []))
+        if selection.get("query"):
+            terms.append(f"({selection['query']})")
+        return " ".join(terms), {"deck_key": deck_key, "deck_name": deck_name, "deck_cfg": deck_cfg}
+
+    async def _modernization_selection_seeds(self, selection: dict) -> tuple[list[BatchItemSeed], dict]:
+        query, context = self._modernization_selection_query(selection)
+        loop = asyncio.get_running_loop()
+        note_ids = await loop.run_in_executor(None, self.anki.find_notes, query)
+        limit = max(0, int(selection.get("limit") or 0))
+        # Apply the limit after local predicates so it means "matching notes",
+        # not merely the first N Anki candidates.
+        notes: list[dict] = []
+        for offset in range(0, len(note_ids), 250):
+            chunk = await loop.run_in_executor(None, self.anki.get_notes_info, note_ids[offset:offset + 250])
+            notes.extend(chunk)
+
+        media_scope = selection.get("media_scope", "all")
+        managed_model = japanese_vocab_template().model_name
+        deck_cfg = context["deck_cfg"]
+        word_field = deck_cfg.get("fields", {}).get("expression", "Word")
+
+        def has_image(note: dict) -> bool:
+            return any(
+                "<img" in str((field or {}).get("value", "")).lower()
+                for field in (note.get("fields") or {}).values() if isinstance(field, dict)
+            )
+
+        seeds: list[BatchItemSeed] = []
+        for note in notes:
+            is_managed = str(note.get("modelName") or "") == managed_model
+            image_present = has_image(note)
+            if media_scope == "with" and not image_present:
+                continue
+            if media_scope == "without" and image_present:
+                continue
+            expression_field = "Expression" if is_managed else word_field
+            seeds.append(BatchItemSeed(
+                int(note["noteId"]), self.note_expression_value(note, expression_field)
+            ))
+            if limit and len(seeds) >= limit:
+                break
+        return seeds, context
+
+    async def count_modernization_selection(self, selection: dict) -> int:
+        if selection.get("media_scope", "all") == "all":
+            query, _ = self._modernization_selection_query(selection)
+            note_ids = await asyncio.get_running_loop().run_in_executor(None, self.anki.find_notes, query)
+            limit = max(0, int(selection.get("limit") or 0))
+            return min(len(note_ids), limit) if limit else len(note_ids)
+        seeds, _ = await self._modernization_selection_seeds(selection)
+        return len(seeds)
+
+    async def create_modernization_job_from_selection(self, selection: dict) -> str:
+        seeds, context = await self._modernization_selection_seeds(selection)
+        if not seeds:
+            raise RuntimeError("The selector matched no notes.")
+        settings = {
+            **self.config_manager.config.get("batch", {}),
+            "selection": {key: value for key, value in selection.items() if key != "deck_key"},
+        }
+        return await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: self.batch_store.create_job(
+                deck_key=context["deck_key"], deck_name=context["deck_name"], items=seeds,
+                dry_run=bool(self.config_manager.config.get("dry_run", True)), settings=settings,
+            ),
+        )
+
+    async def create_modernization_job(self, *, entire_deck: bool) -> str:
+        deck_key = self.active_deck_key
+        deck_cfg = self.config_manager.config.get("decks", {}).get(deck_key, {})
+        deck_name = str(deck_cfg.get("deck_name") or "")
+        if not deck_name:
+            raise RuntimeError("The active deck is not mapped.")
+
+        if entire_deck:
+            return await self.create_modernization_job_from_selection({
+                "deck_key": deck_key, "date_from": "", "date_to": "",
+                "model_name": "", "card_template": "",
+                "query": "", "required_tags": [], "excluded_tags": [],
+                "media_scope": "all", "limit": 0,
+            })
+        else:
+            seeds = [
+                BatchItemSeed(int(item["note_id"]), str(item.get("word", "")))
+                for item in self.queue_items if item.get("type") == "modernize" and item.get("note_id")
+            ]
+        settings = dict(self.config_manager.config.get("batch", {}))
+        return await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: self.batch_store.create_job(
+                deck_key=deck_key, deck_name=deck_name, items=seeds,
+                dry_run=bool(self.config_manager.config.get("dry_run", True)), settings=settings,
+            ),
+        )
+
+    def start_modernization_job(self, job_id: str) -> None:
+        if not self.batch_store.is_primary_runner:
+            self.notify("Another Linguist Anki Bridge process owns the batch runner.", severity="error")
+            return
+        if self._active_batch_job:
+            message = "This batch is already running." if self._active_batch_job == job_id else f"Batch {self._active_batch_job} is already running."
+            self.notify(message, severity="warning")
+            return
+        job = self.batch_store.get_job(job_id)
+        if not job or job.get("status") in {
+            "completed", "cancelled", "rolled_back", "rolling_back", "rollback_partial", "rollback_paused",
+        }:
+            self.notify("This job cannot be resumed in its current state.", severity="warning")
+            return
+        self._active_batch_job = job_id
+        self.run_worker(self._run_modernization_job(job_id), exclusive=False)
+        self.notify(f"Batch {job_id} started.")
+
+    def pause_modernization_job(self, job_id: str) -> None:
+        job = self.batch_store.get_job(job_id)
+        if job and job.get("status") == "running":
+            self.batch_store.set_job_status(job_id, "pausing")
+            self.notify("Pause requested; the current card will finish at a safe boundary.")
+
+    def cancel_modernization_job(self, job_id: str) -> None:
+        self.batch_store.cancel(job_id)
+        self.notify("Batch cancelled; an in-flight card may finish safely.")
+
+    async def _run_modernization_job(self, job_id: str) -> None:
+        job = self.batch_store.get_job(job_id)
+        if not job:
+            self._active_batch_job = None
+            return
+        settings = job.get("settings") or {}
+        limiter = ServiceRateLimiter(settings.get("service_intervals") or {})
+        max_attempts = int(settings.get("max_attempts", 3))
+        retry_backoff = float(settings.get("retry_backoff_seconds", 5.0))
+        commit_interval = float(settings.get("commit_interval_seconds", 0.25))
+        self.batch_store.set_job_status(job_id, "running")
+        self.log_action(f"Batch {job_id} started for {job['deck_name']}.")
+        try:
+            while True:
+                current = self.batch_store.get_job(job_id) or {}
+                if current.get("status") in {"cancelled", "failed"}:
+                    break
+                if current.get("status") == "pausing":
+                    self.batch_store.set_job_status(job_id, "paused")
+                    break
+
+                item = self.batch_store.claim_next(job_id)
+                if item is None:
+                    if self.batch_store.remaining(job_id) == 0:
+                        failed = sum(x.get("status") == "failed" for x in self.batch_store.list_items(job_id))
+                        self.batch_store.set_job_status(job_id, "completed" if not failed else "failed",
+                                                        "" if not failed else f"{failed} card(s) exhausted retries.")
+                        break
+                    await asyncio.sleep(0.5)
+                    continue
+
+                note = None
+                try:
+                    notes = await asyncio.get_running_loop().run_in_executor(
+                        None, self.anki.get_notes_info, [int(item["note_id"])]
+                    )
+                    if not notes:
+                        raise RuntimeError(f"Anki note {item['note_id']} no longer exists.")
+                    note = notes[0]
+                    if item["status"] == "processing":
+                        processed = await process_legacy_card(
+                            self.anki, self.ocr, self.scraper, self.config_manager.config, note,
+                            str(job["deck_key"]).endswith("grammar"), log_cb=self.log_action,
+                            llm_client=self.ollama, deck_key=job["deck_key"], rate_limiter=limiter,
+                        )
+                        await asyncio.get_running_loop().run_in_executor(
+                            None, self.batch_store.save_artifact, job_id, int(item["id"]), processed
+                        )
+                        if (self.batch_store.get_job(job_id) or {}).get("status") == "cancelled":
+                            self.batch_store.set_item(
+                                int(item["id"]), status="skipped",
+                                finished_at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                            )
+                        continue
+
+                    processed = self.batch_store.load_artifact(item)
+                    if not processed:
+                        self.batch_store.set_item(int(item["id"]), status="pending", artifact_path=None)
+                        continue
+
+                    queue_item = {
+                        "type": "modernize", "deck_key": job["deck_key"], "note": note,
+                        "note_id": item["note_id"], "word": item["word"],
+                    }
+                    snapshot_id = str(item.get("snapshot_id") or "")
+                    if snapshot_id:
+                        snapshot = self.snapshot_manager.get(snapshot_id) or {}
+                        media_before = snapshot.get("media_before") or {}
+                    else:
+                        snapshot_id, media_before = await self._create_card_snapshot(
+                            queue_item, processed, bool(job["dry_run"])
+                        )
+                        self.batch_store.set_item(int(item["id"]), snapshot_id=snapshot_id, status="committing")
+
+                    result_note_id = None
+                    if not job["dry_run"]:
+                        result_note_id = await asyncio.get_running_loop().run_in_executor(
+                            None, commit_card_modernization, self.anki, note, processed,
+                            job["deck_key"], self.config_manager.config, media_before,
+                        )
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, lambda: self.snapshot_manager.finalize(
+                            snapshot_id,
+                            result_note_id=result_note_id,
+                            created_note_ids=processed.get("created_note_ids") or [],
+                        )
+                    )
+                    self.batch_store.set_item(
+                        int(item["id"]), status="completed", result_note_id=result_note_id,
+                        last_error="", finished_at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                    )
+                    self.log_action(f"Batch {job_id}: committed '{item['word']}'.")
+                    if commit_interval > 0:
+                        await asyncio.sleep(commit_interval)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    latest = self.batch_store.get_item(int(item["id"])) or item
+                    will_retry = self.batch_store.retry_or_fail(latest, str(exc), max_attempts, retry_backoff)
+                    if not will_retry and latest.get("snapshot_id"):
+                        await asyncio.get_running_loop().run_in_executor(
+                            None, lambda: self.snapshot_manager.finalize(str(latest["snapshot_id"]), error=str(exc))
+                        )
+                    self.log_action(
+                        f"Batch {job_id}: '{item['word']}' failed ({'retry scheduled' if will_retry else 'retry limit reached'}): {exc}"
+                    )
+        finally:
+            self._active_batch_job = None
+            final = self.batch_store.get_job(job_id) or {}
+            self.log_action(f"Batch {job_id} stopped with state {final.get('status', 'unknown')}.")
+
+    def start_batch_rollback(self, job_id: str) -> None:
+        if not self.batch_store.is_primary_runner:
+            self.notify("Another Linguist Anki Bridge process owns the batch runner.", severity="error")
+            return
+        if self._active_batch_job:
+            self.notify("Pause the running batch before rollback.", severity="warning")
+            return
+        self._active_batch_job = job_id
+        self.run_worker(self._rollback_batch_job(job_id), exclusive=False)
+
+    async def _rollback_batch_job(self, job_id: str) -> None:
+        self.batch_store.set_job_status(job_id, "rolling_back")
+        failures = 0
+        try:
+            items = list(reversed(self.batch_store.list_items(job_id)))
+            for item in items:
+                if item.get("status") not in {"completed", "rollback_failed"} or not item.get("snapshot_id"):
+                    continue
+                if self.batch_store.later_change_exists(job_id, int(item["note_id"])):
+                    failures += 1
+                    self.batch_store.set_item(
+                        int(item["id"]), status="rollback_failed",
+                        last_error="A newer batch changed this note; automatic rollback was blocked.",
+                    )
+                    continue
+                try:
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self.snapshot_manager.revert, item["snapshot_id"], self.anki
+                    )
+                    self.batch_store.set_item(
+                        int(item["id"]), status="reverted", last_error="",
+                        finished_at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                    )
+                except Exception as exc:
+                    failures += 1
+                    self.batch_store.set_item(int(item["id"]), status="rollback_failed", last_error=str(exc))
+            self.batch_store.set_job_status(
+                job_id, "rollback_partial" if failures else "rolled_back",
+                f"{failures} card(s) could not be reverted." if failures else "",
+            )
+        finally:
+            self._active_batch_job = None
+
     def on_field_selected_for_edit(self, field_key: str) -> None:
         if not field_key:
             return
@@ -1878,7 +2407,8 @@ class AnkiBridgeApp(App):
 
         item = self.queue_items[self.active_row_idx]
         cache_key = self.cache_key_for(item, self.active_row_idx)
-        res = self.processed_cache.get(cache_key)
+        root_res = self.processed_cache.get(cache_key)
+        res = self.preview_result(root_res)
         if not res:
             self.notify("Card must be processed (Press 'p') before editing fields.", severity="warning")
             return
@@ -1916,11 +2446,13 @@ class AnkiBridgeApp(App):
 
         item = self.queue_items[self.active_row_idx]
         cache_key = self.cache_key_for(item, self.active_row_idx)
-        res = self.processed_cache.get(cache_key)
+        root_res = self.processed_cache.get(cache_key)
+        res = self.preview_result(root_res)
 
         if self.editing_field_key == "word":
             res["word"] = new_val.strip()
-            item["word"] = new_val.strip()
+            if not (root_res or {}).get("split_results"):
+                item["word"] = new_val.strip()
         elif self.editing_field_key == "meaning":
             res["meaning_override_markdown"] = new_val
             res["meaning_override_media"] = dict(self.editing_field_media)
@@ -2017,6 +2549,8 @@ class AnkiBridgeApp(App):
             self.call_after_refresh(self.action_inject_word)
         elif result == "settings":
             self.call_after_refresh(self.action_configure_setup)
+        elif result == "batch":
+            self.call_after_refresh(self.action_manage_batch_jobs)
         elif result == "search":
             self.call_after_refresh(self.action_universal_search)
 
@@ -2094,6 +2628,14 @@ class AnkiBridgeApp(App):
                         if r not in self.search_matches:
                             self.search_matches.append(r)
 
+            # The visible queue is a modernization subset, not the complete
+            # deck. Fall back to Anki so notes without detected image media are
+            # still discoverable from the Cards pane.
+            if not self.search_matches:
+                self.search_mode = False
+                self.run_worker(self._search_active_deck_notes(query))
+                return
+
         if self.search_matches:
             self.search_current_idx = 0
             self.jump_to_search_match()
@@ -2102,6 +2644,56 @@ class AnkiBridgeApp(App):
         else:
             self.notify(f"No matches found for '{query}'", severity="warning")
             self.search_mode = False
+
+    async def _search_active_deck_notes(self, query: str) -> None:
+        deck_cfg = self.config_manager.config.get("decks", {}).get(self.active_deck_key, {})
+        deck_name = deck_cfg.get("deck_name")
+        if not deck_name:
+            self.notify("The active deck is not mapped.", severity="warning")
+            return
+        self.notify(f"Searching all Anki notes in '{deck_name}'…", severity="information")
+        try:
+            loop = asyncio.get_running_loop()
+            notes = await loop.run_in_executor(
+                None, self.anki.search_notes_in_deck, deck_name, query,
+            )
+        except Exception as exc:
+            self.log_action(f"Anki card search failed: {exc}")
+            self.notify(f"Anki search failed: {exc}", severity="error")
+            return
+        if not notes:
+            self.notify(f"No Anki notes found for '{query}'.", severity="warning")
+            return
+
+        image_field = deck_cfg.get("fields", {}).get("meaning_image", "Picture")
+        word_field = deck_cfg.get("fields", {}).get("expression", "Word")
+        self.queue_items = [
+            {
+                "type": "modernize",
+                "deck_key": self.active_deck_key,
+                "note": note,
+                "word": self.note_expression_value(note, word_field),
+                "status": "Search result",
+                "note_id": note["noteId"],
+                "filename": self.note_image_filename(note, image_field),
+                "selected": False,
+            }
+            for note in notes
+        ]
+        self._manual_queue_view = False
+        self.active_row_idx = 0
+        self.rebuild_queue_table()
+        table = self.query_one("#table-queue", DataTable)
+        table.focus()
+        self.search_mode = True
+        self.search_query = query
+        self.search_target_widget = table
+        self.search_matches = list(range(len(self.queue_items)))
+        self.search_current_idx = 0
+        self.jump_to_search_match()
+        from linguist_anki_bridge.tui.screens import SearchNavigationScreen
+        self.push_screen(SearchNavigationScreen())
+        self.update_details()
 
     def jump_to_search_match(self) -> None:
         if not self.search_matches:

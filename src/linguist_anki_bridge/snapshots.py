@@ -86,6 +86,7 @@ class SnapshotManager:
             "processed": _compact(processed),
             "media_before": dict(media_before),
             "result_note_id": None,
+            "created_note_ids": [],
             "error": "",
         }
         with self._lock:
@@ -94,12 +95,16 @@ class SnapshotManager:
             self._save(snapshots)
         return snapshot_id
 
-    def finalize(self, snapshot_id: str, *, result_note_id: int | None = None, error: str = "") -> None:
+    def finalize(
+        self, snapshot_id: str, *, result_note_id: int | None = None,
+        created_note_ids: list[int] | None = None, error: str = "",
+    ) -> None:
         with self._lock:
             snapshots = self._load()
             for record in snapshots:
                 if record.get("id") == snapshot_id:
                     record["result_note_id"] = result_note_id
+                    record["created_note_ids"] = [int(value) for value in (created_note_ids or [])]
                     record["error"] = str(error or "")
                     if error:
                         record["status"] = "failed"
@@ -133,6 +138,12 @@ class SnapshotManager:
                 # Remove the reference before deleting media created for it.
                 anki_client.delete_notes([int(record["result_note_id"])])
 
+            created_note_ids = [int(value) for value in (record.get("created_note_ids") or [])]
+            if created_note_ids:
+                # These are the extra notes created by a split modernization;
+                # the original note id is restored separately below.
+                anki_client.delete_notes(created_note_ids)
+
             for filename, previous in (record.get("media_before") or {}).items():
                 if previous:
                     anki_client.store_media_file(filename, previous)
@@ -158,7 +169,8 @@ class SnapshotManager:
                     )
                 else:
                     anki_client.update_note_fields(note_id, original.get("fields") or {})
-                message = f"Restored note {original['note_id']} and its tracked media."
+                suffix = f" Deleted {len(created_note_ids)} split note(s)." if created_note_ids else ""
+                message = f"Restored note {original['note_id']} and its tracked media.{suffix}"
             elif record.get("result_note_id"):
                 message = f"Deleted injected note {record['result_note_id']} and restored its tracked media."
             else:

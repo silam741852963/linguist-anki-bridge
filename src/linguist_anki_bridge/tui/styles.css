@@ -67,6 +67,12 @@ Screen {
     padding: 1 2;
 }
 
+#details-image-classification {
+    height: auto;
+    border-bottom: solid $active-border;
+    padding: 1 2;
+}
+
 #details-logs {
     height: 1fr;
     background: $bg;
@@ -114,10 +120,18 @@ DataTable > .datatable--cursor {
 }
 
 /* Input Dialog / Popup Modals */
+#modal-dialog {
+    width: 88%;
+    height: 92%;
+    background: $bg;
+    border: double $accent;
+    padding: 1 2;
+}
+
 #modal-dialog-small {
     width: 50;
     height: 12;
-    background: $selection-bg;
+    background: $bg;
     border: double $accent;
     padding: 1 2;
     align: center middle;
@@ -145,7 +159,7 @@ DataTable > .datatable--cursor {
 #modal-dialog-list {
     width: 60;
     height: 20;
-    background: $selection-bg;
+    background: $bg;
     border: double $accent;
     padding: 1 2;
     align: center middle;
@@ -513,7 +527,9 @@ TabPane Switch {
 }
 
 ModalScreen {
-    background: rgba(0, 0, 0, 0.5);
+    /* The modal scrim is transparent: every popup owns one bordered, opaque
+       surface, so its background cannot visually spill outside that border. */
+    background: rgba(0, 0, 0, 0);
     align: center middle;
 }
 

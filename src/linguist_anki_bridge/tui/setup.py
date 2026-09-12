@@ -268,6 +268,15 @@ class ConfigScreen(Screen):
                             yield Select([("Enabled", True), ("Disabled", False)], value=self.config_manager.config.get("dry_run", True), allow_blank=False, id="select-dry-run")
                             yield Label("Backup Directory:")
                             yield Input(value=self.config_manager.config["anki"].get("backup_dir", ""), id="input-backup-dir")
+                            yield Label("[bold yellow]Batch Modernization[/]")
+                            yield Label("Maximum Attempts per Card:")
+                            yield Input(value=str(self.config_manager.config.get("batch", {}).get("max_attempts", 3)), id="input-batch-attempts")
+                            yield Label("Initial Retry Backoff (seconds; doubles per attempt):")
+                            yield Input(value=str(self.config_manager.config.get("batch", {}).get("retry_backoff_seconds", 5.0)), id="input-batch-backoff")
+                            yield Label("Minimum Interval Between Anki Commits (seconds):")
+                            yield Input(value=str(self.config_manager.config.get("batch", {}).get("commit_interval_seconds", 0.25)), id="input-batch-commit-interval")
+                            yield Label("Per-service Start Intervals JSON (seconds):")
+                            yield TextArea(json.dumps(self.config_manager.config.get("batch", {}).get("service_intervals", {}), indent=2), id="textarea-batch-rates")
 
                         with ScrollableContainer(id="settings-connections", classes="settings-section"):
                             yield Label("[bold accent]● CONNECTIONS & MODEL [2][/]", classes="pane-title")
@@ -530,6 +539,19 @@ class ConfigScreen(Screen):
         self.config_manager.config["llm"]["system_prompt_vocab"] = self.query_one("#textarea-prompt-vocab", TextArea).text.strip()
         self.config_manager.config["llm"]["system_prompt_grammar"] = self.query_one("#textarea-prompt-grammar", TextArea).text.strip()
         self.config_manager.config["dry_run"] = self.query_one("#select-dry-run", Select).value
+
+        batch_cfg = self.config_manager.config.setdefault("batch", {})
+        try:
+            batch_cfg["max_attempts"] = max(1, int(self.query_one("#input-batch-attempts", Input).value.strip()))
+            batch_cfg["retry_backoff_seconds"] = max(0.0, float(self.query_one("#input-batch-backoff", Input).value.strip()))
+            batch_cfg["commit_interval_seconds"] = max(0.0, float(self.query_one("#input-batch-commit-interval", Input).value.strip()))
+            rates = json.loads(self.query_one("#textarea-batch-rates", TextArea).text.strip() or "{}")
+            if not isinstance(rates, dict):
+                raise ValueError("service intervals must be a JSON object")
+            batch_cfg["service_intervals"] = {str(key): max(0.0, float(value)) for key, value in rates.items()}
+        except (TypeError, ValueError) as exc:
+            self.notify(f"Invalid batch scheduling setting: {exc}", severity="error")
+            return
 
         ocr_cfg = self.config_manager.config.setdefault("ocr", {})
         ocr_cfg["method"] = self.query_one("#input-ocr-method", Input).value.strip()

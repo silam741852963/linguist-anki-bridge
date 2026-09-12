@@ -218,8 +218,14 @@ class OllamaClient:
         rendered_system_prompt += (
             "\n\nMandatory vocabulary-generation boundary: the dictionary parsing is authoritative. "
             "Do not generate, summarize, translate, or rewrite definitions, readings, metadata, "
-            "related entries, or senses. Generate only a usage nuance for the exact target word "
-            "and example sentences. Return exactly the JSON keys 'nuances' and 'examples'."
+            "related entries, or senses. Generate only usage nuances for the exact target word "
+            "and example sentences. The raw OCR may contain dictionary screenshots: recover every "
+            "distinct usage nuance and every complete example for the exact target word from those "
+            "screenshots. Preserve target-language example sentences, but translate non-"
+            f"{translation_language} explanations and translations into {translation_language}. "
+            "If OCR provides fewer than three usable examples, generate enough additional natural "
+            "examples to reach three; never truncate a larger recovered set to three. Return exactly "
+            "the JSON keys 'nuances' and 'examples'."
         )
         user_prompt = (
             f"Target word: \"{word}\"\n"
@@ -233,7 +239,9 @@ class OllamaClient:
                 f"{context}\n"
                 "</context>\n"
                 "Use these inputs only to understand usage of the exact target word. Do not output "
-                "dictionary definitions or information for related entries.\n"
+                "dictionary definitions or information for related entries. For OCR sections marked "
+                "as dictionary images, include all recoverable examples and usage notes for the target "
+                f"word, translating their explanation/translation into {translation_language}.\n"
                 "Return only: {\"nuances\": \"...\", \"examples\": "
                 "[{\"sentence\": \"...\", \"translation\": \"...\"}]}\n"
             )
@@ -245,7 +253,6 @@ class OllamaClient:
                 "examples": {
                     "type": "array",
                     "minItems": 3,
-                    "maxItems": 3,
                     "items": {
                         "type": "object",
                         "properties": {
@@ -282,7 +289,10 @@ class OllamaClient:
             retry_payload = dict(payload)
             retry_payload["prompt"] = (
                 f"For the exact word {word}, use the dictionary parsing and OCR below only as context. "
-                f"Return JSON with a short usage nuance and three examples.\n{context}\n"
+                "Recover every distinct usage nuance and every complete OCR example for this word. "
+                f"Preserve source-language sentences and translate all translations into "
+                f"{translation_language}. Add natural examples only if needed to reach at least three; "
+                f"do not truncate a larger recovered set.\n{context}\n"
                 'Required shape: {"nuances":"...","examples":'
                 '[{"sentence":"...","translation":"..."}]}'
             )
