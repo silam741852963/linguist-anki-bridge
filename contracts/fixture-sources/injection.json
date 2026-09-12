@@ -1,0 +1,59 @@
+{
+  "mode": "inject",
+  "language_key": "japanese_vocab",
+  "processed_data": {
+    "word": "食べる",
+    "suggestion": "食べさせる",
+    "scraped": {
+      "found": true,
+      "word": "食べさせる",
+      "reading": "たべさせる",
+      "definition": "to make someone eat"
+    },
+    "llm_response": {
+      "nuances": "The causative form of 食べる.",
+      "examples": [
+        {
+          "sentence": "子どもに野菜を食べさせる。",
+          "translation": "I make the child eat vegetables."
+        }
+      ]
+    },
+    "audio_assets": [
+      {
+        "filename": "linguist-tabesaseru-a.mp3",
+        "b64": "YXVkaW8tYQ==",
+        "reading": "たべさせる"
+      },
+      {
+        "filename": "linguist-tabesaseru-b.mp3",
+        "b64": "YXVkaW8tYg==",
+        "reading": "たべさせる"
+      }
+    ],
+    "type_tag": "causative form",
+    "source_note": "Practice with a parent-child example.",
+    "kanji_construction": "食 · eat, food"
+  },
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "dictionary",
+        "label": "fixture dictionary",
+        "confidence_percent": 100
+      },
+      {
+        "source": "user",
+        "label": "source note",
+        "confidence_percent": null
+      }
+    ],
+    "audio": [
+      {
+        "source": "generated",
+        "label": "fixture audio",
+        "confidence_percent": 100
+      }
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "mode": "modernize",
+  "language_key": "japanese_vocab",
+  "processed_data": {
+    "word": "猫",
+    "meaning_override": "cat",
+    "renamed_images": [
+      {
+        "original_name": "dictionary.png",
+        "new_name": "linguist-neko-dictionary.jpg",
+        "b64": "ZGljdGlvbmFyeQ==",
+        "classification": "dictionary"
+      },
+      {
+        "original_name": "cat-photo.png",
+        "new_name": "linguist-neko-photo.jpg",
+        "b64": "cGhvdG8=",
+        "classification": "visual_recall"
+      }
+    ],
+    "issues": ["Dictionary screenshot removed; visual-recall photo retained."],
+    "type_tag": "animal"
+  },
+  "provenance": {
+    "meaning_image": [
+      {
+        "source": "original",
+        "label": "visual-recall photo",
+        "confidence_percent": 100
+      }
+    ],
+    "meaning_text": [
+      {
+        "source": "user",
+        "label": "fixture override",
+        "confidence_percent": null
+      }
+    ]
+  }
+}

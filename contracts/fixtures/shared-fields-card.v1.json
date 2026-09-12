@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "expression": "見る",
+  "values": {
+    "meaning_image": "",
+    "meaning_text": "to see",
+    "kanji_construction": "見 · see",
+    "audio": "みる [sound:linguist-miru.mp3]"
+  },
+  "media": [
+    {
+      "filename": "linguist-miru.mp3",
+      "data_base64": "YXVkaW8="
+    }
+  ],
+  "obsolete_media": [],
+  "issues": [],
+  "tags": [],
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "user",
+        "label": "fixture override",
+        "confidence_percent": null
+      }
+    ]
+  }
+}

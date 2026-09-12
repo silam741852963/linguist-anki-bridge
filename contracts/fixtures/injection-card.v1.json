@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "expression": "食べさせる",
+  "values": {
+    "meaning_image": "",
+    "meaning_text": "<section><div><b>たべさせる / 食べさせる</b></div><div style='margin-top:7px'>to make someone eat</div><div data-source='llm' style='margin-top:6px;font-style:italic;color:#888'><b>Nuance:</b> The causative form of 食べる.</div><div data-source='llm' style='margin-top:10px'><b>Examples:</b><div style='margin-top:5px'><div style='margin-bottom:4px'><b>1. 子どもに野菜を食べさせる。</b> — <span style='color:#666;font-size:.9em'>I make the child eat vegetables.</span></div></div></div></section><aside data-source='user' style='margin-top:12px;border-top:1px dashed #888;padding-top:8px'><div><b>Learning focus:</b> causative form</div><div><b>Personal context:</b> Practice with a parent-child example.</div></aside>",
+    "kanji_construction": "食 · eat, food",
+    "audio": "たべさせる [sound:linguist-tabesaseru-a.mp3]<br/>たべさせる [sound:linguist-tabesaseru-b.mp3]"
+  },
+  "media": [
+    {
+      "filename": "linguist-tabesaseru-a.mp3",
+      "data_base64": "YXVkaW8tYQ=="
+    },
+    {
+      "filename": "linguist-tabesaseru-b.mp3",
+      "data_base64": "YXVkaW8tYg=="
+    }
+  ],
+  "obsolete_media": [],
+  "issues": [],
+  "tags": [
+    "linguist-injected",
+    "linguist::causative_form"
+  ],
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "dictionary",
+        "label": "fixture dictionary",
+        "confidence_percent": 100
+      },
+      {
+        "source": "user",
+        "label": "source note",
+        "confidence_percent": null
+      }
+    ],
+    "audio": [
+      {
+        "source": "generated",
+        "label": "fixture audio",
+        "confidence_percent": 100
+      }
+    ]
+  }
+}

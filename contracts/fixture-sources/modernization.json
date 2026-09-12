@@ -1,0 +1,50 @@
+{
+  "mode": "modernize",
+  "language_key": "japanese_vocab",
+  "processed_data": {
+    "word": "食べる",
+    "scraped": {
+      "found": true,
+      "word": "食べる",
+      "reading": "たべる",
+      "definition": "to eat; to consume"
+    },
+    "llm_response": {
+      "nuances": "An everyday verb for eating food.",
+      "examples": [
+        {
+          "sentence": "朝ご飯を食べる。",
+          "translation": "I eat breakfast."
+        }
+      ]
+    },
+    "new_image_filename": "linguist-taberu.jpg",
+    "new_image_b64": "aW1hZ2U=",
+    "orig_filenames": ["legacy-dictionary.png"],
+    "audio_filename": "linguist-taberu.mp3",
+    "audio_b64": "YXVkaW8=",
+    "kanji_construction": "食 · eat, food",
+    "type_tag": "jlpt n5"
+  },
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "dictionary",
+        "label": "fixture dictionary",
+        "confidence_percent": 100
+      },
+      {
+        "source": "generated",
+        "label": "fixture llm annotation",
+        "confidence_percent": 95
+      }
+    ],
+    "meaning_image": [
+      {
+        "source": "generated",
+        "label": "fixture image",
+        "confidence_percent": 100
+      }
+    ]
+  }
+}

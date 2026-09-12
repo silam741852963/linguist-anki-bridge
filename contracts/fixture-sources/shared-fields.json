@@ -1,0 +1,34 @@
+{
+  "mode": "modernize",
+  "language_key": "japanese_vocab",
+  "processed_data": {
+    "word": "見る",
+    "meaning_override": "to see",
+    "kanji_construction": "見 · see",
+    "audio_filename": "linguist-miru.mp3",
+    "audio_b64": "YXVkaW8=",
+    "scraped": {
+      "reading": "みる"
+    }
+  },
+  "field_mapping": {
+    "expression": "Expression",
+    "meaning_text": "Meaning",
+    "kanji_construction": "Meaning",
+    "audio": "Audio"
+  },
+  "expected_mapped_fields": {
+    "Expression": "見る",
+    "Meaning": "to see<br/>見 · see",
+    "Audio": "みる [sound:linguist-miru.mp3]"
+  },
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "user",
+        "label": "fixture override",
+        "confidence_percent": null
+      }
+    ]
+  }
+}

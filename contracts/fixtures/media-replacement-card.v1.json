@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "expression": "猫",
+  "values": {
+    "meaning_image": "<img src='linguist-neko-photo.jpg'/>",
+    "meaning_text": "cat",
+    "kanji_construction": "",
+    "audio": null
+  },
+  "media": [
+    {
+      "filename": "linguist-neko-photo.jpg",
+      "data_base64": "cGhvdG8="
+    }
+  ],
+  "obsolete_media": [
+    "dictionary.png",
+    "cat-photo.png"
+  ],
+  "issues": [
+    "Dictionary screenshot removed; visual-recall photo retained."
+  ],
+  "tags": [
+    "linguist::animal"
+  ],
+  "provenance": {
+    "meaning_image": [
+      {
+        "source": "original",
+        "label": "visual-recall photo",
+        "confidence_percent": 100
+      }
+    ],
+    "meaning_text": [
+      {
+        "source": "user",
+        "label": "fixture override",
+        "confidence_percent": null
+      }
+    ]
+  }
+}

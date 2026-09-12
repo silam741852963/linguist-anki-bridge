@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "expression": "食べる",
+  "values": {
+    "meaning_image": "<img src='linguist-taberu.jpg'/>",
+    "meaning_text": "<section><div><b>たべる / 食べる</b></div><div style='margin-top:7px'>to eat; to consume</div><div data-source='llm' style='margin-top:6px;font-style:italic;color:#888'><b>Nuance:</b> An everyday verb for eating food.</div><div data-source='llm' style='margin-top:10px'><b>Examples:</b><div style='margin-top:5px'><div style='margin-bottom:4px'><b>1. 朝ご飯を食べる。</b> — <span style='color:#666;font-size:.9em'>I eat breakfast.</span></div></div></div></section>",
+    "kanji_construction": "食 · eat, food",
+    "audio": "たべる [sound:linguist-taberu.mp3]"
+  },
+  "media": [
+    {
+      "filename": "linguist-taberu.jpg",
+      "data_base64": "aW1hZ2U="
+    },
+    {
+      "filename": "linguist-taberu.mp3",
+      "data_base64": "YXVkaW8="
+    }
+  ],
+  "obsolete_media": [
+    "legacy-dictionary.png"
+  ],
+  "issues": [],
+  "tags": [
+    "linguist::jlpt_n5"
+  ],
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "dictionary",
+        "label": "fixture dictionary",
+        "confidence_percent": 100
+      },
+      {
+        "source": "generated",
+        "label": "fixture llm annotation",
+        "confidence_percent": 95
+      }
+    ],
+    "meaning_image": [
+      {
+        "source": "generated",
+        "label": "fixture image",
+        "confidence_percent": 100
+      }
+    ]
+  }
+}

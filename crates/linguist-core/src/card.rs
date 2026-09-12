@@ -206,4 +206,42 @@ mod tests {
         assert_eq!(card.expression, "食べる");
         assert!(card.ready());
     }
+
+    #[test]
+    fn generated_python_fixtures_deserialize_as_contract_v1() {
+        let fixtures = [
+            (
+                "modernization",
+                include_str!("../../../contracts/fixtures/modernization-card.v1.json"),
+                true,
+            ),
+            (
+                "injection",
+                include_str!("../../../contracts/fixtures/injection-card.v1.json"),
+                true,
+            ),
+            (
+                "shared fields",
+                include_str!("../../../contracts/fixtures/shared-fields-card.v1.json"),
+                true,
+            ),
+            (
+                "media replacement",
+                include_str!("../../../contracts/fixtures/media-replacement-card.v1.json"),
+                false,
+            ),
+            (
+                "validation issues",
+                include_str!("../../../contracts/fixtures/validation-issues-card.v1.json"),
+                false,
+            ),
+        ];
+
+        for (name, fixture, ready) in fixtures {
+            let card: CardDocument = serde_json::from_str(fixture)
+                .unwrap_or_else(|error| panic!("{name} fixture failed to deserialize: {error}"));
+            assert_eq!(card.schema_version, crate::CONTRACT_VERSION, "{name}");
+            assert_eq!(card.ready(), ready, "{name}");
+        }
+    }
 }

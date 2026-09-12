@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "expression": "",
+  "values": {
+    "meaning_image": "",
+    "meaning_text": "<div>Not found in standard dictionary.</div><aside data-source='user' style='margin-top:12px;border-top:1px dashed #888;padding-top:8px'><div><b>Learning focus:</b> needs review</div></aside>",
+    "kanji_construction": "",
+    "audio": ""
+  },
+  "media": [],
+  "obsolete_media": [],
+  "issues": [
+    "OCR confidence is below the review threshold.",
+    "Expression is empty"
+  ],
+  "tags": [
+    "linguist-injected",
+    "linguist::needs_review"
+  ],
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "ocr",
+        "label": "fixture OCR",
+        "confidence_percent": 42
+      }
+    ]
+  }
+}

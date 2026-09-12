@@ -59,6 +59,21 @@ The current QML data is intentionally local sample state. It validates the
 desktop composition, theme bridge, editing defaults, focus behavior, and the
 review-first information layout before adapters can mutate Anki.
 
+## Regenerating card fixtures
+
+Fixture source documents under `contracts/fixture-sources` are deterministic
+inputs to the existing Python `build_card_document` function. Generate a
+contract only by supplying both paths explicitly:
+
+```bash
+.venv/bin/python scripts/export_card_contract.py \
+  --input contracts/fixture-sources/modernization.json \
+  --output contracts/fixtures/modernization-card.v1.json
+```
+
+The exporter has no provider setup and no default output path. Tests require the
+checked-in output to match a fresh export byte-for-byte.
+
 ## Migration slices
 
 1. Export Python `CardDocument` results into the versioned JSON contract and

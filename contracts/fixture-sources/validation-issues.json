@@ -1,0 +1,20 @@
+{
+  "mode": "inject",
+  "language_key": "japanese_vocab",
+  "processed_data": {
+    "word": "",
+    "suggestion": "",
+    "scraped": {},
+    "issues": ["OCR confidence is below the review threshold."],
+    "type_tag": "needs review"
+  },
+  "provenance": {
+    "meaning_text": [
+      {
+        "source": "ocr",
+        "label": "fixture OCR",
+        "confidence_percent": 42
+      }
+    ]
+  }
+}
