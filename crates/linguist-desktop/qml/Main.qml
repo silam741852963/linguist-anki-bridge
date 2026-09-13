@@ -14,6 +14,7 @@ ApplicationWindow {
     color: backend.themeBackground
 
     AppBackend { id: backend }
+    Component.onCompleted: backend.refreshState()
 
     readonly property color background: backend.themeBackground
     readonly property color surface: backend.themeSurface
@@ -46,11 +47,17 @@ ApplicationWindow {
                 placeholderText: qsTr("Search cards, decks, or commands   Ctrl K")
             }
             Item { Layout.fillWidth: true }
-            Label { text: qsTr("● Anki"); color: "#a6e3a1" }
-            Label { text: qsTr("● Ollama"); color: "#a6e3a1" }
+            Label {
+                text: qsTr("● Anki · %1").arg(backend.ankiStatus)
+                color: backend.ankiStatus === "Ready" ? "#a6e3a1" : root.muted
+            }
+            Label {
+                text: qsTr("● Ollama · %1").arg(backend.ollamaStatus)
+                color: backend.ollamaStatus === "Ready" ? "#a6e3a1" : root.muted
+            }
             ToolButton {
-                text: qsTr("Reload theme")
-                onClicked: backend.reloadTheme()
+                text: qsTr("Refresh state")
+                onClicked: backend.refreshState()
             }
         }
     }
@@ -84,7 +91,7 @@ ApplicationWindow {
             foregroundColor: root.foreground
             mutedColor: root.muted
             accentColor: root.accent
-            onApplyRequested: statusText.text = qsTr("Native commit adapter is the next migration slice")
+            onApplyRequested: backend.reportError(qsTr("Commit adapter is not connected yet"))
         }
     }
 
@@ -95,7 +102,12 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.leftMargin: 16
             anchors.rightMargin: 16
-            Label { id: statusText; text: qsTr("Review-first native foundation"); color: root.muted }
+            Label {
+                text: backend.errorMessage.length > 0
+                    ? backend.errorMessage
+                    : (backend.activeDeck.length > 0 ? qsTr("Deck · %1").arg(backend.activeDeck) : qsTr("No active deck"))
+                color: backend.errorMessage.length > 0 ? root.accent : root.muted
+            }
             Item { Layout.fillWidth: true }
             Label { text: qsTr("Tab navigate  ·  Ctrl Enter apply"); color: root.muted }
         }

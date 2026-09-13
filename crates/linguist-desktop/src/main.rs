@@ -1,4 +1,5 @@
 mod backend;
+mod controller;
 mod theme;
 
 use cxx_qt::casting::Upcast;
