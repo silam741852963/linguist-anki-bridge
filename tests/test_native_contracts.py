@@ -6,9 +6,15 @@ import sys
 import pytest
 
 from linguist_anki_bridge.contracts import (
+    export_batch_job,
     export_card_document,
+    export_snapshot,
+    import_batch_job,
     import_card_document,
+    import_snapshot,
+    validate_batch_job,
     validate_card_document,
+    validate_snapshot,
 )
 
 
@@ -91,3 +97,32 @@ def test_exporter_requires_different_explicit_input_and_output():
     )
     assert completed.returncode == 2
     assert "must be different" in completed.stderr
+
+
+def test_batch_contract_round_trips_python_rows_and_unknown_history():
+    fixture = json.loads((FIXTURE.parent / "batch-job.v1.json").read_text(encoding="utf-8"))
+    job, items = import_batch_job(fixture)
+    assert job["legacy_priority"] == "overnight"
+    assert items[0]["artifact_path"] == "jobs_artifacts/batch-1/1.json"
+    assert items[0]["legacy_stage"] == "ocr-complete"
+    assert export_batch_job(job, items) == fixture
+
+
+def test_snapshot_contract_round_trips_python_record_and_unknown_history():
+    fixture = json.loads((FIXTURE.parent / "snapshot.v1.json").read_text(encoding="utf-8"))
+    snapshot = import_snapshot(fixture)
+    assert snapshot["legacy_sync_marker"] == "v0"
+    assert snapshot["original_note"]["legacy_guid"] == "note-guid-42"
+    assert export_snapshot(snapshot) == fixture
+
+
+def test_persistence_contracts_reject_version_and_extension_collisions():
+    batch = json.loads((FIXTURE.parent / "batch-job.v1.json").read_text(encoding="utf-8"))
+    batch["schema_version"] = 2
+    with pytest.raises(ValueError, match="Unsupported"):
+        validate_batch_job(batch)
+
+    snapshot = json.loads((FIXTURE.parent / "snapshot.v1.json").read_text(encoding="utf-8"))
+    snapshot["snapshot"]["extensions"]["word"] = "not allowed"
+    with pytest.raises(ValueError, match="cannot replace"):
+        validate_snapshot(snapshot)

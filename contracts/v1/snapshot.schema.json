@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linguist-anki-bridge.local/contracts/v1/snapshot.schema.json",
+  "title": "Linguist snapshot contract v1",
+  "type": "object",
+  "required": ["schema_version", "snapshot"],
+  "properties": {"schema_version": {"const": 1}, "snapshot": {"$ref": "#/$defs/snapshot"}},
+  "additionalProperties": false,
+  "$defs": {
+    "extensions": {"type": "object", "additionalProperties": true},
+    "original_note": {
+      "type": "object", "required": ["extensions"],
+      "properties": {
+        "note_id": {"type": ["integer", "null"]}, "model_name": {"type": "string"},
+        "deck_name": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}},
+        "fields": {"type": "object", "additionalProperties": {"type": "string"}},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "additionalProperties": false
+    },
+    "snapshot": {
+      "type": "object", "required": ["id", "word", "original_note", "extensions"],
+      "properties": {
+        "id": {"type": "string"}, "created_at": {"type": "string"}, "word": {"type": "string"},
+        "mode": {"type": "string"}, "deck_key": {"type": "string"}, "dry_run": {"type": "boolean"},
+        "status": {"type": "string"},
+        "original_note": {"anyOf": [{"$ref": "#/$defs/original_note"}, {"type": "null"}]},
+        "processed": {},
+        "media_before": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+        "result_note_id": {"type": ["integer", "null"]},
+        "created_note_ids": {"type": "array", "items": {"type": "integer"}},
+        "error": {"type": "string"}, "reverted_at": {"type": ["string", "null"]},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

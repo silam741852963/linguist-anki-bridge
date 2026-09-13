@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "job": {
+    "id": "batch-20260913-abc12345",
+    "deck_key": "japanese_vocab",
+    "deck_name": "Japanese",
+    "status": "paused",
+    "dry_run": false,
+    "settings": {
+      "max_attempts": 3,
+      "service_intervals": {
+        "dictionary": 0.5
+      }
+    },
+    "created_at": "2026-09-13T10:00:00+00:00",
+    "updated_at": "2026-09-13T10:10:00+00:00",
+    "started_at": "2026-09-13T10:01:00+00:00",
+    "finished_at": null,
+    "last_error": "Application stopped while this job was running; resume is safe.",
+    "extensions": {
+      "legacy_priority": "overnight"
+    }
+  },
+  "items": [
+    {
+      "id": 1,
+      "ordinal": 0,
+      "note_id": 42,
+      "word": "俳優",
+      "status": "processed",
+      "attempts": 1,
+      "next_attempt_at": null,
+      "artifact": {
+        "reference": "jobs_artifacts/batch-1/1.json",
+        "extensions": {}
+      },
+      "snapshot_id": "20260913-100000-deadbeef",
+      "result_note_id": null,
+      "last_error": "",
+      "started_at": "2026-09-13T10:01:00+00:00",
+      "finished_at": null,
+      "updated_at": "2026-09-13T10:10:00+00:00",
+      "extensions": {
+        "legacy_stage": "ocr-complete"
+      }
+    }
+  ]
+}

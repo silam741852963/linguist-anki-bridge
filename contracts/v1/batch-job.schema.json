@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://linguist-anki-bridge.local/contracts/v1/batch-job.schema.json",
+  "title": "Linguist batch job contract v1",
+  "type": "object",
+  "required": ["schema_version", "job", "items"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "job": {"$ref": "#/$defs/job"},
+    "items": {"type": "array", "items": {"$ref": "#/$defs/item"}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "extensions": {"type": "object", "additionalProperties": true},
+    "job": {
+      "type": "object",
+      "required": ["id", "deck_key", "settings", "extensions"],
+      "properties": {
+        "id": {"type": "string"}, "deck_key": {"type": "string"},
+        "deck_name": {"type": "string"}, "status": {"type": "string"},
+        "dry_run": {"type": "boolean"}, "settings": {"type": "object"},
+        "created_at": {"type": ["string", "null"]}, "updated_at": {"type": ["string", "null"]},
+        "started_at": {"type": ["string", "null"]}, "finished_at": {"type": ["string", "null"]},
+        "last_error": {"type": "string"}, "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object", "required": ["reference"],
+      "properties": {"reference": {"type": "string"}, "extensions": {"$ref": "#/$defs/extensions"}},
+      "additionalProperties": false
+    },
+    "item": {
+      "type": "object", "required": ["note_id", "word", "extensions"],
+      "properties": {
+        "id": {"type": ["integer", "null"]}, "ordinal": {"type": ["integer", "null"]},
+        "note_id": {"type": "integer"}, "word": {"type": "string"}, "status": {"type": "string"},
+        "attempts": {"type": "integer", "minimum": 0}, "next_attempt_at": {"type": ["string", "null"]},
+        "artifact": {"anyOf": [{"$ref": "#/$defs/artifact"}, {"type": "null"}]},
+        "snapshot_id": {"type": ["string", "null"]}, "result_note_id": {"type": ["integer", "null"]},
+        "last_error": {"type": "string"}, "started_at": {"type": ["string", "null"]},
+        "finished_at": {"type": ["string", "null"]}, "updated_at": {"type": ["string", "null"]},
+        "extensions": {"$ref": "#/$defs/extensions"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

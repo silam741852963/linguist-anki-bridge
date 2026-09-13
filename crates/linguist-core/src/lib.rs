@@ -6,6 +6,7 @@
 
 mod card;
 mod jobs;
+mod persistence;
 
 pub use card::{
     AudioAsset, CardBuildInput, CardDocument, CardMode, DictionaryData, ExamplePair, FieldMapping,
@@ -13,6 +14,10 @@ pub use card::{
     RenamedImage, SourceKind, build_card_document,
 };
 pub use jobs::{BatchItemState, BatchJobState, ClaimStage};
+pub use persistence::{
+    BatchArtifactReference, BatchItemContract, BatchJobContract, BatchJobDocument,
+    SnapshotContract, SnapshotDocument, SnapshotOriginalNote,
+};
 
 /// Version written into persisted interchange documents during the migration.
 pub const CONTRACT_VERSION: u16 = 1;
