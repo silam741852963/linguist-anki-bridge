@@ -33,6 +33,8 @@ pub mod qobject {
         #[qproperty(QString, draft_issues)]
         #[qproperty(QString, draft_provenance)]
         #[qproperty(bool, draft_dirty)]
+        #[qproperty(i32, draft_pending_count)]
+        #[qproperty(bool, draft_meaning_locked)]
         #[namespace = "linguist"]
         type AppBackend = super::AppBackendRust;
 
@@ -87,6 +89,18 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "regenerateDraft"]
         fn regenerate_draft(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "draftChangeValue"]
+        fn draft_change_value(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "acceptDraftChange"]
+        fn accept_draft_change(self: Pin<&mut Self>, index: i32);
+        #[qinvokable]
+        #[cxx_name = "rejectDraftChange"]
+        fn reject_draft_change(self: Pin<&mut Self>, index: i32);
+        #[qinvokable]
+        #[cxx_name = "toggleDraftMeaningLock"]
+        fn toggle_draft_meaning_lock(self: Pin<&mut Self>, locked: bool);
     }
 }
 
@@ -124,6 +138,8 @@ pub struct AppBackendRust {
     draft_issues: QString,
     draft_provenance: QString,
     draft_dirty: bool,
+    draft_pending_count: i32,
+    draft_meaning_locked: bool,
     controller: ApplicationController,
 }
 
@@ -163,6 +179,8 @@ impl AppBackendRust {
             draft_issues: QString::default(),
             draft_provenance: QString::default(),
             draft_dirty: false,
+            draft_pending_count: 0,
+            draft_meaning_locked: false,
             controller,
         }
     }
@@ -290,6 +308,43 @@ impl qobject::AppBackend {
             .regenerate_draft(&DisconnectedGenerator);
         sync_controller_state(self);
     }
+
+    pub fn draft_change_value(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().controller.pending_change(index))
+            .map(|change| change.value.clone())
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn accept_draft_change(mut self: Pin<&mut Self>, index: i32) {
+        if let Ok(index) = usize::try_from(index) {
+            self.as_mut()
+                .rust_mut()
+                .controller
+                .accept_draft_change(index);
+        }
+        sync_controller_state(self);
+    }
+
+    pub fn reject_draft_change(mut self: Pin<&mut Self>, index: i32) {
+        if let Ok(index) = usize::try_from(index) {
+            self.as_mut()
+                .rust_mut()
+                .controller
+                .reject_draft_change(index);
+        }
+        sync_controller_state(self);
+    }
+
+    pub fn toggle_draft_meaning_lock(mut self: Pin<&mut Self>, locked: bool) {
+        self.as_mut()
+            .rust_mut()
+            .controller
+            .set_draft_locked(crate::draft::DraftField::Meaning, locked);
+        sync_controller_state(self);
+    }
 }
 
 fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
@@ -322,6 +377,8 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
         draft_issues,
         draft_provenance,
         draft_dirty,
+        draft_pending_count,
+        draft_meaning_locked,
     ) = {
         let binding = qobject.as_ref();
         let draft = binding.rust().controller.active_draft();
@@ -336,6 +393,8 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
                     draft.issues.join("\n"),
                     draft.provenance.join("\n"),
                     draft.dirty(),
+                    queue_len(draft.pending().len()),
+                    draft.locked(crate::draft::DraftField::Meaning),
                 )
             })
             .unwrap_or_default()
@@ -369,7 +428,11 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
     qobject
         .as_mut()
         .set_draft_provenance(draft_provenance.into());
-    qobject.set_draft_dirty(draft_dirty);
+    qobject.as_mut().set_draft_dirty(draft_dirty);
+    qobject
+        .as_mut()
+        .set_draft_pending_count(draft_pending_count);
+    qobject.set_draft_meaning_locked(draft_meaning_locked);
 }
 
 fn review_row_value(

@@ -66,7 +66,11 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.margins: 15
                     anchors.verticalCenter: parent.verticalCenter
-                    Label { text: qsTr("MEANING"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.2 }
+                    RowLayout {
+                        Label { text: qsTr("MEANING"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.2 }
+                        Item { Layout.fillWidth: true }
+                        CheckBox { text: qsTr("Lock"); checked: backend.draftMeaningLocked; onToggled: backend.toggleDraftMeaningLock(checked) }
+                    }
                     TextArea {
                         id: meaningEditor
                         Layout.fillWidth: true
@@ -77,6 +81,16 @@ Rectangle {
                         background: Rectangle { color: "transparent" }
                     }
                     Label { text: backend.draftProvenance; color: mutedColor; font.pixelSize: 11 }
+                    Repeater {
+                        model: backend.draftPendingCount
+                        delegate: RowLayout {
+                            required property int index
+                            Layout.fillWidth: true
+                            Label { Layout.fillWidth: true; text: backend.draftChangeValue(index); color: accentColor; elide: Text.ElideRight }
+                            Button { text: qsTr("Accept"); onClicked: backend.acceptDraftChange(index) }
+                            Button { text: qsTr("Reject"); onClicked: backend.rejectDraftChange(index) }
+                        }
+                    }
                     Label { text: qsTr("KANJI"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.2 }
                     TextArea {
                         id: kanjiEditor
