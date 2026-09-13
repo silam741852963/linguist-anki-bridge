@@ -2,6 +2,7 @@
 members = [
     "crates/linguist-core",
     "crates/linguist-anki",
+    "crates/linguist-snapshots",
     "crates/linguist-application",
     "crates/linguist-desktop",
 ]

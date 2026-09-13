@@ -942,6 +942,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "linguist-snapshots"
+version = "0.1.0"
+dependencies = [
+ "linguist-core",
+ "serde_json",
+]
+
+[[package]]
 name = "link-cplusplus"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"

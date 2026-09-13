@@ -17,7 +17,7 @@ pub use card::{
 pub use expression::normalize_expression;
 pub use jobs::{BatchItemState, BatchJobState, ClaimStage};
 pub use persistence::{
-    BatchArtifactReference, BatchItemContract, BatchJobContract, BatchJobDocument,
+    BatchArtifactReference, BatchItemContract, BatchJobContract, BatchJobDocument, Extensions,
     SnapshotContract, SnapshotDocument, SnapshotOriginalNote,
 };
 
