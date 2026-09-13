@@ -4,6 +4,7 @@ members = [
     "crates/linguist-anki",
     "crates/linguist-snapshots",
     "crates/linguist-application",
+    "crates/linguist-jobs",
     "crates/linguist-desktop",
 ]
 resolver = "2"
@@ -19,6 +20,7 @@ linguist-core = { path = "crates/linguist-core" }
 linguist-application = { path = "crates/linguist-application" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.150"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
 base64 = "0.22.1"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "time", "io-util", "sync"] }
