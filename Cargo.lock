@@ -920,6 +920,8 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "linguist-core",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

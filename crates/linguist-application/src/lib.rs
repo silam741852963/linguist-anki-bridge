@@ -13,8 +13,9 @@ use std::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use linguist_core::{
     CardDocument, CardMode, FieldMapping, ManagedTemplatePlan, ModelTemplate, ObservedModel,
-    normalize_expression,
+    SnapshotDocument, SnapshotOriginalNote, normalize_expression,
 };
+use serde::{Deserialize, Serialize};
 
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, PortError>> + Send + 'a>>;
 
@@ -547,7 +548,7 @@ pub trait CommitPort: MediaPort {
     fn finalize_snapshot<'a>(
         &'a self,
         snapshot: &'a SnapshotHandle,
-        note_id: i64,
+        post_write_state: &'a PostWriteState,
     ) -> PortFuture<'a, ()>;
     fn fail_snapshot<'a>(
         &'a self,
@@ -673,7 +674,37 @@ pub async fn commit_card<P: CommitPort + ?Sized>(
                 .map_err(|error| commit_error("note", error.to_string()))?,
         };
         note_mutation = Some(mutation.clone());
-        port.finalize_snapshot(&snapshot, mutation.note_id)
+        let post_write_state = PostWriteState {
+            note: PostWriteNote {
+                note_id: mutation.note_id,
+                model_name: request.target_model.clone(),
+                deck_name: request.deck_name.clone(),
+                fields: fields.clone(),
+                tags: match request.mode {
+                    CardMode::Modernize => request
+                        .source
+                        .as_ref()
+                        .map(|source| source.tags.clone())
+                        .unwrap_or_default(),
+                    CardMode::Inject => request.document.tags.clone(),
+                },
+            },
+            media: request
+                .document
+                .media
+                .iter()
+                .map(|asset| (asset.filename.clone(), Some(asset.data_base64.clone())))
+                .chain(
+                    request
+                        .document
+                        .obsolete_media
+                        .iter()
+                        .cloned()
+                        .map(|filename| (filename, None)),
+                )
+                .collect(),
+        };
+        port.finalize_snapshot(&snapshot, &post_write_state)
             .await
             .map_err(|error| commit_error("finalize snapshot", error.to_string()))?;
         media
@@ -731,6 +762,217 @@ fn commit_error(phase: &'static str, message: impl Into<String>) -> CommitError 
         phase,
         message: message.into(),
         rollback_errors: vec![],
+    }
+}
+
+/// Snapshot extension populated by native commit adapters. It records the
+/// state produced by the commit, so restore never overwrites a later edit.
+pub const NATIVE_POST_WRITE_EXTENSION: &str = "native_post_write_v1";
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PostWriteNote {
+    pub note_id: i64,
+    pub model_name: String,
+    pub deck_name: String,
+    pub fields: BTreeMap<String, String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PostWriteState {
+    pub note: PostWriteNote,
+    /// Every file changed by the commit, after the successful write. `None`
+    /// represents obsolete media that was removed.
+    pub media: BTreeMap<String, Option<String>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RestoreOutcome {
+    DryRun,
+    AlreadyRestored,
+    Restored {
+        restored_note_id: Option<i64>,
+        removed_note_ids: Vec<i64>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RestoreError {
+    Invalid(String),
+    Conflict { note_id: i64, reason: String },
+    Port(PortError),
+}
+
+impl std::fmt::Display for RestoreError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Invalid(message) => write!(formatter, "invalid snapshot: {message}"),
+            Self::Conflict { note_id, reason } => {
+                write!(
+                    formatter,
+                    "newer write conflicts with note {note_id}: {reason}"
+                )
+            }
+            Self::Port(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for RestoreError {}
+
+impl From<PortError> for RestoreError {
+    fn from(error: PortError) -> Self {
+        Self::Port(error)
+    }
+}
+
+/// Collection mutations needed to restore a versioned snapshot. The adapter
+/// must make `restore_note` restore model, deck, fields, and tags as one
+/// collection-level operation.
+pub trait RestorePort: MediaPort {
+    fn snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, bool>;
+    fn note_info<'a>(&'a self, note_id: i64) -> PortFuture<'a, Option<NoteInfo>>;
+    fn delete_notes<'a>(&'a self, note_ids: &'a [i64]) -> PortFuture<'a, ()>;
+    fn restore_note<'a>(&'a self, original: &'a SnapshotOriginalNote) -> PortFuture<'a, ()>;
+    fn mark_snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, ()>;
+}
+
+/// Restore a Python or native snapshot without touching unrelated collection
+/// state. Native snapshots additionally reject a note that no longer equals
+/// the state recorded immediately after commit.
+pub async fn restore_snapshot<P: RestorePort + ?Sized>(
+    port: &P,
+    document: &SnapshotDocument,
+) -> Result<RestoreOutcome, RestoreError> {
+    let snapshot = &document.snapshot;
+    if document.schema_version != linguist_core::CONTRACT_VERSION {
+        return Err(RestoreError::Invalid("unsupported schema version".into()));
+    }
+    if snapshot.dry_run {
+        return Ok(RestoreOutcome::DryRun);
+    }
+    if snapshot.status == "reverted" || port.snapshot_restored(&snapshot.id).await? {
+        return Ok(RestoreOutcome::AlreadyRestored);
+    }
+
+    let original = snapshot.original_note.as_ref();
+    let original_note_id = original.and_then(|note| note.note_id);
+    let result_note_id = snapshot.result_note_id;
+    if original.is_some() && original_note_id.is_none() {
+        return Err(RestoreError::Invalid("original note has no note id".into()));
+    }
+    if original_note_id.is_none() && result_note_id.is_none() {
+        return Err(RestoreError::Invalid(
+            "no original or committed note id".into(),
+        ));
+    }
+
+    if let Some(expected) = post_write_state(document)? {
+        let current = port
+            .note_info(expected.note.note_id)
+            .await?
+            .ok_or_else(|| RestoreError::Conflict {
+                note_id: expected.note.note_id,
+                reason: "note no longer exists".into(),
+            })?;
+        ensure_post_write_matches(&current, &expected.note)?;
+        for (filename, expected_media) in &expected.media {
+            let current_media = port.retrieve_media(filename).await?;
+            let matches = match (expected_media, current_media) {
+                (Some(expected), Some(current)) => same_media(expected, &current.data_base64),
+                (None, None) => true,
+                _ => false,
+            };
+            if !matches {
+                return Err(RestoreError::Conflict {
+                    note_id: expected.note.note_id,
+                    reason: format!("media changed: {filename}"),
+                });
+            }
+        }
+    } else if let Some(note_id) = original_note_id {
+        if port.note_info(note_id).await?.is_none() {
+            return Err(RestoreError::Conflict {
+                note_id,
+                reason: "original note no longer exists".into(),
+            });
+        }
+    }
+
+    let mut deleted = BTreeSet::new();
+    if original.is_none() {
+        if let Some(note_id) = result_note_id {
+            deleted.insert(note_id);
+        }
+    }
+    deleted.extend(snapshot.created_note_ids.iter().copied());
+    let removed_note_ids: Vec<_> = deleted.into_iter().collect();
+    if !removed_note_ids.is_empty() {
+        port.delete_notes(&removed_note_ids).await?;
+    }
+
+    for (filename, previous) in &snapshot.media_before {
+        match previous {
+            Some(data_base64) => {
+                port.store_media(&MediaFile {
+                    filename: filename.clone(),
+                    data_base64: data_base64.clone(),
+                })
+                .await?;
+            }
+            None => port.delete_media(filename).await?,
+        }
+    }
+    if let Some(original) = original {
+        port.restore_note(original).await?;
+    }
+    port.mark_snapshot_restored(&snapshot.id).await?;
+    Ok(RestoreOutcome::Restored {
+        restored_note_id: original_note_id,
+        removed_note_ids,
+    })
+}
+
+fn post_write_state(document: &SnapshotDocument) -> Result<Option<PostWriteState>, RestoreError> {
+    document
+        .snapshot
+        .extensions
+        .get(NATIVE_POST_WRITE_EXTENSION)
+        .map(|value| {
+            serde_json::from_value(value.clone()).map_err(|error| {
+                RestoreError::Invalid(format!("invalid native post-write state: {error}"))
+            })
+        })
+        .transpose()
+}
+
+fn ensure_post_write_matches(
+    current: &NoteInfo,
+    expected: &PostWriteNote,
+) -> Result<(), RestoreError> {
+    let same_deck = current
+        .deck_names
+        .iter()
+        .any(|deck| deck.0 == expected.deck_name);
+    let same_tags: BTreeSet<_> = current.tags.iter().collect();
+    let expected_tags: BTreeSet<_> = expected.tags.iter().collect();
+    let reason = if current.model_name.0 != expected.model_name {
+        Some("model changed")
+    } else if !same_deck {
+        Some("deck changed")
+    } else if current.fields != expected.fields {
+        Some("fields changed")
+    } else if same_tags != expected_tags {
+        Some("tags changed")
+    } else {
+        None
+    };
+    match reason {
+        Some(reason) => Err(RestoreError::Conflict {
+            note_id: expected.note_id,
+            reason: reason.into(),
+        }),
+        None => Ok(()),
     }
 }
 
@@ -1147,7 +1389,11 @@ mod tests {
             })
         }
 
-        fn finalize_snapshot<'a>(&'a self, _: &'a SnapshotHandle, _: i64) -> PortFuture<'a, ()> {
+        fn finalize_snapshot<'a>(
+            &'a self,
+            _: &'a SnapshotHandle,
+            _: &'a PostWriteState,
+        ) -> PortFuture<'a, ()> {
             Box::pin(async move { self.event("finalize") })
         }
 
@@ -1339,5 +1585,229 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[derive(Default)]
+    struct MockRestorePort {
+        media: Mutex<BTreeMap<String, String>>,
+        notes: Mutex<BTreeMap<i64, NoteInfo>>,
+        restored: Mutex<BTreeSet<String>>,
+        events: Mutex<Vec<String>>,
+    }
+
+    impl MockRestorePort {
+        fn with_note(note: NoteInfo) -> Self {
+            Self {
+                notes: Mutex::new(BTreeMap::from([(note.note_id, note)])),
+                ..Self::default()
+            }
+        }
+    }
+
+    impl MediaPort for MockRestorePort {
+        fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
+            Box::pin(async move {
+                Ok(self
+                    .media
+                    .lock()
+                    .unwrap()
+                    .get(filename)
+                    .cloned()
+                    .map(|data_base64| MediaFile {
+                        filename: filename.into(),
+                        data_base64,
+                    }))
+            })
+        }
+
+        fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("store:{}", media.filename));
+                self.media
+                    .lock()
+                    .unwrap()
+                    .insert(media.filename.clone(), media.data_base64.clone());
+                Ok(())
+            })
+        }
+
+        fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("delete media:{filename}"));
+                self.media.lock().unwrap().remove(filename);
+                Ok(())
+            })
+        }
+    }
+
+    impl RestorePort for MockRestorePort {
+        fn snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, bool> {
+            Box::pin(async move { Ok(self.restored.lock().unwrap().contains(snapshot_id)) })
+        }
+
+        fn note_info<'a>(&'a self, note_id: i64) -> PortFuture<'a, Option<NoteInfo>> {
+            Box::pin(async move { Ok(self.notes.lock().unwrap().get(&note_id).cloned()) })
+        }
+
+        fn delete_notes<'a>(&'a self, note_ids: &'a [i64]) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("delete notes:{note_ids:?}"));
+                let mut notes = self.notes.lock().unwrap();
+                for note_id in note_ids {
+                    notes.remove(note_id);
+                }
+                Ok(())
+            })
+        }
+
+        fn restore_note<'a>(&'a self, original: &'a SnapshotOriginalNote) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                let note_id = original.note_id.expect("validated original note id");
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("restore:{note_id}"));
+                self.notes.lock().unwrap().insert(
+                    note_id,
+                    NoteInfo {
+                        note_id,
+                        model_name: ModelName(original.model_name.clone()),
+                        deck_names: vec![DeckName(original.deck_name.clone())],
+                        fields: original.fields.clone(),
+                        tags: original.tags.clone(),
+                    },
+                );
+                Ok(())
+            })
+        }
+
+        fn mark_snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.events.lock().unwrap().push("mark restored".into());
+                self.restored.lock().unwrap().insert(snapshot_id.into());
+                Ok(())
+            })
+        }
+    }
+
+    fn python_snapshot() -> SnapshotDocument {
+        serde_json::from_str(include_str!("../../../contracts/fixtures/snapshot.v1.json")).unwrap()
+    }
+
+    #[tokio::test]
+    async fn restore_python_snapshot_restores_mock_collection_once() {
+        let snapshot = python_snapshot();
+        let port = MockRestorePort::with_note(NoteInfo {
+            note_id: 42,
+            model_name: ModelName("Linguist Japanese Vocabulary".into()),
+            deck_names: vec![DeckName("Japanese".into())],
+            fields: BTreeMap::from([("Expression".into(), "new".into())]),
+            tags: vec!["new".into()],
+        });
+        port.media.lock().unwrap().extend(BTreeMap::from([
+            ("image.jpg".into(), "new-base64".into()),
+            ("new.mp3".into(), "new-audio".into()),
+        ]));
+
+        assert!(matches!(
+            restore_snapshot(&port, &snapshot).await,
+            Ok(RestoreOutcome::Restored {
+                restored_note_id: Some(42),
+                ..
+            })
+        ));
+        let restored = port.notes.lock().unwrap().get(&42).cloned().unwrap();
+        assert_eq!(restored.model_name.0, "Legacy Japanese");
+        assert_eq!(restored.deck_names, vec![DeckName("Japanese".into())]);
+        assert_eq!(restored.fields["Word"], "俳優");
+        assert_eq!(restored.tags, vec!["legacy"]);
+        assert_eq!(
+            port.media.lock().unwrap().get("image.jpg"),
+            Some(&"old-base64".into())
+        );
+        assert!(!port.media.lock().unwrap().contains_key("new.mp3"));
+        let state = (
+            port.media.lock().unwrap().clone(),
+            port.notes.lock().unwrap().clone(),
+            port.events.lock().unwrap().clone(),
+        );
+
+        assert_eq!(
+            restore_snapshot(&port, &snapshot).await,
+            Ok(RestoreOutcome::AlreadyRestored)
+        );
+        assert_eq!(port.media.lock().unwrap().clone(), state.0);
+        assert_eq!(port.notes.lock().unwrap().clone(), state.1);
+        assert_eq!(port.events.lock().unwrap().clone(), state.2);
+    }
+
+    #[tokio::test]
+    async fn restore_injection_removes_created_notes_and_media() {
+        let mut snapshot = python_snapshot();
+        snapshot.snapshot.original_note = None;
+        snapshot.snapshot.result_note_id = Some(88);
+        snapshot.snapshot.created_note_ids = vec![89, 88];
+        let port = MockRestorePort::with_note(note(88, &[("Expression", "new")]));
+        port.notes
+            .lock()
+            .unwrap()
+            .insert(89, note(89, &[("Expression", "sibling")]));
+        port.media
+            .lock()
+            .unwrap()
+            .insert("new.mp3".into(), "new-audio".into());
+
+        assert_eq!(
+            restore_snapshot(&port, &snapshot).await,
+            Ok(RestoreOutcome::Restored {
+                restored_note_id: None,
+                removed_note_ids: vec![88, 89],
+            })
+        );
+        assert!(port.notes.lock().unwrap().is_empty());
+        assert!(!port.media.lock().unwrap().contains_key("new.mp3"));
+    }
+
+    #[tokio::test]
+    async fn restore_blocks_native_snapshot_when_note_has_newer_write() {
+        let mut snapshot = python_snapshot();
+        snapshot.snapshot.extensions.insert(
+            NATIVE_POST_WRITE_EXTENSION.into(),
+            serde_json::to_value(PostWriteState {
+                note: PostWriteNote {
+                    note_id: 42,
+                    model_name: "Linguist Japanese Vocabulary".into(),
+                    deck_name: "Japanese".into(),
+                    fields: BTreeMap::from([("Expression".into(), "expected".into())]),
+                    tags: vec!["new".into()],
+                },
+                media: BTreeMap::new(),
+            })
+            .unwrap(),
+        );
+        let port = MockRestorePort::with_note(NoteInfo {
+            note_id: 42,
+            model_name: ModelName("Linguist Japanese Vocabulary".into()),
+            deck_names: vec![DeckName("Japanese".into())],
+            fields: BTreeMap::from([("Expression".into(), "edited later".into())]),
+            tags: vec!["new".into()],
+        });
+        let before = port.notes.lock().unwrap().clone();
+
+        assert!(matches!(
+            restore_snapshot(&port, &snapshot).await,
+            Err(RestoreError::Conflict { note_id: 42, .. })
+        ));
+        assert_eq!(*port.notes.lock().unwrap(), before);
+        assert!(port.events.lock().unwrap().is_empty());
     }
 }
