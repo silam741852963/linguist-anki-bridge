@@ -8,7 +8,7 @@ use std::{collections::BTreeSet, time::Duration};
 
 use linguist_application::{
     CardTemplate, DeckName, ExactExpressionRequest, ExpressionResolution, MediaFile, MediaPort,
-    ModelFields, ModelName, ModelTemplates, NoteInfo, PortError, PortFuture,
+    ModelFields, ModelName, ModelStyling, ModelTemplates, NoteInfo, PortError, PortFuture,
     resolve_exact_expression,
 };
 use reqwest::{Client, Url};
@@ -174,6 +174,19 @@ impl AnkiConnectTransport {
         Ok(ModelTemplates {
             model_name: model_name.clone(),
             templates: converted,
+        })
+    }
+
+    pub async fn model_styling(
+        &self,
+        model_name: &ModelName,
+    ) -> Result<ModelStyling, AnkiConnectError> {
+        let styling: serde_json::Map<String, Value> = self
+            .send("modelStyling", json!({"modelName": model_name.0}))
+            .await?;
+        Ok(ModelStyling {
+            model_name: model_name.clone(),
+            css: required_string(&styling, "css", "modelStyling")?,
         })
     }
 
@@ -716,6 +729,22 @@ mod tests {
                 front: "{{Expression}}".into(),
                 back: "{{FrontSide}}<hr>{{Meaning}}".into(),
             }]
+        );
+
+        let (styling_url, _) = mock_server(
+            200,
+            r#"{"result":{"css":".card { color: white; }"},"error":null}"#,
+            Duration::ZERO,
+        )
+        .await;
+        assert_eq!(
+            AnkiConnectTransport::new(&styling_url)
+                .unwrap()
+                .model_styling(&model)
+                .await
+                .unwrap()
+                .css,
+            ".card { color: white; }"
         );
 
         let (media_url, _) =

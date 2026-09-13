@@ -7,6 +7,7 @@
 mod card;
 mod expression;
 mod jobs;
+mod managed_template;
 mod persistence;
 
 pub use card::{
@@ -16,6 +17,10 @@ pub use card::{
 };
 pub use expression::normalize_expression;
 pub use jobs::{BatchItemState, BatchJobState, ClaimStage};
+pub use managed_template::{
+    ManagedModelSpec, ManagedTemplateError, ManagedTemplatePlan, ModelTemplate, ObservedModel,
+    japanese_vocab_spec, plan_japanese_vocab_template,
+};
 pub use persistence::{
     BatchArtifactReference, BatchItemContract, BatchJobContract, BatchJobDocument, Extensions,
     SnapshotContract, SnapshotDocument, SnapshotOriginalNote,

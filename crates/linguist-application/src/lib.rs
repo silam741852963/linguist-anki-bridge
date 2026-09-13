@@ -11,7 +11,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use linguist_core::{CardDocument, normalize_expression};
+use linguist_core::{CardDocument, ModelTemplate, ObservedModel, normalize_expression};
 
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, PortError>> + Send + 'a>>;
 
@@ -63,6 +63,36 @@ pub struct CardTemplate {
 pub struct ModelTemplates {
     pub model_name: ModelName,
     pub templates: Vec<CardTemplate>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelStyling {
+    pub model_name: ModelName,
+    pub css: String,
+}
+
+pub fn observe_model(
+    fields: &ModelFields,
+    templates: &ModelTemplates,
+    styling: &ModelStyling,
+) -> Result<ObservedModel, String> {
+    if fields.model_name != templates.model_name || fields.model_name != styling.model_name {
+        return Err("model fields, templates, and styling names differ".into());
+    }
+    Ok(ObservedModel {
+        model_name: fields.model_name.0.clone(),
+        fields: fields.fields.clone(),
+        templates: templates
+            .templates
+            .iter()
+            .map(|template| ModelTemplate {
+                name: template.name.clone(),
+                front: template.front.clone(),
+                back: template.back.clone(),
+            })
+            .collect(),
+        css: styling.css.clone(),
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
