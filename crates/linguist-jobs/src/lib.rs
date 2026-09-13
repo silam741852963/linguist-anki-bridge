@@ -12,7 +12,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use linguist_core::{BatchArtifactReference, BatchItemContract, BatchJobContract};
+use linguist_core::{
+    BatchArtifactReference, BatchItemContract, BatchItemState, BatchJobContract, BatchJobState,
+    ClaimStage,
+};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde_json::Value;
 
@@ -51,6 +54,35 @@ pub struct ItemPage {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimedItem {
+    pub item: BatchItemContract,
+    pub stage: ClaimStage,
+}
+
+/// Process-scoped exclusive lease. Dropping it releases the kernel lock.
+pub struct RunnerLease {
+    file: File,
+}
+
+impl std::fmt::Debug for RunnerLease {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RunnerLease")
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for RunnerLease {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        // SAFETY: `file` is open for the lease lifetime and flock only uses its fd.
+        unsafe {
+            libc::flock(std::os::fd::AsRawFd::as_raw_fd(&self.file), libc::LOCK_UN);
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MigrationMetadata {
     pub version: i64,
     pub name: String,
@@ -66,6 +98,7 @@ pub enum JobRepositoryError {
     UnknownJob(String),
     UnknownItem(i64),
     InvalidArtifactPath,
+    InvalidState(String),
     Io(std::io::Error),
     Sql(rusqlite::Error),
     Json(serde_json::Error),
@@ -86,6 +119,7 @@ impl std::fmt::Display for JobRepositoryError {
             Self::UnknownJob(job_id) => write!(formatter, "unknown job: {job_id}"),
             Self::UnknownItem(item_id) => write!(formatter, "unknown item: {item_id}"),
             Self::InvalidArtifactPath => write!(formatter, "invalid artifact path"),
+            Self::InvalidState(state) => write!(formatter, "invalid batch state: {state}"),
             Self::Io(error) => error.fmt(formatter),
             Self::Sql(error) => error.fmt(formatter),
             Self::Json(error) => error.fmt(formatter),
@@ -148,6 +182,193 @@ impl JobRepository {
     }
     pub fn artifact_root(&self) -> &Path {
         &self.artifact_root
+    }
+
+    /// Return `None` if another process owns the runner. The lock is owned by
+    /// the OS, so a crash releases it without a stale-file recovery path.
+    pub fn acquire_runner_lease(&self) -> Result<Option<RunnerLease>, JobRepositoryError> {
+        let path = self.database.with_extension("sqlite3.runner.lock");
+        let file = File::options()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(path)?;
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            // SAFETY: `file` stays live in the returned lease and flock only
+            // accesses the valid descriptor.
+            let status = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            if status != 0 {
+                return Ok(None);
+            }
+        }
+        Ok(Some(RunnerLease { file }))
+    }
+
+    pub fn recover_interrupted(&self) -> Result<(), JobRepositoryError> {
+        let now = now();
+        let connection = self.connect()?;
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute(
+            "UPDATE batch_jobs SET status='paused', updated_at=?, last_error=? WHERE status IN ('running', 'pausing')",
+            params![now.clone(), "Application stopped while this job was running; resume is safe."],
+        )?;
+        transaction.execute(
+            "UPDATE batch_items SET status='pending', updated_at=? WHERE status='processing'",
+            [now.clone()],
+        )?;
+        transaction.execute(
+            "UPDATE batch_items SET status='processed', updated_at=? WHERE status='committing'",
+            [now.clone()],
+        )?;
+        transaction.execute("UPDATE batch_jobs SET status='rollback_paused', updated_at=? WHERE status='rolling_back'", [now])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn set_job_state(
+        &self,
+        job_id: &str,
+        state: BatchJobState,
+        error: &str,
+    ) -> Result<(), JobRepositoryError> {
+        let now = now();
+        let state_name = job_state_name(state);
+        let started_at = (state == BatchJobState::Running).then_some(now.clone());
+        let finished_at = matches!(
+            state,
+            BatchJobState::Completed
+                | BatchJobState::Failed
+                | BatchJobState::Cancelled
+                | BatchJobState::RolledBack
+                | BatchJobState::RollbackPartial
+        )
+        .then_some(now.clone());
+        let connection = self.connect()?;
+        let updated = connection.execute(
+            "UPDATE batch_jobs SET status=?, updated_at=?, last_error=?,
+                    started_at=COALESCE(started_at, ?),
+                    finished_at=CASE WHEN ?='running' THEN NULL ELSE COALESCE(?, finished_at) END
+             WHERE id=?",
+            params![
+                state_name,
+                now,
+                error,
+                started_at,
+                state_name,
+                finished_at,
+                job_id
+            ],
+        )?;
+        if updated == 1 {
+            Ok(())
+        } else {
+            Err(JobRepositoryError::UnknownJob(job_id.into()))
+        }
+    }
+
+    /// Claim pending processing work or an already-processed commit. The
+    /// immediate transaction means two runners cannot claim the same row.
+    pub fn claim_next(&self, job_id: &str) -> Result<Option<ClaimedItem>, JobRepositoryError> {
+        let now = now();
+        let mut connection = self.connect()?;
+        let transaction =
+            connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let item = transaction.query_row(
+            "SELECT id, ordinal, note_id, word, status, attempts, next_attempt_at, artifact_path, snapshot_id,
+                    result_note_id, last_error, started_at, finished_at, updated_at
+             FROM batch_items WHERE job_id=? AND status IN ('processed', 'pending')
+                 AND (next_attempt_at IS NULL OR next_attempt_at<=?)
+             ORDER BY CASE status WHEN 'processed' THEN 0 ELSE 1 END, ordinal LIMIT 1",
+            params![job_id, now], row_item,
+        ).optional()?;
+        let Some(mut item) = item else {
+            transaction.commit()?;
+            return Ok(None);
+        };
+        let old_state = parse_item_state(&item.status)?;
+        let stage = old_state
+            .claim_stage()
+            .ok_or_else(|| JobRepositoryError::InvalidState(item.status.clone()))?;
+        let new_state = match stage {
+            ClaimStage::Process => BatchItemState::Processing,
+            ClaimStage::Commit => BatchItemState::Committing,
+        };
+        transaction.execute(
+            "UPDATE batch_items SET status=?, started_at=COALESCE(started_at, ?), updated_at=? WHERE id=?",
+            params![item_state_name(new_state), now, now, item.id],
+        )?;
+        transaction.execute(
+            "UPDATE batch_jobs SET updated_at=? WHERE id=?",
+            params![now, job_id],
+        )?;
+        transaction.commit()?;
+        item.status = item_state_name(new_state).into();
+        item.updated_at = Some(now);
+        Ok(Some(ClaimedItem { item, stage }))
+    }
+
+    pub fn retry_or_fail(
+        &self,
+        item_id: i64,
+        error: &str,
+        max_attempts: u32,
+        backoff_seconds: u64,
+    ) -> Result<bool, JobRepositoryError> {
+        let connection = self.connect()?;
+        let item = connection.query_row(
+            "SELECT id, ordinal, note_id, word, status, attempts, next_attempt_at, artifact_path, snapshot_id,
+                    result_note_id, last_error, started_at, finished_at, updated_at FROM batch_items WHERE id=?",
+            [item_id], row_item,
+        ).optional()?.ok_or(JobRepositoryError::UnknownItem(item_id))?;
+        let attempts = item.attempts + 1;
+        let retry = attempts < max_attempts.max(1);
+        let resume = if item.artifact.is_some() {
+            BatchItemState::Processed
+        } else {
+            BatchItemState::Pending
+        };
+        let next_attempt_at = retry.then(|| {
+            future_timestamp(
+                backoff_seconds.saturating_mul(2_u64.saturating_pow(attempts.saturating_sub(1))),
+            )
+        });
+        connection.execute(
+            "UPDATE batch_items SET status=?, attempts=?, next_attempt_at=?, last_error=?, finished_at=?, updated_at=? WHERE id=?",
+            params![item_state_name(if retry { resume } else { BatchItemState::Failed }), attempts, next_attempt_at, error,
+                if retry { None } else { Some(now()) }, now(), item_id],
+        )?;
+        Ok(retry)
+    }
+
+    pub fn cancel(&self, job_id: &str) -> Result<(), JobRepositoryError> {
+        let now = now();
+        let connection = self.connect()?;
+        let transaction = connection.unchecked_transaction()?;
+        let updated = transaction.execute(
+            "UPDATE batch_jobs SET status='cancelled', updated_at=?, finished_at=? WHERE id=?",
+            params![now, now, job_id],
+        )?;
+        if updated != 1 {
+            return Err(JobRepositoryError::UnknownJob(job_id.into()));
+        }
+        transaction.execute("UPDATE batch_items SET status='skipped', finished_at=?, updated_at=? WHERE job_id=? AND status='pending'", params![now, now, job_id])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn finish_if_complete(&self, job_id: &str) -> Result<bool, JobRepositoryError> {
+        let connection = self.connect()?;
+        let remaining: u64 = connection.query_row(
+            "SELECT COUNT(*) FROM batch_items WHERE job_id=? AND status NOT IN ('completed', 'reverted', 'skipped', 'failed')", [job_id], |row| row.get(0),
+        )?;
+        if remaining != 0 {
+            return Ok(false);
+        }
+        self.set_job_state(job_id, BatchJobState::Completed, "")?;
+        Ok(true)
     }
 
     pub fn migration_metadata(&self) -> Result<Vec<MigrationMetadata>, JobRepositoryError> {
@@ -467,6 +688,59 @@ fn now() -> String {
     format!("{}.{:09}Z", duration.as_secs(), duration.subsec_nanos())
 }
 
+fn future_timestamp(seconds: u64) -> String {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .saturating_add(std::time::Duration::from_secs(seconds));
+    format!("{}.{:09}Z", duration.as_secs(), duration.subsec_nanos())
+}
+
+fn job_state_name(state: BatchJobState) -> &'static str {
+    match state {
+        BatchJobState::Queued => "queued",
+        BatchJobState::Running => "running",
+        BatchJobState::Pausing => "pausing",
+        BatchJobState::Paused => "paused",
+        BatchJobState::Completed => "completed",
+        BatchJobState::Failed => "failed",
+        BatchJobState::Cancelled => "cancelled",
+        BatchJobState::RollingBack => "rolling_back",
+        BatchJobState::RollbackPaused => "rollback_paused",
+        BatchJobState::RolledBack => "rolled_back",
+        BatchJobState::RollbackPartial => "rollback_partial",
+    }
+}
+
+fn item_state_name(state: BatchItemState) -> &'static str {
+    match state {
+        BatchItemState::Pending => "pending",
+        BatchItemState::Processing => "processing",
+        BatchItemState::Processed => "processed",
+        BatchItemState::Committing => "committing",
+        BatchItemState::Completed => "completed",
+        BatchItemState::Failed => "failed",
+        BatchItemState::Skipped => "skipped",
+        BatchItemState::Reverted => "reverted",
+        BatchItemState::RollbackFailed => "rollback_failed",
+    }
+}
+
+fn parse_item_state(state: &str) -> Result<BatchItemState, JobRepositoryError> {
+    match state {
+        "pending" => Ok(BatchItemState::Pending),
+        "processing" => Ok(BatchItemState::Processing),
+        "processed" => Ok(BatchItemState::Processed),
+        "committing" => Ok(BatchItemState::Committing),
+        "completed" => Ok(BatchItemState::Completed),
+        "failed" => Ok(BatchItemState::Failed),
+        "skipped" => Ok(BatchItemState::Skipped),
+        "reverted" => Ok(BatchItemState::Reverted),
+        "rollback_failed" => Ok(BatchItemState::RollbackFailed),
+        _ => Err(JobRepositoryError::InvalidState(state.into())),
+    }
+}
+
 fn sync_directory(directory: &Path) -> Result<(), std::io::Error> {
     #[cfg(unix)]
     File::open(directory)?.sync_all()?;
@@ -477,7 +751,7 @@ fn sync_directory(directory: &Path) -> Result<(), std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
+    use std::{env, fs, process::Command};
 
     use serde_json::json;
 
@@ -596,5 +870,83 @@ mod tests {
         ));
         assert_eq!(fs::read(&path).unwrap(), before);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn claims_are_atomic_and_processed_artifacts_resume_at_commit() {
+        let path = temporary_path("claim");
+        let repository = JobRepository::open(&path).unwrap();
+        let id = repository.create_job(job(&[42])).unwrap();
+        let first = repository.claim_next(&id).unwrap().unwrap();
+        assert_eq!(first.stage, ClaimStage::Process);
+        assert!(repository.claim_next(&id).unwrap().is_none());
+        repository
+            .replace_artifact(&id, first.item.id.unwrap(), &json!({"draft": true}))
+            .unwrap();
+        let retry = repository.claim_next(&id).unwrap().unwrap();
+        assert_eq!(retry.stage, ClaimStage::Commit);
+        assert!(
+            repository
+                .retry_or_fail(retry.item.id.unwrap(), "offline", 3, 60)
+                .unwrap()
+        );
+        assert_eq!(
+            repository.item_page(&id, 1, 0).unwrap().items[0].status,
+            "processed"
+        );
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn recovery_returns_work_to_safe_boundaries_and_lease_is_exclusive() {
+        let path = temporary_path("recovery");
+        let repository = JobRepository::open(&path).unwrap();
+        let id = repository.create_job(job(&[1, 2])).unwrap();
+        repository
+            .set_job_state(&id, BatchJobState::Running, "")
+            .unwrap();
+        let processing = repository.claim_next(&id).unwrap().unwrap();
+        repository
+            .replace_artifact(
+                &id,
+                repository.item_page(&id, 2, 0).unwrap().items[1]
+                    .id
+                    .unwrap(),
+                &json!({}),
+            )
+            .unwrap();
+        let committing = repository.claim_next(&id).unwrap().unwrap();
+        assert_eq!(processing.stage, ClaimStage::Process);
+        assert_eq!(committing.stage, ClaimStage::Commit);
+        let lease = repository.acquire_runner_lease().unwrap().unwrap();
+        let child = Command::new(env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("tests::runner_lease_child_probe")
+            .env("LINGUIST_JOBS_LEASE_PROBE", &path)
+            .status()
+            .unwrap();
+        assert!(child.success());
+        repository.recover_interrupted().unwrap();
+        assert_eq!(repository.job(&id).unwrap().unwrap().status, "paused");
+        let states = repository
+            .item_page(&id, 2, 0)
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|item| item.status)
+            .collect::<Vec<_>>();
+        assert_eq!(states, vec!["pending", "processed"]);
+        drop(lease);
+        assert!(repository.acquire_runner_lease().unwrap().is_some());
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn runner_lease_child_probe() {
+        let Ok(path) = env::var("LINGUIST_JOBS_LEASE_PROBE") else {
+            return;
+        };
+        let repository = JobRepository::open(path).unwrap();
+        assert!(repository.acquire_runner_lease().unwrap().is_none());
     }
 }

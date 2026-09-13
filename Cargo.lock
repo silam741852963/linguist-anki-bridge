@@ -1002,6 +1002,7 @@ dependencies = [
 name = "linguist-jobs"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "linguist-core",
  "rusqlite",
  "serde_json",

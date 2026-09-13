@@ -21,6 +21,7 @@ linguist-application = { path = "crates/linguist-application" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.150"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
+libc = "0.2.189"
 base64 = "0.22.1"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "time", "io-util", "sync"] }

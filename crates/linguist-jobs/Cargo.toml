@@ -7,5 +7,6 @@ rust-version.workspace = true
 
 [dependencies]
 linguist-core.workspace = true
+libc.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
