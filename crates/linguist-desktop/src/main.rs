@@ -1,5 +1,6 @@
 mod backend;
 mod controller;
+mod review_model;
 mod theme;
 
 use cxx_qt::casting::Upcast;

@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 Rectangle {
+    required property var backend
     required property color backgroundColor
     required property color foregroundColor
     required property color mutedColor
@@ -18,45 +19,106 @@ Rectangle {
             Layout.fillWidth: true
             Label { text: qsTr("Review queue"); color: foregroundColor; font.pixelSize: 18; font.weight: Font.DemiBold }
             Item { Layout.fillWidth: true }
-            Label { text: qsTr("24 cards"); color: mutedColor }
+            Label {
+                text: qsTr("%1 cards").arg(backend.reviewRowCount)
+                color: mutedColor
+            }
         }
         ComboBox {
+            id: deckPicker
             Layout.fillWidth: true
-            model: [qsTr("Needs review"), qsTr("Ready"), qsTr("Failed"), qsTr("All cards")]
+            model: backend.deckCount
+            currentIndex: backend.selectedDeckIndex
+            enabled: backend.deckCount > 0
+            delegate: ItemDelegate {
+                required property int index
+                width: deckPicker.width
+                text: backend.deckName(index)
+                highlighted: deckPicker.highlightedIndex === index
+                onClicked: {
+                    deckPicker.currentIndex = index
+                    deckPicker.activated(index)
+                    deckPicker.popup.close()
+                }
+            }
+            contentItem: Label {
+                leftPadding: 10
+                rightPadding: 10
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+                color: deckPicker.enabled ? foregroundColor : mutedColor
+                text: deckPicker.currentIndex >= 0
+                    ? backend.deckName(deckPicker.currentIndex)
+                    : qsTr("No decks")
+            }
+            onActivated: backend.selectDeckIndex(currentIndex)
         }
-        ListView {
-            id: list
+        StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            spacing: 6
-            currentIndex: 0
-            model: ListModel {
-                ListElement { expression: "食べる"; reading: "たべる · vocabulary"; issue: "Ready" }
-                ListElement { expression: "ということだ"; reading: "grammar · OCR"; issue: "Check OCR" }
-                ListElement { expression: "見落とす"; reading: "みおとす · vocabulary"; issue: "Image choice" }
-                ListElement { expression: "to reckon"; reading: "English · vocabulary"; issue: "Ready" }
-            }
-            delegate: Rectangle {
-                required property int index
-                required property string expression
-                required property string reading
-                required property string issue
-                width: ListView.view.width
-                height: 78
-                radius: 8
-                color: ListView.isCurrentItem ? Qt.alpha(accentColor, 0.22) : "transparent"
-                border.color: ListView.isCurrentItem ? accentColor : Qt.alpha(mutedColor, 0.35)
-                focus: ListView.isCurrentItem
+            currentIndex: backend.reviewRowCount > 0 ? 1 : 0
 
-                MouseArea { anchors.fill: parent; onClicked: list.currentIndex = index }
-                Column {
-                    anchors.fill: parent
-                    anchors.margins: 11
-                    spacing: 4
-                    Label { text: expression; color: foregroundColor; font.pixelSize: 17 }
-                    Label { text: reading; color: mutedColor }
-                    Label { text: issue; color: issue === "Ready" ? "#a6e3a1" : accentColor; font.pixelSize: 11 }
+            Item {
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width - 30, 250)
+                    spacing: 8
+                    Label {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: backend.queueState
+                        color: foregroundColor
+                        font.pixelSize: 16
+                        font.weight: Font.DemiBold
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
+                        text: backend.queueMessage
+                        color: mutedColor
+                    }
+                }
+            }
+
+            ListView {
+                id: list
+                clip: true
+                spacing: 6
+                model: backend.reviewRowCount
+                currentIndex: backend.selectedReviewIndex
+                focus: true
+                keyNavigationEnabled: true
+                highlightFollowsCurrentItem: true
+                onCurrentIndexChanged: {
+                    if (currentIndex >= 0)
+                        backend.selectReviewIndex(currentIndex)
+                }
+                delegate: Rectangle {
+                    required property int index
+                    readonly property string rowState: backend.reviewState(index)
+                    width: ListView.view.width
+                    height: 78
+                    radius: 8
+                    color: ListView.isCurrentItem ? Qt.alpha(accentColor, 0.22) : "transparent"
+                    border.color: ListView.isCurrentItem ? accentColor : Qt.alpha(mutedColor, 0.35)
+                    focus: ListView.isCurrentItem
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: list.currentIndex = index
+                    }
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 11
+                        spacing: 4
+                        Label { text: backend.reviewExpression(index); color: foregroundColor; font.pixelSize: 17 }
+                        Label { text: backend.reviewDetail(index); color: mutedColor }
+                        Label {
+                            text: rowState
+                            color: rowState === "Ready" ? "#a6e3a1" : accentColor
+                            font.pixelSize: 11
+                        }
+                    }
                 }
             }
         }

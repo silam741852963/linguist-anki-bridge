@@ -1,3 +1,5 @@
+use crate::review_model::{ReviewQueueData, ReviewQueueModel, ReviewRow};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServiceState {
     Checking,
@@ -43,16 +45,22 @@ pub trait DesktopPort {
     fn anki_available(&self) -> Result<(), String>;
     fn ollama_available(&self) -> Result<(), String>;
     fn active_deck(&self) -> Result<String, String>;
+    fn review_queue(&self) -> Result<ReviewQueueData, String>;
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct ApplicationController {
     state: ViewState,
+    queue: ReviewQueueModel,
 }
 
 impl ApplicationController {
     pub fn state(&self) -> &ViewState {
         &self.state
+    }
+
+    pub fn queue(&self) -> &ReviewQueueModel {
+        &self.queue
     }
 
     pub fn refresh<P: DesktopPort>(&mut self, port: &P) {
@@ -67,11 +75,40 @@ impl ApplicationController {
                 self.state.error = error;
             }
         }
+        self.begin_queue_loading();
+        match port.review_queue() {
+            Ok(data) => self.replace_queue(data),
+            Err(error) => self.fail_queue(error),
+        }
         self.state.busy = false;
     }
 
     pub fn select(&mut self, selection: impl Into<String>) {
         self.state.selection = selection.into();
+    }
+
+    pub fn begin_queue_loading(&mut self) {
+        self.queue.begin_loading();
+    }
+
+    pub fn replace_queue(&mut self, data: ReviewQueueData) {
+        self.queue.replace(data);
+        self.sync_queue_selection();
+    }
+
+    pub fn fail_queue(&mut self, message: impl Into<String>) {
+        self.queue.fail(message);
+        self.state.selection.clear();
+    }
+
+    pub fn select_queue_index(&mut self, index: usize) {
+        if let Some(row) = self.queue.select_index(index) {
+            self.state.selection = selection_label(row);
+        }
+    }
+
+    pub fn select_deck_index(&mut self, index: usize) {
+        let _ = self.queue.select_deck_index(index);
     }
 
     pub fn report_error(&mut self, error: impl Into<String>) {
@@ -81,6 +118,19 @@ impl ApplicationController {
     pub fn clear_error(&mut self) {
         self.state.error.clear();
     }
+
+    fn sync_queue_selection(&mut self) {
+        self.state.selection = self
+            .queue
+            .selected_index()
+            .and_then(|index| self.queue.rows().get(index))
+            .map(selection_label)
+            .unwrap_or_default();
+    }
+}
+
+fn selection_label(row: &ReviewRow) -> String {
+    format!("{} · {}", row.note_id, row.expression)
 }
 
 fn service_state(result: Result<(), String>) -> ServiceState {
@@ -98,6 +148,7 @@ mod tests {
         anki: Result<(), String>,
         ollama: Result<(), String>,
         deck: Result<String, String>,
+        queue: Result<ReviewQueueData, String>,
     }
 
     impl DesktopPort for FakePort {
@@ -110,6 +161,9 @@ mod tests {
         fn active_deck(&self) -> Result<String, String> {
             self.deck.clone()
         }
+        fn review_queue(&self) -> Result<ReviewQueueData, String> {
+            self.queue.clone()
+        }
     }
 
     #[test]
@@ -119,6 +173,7 @@ mod tests {
             anki: Ok(()),
             ollama: Err("offline".into()),
             deck: Err("Anki unavailable".into()),
+            queue: Err("Anki unavailable".into()),
         });
         assert_eq!(controller.state().anki, ServiceState::Ready);
         assert_eq!(controller.state().ollama.label(), "Unavailable: offline");
@@ -134,5 +189,31 @@ mod tests {
         assert_eq!(controller.state().selection, "42 · 食べる");
         controller.clear_error();
         assert!(controller.state().error.is_empty());
+    }
+
+    #[test]
+    fn queue_refresh_updates_selection_through_controller_command() {
+        let mut controller = ApplicationController::default();
+        controller.replace_queue(ReviewQueueData {
+            decks: vec!["Japanese".into()],
+            rows: vec![ReviewRow {
+                note_id: 42,
+                expression: "食べる".into(),
+                detail: "vocabulary".into(),
+                state: crate::review_model::ReviewState::NeedsReview,
+            }],
+        });
+        controller.select_queue_index(0);
+        controller.replace_queue(ReviewQueueData {
+            decks: vec!["Japanese".into()],
+            rows: vec![ReviewRow {
+                note_id: 42,
+                expression: "食べる".into(),
+                detail: "vocabulary".into(),
+                state: crate::review_model::ReviewState::Ready,
+            }],
+        });
+        assert_eq!(controller.state().selection, "42 · 食べる");
+        assert_eq!(controller.queue().selected_index(), Some(0));
     }
 }

@@ -77,6 +77,7 @@ ApplicationWindow {
         ReviewQueue {
             Layout.preferredWidth: 360
             Layout.fillHeight: true
+            backend: backend
             backgroundColor: Qt.darker(root.surface, 1.08)
             foregroundColor: root.foreground
             mutedColor: root.muted
