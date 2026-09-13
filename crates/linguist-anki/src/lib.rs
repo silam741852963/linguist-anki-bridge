@@ -7,8 +7,9 @@
 use std::{collections::BTreeSet, time::Duration};
 
 use linguist_application::{
-    CardTemplate, DeckName, ExactExpressionRequest, ExpressionResolution, MediaFile, ModelFields,
-    ModelName, ModelTemplates, NoteInfo, resolve_exact_expression,
+    CardTemplate, DeckName, ExactExpressionRequest, ExpressionResolution, MediaFile, MediaPort,
+    ModelFields, ModelName, ModelTemplates, NoteInfo, PortError, PortFuture,
+    resolve_exact_expression,
 };
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
@@ -222,6 +223,27 @@ impl AnkiConnectTransport {
         }))
     }
 
+    pub async fn store_media_file(
+        &self,
+        filename: &str,
+        data_base64: &str,
+    ) -> Result<(), AnkiConnectError> {
+        let _: Value = self
+            .send(
+                "storeMediaFile",
+                json!({"filename": filename, "data": data_base64}),
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn delete_media_file(&self, filename: &str) -> Result<(), AnkiConnectError> {
+        let _: Value = self
+            .send("deleteMediaFile", json!({"filename": filename}))
+            .await?;
+        Ok(())
+    }
+
     async fn send<T>(&self, action: &str, params: Value) -> Result<T, AnkiConnectError>
     where
         T: serde::de::DeserializeOwned,
@@ -294,6 +316,47 @@ impl AnkiConnectTransport {
             message: error.to_string(),
             retryable: error.is_connect() || error.is_request(),
         }
+    }
+}
+
+impl MediaPort for AnkiConnectTransport {
+    fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
+        Box::pin(async move {
+            self.retrieve_media_file(filename)
+                .await
+                .map_err(|error| media_port_error("retrieve media", error))
+        })
+    }
+
+    fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            self.store_media_file(&media.filename, &media.data_base64)
+                .await
+                .map_err(|error| media_port_error("store media", error))
+        })
+    }
+
+    fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            self.delete_media_file(filename)
+                .await
+                .map_err(|error| media_port_error("delete media", error))
+        })
+    }
+}
+
+fn media_port_error(operation: &'static str, error: AnkiConnectError) -> PortError {
+    let retryable = matches!(
+        error,
+        AnkiConnectError::Transport {
+            retryable: true,
+            ..
+        } | AnkiConnectError::Timeout { .. }
+    );
+    PortError {
+        operation,
+        message: error.to_string(),
+        retryable,
     }
 }
 
@@ -712,5 +775,21 @@ mod tests {
         assert!(requests[0].contains(r#""action":"findNotes"#));
         assert!(requests[0].contains(r#"deck:\"Japanese::Vocabulary\" \"俳優\""#));
         assert!(requests[1].contains(r#""action":"notesInfo"#));
+    }
+
+    #[tokio::test]
+    async fn media_write_actions_use_anki_connect_envelopes() {
+        let (url, requests) = mock_sequence(vec![
+            r#"{"result":"new.jpg","error":null}"#,
+            r#"{"result":null,"error":null}"#,
+        ])
+        .await;
+        let transport = AnkiConnectTransport::new(&url).unwrap();
+        transport.store_media_file("new.jpg", "bmV3").await.unwrap();
+        transport.delete_media_file("old.jpg").await.unwrap();
+        let requests = requests.await.unwrap();
+        assert!(requests[0].contains(r#""action":"storeMediaFile"#));
+        assert!(requests[0].contains(r#""filename":"new.jpg"#));
+        assert!(requests[1].contains(r#""action":"deleteMediaFile"#));
     }
 }

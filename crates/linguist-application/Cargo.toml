@@ -6,4 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64.workspace = true
 linguist-core.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

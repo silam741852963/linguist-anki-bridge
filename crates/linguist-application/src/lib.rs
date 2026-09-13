@@ -4,8 +4,13 @@
 //! implement these ports. The Qt layer consumes application events and does
 //! not call providers directly.
 
-use std::{collections::BTreeMap, future::Future, pin::Pin};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    pin::Pin,
+};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use linguist_core::{CardDocument, normalize_expression};
 
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, PortError>> + Send + 'a>>;
@@ -73,6 +78,243 @@ pub struct NoteInfo {
 pub struct MediaFile {
     pub filename: String,
     pub data_base64: String,
+}
+
+pub trait MediaPort: Send + Sync {
+    fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>>;
+    fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()>;
+    fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MediaChange {
+    pub filename: String,
+    pub data_base64: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MediaPlan {
+    pub stage: Vec<MediaChange>,
+    pub remove_obsolete: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedMediaTransaction {
+    staged: Vec<MediaFile>,
+    obsolete: Vec<String>,
+    before: BTreeMap<String, Option<MediaFile>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MediaTransactionError {
+    pub phase: &'static str,
+    pub message: String,
+    pub rollback_errors: Vec<String>,
+}
+
+impl std::fmt::Display for MediaTransactionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "media {}: {}", self.phase, self.message)
+    }
+}
+
+impl std::error::Error for MediaTransactionError {}
+
+impl PreparedMediaTransaction {
+    pub async fn prepare<P: MediaPort + ?Sized>(
+        port: &P,
+        plan: MediaPlan,
+    ) -> Result<Self, MediaTransactionError> {
+        let mut staged = BTreeMap::<String, String>::new();
+        for change in plan.stage {
+            validate_media(&change)?;
+            match staged.get(&change.filename) {
+                Some(existing) if existing != &change.data_base64 => {
+                    return Err(transaction_error(
+                        "validate",
+                        format!("conflicting media {}", change.filename),
+                    ));
+                }
+                Some(_) => {}
+                None => {
+                    staged.insert(change.filename, change.data_base64);
+                }
+            }
+        }
+        let obsolete = plan
+            .remove_obsolete
+            .into_iter()
+            .filter(|filename| !filename.is_empty())
+            .collect::<BTreeSet<_>>();
+        if let Some(filename) = obsolete
+            .iter()
+            .find(|filename| staged.contains_key(*filename))
+        {
+            return Err(transaction_error(
+                "validate",
+                format!("media {filename} cannot be staged and removed"),
+            ));
+        }
+        let staged = staged
+            .into_iter()
+            .map(|(filename, data_base64)| MediaFile {
+                filename,
+                data_base64,
+            })
+            .collect::<Vec<_>>();
+        let obsolete = obsolete.into_iter().collect::<Vec<_>>();
+        let mut before = BTreeMap::new();
+        for filename in staged
+            .iter()
+            .map(|media| media.filename.as_str())
+            .chain(obsolete.iter().map(String::as_str))
+        {
+            let existing = port
+                .retrieve_media(filename)
+                .await
+                .map_err(|error| transaction_error("snapshot", format!("{filename}: {error}")))?;
+            before.insert(filename.into(), existing);
+        }
+        Ok(Self {
+            staged,
+            obsolete,
+            before,
+        })
+    }
+
+    pub fn before(&self) -> &BTreeMap<String, Option<MediaFile>> {
+        &self.before
+    }
+
+    pub async fn commit<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+    ) -> Result<(), MediaTransactionError> {
+        let mut touched = Vec::new();
+        for media in &self.staged {
+            touched.push(media.filename.clone());
+            if let Err(error) = port.store_media(media).await {
+                return Err(self
+                    .rollback_after(port, touched, "stage", error.to_string())
+                    .await);
+            }
+            match port.retrieve_media(&media.filename).await {
+                Ok(Some(stored)) if same_media(&stored.data_base64, &media.data_base64) => {}
+                Ok(Some(_)) => {
+                    return Err(self
+                        .rollback_after(
+                            port,
+                            touched,
+                            "verify",
+                            format!("{} content differs", media.filename),
+                        )
+                        .await);
+                }
+                Ok(None) => {
+                    return Err(self
+                        .rollback_after(
+                            port,
+                            touched,
+                            "verify",
+                            format!("{} missing after store", media.filename),
+                        )
+                        .await);
+                }
+                Err(error) => {
+                    return Err(self
+                        .rollback_after(port, touched, "verify", error.to_string())
+                        .await);
+                }
+            }
+        }
+        for filename in &self.obsolete {
+            touched.push(filename.clone());
+            if let Err(error) = port.delete_media(filename).await {
+                return Err(self
+                    .rollback_after(port, touched, "remove", error.to_string())
+                    .await);
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn rollback<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+    ) -> Result<(), MediaTransactionError> {
+        let names = self.before.keys().cloned().collect();
+        let errors = self.restore(port, names).await;
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(MediaTransactionError {
+                phase: "rollback",
+                message: "could not restore all media".into(),
+                rollback_errors: errors,
+            })
+        }
+    }
+
+    async fn rollback_after<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+        touched: Vec<String>,
+        phase: &'static str,
+        message: String,
+    ) -> MediaTransactionError {
+        let errors = self.restore(port, touched).await;
+        MediaTransactionError {
+            phase,
+            message,
+            rollback_errors: errors,
+        }
+    }
+
+    async fn restore<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+        mut names: Vec<String>,
+    ) -> Vec<String> {
+        names.reverse();
+        names.dedup();
+        let mut errors = Vec::new();
+        for filename in names {
+            let result = match self.before.get(&filename).cloned().flatten() {
+                Some(media) => port.store_media(&media).await,
+                None => port.delete_media(&filename).await,
+            };
+            if let Err(error) = result {
+                errors.push(format!("{filename}: {error}"));
+            }
+        }
+        errors
+    }
+}
+
+fn validate_media(change: &MediaChange) -> Result<(), MediaTransactionError> {
+    if change.filename.is_empty() || change.filename.contains('/') || change.filename.contains('\\')
+    {
+        return Err(transaction_error("validate", "unsafe media filename"));
+    }
+    if change.data_base64.is_empty() || STANDARD.decode(&change.data_base64).is_err() {
+        return Err(transaction_error(
+            "validate",
+            format!("invalid base64 for {}", change.filename),
+        ));
+    }
+    Ok(())
+}
+
+fn same_media(left: &str, right: &str) -> bool {
+    STANDARD.decode(left).ok() == STANDARD.decode(right).ok()
+}
+
+fn transaction_error(phase: &'static str, message: impl Into<String>) -> MediaTransactionError {
+    MediaTransactionError {
+        phase,
+        message: message.into(),
+        rollback_errors: vec![],
+    }
 }
 
 /// A caller-provided expression plus the fields that semantically represent it
@@ -211,6 +453,8 @@ pub trait JobPort: Send + Sync {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
 
     fn note(note_id: i64, fields: &[(&str, &str)]) -> NoteInfo {
@@ -280,5 +524,213 @@ mod tests {
             duplicate,
             ExpressionResolution::Ambiguous { matches, .. } if matches.len() == 2
         ));
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum MediaOperation {
+        Retrieve,
+        Store,
+        Delete,
+    }
+
+    #[derive(Default)]
+    struct MockMediaPort {
+        media: Mutex<BTreeMap<String, String>>,
+        calls: Mutex<Vec<MediaOperation>>,
+        fail: Mutex<Option<(MediaOperation, usize)>>,
+        corrupt_once: Mutex<Option<String>>,
+    }
+
+    impl MockMediaPort {
+        fn with_media(media: &[(&str, &str)]) -> Self {
+            Self {
+                media: Mutex::new(
+                    media
+                        .iter()
+                        .map(|(name, data)| ((*name).into(), (*data).into()))
+                        .collect(),
+                ),
+                ..Self::default()
+            }
+        }
+
+        fn fail_at(&self, operation: MediaOperation, count: usize) {
+            *self.fail.lock().unwrap() = Some((operation, count));
+        }
+
+        fn check(&self, operation: MediaOperation) -> Result<(), PortError> {
+            let mut calls = self.calls.lock().unwrap();
+            calls.push(operation);
+            let occurrence = calls
+                .iter()
+                .filter(|current| **current == operation)
+                .count();
+            let mut failure = self.fail.lock().unwrap();
+            if *failure == Some((operation, occurrence)) {
+                *failure = None;
+                return Err(PortError {
+                    operation: "mock media",
+                    message: "injected failure".into(),
+                    retryable: false,
+                });
+            }
+            Ok(())
+        }
+
+        fn state(&self) -> BTreeMap<String, String> {
+            self.media.lock().unwrap().clone()
+        }
+    }
+
+    impl MediaPort for MockMediaPort {
+        fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
+            Box::pin(async move {
+                self.check(MediaOperation::Retrieve)?;
+                Ok(self
+                    .media
+                    .lock()
+                    .unwrap()
+                    .get(filename)
+                    .cloned()
+                    .map(|data_base64| MediaFile {
+                        filename: filename.into(),
+                        data_base64,
+                    }))
+            })
+        }
+
+        fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.check(MediaOperation::Store)?;
+                let corrupt = {
+                    let mut corrupt_once = self.corrupt_once.lock().unwrap();
+                    if corrupt_once.as_deref() == Some(&media.filename) {
+                        *corrupt_once = None;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                let data = if corrupt {
+                    "Y29ycnVwdA==".into()
+                } else {
+                    media.data_base64.clone()
+                };
+                self.media
+                    .lock()
+                    .unwrap()
+                    .insert(media.filename.clone(), data);
+                Ok(())
+            })
+        }
+
+        fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.check(MediaOperation::Delete)?;
+                self.media.lock().unwrap().remove(filename);
+                Ok(())
+            })
+        }
+    }
+
+    fn media_plan() -> MediaPlan {
+        MediaPlan {
+            stage: vec![
+                MediaChange {
+                    filename: "new-a.jpg".into(),
+                    data_base64: "bmV3LWE=".into(),
+                },
+                MediaChange {
+                    filename: "new-b.mp3".into(),
+                    data_base64: "bmV3LWI=".into(),
+                },
+            ],
+            remove_obsolete: vec!["old.jpg".into()],
+        }
+    }
+
+    #[tokio::test]
+    async fn media_transaction_stages_verifies_and_removes_obsolete_media() {
+        let port = MockMediaPort::with_media(&[("old.jpg", "b2xk")]);
+        let transaction = PreparedMediaTransaction::prepare(&port, media_plan())
+            .await
+            .unwrap();
+        assert_eq!(
+            transaction.before()["old.jpg"]
+                .as_ref()
+                .unwrap()
+                .data_base64,
+            "b2xk"
+        );
+        transaction.commit(&port).await.unwrap();
+        assert_eq!(
+            port.state(),
+            BTreeMap::from([
+                ("new-a.jpg".into(), "bmV3LWE=".into()),
+                ("new-b.mp3".into(), "bmV3LWI=".into()),
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn media_transaction_captures_before_every_mutation_and_rolls_back_each_boundary() {
+        for (operation, count, corrupt) in [
+            (MediaOperation::Store, 1, false),
+            (MediaOperation::Store, 2, false),
+            (MediaOperation::Delete, 1, false),
+            (MediaOperation::Store, 0, true),
+        ] {
+            let port = MockMediaPort::with_media(&[("old.jpg", "b2xk")]);
+            let before = port.state();
+            let transaction = PreparedMediaTransaction::prepare(&port, media_plan())
+                .await
+                .unwrap();
+            if corrupt {
+                *port.corrupt_once.lock().unwrap() = Some("new-a.jpg".into());
+            } else {
+                port.fail_at(operation, count);
+            }
+            let error = transaction.commit(&port).await.unwrap_err();
+            assert!(matches!(error.phase, "stage" | "verify" | "remove"));
+            assert!(error.rollback_errors.is_empty());
+            assert_eq!(port.state(), before);
+        }
+    }
+
+    #[tokio::test]
+    async fn media_preflight_failure_and_conflicts_never_mutate() {
+        let port = MockMediaPort::with_media(&[("old.jpg", "b2xk")]);
+        let before = port.state();
+        port.fail_at(MediaOperation::Retrieve, 1);
+        assert!(matches!(
+            PreparedMediaTransaction::prepare(&port, media_plan()).await,
+            Err(MediaTransactionError {
+                phase: "snapshot",
+                ..
+            })
+        ));
+        assert_eq!(port.state(), before);
+
+        let conflict = MediaPlan {
+            stage: vec![
+                MediaChange {
+                    filename: "same.jpg".into(),
+                    data_base64: "YQ==".into(),
+                },
+                MediaChange {
+                    filename: "same.jpg".into(),
+                    data_base64: "Yg==".into(),
+                },
+            ],
+            remove_obsolete: vec!["same.jpg".into()],
+        };
+        assert!(matches!(
+            PreparedMediaTransaction::prepare(&port, conflict).await,
+            Err(MediaTransactionError {
+                phase: "validate",
+                ..
+            })
+        ));
+        assert_eq!(port.state(), before);
     }
 }
