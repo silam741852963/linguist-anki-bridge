@@ -70,8 +70,14 @@ pub mod qobject {
         #[cxx_name = "selectReviewIndex"]
         fn select_review_index(self: Pin<&mut Self>, index: i32);
         #[qinvokable]
+        #[cxx_name = "editDraftExpression"]
+        fn edit_draft_expression(self: Pin<&mut Self>, value: &QString);
+        #[qinvokable]
         #[cxx_name = "editDraftMeaning"]
         fn edit_draft_meaning(self: Pin<&mut Self>, value: &QString);
+        #[qinvokable]
+        #[cxx_name = "editDraftKanji"]
+        fn edit_draft_kanji(self: Pin<&mut Self>, value: &QString);
         #[qinvokable]
         #[cxx_name = "undoDraft"]
         fn undo_draft(self: Pin<&mut Self>);
@@ -245,6 +251,22 @@ impl qobject::AppBackend {
             .rust_mut()
             .controller
             .edit_draft(crate::draft::DraftField::Meaning, value.to_string());
+        sync_controller_state(self);
+    }
+
+    pub fn edit_draft_expression(mut self: Pin<&mut Self>, value: &QString) {
+        self.as_mut()
+            .rust_mut()
+            .controller
+            .edit_draft(crate::draft::DraftField::Expression, value.to_string());
+        sync_controller_state(self);
+    }
+
+    pub fn edit_draft_kanji(mut self: Pin<&mut Self>, value: &QString) {
+        self.as_mut()
+            .rust_mut()
+            .controller
+            .edit_draft(crate::draft::DraftField::Kanji, value.to_string());
         sync_controller_state(self);
     }
 

@@ -24,7 +24,14 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.margins: 22
-                Label { text: backend.draftExpression.length > 0 ? backend.draftExpression : qsTr("Select a card"); color: foregroundColor; font.pixelSize: 30; font.weight: Font.DemiBold }
+                TextField {
+                    id: expressionEditor
+                    Layout.preferredWidth: 260
+                    text: backend.draftExpression
+                    placeholderText: qsTr("Select a card")
+                    font.pixelSize: 30
+                    onTextChanged: if (activeFocus && text !== backend.draftExpression) backend.editDraftExpression(text)
+                }
                 Label { text: backend.draftDirty ? qsTr("Unsaved draft") : qsTr("Saved draft"); color: mutedColor; font.pixelSize: 17 }
                 Item { Layout.fillWidth: true }
                 Button { text: qsTr("Undo"); onClicked: backend.undoDraft() }
@@ -70,6 +77,16 @@ Rectangle {
                         background: Rectangle { color: "transparent" }
                     }
                     Label { text: backend.draftProvenance; color: mutedColor; font.pixelSize: 11 }
+                    Label { text: qsTr("KANJI"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.2 }
+                    TextArea {
+                        id: kanjiEditor
+                        Layout.fillWidth: true
+                        text: backend.draftKanji
+                        onTextChanged: if (activeFocus && text !== backend.draftKanji) backend.editDraftKanji(text)
+                        color: foregroundColor
+                        wrapMode: TextEdit.Wrap
+                        background: Rectangle { color: "transparent" }
+                    }
                 }
             }
 
