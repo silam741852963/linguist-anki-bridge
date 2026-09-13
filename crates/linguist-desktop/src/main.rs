@@ -1,4 +1,6 @@
 mod backend;
+#[allow(dead_code)] // N19 transport/controller binding follows this state contract.
+mod commit_model;
 mod controller;
 mod draft;
 mod review_model;
