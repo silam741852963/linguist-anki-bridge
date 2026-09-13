@@ -22,6 +22,20 @@ pub struct CommitViewState {
     pub snapshots: Vec<SnapshotHistoryItem>,
 }
 
+pub trait CommitExecutor<Request> {
+    fn preview(&mut self, request: &Request) -> Result<CommitPreview, String>;
+    fn apply(&mut self, request: &Request) -> Result<SnapshotHistoryItem, String>;
+    fn restore(&mut self, snapshot_id: &str) -> Result<(), String>;
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CommitPreview {
+    pub before: BTreeMap<String, String>,
+    pub after: BTreeMap<String, String>,
+    pub media: Vec<String>,
+    pub model_changed: bool,
+}
+
 impl CommitViewState {
     pub fn new() -> Self {
         Self {
@@ -61,6 +75,41 @@ impl CommitViewState {
             },
         );
     }
+
+    pub fn preview_with<Request, Executor: CommitExecutor<Request>>(
+        &mut self,
+        executor: &mut Executor,
+        request: &Request,
+    ) -> Result<(), String> {
+        let preview = executor.preview(request)?;
+        self.preview(
+            &preview.before,
+            &preview.after,
+            preview.media,
+            preview.model_changed,
+        );
+        self.dry_run = true;
+        Ok(())
+    }
+
+    pub fn apply_with<Request, Executor: CommitExecutor<Request>>(
+        &mut self,
+        executor: &mut Executor,
+        request: &Request,
+    ) -> Result<(), String> {
+        let snapshot = executor.apply(request)?;
+        self.dry_run = false;
+        self.snapshots.insert(0, snapshot);
+        Ok(())
+    }
+
+    pub fn restore_with<Request, Executor: CommitExecutor<Request>>(
+        &mut self,
+        executor: &mut Executor,
+        snapshot_id: &str,
+    ) -> Result<(), String> {
+        executor.restore(snapshot_id)
+    }
 }
 
 #[cfg(test)]
@@ -90,5 +139,43 @@ mod tests {
         let mut view = CommitViewState::new();
         view.record_snapshot("snapshot-1", 42);
         assert_eq!(view.snapshots[0].note_id, 42);
+    }
+
+    #[derive(Default)]
+    struct FakeExecutor {
+        calls: Vec<String>,
+    }
+    impl CommitExecutor<()> for FakeExecutor {
+        fn preview(&mut self, _: &()) -> Result<CommitPreview, String> {
+            self.calls.push("preview".into());
+            Ok(CommitPreview {
+                before: BTreeMap::new(),
+                after: BTreeMap::from([("Meaning".into(), "new".into())]),
+                media: vec![],
+                model_changed: false,
+            })
+        }
+        fn apply(&mut self, _: &()) -> Result<SnapshotHistoryItem, String> {
+            self.calls.push("apply".into());
+            Ok(SnapshotHistoryItem {
+                snapshot_id: "snapshot-1".into(),
+                note_id: 42,
+            })
+        }
+        fn restore(&mut self, id: &str) -> Result<(), String> {
+            self.calls.push(format!("restore:{id}"));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn command_controller_keeps_preview_dry_until_apply_and_restores_history() {
+        let mut view = CommitViewState::new();
+        let mut executor = FakeExecutor::default();
+        view.preview_with(&mut executor, &()).unwrap();
+        assert!(view.dry_run);
+        view.apply_with(&mut executor, &()).unwrap();
+        view.restore_with(&mut executor, "snapshot-1").unwrap();
+        assert_eq!(executor.calls, ["preview", "apply", "restore:snapshot-1"]);
     }
 }
