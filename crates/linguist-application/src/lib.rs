@@ -11,7 +11,10 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use linguist_core::{CardDocument, ModelTemplate, ObservedModel, normalize_expression};
+use linguist_core::{
+    CardDocument, CardMode, FieldMapping, ManagedTemplatePlan, ModelTemplate, ObservedModel,
+    normalize_expression,
+};
 
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, PortError>> + Send + 'a>>;
 
@@ -268,6 +271,49 @@ impl PreparedMediaTransaction {
         Ok(())
     }
 
+    /// Mutation phase for the card's new media. Caller owns rollback after
+    /// this succeeds, so note/model work can happen before obsolete removal.
+    pub async fn stage_and_verify<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+    ) -> Result<(), MediaTransactionError> {
+        for media in &self.staged {
+            port.store_media(media)
+                .await
+                .map_err(|error| transaction_error("stage", error.to_string()))?;
+            match port.retrieve_media(&media.filename).await {
+                Ok(Some(stored)) if same_media(&stored.data_base64, &media.data_base64) => {}
+                Ok(Some(_)) => {
+                    return Err(transaction_error(
+                        "verify",
+                        format!("{} content differs", media.filename),
+                    ));
+                }
+                Ok(None) => {
+                    return Err(transaction_error(
+                        "verify",
+                        format!("{} missing after store", media.filename),
+                    ));
+                }
+                Err(error) => return Err(transaction_error("verify", error.to_string())),
+            }
+        }
+        Ok(())
+    }
+
+    /// Final media phase. Call only after snapshot finalization succeeds.
+    pub async fn remove_obsolete<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+    ) -> Result<(), MediaTransactionError> {
+        for filename in &self.obsolete {
+            port.delete_media(filename)
+                .await
+                .map_err(|error| transaction_error("remove", error.to_string()))?;
+        }
+        Ok(())
+    }
+
     pub async fn rollback<P: MediaPort + ?Sized>(
         &self,
         port: &P,
@@ -447,6 +493,245 @@ pub struct SourceNote {
 pub struct CommitReceipt {
     pub note_id: i64,
     pub snapshot_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommitSource {
+    pub note_id: i64,
+    pub model_name: String,
+    pub fields: BTreeMap<String, String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommitRequest {
+    pub mode: CardMode,
+    pub dry_run: bool,
+    pub deck_key: String,
+    pub deck_name: String,
+    pub target_model: String,
+    pub source: Option<CommitSource>,
+    pub document: CardDocument,
+    pub field_mapping: FieldMapping,
+    pub template_plan: ManagedTemplatePlan,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotCapture {
+    pub word: String,
+    pub mode: CardMode,
+    pub deck_key: String,
+    pub source: Option<CommitSource>,
+    pub document: CardDocument,
+    pub media_before: BTreeMap<String, Option<MediaFile>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotHandle(pub String);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TemplateMutation;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteMutation {
+    pub note_id: i64,
+    pub created: bool,
+}
+
+pub trait CommitPort: MediaPort {
+    fn backup_deck<'a>(&'a self, deck_name: &'a str) -> PortFuture<'a, ()>;
+    fn capture_snapshot<'a>(
+        &'a self,
+        capture: &'a SnapshotCapture,
+    ) -> PortFuture<'a, SnapshotHandle>;
+    fn finalize_snapshot<'a>(
+        &'a self,
+        snapshot: &'a SnapshotHandle,
+        note_id: i64,
+    ) -> PortFuture<'a, ()>;
+    fn fail_snapshot<'a>(
+        &'a self,
+        snapshot: &'a SnapshotHandle,
+        error: &'a str,
+    ) -> PortFuture<'a, ()>;
+    fn apply_template<'a>(
+        &'a self,
+        plan: &'a ManagedTemplatePlan,
+    ) -> PortFuture<'a, TemplateMutation>;
+    fn rollback_template<'a>(&'a self, mutation: &'a TemplateMutation) -> PortFuture<'a, ()>;
+    fn update_note<'a>(
+        &'a self,
+        source: &'a CommitSource,
+        fields: &'a BTreeMap<String, String>,
+        target_model: &'a str,
+    ) -> PortFuture<'a, NoteMutation>;
+    fn create_note<'a>(
+        &'a self,
+        deck_name: &'a str,
+        model_name: &'a str,
+        fields: &'a BTreeMap<String, String>,
+        tags: &'a [String],
+    ) -> PortFuture<'a, NoteMutation>;
+    fn rollback_note<'a>(
+        &'a self,
+        mutation: &'a NoteMutation,
+        source: Option<&'a CommitSource>,
+    ) -> PortFuture<'a, ()>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CommitOutcome {
+    DryRun { fields: BTreeMap<String, String> },
+    Committed(CommitReceipt),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommitError {
+    pub phase: &'static str,
+    pub message: String,
+    pub rollback_errors: Vec<String>,
+}
+
+impl std::fmt::Display for CommitError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "commit {}: {}", self.phase, self.message)
+    }
+}
+
+impl std::error::Error for CommitError {}
+
+pub async fn commit_card<P: CommitPort + ?Sized>(
+    port: &P,
+    request: CommitRequest,
+) -> Result<CommitOutcome, CommitError> {
+    let fields = validate_commit(&request)?;
+    if request.dry_run {
+        return Ok(CommitOutcome::DryRun { fields });
+    }
+    port.backup_deck(&request.deck_name)
+        .await
+        .map_err(|error| commit_error("backup", error.to_string()))?;
+
+    let media = PreparedMediaTransaction::prepare(
+        port,
+        MediaPlan {
+            stage: request
+                .document
+                .media
+                .iter()
+                .map(|asset| MediaChange {
+                    filename: asset.filename.clone(),
+                    data_base64: asset.data_base64.clone(),
+                })
+                .collect(),
+            remove_obsolete: request.document.obsolete_media.clone(),
+        },
+    )
+    .await
+    .map_err(|error| commit_error(error.phase, error.message))?;
+    let snapshot = port
+        .capture_snapshot(&SnapshotCapture {
+            word: request.document.expression.clone(),
+            mode: request.mode,
+            deck_key: request.deck_key.clone(),
+            source: request.source.clone(),
+            document: request.document.clone(),
+            media_before: media.before().clone(),
+        })
+        .await
+        .map_err(|error| commit_error("snapshot", error.to_string()))?;
+
+    let mut template_mutation = None;
+    let mut note_mutation = None;
+    let result = async {
+        media
+            .stage_and_verify(port)
+            .await
+            .map_err(|error| commit_error(error.phase, error.message))?;
+        template_mutation = Some(
+            port.apply_template(&request.template_plan)
+                .await
+                .map_err(|error| commit_error("template", error.to_string()))?,
+        );
+        let mutation = match request.mode {
+            CardMode::Modernize => {
+                let source = request.source.as_ref().ok_or_else(|| {
+                    commit_error("validate", "modernization requires source note")
+                })?;
+                port.update_note(source, &fields, &request.target_model)
+                    .await
+                    .map_err(|error| commit_error("note", error.to_string()))?
+            }
+            CardMode::Inject => port
+                .create_note(
+                    &request.deck_name,
+                    &request.target_model,
+                    &fields,
+                    &request.document.tags,
+                )
+                .await
+                .map_err(|error| commit_error("note", error.to_string()))?,
+        };
+        note_mutation = Some(mutation.clone());
+        port.finalize_snapshot(&snapshot, mutation.note_id)
+            .await
+            .map_err(|error| commit_error("finalize snapshot", error.to_string()))?;
+        media
+            .remove_obsolete(port)
+            .await
+            .map_err(|error| commit_error(error.phase, error.message))?;
+        Ok::<CommitOutcome, CommitError>(CommitOutcome::Committed(CommitReceipt {
+            note_id: mutation.note_id,
+            snapshot_id: snapshot.0.clone(),
+        }))
+    }
+    .await;
+    match result {
+        Ok(outcome) => Ok(outcome),
+        Err(mut error) => {
+            if let Some(mutation) = note_mutation.as_ref() {
+                if let Err(rollback) = port.rollback_note(mutation, request.source.as_ref()).await {
+                    error.rollback_errors.push(format!("note: {rollback}"));
+                }
+            }
+            if let Some(mutation) = template_mutation.as_ref() {
+                if let Err(rollback) = port.rollback_template(mutation).await {
+                    error.rollback_errors.push(format!("template: {rollback}"));
+                }
+            }
+            if let Err(rollback) = media.rollback(port).await {
+                error.rollback_errors.extend(rollback.rollback_errors);
+            }
+            if let Err(rollback) = port.fail_snapshot(&snapshot, &error.message).await {
+                error.rollback_errors.push(format!("snapshot: {rollback}"));
+            }
+            Err(error)
+        }
+    }
+}
+
+fn validate_commit(request: &CommitRequest) -> Result<BTreeMap<String, String>, CommitError> {
+    if !request.document.ready() {
+        return Err(commit_error("validate", "card document is not ready"));
+    }
+    if request.mode == CardMode::Modernize && request.source.is_none() {
+        return Err(commit_error(
+            "validate",
+            "modernization requires source note",
+        ));
+    }
+    request
+        .document
+        .map_fields(&request.field_mapping)
+        .map_err(|error| commit_error("validate", error.to_string()))
+}
+
+fn commit_error(phase: &'static str, message: impl Into<String>) -> CommitError {
+    CommitError {
+        phase,
+        message: message.into(),
+        rollback_errors: vec![],
+    }
 }
 
 pub trait AnkiPort: Send + Sync {
@@ -762,5 +1047,297 @@ mod tests {
             })
         ));
         assert_eq!(port.state(), before);
+    }
+
+    #[derive(Default)]
+    struct MockCommitPort {
+        media: Mutex<BTreeMap<String, String>>,
+        events: Mutex<Vec<String>>,
+        fail: Mutex<Option<String>>,
+        note_fields: Mutex<BTreeMap<i64, BTreeMap<String, String>>>,
+        next_note: Mutex<i64>,
+    }
+
+    impl MockCommitPort {
+        fn new() -> Self {
+            Self {
+                media: Mutex::new(BTreeMap::from([("old.jpg".into(), "b2xk".into())])),
+                note_fields: Mutex::new(BTreeMap::from([(
+                    42,
+                    BTreeMap::from([("Expression".into(), "old".into())]),
+                )])),
+                next_note: Mutex::new(100),
+                ..Self::default()
+            }
+        }
+
+        fn fail(&self, phase: &str) {
+            *self.fail.lock().unwrap() = Some(phase.into());
+        }
+
+        fn event(&self, phase: &str) -> Result<(), PortError> {
+            self.events.lock().unwrap().push(phase.into());
+            let mut failure = self.fail.lock().unwrap();
+            if failure.as_deref() == Some(phase) {
+                *failure = None;
+                Err(PortError {
+                    operation: "mock commit",
+                    message: format!("{phase} failed"),
+                    retryable: false,
+                })
+            } else {
+                Ok(())
+            }
+        }
+
+        fn media_state(&self) -> BTreeMap<String, String> {
+            self.media.lock().unwrap().clone()
+        }
+    }
+
+    impl MediaPort for MockCommitPort {
+        fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
+            Box::pin(async move {
+                self.event("retrieve")?;
+                Ok(self
+                    .media
+                    .lock()
+                    .unwrap()
+                    .get(filename)
+                    .cloned()
+                    .map(|data_base64| MediaFile {
+                        filename: filename.into(),
+                        data_base64,
+                    }))
+            })
+        }
+
+        fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.event("store")?;
+                self.media
+                    .lock()
+                    .unwrap()
+                    .insert(media.filename.clone(), media.data_base64.clone());
+                Ok(())
+            })
+        }
+
+        fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.event("delete")?;
+                self.media.lock().unwrap().remove(filename);
+                Ok(())
+            })
+        }
+    }
+
+    impl CommitPort for MockCommitPort {
+        fn backup_deck<'a>(&'a self, _: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move { self.event("backup") })
+        }
+
+        fn capture_snapshot<'a>(
+            &'a self,
+            _: &'a SnapshotCapture,
+        ) -> PortFuture<'a, SnapshotHandle> {
+            Box::pin(async move {
+                self.event("capture")?;
+                Ok(SnapshotHandle("snapshot-1".into()))
+            })
+        }
+
+        fn finalize_snapshot<'a>(&'a self, _: &'a SnapshotHandle, _: i64) -> PortFuture<'a, ()> {
+            Box::pin(async move { self.event("finalize") })
+        }
+
+        fn fail_snapshot<'a>(&'a self, _: &'a SnapshotHandle, _: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move { self.event("fail snapshot") })
+        }
+
+        fn apply_template<'a>(
+            &'a self,
+            _: &'a ManagedTemplatePlan,
+        ) -> PortFuture<'a, TemplateMutation> {
+            Box::pin(async move {
+                self.event("template")?;
+                Ok(TemplateMutation)
+            })
+        }
+
+        fn rollback_template<'a>(&'a self, _: &'a TemplateMutation) -> PortFuture<'a, ()> {
+            Box::pin(async move { self.event("rollback template") })
+        }
+
+        fn update_note<'a>(
+            &'a self,
+            source: &'a CommitSource,
+            fields: &'a BTreeMap<String, String>,
+            _: &'a str,
+        ) -> PortFuture<'a, NoteMutation> {
+            Box::pin(async move {
+                self.event("update")?;
+                self.note_fields
+                    .lock()
+                    .unwrap()
+                    .insert(source.note_id, fields.clone());
+                Ok(NoteMutation {
+                    note_id: source.note_id,
+                    created: false,
+                })
+            })
+        }
+
+        fn create_note<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            fields: &'a BTreeMap<String, String>,
+            _: &'a [String],
+        ) -> PortFuture<'a, NoteMutation> {
+            Box::pin(async move {
+                self.event("create")?;
+                let mut next = self.next_note.lock().unwrap();
+                let note_id = *next;
+                *next += 1;
+                self.note_fields
+                    .lock()
+                    .unwrap()
+                    .insert(note_id, fields.clone());
+                Ok(NoteMutation {
+                    note_id,
+                    created: true,
+                })
+            })
+        }
+
+        fn rollback_note<'a>(
+            &'a self,
+            mutation: &'a NoteMutation,
+            source: Option<&'a CommitSource>,
+        ) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.event("rollback note")?;
+                if mutation.created {
+                    self.note_fields.lock().unwrap().remove(&mutation.note_id);
+                } else if let Some(source) = source {
+                    self.note_fields
+                        .lock()
+                        .unwrap()
+                        .insert(source.note_id, source.fields.clone());
+                }
+                Ok(())
+            })
+        }
+    }
+
+    fn commit_request(mode: CardMode, dry_run: bool) -> CommitRequest {
+        let source = (mode == CardMode::Modernize).then(|| CommitSource {
+            note_id: 42,
+            model_name: "Legacy".into(),
+            fields: BTreeMap::from([("Expression".into(), "old".into())]),
+            tags: vec!["old".into()],
+        });
+        CommitRequest {
+            mode,
+            dry_run,
+            deck_key: "japanese_vocab".into(),
+            deck_name: "Japanese".into(),
+            target_model: "Linguist Japanese Vocabulary".into(),
+            source,
+            document: CardDocument {
+                schema_version: linguist_core::CONTRACT_VERSION,
+                expression: "新語".into(),
+                values: linguist_core::LogicalFields {
+                    meaning_text: Some("new meaning".into()),
+                    ..Default::default()
+                },
+                media: vec![linguist_core::MediaAsset {
+                    filename: "new.jpg".into(),
+                    data_base64: "bmV3".into(),
+                }],
+                obsolete_media: vec!["old.jpg".into()],
+                issues: vec![],
+                tags: vec!["new".into()],
+                provenance: BTreeMap::new(),
+            },
+            field_mapping: linguist_core::FieldMapping {
+                expression: Some("Expression".into()),
+                meaning_text: Some("Meaning".into()),
+                ..Default::default()
+            },
+            template_plan: ManagedTemplatePlan::NoChange,
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_dry_run_performs_no_external_mutation() {
+        let port = MockCommitPort::new();
+        assert!(matches!(
+            commit_card(&port, commit_request(CardMode::Inject, true)).await,
+            Ok(CommitOutcome::DryRun { .. })
+        ));
+        assert!(port.events.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn commit_orders_backup_snapshot_note_and_obsolete_media_last() {
+        for mode in [CardMode::Modernize, CardMode::Inject] {
+            let port = MockCommitPort::new();
+            let outcome = commit_card(&port, commit_request(mode, false))
+                .await
+                .unwrap();
+            assert!(matches!(outcome, CommitOutcome::Committed(_)));
+            let events = port.events.lock().unwrap().clone();
+            let index = |name: &str| events.iter().position(|event| event == name).unwrap();
+            assert!(index("backup") < index("capture"));
+            assert!(index("capture") < index("store"));
+            assert!(index("store") < index("template"));
+            assert!(
+                index("template")
+                    < index(if mode == CardMode::Modernize {
+                        "update"
+                    } else {
+                        "create"
+                    })
+            );
+            assert!(index("finalize") < index("delete"));
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_rolls_back_modernize_and_inject_failures_at_every_mutation_step() {
+        for mode in [CardMode::Modernize, CardMode::Inject] {
+            for phase in [
+                "backup",
+                "capture",
+                "store",
+                "template",
+                if mode == CardMode::Modernize {
+                    "update"
+                } else {
+                    "create"
+                },
+                "finalize",
+                "delete",
+            ] {
+                let port = MockCommitPort::new();
+                let media_before = port.media_state();
+                let notes_before = port.note_fields.lock().unwrap().clone();
+                port.fail(phase);
+                assert!(
+                    commit_card(&port, commit_request(mode, false))
+                        .await
+                        .is_err(),
+                    "{mode:?} {phase}"
+                );
+                assert_eq!(port.media_state(), media_before, "{mode:?} {phase}");
+                assert_eq!(
+                    *port.note_fields.lock().unwrap(),
+                    notes_before,
+                    "{mode:?} {phase}"
+                );
+            }
+        }
     }
 }
