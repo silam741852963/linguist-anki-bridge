@@ -4,8 +4,11 @@
 //! and write actions are added in later slices after their domain boundaries
 //! have tests, so the desktop cannot mutate Anki by accident.
 
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 
+use linguist_application::{
+    CardTemplate, DeckName, MediaFile, ModelFields, ModelName, ModelTemplates, NoteInfo,
+};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -120,6 +123,83 @@ impl AnkiConnectTransport {
         self.send("requestPermission", Value::Null).await
     }
 
+    /// Return collection deck names without loading their notes.
+    pub async fn deck_names(&self) -> Result<Vec<DeckName>, AnkiConnectError> {
+        self.send::<Vec<String>>("deckNames", Value::Null)
+            .await
+            .map(|names| names.into_iter().map(DeckName).collect())
+    }
+
+    /// Return model names without loading model definitions.
+    pub async fn model_names(&self) -> Result<Vec<ModelName>, AnkiConnectError> {
+        self.send::<Vec<String>>("modelNames", Value::Null)
+            .await
+            .map(|names| names.into_iter().map(ModelName).collect())
+    }
+
+    pub async fn model_fields(
+        &self,
+        model_name: &ModelName,
+    ) -> Result<ModelFields, AnkiConnectError> {
+        let fields = self
+            .send("modelFieldNames", json!({"modelName": model_name.0}))
+            .await?;
+        Ok(ModelFields {
+            model_name: model_name.clone(),
+            fields,
+        })
+    }
+
+    pub async fn model_templates(
+        &self,
+        model_name: &ModelName,
+    ) -> Result<ModelTemplates, AnkiConnectError> {
+        let templates: serde_json::Map<String, Value> = self
+            .send("modelTemplates", json!({"modelName": model_name.0}))
+            .await?;
+        let mut converted = Vec::with_capacity(templates.len());
+        for (name, template) in templates {
+            let object =
+                template
+                    .as_object()
+                    .ok_or_else(|| AnkiConnectError::MalformedResponse {
+                        message: format!("template {name:?} is not an object"),
+                    })?;
+            let front = required_string(object, "Front", "modelTemplates")?;
+            let back = required_string(object, "Back", "modelTemplates")?;
+            converted.push(CardTemplate { name, front, back });
+        }
+        Ok(ModelTemplates {
+            model_name: model_name.clone(),
+            templates: converted,
+        })
+    }
+
+    /// Search Anki's indexed collection without embedding search policy here.
+    pub async fn find_notes(&self, query: &str) -> Result<Vec<i64>, AnkiConnectError> {
+        self.send("findNotes", json!({"query": query})).await
+    }
+
+    /// Convert Anki's rich note-info response into the read-only application model.
+    pub async fn notes_info(&self, note_ids: &[i64]) -> Result<Vec<NoteInfo>, AnkiConnectError> {
+        let raw: Vec<RawNoteInfo> = self.send("notesInfo", json!({"notes": note_ids})).await?;
+        Ok(raw.into_iter().map(RawNoteInfo::into_note).collect())
+    }
+
+    /// Retrieve a media payload. A missing Anki media file is represented as `None`.
+    pub async fn retrieve_media_file(
+        &self,
+        filename: &str,
+    ) -> Result<Option<MediaFile>, AnkiConnectError> {
+        let data_base64: Option<String> = self
+            .send("retrieveMediaFile", json!({"filename": filename}))
+            .await?;
+        Ok(data_base64.map(|data_base64| MediaFile {
+            filename: filename.to_owned(),
+            data_base64,
+        }))
+    }
+
     async fn send<T>(&self, action: &str, params: Value) -> Result<T, AnkiConnectError>
     where
         T: serde::de::DeserializeOwned,
@@ -191,6 +271,77 @@ impl AnkiConnectTransport {
         AnkiConnectError::Transport {
             message: error.to_string(),
             retryable: error.is_connect() || error.is_request(),
+        }
+    }
+}
+
+fn required_string(
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+    action: &str,
+) -> Result<String, AnkiConnectError> {
+    object
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| AnkiConnectError::MalformedResponse {
+            message: format!("{action} result is missing string {field:?}"),
+        })
+}
+
+#[derive(Deserialize)]
+struct RawNoteInfo {
+    #[serde(rename = "noteId")]
+    note_id: i64,
+    #[serde(rename = "modelName")]
+    model_name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    fields: std::collections::BTreeMap<String, RawField>,
+    #[serde(default)]
+    cards: Vec<RawCardInfo>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawField {
+    Info { value: String },
+    Value(String),
+}
+
+#[derive(Deserialize)]
+struct RawCardInfo {
+    #[serde(rename = "deckName")]
+    deck_name: Option<String>,
+}
+
+impl RawNoteInfo {
+    fn into_note(self) -> NoteInfo {
+        let fields = self
+            .fields
+            .into_iter()
+            .map(|(name, value)| {
+                let value = match value {
+                    RawField::Info { value } | RawField::Value(value) => value,
+                };
+                (name, value)
+            })
+            .collect();
+        let deck_names = self
+            .cards
+            .into_iter()
+            .filter_map(|card| card.deck_name)
+            .map(DeckName)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        NoteInfo {
+            note_id: self.note_id,
+            model_name: ModelName(self.model_name),
+            deck_names,
+            fields,
+            tags: self.tags,
         }
     }
 }
@@ -336,5 +487,150 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, AnkiConnectError::MalformedResponse { .. }));
+    }
+
+    #[tokio::test]
+    async fn converts_empty_decks_and_missing_notes_at_the_adapter_boundary() {
+        let (deck_url, _) = mock_server(200, r#"{"result":[],"error":null}"#, Duration::ZERO).await;
+        assert!(
+            AnkiConnectTransport::new(&deck_url)
+                .unwrap()
+                .deck_names()
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        let (search_url, request) =
+            mock_server(200, r#"{"result":[],"error":null}"#, Duration::ZERO).await;
+        let transport = AnkiConnectTransport::new(&search_url).unwrap();
+        assert!(
+            transport
+                .find_notes("deck:Japanese missing")
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(request.await.unwrap().contains(r#"{"action":"findNotes"#));
+
+        let (notes_url, _) =
+            mock_server(200, r#"{"result":[],"error":null}"#, Duration::ZERO).await;
+        assert!(
+            AnkiConnectTransport::new(&notes_url)
+                .unwrap()
+                .notes_info(&[404])
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn preserves_html_fields_tags_and_note_decks() {
+        let response = r#"{
+          "result":[{
+            "noteId":42,"modelName":"Japanese","tags":["source","needs review"],
+            "fields":{"Expression":{"order":0,"value":"<b>俳優</b>"},"Meaning":{"order":1,"value":"actor<br>performer"}},
+            "cards":[{"deckName":"Japanese::Media"},{"deckName":"Japanese::Media"}]
+          }],"error":null
+        }"#;
+        let (url, _) = mock_server(200, response, Duration::ZERO).await;
+        let note = AnkiConnectTransport::new(&url)
+            .unwrap()
+            .notes_info(&[42])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(note.note_id, 42);
+        assert_eq!(note.model_name, ModelName("Japanese".into()));
+        assert_eq!(note.fields["Expression"], "<b>俳優</b>");
+        assert_eq!(note.fields["Meaning"], "actor<br>performer");
+        assert_eq!(note.tags, ["source", "needs review"]);
+        assert_eq!(note.deck_names, [DeckName("Japanese::Media".into())]);
+    }
+
+    #[tokio::test]
+    async fn converts_multiple_models_fields_templates_and_media() {
+        let (models_url, _) = mock_server(
+            200,
+            r#"{"result":["Basic","Japanese"],"error":null}"#,
+            Duration::ZERO,
+        )
+        .await;
+        assert_eq!(
+            AnkiConnectTransport::new(&models_url)
+                .unwrap()
+                .model_names()
+                .await
+                .unwrap(),
+            [ModelName("Basic".into()), ModelName("Japanese".into())]
+        );
+
+        let (fields_url, _) = mock_server(
+            200,
+            r#"{"result":["Expression","Meaning"],"error":null}"#,
+            Duration::ZERO,
+        )
+        .await;
+        let model = ModelName("Japanese".into());
+        assert_eq!(
+            AnkiConnectTransport::new(&fields_url)
+                .unwrap()
+                .model_fields(&model)
+                .await
+                .unwrap()
+                .fields,
+            ["Expression", "Meaning"]
+        );
+
+        let (templates_url, _) = mock_server(
+            200,
+            r#"{"result":{"Recognition":{"Front":"{{Expression}}","Back":"{{FrontSide}}<hr>{{Meaning}}"}},"error":null}"#,
+            Duration::ZERO,
+        )
+        .await;
+        assert_eq!(
+            AnkiConnectTransport::new(&templates_url)
+                .unwrap()
+                .model_templates(&model)
+                .await
+                .unwrap()
+                .templates,
+            [CardTemplate {
+                name: "Recognition".into(),
+                front: "{{Expression}}".into(),
+                back: "{{FrontSide}}<hr>{{Meaning}}".into(),
+            }]
+        );
+
+        let (media_url, _) =
+            mock_server(200, r#"{"result":null,"error":null}"#, Duration::ZERO).await;
+        assert_eq!(
+            AnkiConnectTransport::new(&media_url)
+                .unwrap()
+                .retrieve_media_file("missing.mp3")
+                .await
+                .unwrap(),
+            None
+        );
+
+        let (media_url, _) = mock_server(
+            200,
+            r#"{"result":"base64-audio","error":null}"#,
+            Duration::ZERO,
+        )
+        .await;
+        assert_eq!(
+            AnkiConnectTransport::new(&media_url)
+                .unwrap()
+                .retrieve_media_file("audio.mp3")
+                .await
+                .unwrap(),
+            Some(MediaFile {
+                filename: "audio.mp3".into(),
+                data_base64: "base64-audio".into(),
+            })
+        );
     }
 }

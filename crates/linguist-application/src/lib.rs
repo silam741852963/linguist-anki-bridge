@@ -4,7 +4,7 @@
 //! implement these ports. The Qt layer consumes application events and does
 //! not call providers directly.
 
-use std::{future::Future, pin::Pin};
+use std::{collections::BTreeMap, future::Future, pin::Pin};
 
 use linguist_core::CardDocument;
 
@@ -31,6 +31,48 @@ pub struct NoteSummary {
     pub expression: String,
     pub deck_key: String,
     pub model_name: String,
+}
+
+/// Read-only collection data exposed to use cases and eventually to the GUI.
+/// Adapter-specific wire shapes must not cross this boundary.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct DeckName(pub String);
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ModelName(pub String);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelFields {
+    pub model_name: ModelName,
+    pub fields: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CardTemplate {
+    pub name: String,
+    pub front: String,
+    pub back: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelTemplates {
+    pub model_name: ModelName,
+    pub templates: Vec<CardTemplate>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteInfo {
+    pub note_id: i64,
+    pub model_name: ModelName,
+    pub deck_names: Vec<DeckName>,
+    pub fields: BTreeMap<String, String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MediaFile {
+    pub filename: String,
+    pub data_base64: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
