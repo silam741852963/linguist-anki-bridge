@@ -5,6 +5,7 @@
 //! each Python integration is replaced independently.
 
 mod card;
+mod expression;
 mod jobs;
 mod persistence;
 
@@ -13,6 +14,7 @@ pub use card::{
     LlmResponse, LogicalFields, MappingError, MediaAsset, ProcessedCardData, Provenance,
     RenamedImage, SourceKind, build_card_document,
 };
+pub use expression::normalize_expression;
 pub use jobs::{BatchItemState, BatchJobState, ClaimStage};
 pub use persistence::{
     BatchArtifactReference, BatchItemContract, BatchJobContract, BatchJobDocument,

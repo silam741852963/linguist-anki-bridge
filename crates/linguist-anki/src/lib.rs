@@ -7,7 +7,8 @@
 use std::{collections::BTreeSet, time::Duration};
 
 use linguist_application::{
-    CardTemplate, DeckName, MediaFile, ModelFields, ModelName, ModelTemplates, NoteInfo,
+    CardTemplate, DeckName, ExactExpressionRequest, ExpressionResolution, MediaFile, ModelFields,
+    ModelName, ModelTemplates, NoteInfo, resolve_exact_expression,
 };
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
@@ -180,6 +181,27 @@ impl AnkiConnectTransport {
         self.send("findNotes", json!({"query": query})).await
     }
 
+    /// Ask Anki for indexed candidates, then defer exact comparison and mode
+    /// selection to the application use case.
+    pub async fn resolve_exact_expression(
+        &self,
+        deck_name: &str,
+        request: &ExactExpressionRequest,
+    ) -> Result<ExpressionResolution, AnkiConnectError> {
+        let normalized = linguist_core::normalize_expression(&request.expression);
+        if normalized.is_empty() {
+            return Ok(resolve_exact_expression(request, []));
+        }
+        let query = format!(
+            "deck:\"{}\" \"{}\"",
+            escape_anki_query(deck_name),
+            escape_anki_query(&normalized)
+        );
+        let note_ids = self.find_notes(&query).await?;
+        let notes = self.notes_info(&note_ids).await?;
+        Ok(resolve_exact_expression(request, notes))
+    }
+
     /// Convert Anki's rich note-info response into the read-only application model.
     pub async fn notes_info(&self, note_ids: &[i64]) -> Result<Vec<NoteInfo>, AnkiConnectError> {
         let raw: Vec<RawNoteInfo> = self.send("notesInfo", json!({"notes": note_ids})).await?;
@@ -289,6 +311,10 @@ fn required_string(
         })
 }
 
+fn escape_anki_query(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 #[derive(Deserialize)]
 struct RawNoteInfo {
     #[serde(rename = "noteId")]
@@ -380,6 +406,31 @@ mod tests {
                 body.len()
             );
             stream.write_all(response.as_bytes()).await.unwrap();
+        });
+        (format!("http://{address}"), request_rx)
+    }
+
+    async fn mock_sequence(
+        responses: Vec<&'static str>,
+    ) -> (String, oneshot::Receiver<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (request_tx, request_rx) = oneshot::channel();
+        tokio::spawn(async move {
+            let mut requests = Vec::with_capacity(responses.len());
+            for body in responses {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = vec![0; 4096];
+                let count = stream.read(&mut request).await.unwrap();
+                request.truncate(count);
+                requests.push(String::from_utf8_lossy(&request).into_owned());
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+            let _ = request_tx.send(requests);
         });
         (format!("http://{address}"), request_rx)
     }
@@ -632,5 +683,34 @@ mod tests {
                 data_base64: "base64-audio".into(),
             })
         );
+    }
+
+    #[tokio::test]
+    async fn adapter_uses_indexed_candidates_then_application_resolution() {
+        let (url, requests) = mock_sequence(vec![
+            r#"{"result":[42],"error":null}"#,
+            r#"{"result":[{"noteId":42,"modelName":"Legacy","fields":{"Word":{"value":"<b>俳優</b>"}},"tags":[],"cards":[]}],"error":null}"#,
+        ])
+        .await;
+        let resolution = AnkiConnectTransport::new(&url)
+            .unwrap()
+            .resolve_exact_expression(
+                "Japanese::Vocabulary",
+                &ExactExpressionRequest {
+                    deck_key: "japanese_vocab".into(),
+                    expression: " 俳優 ".into(),
+                    preferred_fields: vec!["Word".into()],
+                },
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            resolution,
+            ExpressionResolution::Modernize { note, .. } if note.note_id == 42
+        ));
+        let requests = requests.await.unwrap();
+        assert!(requests[0].contains(r#""action":"findNotes"#));
+        assert!(requests[0].contains(r#"deck:\"Japanese::Vocabulary\" \"俳優\""#));
+        assert!(requests[1].contains(r#""action":"notesInfo"#));
     }
 }
