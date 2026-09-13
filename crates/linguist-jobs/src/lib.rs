@@ -72,6 +72,40 @@ pub struct RollbackReport {
     pub failures: Vec<(i64, String)>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuditIssue {
+    pub job_id: Option<String>,
+    pub item_id: Option<i64>,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LegacyAudit {
+    pub jobs: Vec<LegacyJob>,
+    pub issues: Vec<AuditIssue>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LegacyJob {
+    pub job: BatchJobContract,
+    pub items: Vec<BatchItemContract>,
+}
+
+impl LegacyAudit {
+    pub fn is_valid(&self) -> bool {
+        self.issues.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationReport {
+    pub backup: PathBuf,
+    pub target: PathBuf,
+    pub jobs: usize,
+    pub items: usize,
+    pub artifacts: usize,
+}
+
 /// Process-scoped exclusive lease. Dropping it releases the kernel lock.
 pub struct RunnerLease {
     file: File,
@@ -113,6 +147,8 @@ pub enum JobRepositoryError {
     InvalidArtifactPath,
     InvalidState(String),
     ActiveJob(String),
+    LegacyAuditFailed(Vec<AuditIssue>),
+    TargetExists(PathBuf),
     Io(std::io::Error),
     Sql(rusqlite::Error),
     Json(serde_json::Error),
@@ -135,6 +171,14 @@ impl std::fmt::Display for JobRepositoryError {
             Self::InvalidArtifactPath => write!(formatter, "invalid artifact path"),
             Self::InvalidState(state) => write!(formatter, "invalid batch state: {state}"),
             Self::ActiveJob(job_id) => write!(formatter, "job still active: {job_id}"),
+            Self::LegacyAuditFailed(issues) => write!(
+                formatter,
+                "legacy audit failed with {} issue(s)",
+                issues.len()
+            ),
+            Self::TargetExists(path) => {
+                write!(formatter, "migration target exists: {}", path.display())
+            }
             Self::Io(error) => error.fmt(formatter),
             Self::Sql(error) => error.fmt(formatter),
             Self::Json(error) => error.fmt(formatter),
@@ -197,6 +241,49 @@ impl JobRepository {
     }
     pub fn artifact_root(&self) -> &Path {
         &self.artifact_root
+    }
+
+    /// Audit a byte-for-byte copied legacy database through a read-only
+    /// connection. The source database and its WAL are never opened writable.
+    pub fn audit_legacy(source: &Path) -> Result<LegacyAudit, JobRepositoryError> {
+        let copy =
+            std::env::temp_dir().join(format!("linguist-jobs-audit-{}.sqlite3", new_id("copy")));
+        fs::copy(source, &copy)?;
+        copy_sqlite_sidecars(source, &copy)?;
+        let result = audit_legacy_copy(&copy, &legacy_artifact_root(source));
+        let _ = fs::remove_file(&copy);
+        let _ = fs::remove_file(sqlite_sidecar(&copy, "-wal"));
+        let _ = fs::remove_file(sqlite_sidecar(&copy, "-shm"));
+        result
+    }
+
+    /// Explicit migration entry point. It copies the legacy database to a
+    /// sibling backup before creating a separate native target database.
+    pub fn migrate_legacy(
+        source: &Path,
+        target: &Path,
+    ) -> Result<MigrationReport, JobRepositoryError> {
+        if target.exists() {
+            return Err(JobRepositoryError::TargetExists(target.into()));
+        }
+        let audit = Self::audit_legacy(source)?;
+        if !audit.is_valid() {
+            return Err(JobRepositoryError::LegacyAuditFailed(audit.issues));
+        }
+        let backup = backup_path(source);
+        fs::copy(source, &backup)?;
+        let repository = Self::open(target)?;
+        let mut artifacts = 0;
+        for legacy in &audit.jobs {
+            artifacts += repository.import_legacy_job(legacy, &legacy_artifact_root(source))?;
+        }
+        Ok(MigrationReport {
+            backup,
+            target: target.into(),
+            jobs: audit.jobs.len(),
+            items: audit.jobs.iter().map(|job| job.items.len()).sum(),
+            artifacts,
+        })
     }
 
     /// Return `None` if another process owns the runner. The lock is owned by
@@ -713,6 +800,54 @@ impl JobRepository {
         }
     }
 
+    fn import_legacy_job(
+        &self,
+        legacy: &LegacyJob,
+        legacy_artifacts: &Path,
+    ) -> Result<usize, JobRepositoryError> {
+        let job = &legacy.job;
+        let mut connection = self.connect()?;
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "INSERT INTO batch_jobs (id, deck_key, deck_name, status, dry_run, settings_json, created_at, updated_at, started_at, finished_at, last_error)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![job.id, job.deck_key, job.deck_name, job.status, job.dry_run, serde_json::to_string(&job.settings)?,
+                job.created_at, job.updated_at, job.started_at, job.finished_at, job.last_error],
+        )?;
+        let mut copied = 0;
+        for item in &legacy.items {
+            let artifact = item
+                .artifact
+                .as_ref()
+                .map(|source| {
+                    let source_path = PathBuf::from(&source.reference);
+                    let file_name = source_path
+                        .file_name()
+                        .ok_or(JobRepositoryError::InvalidArtifactPath)?;
+                    let directory = self.artifact_root.join(&job.id);
+                    fs::create_dir_all(&directory)?;
+                    let target_path = directory.join(file_name);
+                    copy_atomic(&source_path, &target_path)?;
+                    copied += 1;
+                    Ok::<BatchArtifactReference, JobRepositoryError>(BatchArtifactReference {
+                        reference: target_path.to_string_lossy().into_owned(),
+                        extensions: source.extensions.clone(),
+                    })
+                })
+                .transpose()?;
+            transaction.execute(
+                "INSERT INTO batch_items (id, job_id, ordinal, note_id, word, status, attempts, next_attempt_at, artifact_path, snapshot_id, result_note_id, last_error, started_at, finished_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![item.id, job.id, item.ordinal, item.note_id, item.word, item.status, item.attempts,
+                    item.next_attempt_at, artifact.as_ref().map(|artifact| &artifact.reference), item.snapshot_id,
+                    item.result_note_id, item.last_error, item.started_at, item.finished_at, item.updated_at],
+            )?;
+        }
+        transaction.commit()?;
+        let _ = legacy_artifacts;
+        Ok(copied)
+    }
+
     fn initialize(&self) -> Result<(), JobRepositoryError> {
         if let Some(parent) = self.database.parent() {
             fs::create_dir_all(parent)?;
@@ -887,6 +1022,164 @@ fn parse_item_state(state: &str) -> Result<BatchItemState, JobRepositoryError> {
     }
 }
 
+fn valid_job_state(state: &str) -> bool {
+    matches!(
+        state,
+        "queued"
+            | "running"
+            | "pausing"
+            | "paused"
+            | "completed"
+            | "failed"
+            | "cancelled"
+            | "rolling_back"
+            | "rollback_paused"
+            | "rolled_back"
+            | "rollback_partial"
+    )
+}
+
+fn audit_legacy_copy(copy: &Path, artifact_root: &Path) -> Result<LegacyAudit, JobRepositoryError> {
+    let connection = Connection::open_with_flags(copy, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let mut audit = LegacyAudit::default();
+    for table in ["batch_jobs", "batch_items"] {
+        let exists = connection
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                [table],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !exists {
+            audit.issues.push(AuditIssue {
+                job_id: None,
+                item_id: None,
+                message: format!("missing table {table}"),
+            });
+        }
+    }
+    if !audit.issues.is_empty() {
+        return Ok(audit);
+    }
+    let mut jobs = connection.prepare(
+        "SELECT id, deck_key, deck_name, status, dry_run, settings_json, created_at, updated_at, started_at, finished_at, last_error FROM batch_jobs ORDER BY created_at, id",
+    )?;
+    let jobs = jobs
+        .query_map([], row_job)?
+        .collect::<Result<Vec<_>, _>>()?;
+    for job in jobs {
+        let mut issues = Vec::new();
+        if !valid_job_state(&job.status) {
+            issues.push("unknown job status".into());
+        }
+        let mut statement = connection.prepare(
+            "SELECT id, ordinal, note_id, word, status, attempts, next_attempt_at, artifact_path, snapshot_id, result_note_id, last_error, started_at, finished_at, updated_at FROM batch_items WHERE job_id=? ORDER BY ordinal",
+        )?;
+        let items = statement
+            .query_map([&job.id], row_item)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut notes = BTreeSet::new();
+        for item in &items {
+            if !notes.insert(item.note_id) {
+                audit.issues.push(AuditIssue {
+                    job_id: Some(job.id.clone()),
+                    item_id: item.id,
+                    message: "duplicate note id".into(),
+                });
+            }
+            if parse_item_state(&item.status).is_err() {
+                audit.issues.push(AuditIssue {
+                    job_id: Some(job.id.clone()),
+                    item_id: item.id,
+                    message: "unknown item status".into(),
+                });
+            }
+            if let Some(artifact) = &item.artifact {
+                let path = PathBuf::from(&artifact.reference);
+                if !path.starts_with(artifact_root) || !path.is_file() {
+                    audit.issues.push(AuditIssue {
+                        job_id: Some(job.id.clone()),
+                        item_id: item.id,
+                        message: "artifact missing or outside legacy root".into(),
+                    });
+                } else if serde_json::from_slice::<Value>(&fs::read(path)?)
+                    .ok()
+                    .filter(Value::is_object)
+                    .is_none()
+                {
+                    audit.issues.push(AuditIssue {
+                        job_id: Some(job.id.clone()),
+                        item_id: item.id,
+                        message: "artifact is not a JSON object".into(),
+                    });
+                }
+            }
+        }
+        for message in issues {
+            audit.issues.push(AuditIssue {
+                job_id: Some(job.id.clone()),
+                item_id: None,
+                message,
+            });
+        }
+        audit.jobs.push(LegacyJob { job, items });
+    }
+    Ok(audit)
+}
+
+fn legacy_artifact_root(database: &Path) -> PathBuf {
+    database.with_file_name(format!(
+        "{}_artifacts",
+        database
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("jobs")
+    ))
+}
+
+fn backup_path(source: &Path) -> PathBuf {
+    source.with_file_name(format!(
+        "{}.pre-native-{}.bak",
+        source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("jobs.sqlite3"),
+        new_id("backup")
+    ))
+}
+
+fn copy_atomic(source: &Path, target: &Path) -> Result<(), JobRepositoryError> {
+    let temporary = target.with_file_name(format!(
+        ".{}.tmp",
+        target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("artifact")
+    ));
+    fs::copy(source, &temporary)?;
+    File::open(&temporary)?.sync_all()?;
+    fs::rename(&temporary, target)?;
+    if let Some(parent) = target.parent() {
+        sync_directory(parent)?;
+    }
+    Ok(())
+}
+
+fn sqlite_sidecar(database: &Path, suffix: &str) -> PathBuf {
+    PathBuf::from(format!("{}{}", database.display(), suffix))
+}
+
+fn copy_sqlite_sidecars(source: &Path, target: &Path) -> Result<(), JobRepositoryError> {
+    for suffix in ["-wal", "-shm"] {
+        let source = sqlite_sidecar(source, suffix);
+        if source.exists() {
+            fs::copy(source, sqlite_sidecar(target, suffix))?;
+        }
+    }
+    Ok(())
+}
+
 fn sync_directory(directory: &Path) -> Result<(), std::io::Error> {
     #[cfg(unix)]
     File::open(directory)?.sync_all()?;
@@ -922,6 +1215,39 @@ mod tests {
                     word: format!("word-{note_id}"),
                 })
                 .collect(),
+        }
+    }
+
+    fn legacy_fixture(path: &Path) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let connection = Connection::open(path).unwrap();
+        connection.execute_batch(
+            "CREATE TABLE batch_jobs (id TEXT PRIMARY KEY, deck_key TEXT NOT NULL, deck_name TEXT NOT NULL, status TEXT NOT NULL, dry_run INTEGER NOT NULL, settings_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, last_error TEXT NOT NULL);
+             CREATE TABLE batch_items (id INTEGER PRIMARY KEY, job_id TEXT NOT NULL, ordinal INTEGER NOT NULL, note_id INTEGER NOT NULL, word TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL, next_attempt_at TEXT, artifact_path TEXT, snapshot_id TEXT, result_note_id INTEGER, last_error TEXT NOT NULL, started_at TEXT, finished_at TEXT, updated_at TEXT NOT NULL);"
+        ).unwrap();
+        let statuses = [
+            ("queued", "pending"),
+            ("paused", "pending"),
+            ("failed", "failed"),
+            ("completed", "completed"),
+            ("running", "processing"),
+        ];
+        let artifacts = legacy_artifact_root(path);
+        fs::create_dir_all(artifacts.join("completed")).unwrap();
+        let artifact = artifacts.join("completed/4.json");
+        fs::write(&artifact, br#"{"word":"done"}"#).unwrap();
+        for (index, (job_status, item_status)) in statuses.into_iter().enumerate() {
+            connection.execute(
+                "INSERT INTO batch_jobs VALUES (?, 'japanese_vocab', 'Japanese', ?, 0, '{\"max_attempts\":3}', ?, ?, NULL, NULL, '')",
+                params![job_status, job_status, format!("2026-01-0{}T00:00:00Z", index + 1), format!("2026-01-0{}T00:00:00Z", index + 1)],
+            ).unwrap();
+            let artifact_path =
+                (job_status == "completed").then(|| artifact.to_string_lossy().into_owned());
+            connection.execute(
+                "INSERT INTO batch_items VALUES (?, ?, 0, ?, ?, ?, 0, NULL, ?, ?, ?, '', NULL, NULL, ?)",
+                params![index as i64 + 1, job_status, index as i64 + 1, format!("word-{job_status}"), item_status, artifact_path,
+                    (job_status == "completed").then_some("snapshot-4"), (job_status == "completed").then_some(4_i64), format!("2026-01-0{}T00:00:00Z", index + 1)],
+            ).unwrap();
         }
     }
 
@@ -1185,5 +1511,51 @@ mod tests {
         repository.delete_job(&id).unwrap();
         assert!(!std::path::Path::new(&artifact.reference).exists());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn audit_and_backup_first_migration_preserve_python_fixture_bytes() {
+        let source = temporary_path("legacy-migrate");
+        legacy_fixture(&source);
+        let before = fs::read(&source).unwrap();
+        let audit = JobRepository::audit_legacy(&source).unwrap();
+        assert!(audit.is_valid());
+        assert_eq!(audit.jobs.len(), 5);
+        assert_eq!(fs::read(&source).unwrap(), before);
+
+        let target = source.with_file_name("native.sqlite3");
+        let report = JobRepository::migrate_legacy(&source, &target).unwrap();
+        assert_eq!((report.jobs, report.items, report.artifacts), (5, 5, 1));
+        assert_eq!(fs::read(&source).unwrap(), before);
+        assert_eq!(fs::read(&report.backup).unwrap(), before);
+        let migrated = JobRepository::open(&target).unwrap();
+        let statuses = migrated
+            .job_summaries()
+            .unwrap()
+            .into_iter()
+            .map(|summary| summary.job.status)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            statuses,
+            BTreeSet::from([
+                "queued".into(),
+                "paused".into(),
+                "failed".into(),
+                "completed".into(),
+                "running".into(),
+            ])
+        );
+        let completed = migrated
+            .item_page("completed", 1, 0)
+            .unwrap()
+            .items
+            .remove(0);
+        assert_eq!(
+            migrated
+                .load_artifact(completed.artifact.as_ref().unwrap())
+                .unwrap(),
+            json!({"word": "done"})
+        );
+        fs::remove_dir_all(source.parent().unwrap()).unwrap();
     }
 }
