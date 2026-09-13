@@ -36,7 +36,7 @@ Rectangle {
                 Item { Layout.fillWidth: true }
                 Button { text: qsTr("Undo"); onClicked: backend.undoDraft() }
                 Button { text: qsTr("Redo"); onClicked: backend.redoDraft() }
-                Button { text: qsTr("Regenerate") }
+                Button { text: qsTr("Regenerate"); onClicked: backend.regenerateDraft() }
                 Button { text: qsTr("Apply to Anki"); highlighted: true; onClicked: workspace.applyRequested() }
             }
 

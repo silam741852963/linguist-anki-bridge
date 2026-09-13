@@ -1,4 +1,4 @@
-use crate::draft::{DraftField, DraftPersistence, DraftStore, ReviewDraft};
+use crate::draft::{DraftField, DraftPersistence, DraftStore, GeneratedChange, ReviewDraft};
 use crate::review_model::{ReviewQueueData, ReviewQueueModel, ReviewRow};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -68,6 +68,11 @@ impl ApplicationController {
 
     pub fn active_draft(&self) -> Option<&ReviewDraft> {
         self.drafts.active()
+    }
+
+    #[allow(dead_code)]
+    pub fn pending_change(&self, index: usize) -> Option<&GeneratedChange> {
+        self.active_draft()?.pending().get(index)
     }
 
     pub fn refresh<P: DesktopPort>(&mut self, port: &P) {
@@ -147,6 +152,41 @@ impl ApplicationController {
         self.drafts.active_mut().is_some_and(ReviewDraft::redo)
     }
 
+    #[allow(dead_code)]
+    pub fn set_draft_locked(&mut self, field: DraftField, locked: bool) {
+        if let Some(draft) = self.drafts.active_mut() {
+            draft.set_locked(field, locked);
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn accept_draft_change(&mut self, index: usize) -> bool {
+        self.drafts
+            .active_mut()
+            .is_some_and(|draft| draft.accept(index))
+    }
+
+    #[allow(dead_code)]
+    pub fn reject_draft_change(&mut self, index: usize) -> bool {
+        self.drafts
+            .active_mut()
+            .is_some_and(|draft| draft.reject(index))
+    }
+
+    pub fn regenerate_draft<P: DraftGenerationPort>(&mut self, port: &P) {
+        let Some(draft) = self.active_draft().cloned() else {
+            return;
+        };
+        match port.generate(&draft) {
+            Ok(changes) => self
+                .drafts
+                .active_mut()
+                .expect("active draft unchanged")
+                .regenerate(changes),
+            Err(error) => self.report_error(error),
+        }
+    }
+
     fn sync_queue_selection(&mut self) {
         self.state.selection = self
             .queue
@@ -155,6 +195,10 @@ impl ApplicationController {
             .map(selection_label)
             .unwrap_or_default();
     }
+}
+
+pub trait DraftGenerationPort {
+    fn generate(&self, draft: &ReviewDraft) -> Result<Vec<GeneratedChange>, String>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -251,5 +295,36 @@ mod tests {
         });
         assert_eq!(controller.state().selection, "42 · 食べる");
         assert_eq!(controller.queue().selected_index(), Some(0));
+    }
+
+    struct FakeGeneration;
+    impl DraftGenerationPort for FakeGeneration {
+        fn generate(&self, _draft: &ReviewDraft) -> Result<Vec<GeneratedChange>, String> {
+            Ok(vec![GeneratedChange {
+                field: DraftField::Meaning,
+                value: "generated".into(),
+                provenance: "fake".into(),
+            }])
+        }
+    }
+
+    #[test]
+    fn generated_changes_can_be_reviewed_without_overwriting_user_edits() {
+        let mut controller = ApplicationController::default();
+        controller.replace_queue(ReviewQueueData {
+            decks: vec![],
+            rows: vec![ReviewRow {
+                note_id: 7,
+                expression: "読む".into(),
+                detail: String::new(),
+                state: crate::review_model::ReviewState::NeedsReview,
+            }],
+        });
+        controller.select_queue_index(0);
+        controller.edit_draft(DraftField::Meaning, "user");
+        controller.regenerate_draft(&FakeGeneration);
+        assert!(controller.pending_change(0).is_none());
+        controller.set_draft_locked(DraftField::Kanji, true);
+        assert!(controller.active_draft().unwrap().locked(DraftField::Kanji));
     }
 }

@@ -84,6 +84,9 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "redoDraft"]
         fn redo_draft(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "regenerateDraft"]
+        fn regenerate_draft(self: Pin<&mut Self>);
     }
 }
 
@@ -92,7 +95,7 @@ use std::pin::Pin;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 
-use crate::controller::{ApplicationController, DesktopPort};
+use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort};
 use crate::theme::ThemePalette;
 
 pub struct AppBackendRust {
@@ -279,6 +282,14 @@ impl qobject::AppBackend {
         self.as_mut().rust_mut().controller.redo_draft();
         sync_controller_state(self);
     }
+
+    pub fn regenerate_draft(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .rust_mut()
+            .controller
+            .regenerate_draft(&DisconnectedGenerator);
+        sync_controller_state(self);
+    }
 }
 
 fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
@@ -383,6 +394,17 @@ fn queue_index(index: Option<usize>) -> i32 {
 }
 
 struct DisconnectedPort;
+
+struct DisconnectedGenerator;
+
+impl DraftGenerationPort for DisconnectedGenerator {
+    fn generate(
+        &self,
+        _draft: &crate::draft::ReviewDraft,
+    ) -> Result<Vec<crate::draft::GeneratedChange>, String> {
+        Err("Generation adapter is not connected yet".into())
+    }
+}
 
 impl DesktopPort for DisconnectedPort {
     fn anki_available(&self) -> Result<(), String> {
