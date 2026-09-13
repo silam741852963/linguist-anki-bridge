@@ -59,6 +59,19 @@ pub struct ClaimedItem {
     pub stage: ClaimStage,
 }
 
+/// Anki-facing restoration remains outside the SQLite repository. This keeps
+/// deletion and retention operations provably unable to contact Anki.
+pub trait BatchRollbackPort {
+    fn restore_snapshot(&self, snapshot_id: &str) -> Result<(), String>;
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RollbackReport {
+    pub reverted_item_ids: Vec<i64>,
+    pub conflicts: Vec<i64>,
+    pub failures: Vec<(i64, String)>,
+}
+
 /// Process-scoped exclusive lease. Dropping it releases the kernel lock.
 pub struct RunnerLease {
     file: File,
@@ -99,6 +112,7 @@ pub enum JobRepositoryError {
     UnknownItem(i64),
     InvalidArtifactPath,
     InvalidState(String),
+    ActiveJob(String),
     Io(std::io::Error),
     Sql(rusqlite::Error),
     Json(serde_json::Error),
@@ -120,6 +134,7 @@ impl std::fmt::Display for JobRepositoryError {
             Self::UnknownItem(item_id) => write!(formatter, "unknown item: {item_id}"),
             Self::InvalidArtifactPath => write!(formatter, "invalid artifact path"),
             Self::InvalidState(state) => write!(formatter, "invalid batch state: {state}"),
+            Self::ActiveJob(job_id) => write!(formatter, "job still active: {job_id}"),
             Self::Io(error) => error.fmt(formatter),
             Self::Sql(error) => error.fmt(formatter),
             Self::Json(error) => error.fmt(formatter),
@@ -369,6 +384,137 @@ impl JobRepository {
         }
         self.set_job_state(job_id, BatchJobState::Completed, "")?;
         Ok(true)
+    }
+
+    pub fn complete_item(
+        &self,
+        item_id: i64,
+        snapshot_id: &str,
+        result_note_id: i64,
+    ) -> Result<(), JobRepositoryError> {
+        let now = now();
+        let connection = self.connect()?;
+        let changed = connection.execute(
+            "UPDATE batch_items SET status='completed', snapshot_id=?, result_note_id=?, finished_at=?, updated_at=? WHERE id=?",
+            params![snapshot_id, result_note_id, now, now, item_id],
+        )?;
+        if changed == 1 {
+            Ok(())
+        } else {
+            Err(JobRepositoryError::UnknownItem(item_id))
+        }
+    }
+
+    /// Restore completed rows in reverse commit order. A later completed job
+    /// owning the same note blocks the older rollback before Anki is touched.
+    pub fn rollback<P: BatchRollbackPort>(
+        &self,
+        job_id: &str,
+        port: &P,
+    ) -> Result<RollbackReport, JobRepositoryError> {
+        self.set_job_state(job_id, BatchJobState::RollingBack, "")?;
+        let connection = self.connect()?;
+        let mut statement = connection.prepare(
+            "SELECT id, ordinal, note_id, word, status, attempts, next_attempt_at, artifact_path, snapshot_id,
+                    result_note_id, last_error, started_at, finished_at, updated_at
+             FROM batch_items WHERE job_id=? AND status IN ('completed', 'rollback_failed') ORDER BY ordinal DESC",
+        )?;
+        let items = statement
+            .query_map([job_id], row_item)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut report = RollbackReport::default();
+        for item in items {
+            let item_id = item.id.expect("native item ids are present");
+            if self.later_completed_change_exists(job_id, item.note_id)? {
+                self.mark_rollback_failure(item_id, "newer completed job owns this note")?;
+                report.conflicts.push(item_id);
+                continue;
+            }
+            let Some(snapshot_id) = item.snapshot_id.as_deref() else {
+                self.mark_rollback_failure(item_id, "completed item has no snapshot")?;
+                report
+                    .failures
+                    .push((item_id, "completed item has no snapshot".into()));
+                continue;
+            };
+            match port.restore_snapshot(snapshot_id) {
+                Ok(()) => {
+                    let connection = self.connect()?;
+                    connection.execute(
+                        "UPDATE batch_items SET status='reverted', last_error='', finished_at=?, updated_at=? WHERE id=?",
+                        params![now(), now(), item_id],
+                    )?;
+                    report.reverted_item_ids.push(item_id);
+                }
+                Err(error) => {
+                    self.mark_rollback_failure(item_id, &error)?;
+                    report.failures.push((item_id, error));
+                }
+            }
+        }
+        let final_state = if report.conflicts.is_empty() && report.failures.is_empty() {
+            BatchJobState::RolledBack
+        } else {
+            BatchJobState::RollbackPartial
+        };
+        self.set_job_state(job_id, final_state, "")?;
+        Ok(report)
+    }
+
+    /// Delete database rows and their artifacts only. Snapshots are owned by
+    /// the separate snapshot repository and deliberately remain untouched.
+    pub fn delete_job(&self, job_id: &str) -> Result<RollbackReport, JobRepositoryError> {
+        let job = self
+            .job(job_id)?
+            .ok_or_else(|| JobRepositoryError::UnknownJob(job_id.into()))?;
+        if matches!(job.status.as_str(), "running" | "pausing" | "rolling_back") {
+            return Err(JobRepositoryError::ActiveJob(job_id.into()));
+        }
+        let connection = self.connect()?;
+        let active: u64 = connection.query_row(
+            "SELECT COUNT(*) FROM batch_items WHERE job_id=? AND status IN ('processing', 'committing')", [job_id], |row| row.get(0),
+        )?;
+        if active != 0 {
+            return Err(JobRepositoryError::ActiveJob(job_id.into()));
+        }
+        let mut statement = connection.prepare("SELECT id FROM batch_items WHERE job_id=?")?;
+        let item_ids = statement
+            .query_map([job_id], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+        let connection = self.connect()?;
+        connection.execute("DELETE FROM batch_jobs WHERE id=?", [job_id])?;
+        let directory = self.artifact_root.join(job_id);
+        if directory.parent() == Some(self.artifact_root.as_path()) && directory.exists() {
+            fs::remove_dir_all(directory)?;
+        }
+        Ok(RollbackReport {
+            reverted_item_ids: item_ids,
+            ..RollbackReport::default()
+        })
+    }
+
+    fn mark_rollback_failure(&self, item_id: i64, error: &str) -> Result<(), JobRepositoryError> {
+        let connection = self.connect()?;
+        connection.execute(
+            "UPDATE batch_items SET status='rollback_failed', last_error=?, updated_at=? WHERE id=?",
+            params![error, now(), item_id],
+        )?;
+        Ok(())
+    }
+
+    fn later_completed_change_exists(
+        &self,
+        job_id: &str,
+        note_id: i64,
+    ) -> Result<bool, JobRepositoryError> {
+        let connection = self.connect()?;
+        connection.query_row(
+            "SELECT 1 FROM batch_items newer JOIN batch_jobs newer_job ON newer_job.id=newer.job_id
+             JOIN batch_jobs current_job ON current_job.id=?
+             WHERE newer.note_id=? AND newer_job.created_at>current_job.created_at AND newer.status='completed' LIMIT 1",
+            params![job_id, note_id], |_| Ok(()),
+        ).optional().map(|value| value.is_some()).map_err(Into::into)
     }
 
     pub fn migration_metadata(&self) -> Result<Vec<MigrationMetadata>, JobRepositoryError> {
@@ -948,5 +1094,96 @@ mod tests {
         };
         let repository = JobRepository::open(path).unwrap();
         assert!(repository.acquire_runner_lease().unwrap().is_none());
+    }
+
+    #[derive(Default)]
+    struct MockRollbackPort {
+        restored: std::sync::Mutex<Vec<String>>,
+        fail: Option<String>,
+    }
+
+    impl BatchRollbackPort for MockRollbackPort {
+        fn restore_snapshot(&self, snapshot_id: &str) -> Result<(), String> {
+            self.restored.lock().unwrap().push(snapshot_id.into());
+            if self.fail.as_deref() == Some(snapshot_id) {
+                Err("restore failed".into())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn rollback_reverses_commits_and_never_overwrites_newer_job() {
+        let path = temporary_path("rollback");
+        let repository = JobRepository::open(&path).unwrap();
+        let older = repository.create_job(job(&[10, 11])).unwrap();
+        let old_items = repository.item_page(&older, 2, 0).unwrap().items;
+        repository
+            .complete_item(old_items[0].id.unwrap(), "old-10", 10)
+            .unwrap();
+        repository
+            .complete_item(old_items[1].id.unwrap(), "old-11", 11)
+            .unwrap();
+        let newer = repository.create_job(job(&[10])).unwrap();
+        let newer_item = repository.item_page(&newer, 1, 0).unwrap().items.remove(0);
+        repository
+            .complete_item(newer_item.id.unwrap(), "new-10", 10)
+            .unwrap();
+        let port = MockRollbackPort::default();
+
+        let report = repository.rollback(&older, &port).unwrap();
+        assert_eq!(report.conflicts, vec![old_items[0].id.unwrap()]);
+        assert_eq!(*port.restored.lock().unwrap(), vec!["old-11"]);
+        assert_eq!(
+            repository.job(&older).unwrap().unwrap().status,
+            "rollback_partial"
+        );
+        assert_eq!(
+            repository.item_page(&older, 2, 0).unwrap().items[0].status,
+            "rollback_failed"
+        );
+        assert_eq!(
+            repository.item_page(&newer, 1, 0).unwrap().items[0].status,
+            "completed"
+        );
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn rollback_failures_retry_and_deletion_removes_only_artifacts() {
+        let path = temporary_path("retention");
+        let repository = JobRepository::open(&path).unwrap();
+        let id = repository.create_job(job(&[7])).unwrap();
+        let item = repository.item_page(&id, 1, 0).unwrap().items.remove(0);
+        let artifact = repository
+            .replace_artifact(&id, item.id.unwrap(), &json!({"cached": true}))
+            .unwrap();
+        repository
+            .complete_item(item.id.unwrap(), "snap-7", 7)
+            .unwrap();
+        let failing = MockRollbackPort {
+            fail: Some("snap-7".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            repository.rollback(&id, &failing).unwrap().failures.len(),
+            1
+        );
+        let success = MockRollbackPort::default();
+        assert_eq!(
+            repository
+                .rollback(&id, &success)
+                .unwrap()
+                .reverted_item_ids,
+            vec![item.id.unwrap()]
+        );
+        assert!(std::path::Path::new(&artifact.reference).exists());
+
+        // delete_job accepts no Anki/snapshot port: this test proves retention
+        // cannot call Anki while removing only its database/artifact scope.
+        repository.delete_job(&id).unwrap();
+        assert!(!std::path::Path::new(&artifact.reference).exists());
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }
