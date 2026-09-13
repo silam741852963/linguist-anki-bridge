@@ -35,6 +35,12 @@ pub mod qobject {
         #[qproperty(bool, draft_dirty)]
         #[qproperty(i32, draft_pending_count)]
         #[qproperty(bool, draft_meaning_locked)]
+        #[qproperty(bool, commit_dry_run)]
+        #[qproperty(bool, commit_preview_ready)]
+        #[qproperty(i32, commit_field_count)]
+        #[qproperty(i32, commit_media_count)]
+        #[qproperty(bool, commit_model_changed)]
+        #[qproperty(i32, commit_snapshot_count)]
         #[namespace = "linguist"]
         type AppBackend = super::AppBackendRust;
 
@@ -101,6 +107,21 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "toggleDraftMeaningLock"]
         fn toggle_draft_meaning_lock(self: Pin<&mut Self>, locked: bool);
+        #[qinvokable]
+        #[cxx_name = "previewCommit"]
+        fn preview_commit(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "applyCommit"]
+        fn apply_commit(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "restoreSnapshot"]
+        fn restore_snapshot(self: Pin<&mut Self>, index: i32);
+        #[qinvokable]
+        #[cxx_name = "commitField"]
+        fn commit_field(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "commitSnapshot"]
+        fn commit_snapshot(self: &AppBackend, index: i32) -> QString;
     }
 }
 
@@ -140,6 +161,12 @@ pub struct AppBackendRust {
     draft_dirty: bool,
     draft_pending_count: i32,
     draft_meaning_locked: bool,
+    commit_dry_run: bool,
+    commit_preview_ready: bool,
+    commit_field_count: i32,
+    commit_media_count: i32,
+    commit_model_changed: bool,
+    commit_snapshot_count: i32,
     controller: ApplicationController,
 }
 
@@ -181,6 +208,12 @@ impl AppBackendRust {
             draft_dirty: false,
             draft_pending_count: 0,
             draft_meaning_locked: false,
+            commit_dry_run: true,
+            commit_preview_ready: false,
+            commit_field_count: 0,
+            commit_media_count: 0,
+            commit_model_changed: false,
+            commit_snapshot_count: 0,
             controller,
         }
     }
@@ -345,6 +378,63 @@ impl qobject::AppBackend {
             .set_draft_locked(crate::draft::DraftField::Meaning, locked);
         sync_controller_state(self);
     }
+
+    pub fn preview_commit(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .rust_mut()
+            .controller
+            .preview_commit(&mut DisconnectedCommitAdapter);
+        sync_controller_state(self);
+    }
+
+    pub fn apply_commit(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .rust_mut()
+            .controller
+            .apply_commit(&mut DisconnectedCommitAdapter);
+        sync_controller_state(self);
+    }
+
+    pub fn restore_snapshot(mut self: Pin<&mut Self>, index: i32) {
+        let snapshot_id = {
+            let binding = self.as_ref();
+            usize::try_from(index)
+                .ok()
+                .and_then(|index| binding.rust().controller.commit().snapshots.get(index))
+                .map(|snapshot| snapshot.snapshot_id.clone())
+        };
+        match snapshot_id {
+            Some(snapshot_id) => self
+                .as_mut()
+                .rust_mut()
+                .controller
+                .restore_commit(&mut DisconnectedCommitAdapter, &snapshot_id),
+            None => self
+                .as_mut()
+                .rust_mut()
+                .controller
+                .report_error("Snapshot is not available in this history"),
+        }
+        sync_controller_state(self);
+    }
+
+    pub fn commit_field(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().controller.commit().fields.get(index))
+            .map(|change| format!("{}: {} → {}", change.field, change.before, change.after))
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn commit_snapshot(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().controller.commit().snapshots.get(index))
+            .map(|snapshot| format!("{} · note {}", snapshot.snapshot_id, snapshot.note_id))
+            .unwrap_or_default()
+            .into()
+    }
 }
 
 fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
@@ -366,6 +456,25 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
             queue_index(queue.selected_deck_index()),
             queue_len(queue.rows().len()),
             queue_index(queue.selected_index()),
+        )
+    };
+    let (
+        commit_dry_run,
+        commit_preview_ready,
+        commit_field_count,
+        commit_media_count,
+        commit_model_changed,
+        commit_snapshot_count,
+    ) = {
+        let binding = qobject.as_ref();
+        let commit = binding.rust().controller.commit();
+        (
+            commit.dry_run,
+            commit.preview_ready,
+            queue_len(commit.fields.len()),
+            queue_len(commit.media.len()),
+            commit.model_changed,
+            queue_len(commit.snapshots.len()),
         )
     };
     let (
@@ -432,7 +541,21 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
     qobject
         .as_mut()
         .set_draft_pending_count(draft_pending_count);
-    qobject.set_draft_meaning_locked(draft_meaning_locked);
+    qobject
+        .as_mut()
+        .set_draft_meaning_locked(draft_meaning_locked);
+    qobject.as_mut().set_commit_dry_run(commit_dry_run);
+    qobject
+        .as_mut()
+        .set_commit_preview_ready(commit_preview_ready);
+    qobject.as_mut().set_commit_field_count(commit_field_count);
+    qobject.as_mut().set_commit_media_count(commit_media_count);
+    qobject
+        .as_mut()
+        .set_commit_model_changed(commit_model_changed);
+    qobject
+        .as_mut()
+        .set_commit_snapshot_count(commit_snapshot_count);
 }
 
 fn review_row_value(
@@ -460,12 +583,34 @@ struct DisconnectedPort;
 
 struct DisconnectedGenerator;
 
+struct DisconnectedCommitAdapter;
+
 impl DraftGenerationPort for DisconnectedGenerator {
     fn generate(
         &self,
         _draft: &crate::draft::ReviewDraft,
     ) -> Result<Vec<crate::draft::GeneratedChange>, String> {
         Err("Generation adapter is not connected yet".into())
+    }
+}
+
+impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for DisconnectedCommitAdapter {
+    fn preview(
+        &mut self,
+        _draft: &crate::draft::ReviewDraft,
+    ) -> Result<crate::commit_model::CommitPreview, String> {
+        Err("Commit adapter is not connected yet".into())
+    }
+
+    fn apply(
+        &mut self,
+        _draft: &crate::draft::ReviewDraft,
+    ) -> Result<crate::commit_model::SnapshotHistoryItem, String> {
+        Err("Commit adapter is not connected yet".into())
+    }
+
+    fn restore(&mut self, _snapshot_id: &str) -> Result<(), String> {
+        Err("Commit adapter is not connected yet".into())
     }
 }
 

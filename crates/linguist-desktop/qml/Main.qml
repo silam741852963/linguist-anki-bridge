@@ -23,7 +23,7 @@ ApplicationWindow {
     readonly property color accent: backend.themeAccent
 
     Shortcut { sequence: "Ctrl+K"; onActivated: search.forceActiveFocus() }
-    Shortcut { sequence: "Ctrl+Return"; onActivated: reviewWorkspace.applyRequested() }
+    Shortcut { sequence: "Ctrl+Return"; onActivated: backend.previewCommit() }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: backend.reloadTheme() }
 
     header: ToolBar {
@@ -93,7 +93,6 @@ ApplicationWindow {
             foregroundColor: root.foreground
             mutedColor: root.muted
             accentColor: root.accent
-            onApplyRequested: backend.reportError(qsTr("Commit adapter is not connected yet"))
         }
     }
 

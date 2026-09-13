@@ -16,6 +16,7 @@ pub struct SnapshotHistoryItem {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CommitViewState {
     pub dry_run: bool,
+    pub preview_ready: bool,
     pub fields: Vec<PlannedChange>,
     pub media: Vec<String>,
     pub model_changed: bool,
@@ -64,6 +65,15 @@ impl CommitViewState {
             .collect();
         self.media = media;
         self.model_changed = model_changed;
+        self.preview_ready = true;
+    }
+
+    pub fn invalidate_preview(&mut self) {
+        self.dry_run = true;
+        self.preview_ready = false;
+        self.fields.clear();
+        self.media.clear();
+        self.model_changed = false;
     }
 
     pub fn record_snapshot(&mut self, snapshot_id: impl Into<String>, note_id: i64) {
@@ -81,6 +91,7 @@ impl CommitViewState {
         executor: &mut Executor,
         request: &Request,
     ) -> Result<(), String> {
+        self.invalidate_preview();
         let preview = executor.preview(request)?;
         self.preview(
             &preview.before,
@@ -97,8 +108,12 @@ impl CommitViewState {
         executor: &mut Executor,
         request: &Request,
     ) -> Result<(), String> {
+        if !self.preview_ready {
+            return Err("Preview changes before applying them".into());
+        }
         let snapshot = executor.apply(request)?;
         self.dry_run = false;
+        self.preview_ready = false;
         self.snapshots.insert(0, snapshot);
         Ok(())
     }
@@ -108,6 +123,13 @@ impl CommitViewState {
         executor: &mut Executor,
         snapshot_id: &str,
     ) -> Result<(), String> {
+        if !self
+            .snapshots
+            .iter()
+            .any(|snapshot| snapshot.snapshot_id == snapshot_id)
+        {
+            return Err("Snapshot is not available in this history".into());
+        }
         executor.restore(snapshot_id)
     }
 }
@@ -177,5 +199,16 @@ mod tests {
         view.apply_with(&mut executor, &()).unwrap();
         view.restore_with(&mut executor, "snapshot-1").unwrap();
         assert_eq!(executor.calls, ["preview", "apply", "restore:snapshot-1"]);
+    }
+
+    #[test]
+    fn apply_requires_a_successful_preview() {
+        let mut view = CommitViewState::new();
+        let mut executor = FakeExecutor::default();
+        assert_eq!(
+            view.apply_with(&mut executor, &()).unwrap_err(),
+            "Preview changes before applying them"
+        );
+        assert!(executor.calls.is_empty());
     }
 }

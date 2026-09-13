@@ -1,5 +1,8 @@
-use crate::draft::{DraftField, DraftPersistence, DraftStore, GeneratedChange, ReviewDraft};
 use crate::review_model::{ReviewQueueData, ReviewQueueModel, ReviewRow};
+use crate::{
+    commit_model::{CommitExecutor, CommitViewState},
+    draft::{DraftField, DraftPersistence, DraftStore, GeneratedChange, ReviewDraft},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServiceState {
@@ -55,6 +58,7 @@ pub struct ApplicationController {
     queue: ReviewQueueModel,
     drafts: DraftStore,
     draft_persistence: MemoryDraftPersistence,
+    commit: CommitViewState,
 }
 
 impl ApplicationController {
@@ -68,6 +72,10 @@ impl ApplicationController {
 
     pub fn active_draft(&self) -> Option<&ReviewDraft> {
         self.drafts.active()
+    }
+
+    pub fn commit(&self) -> &CommitViewState {
+        &self.commit
     }
 
     #[allow(dead_code)]
@@ -123,6 +131,7 @@ impl ApplicationController {
             self.report_error(format!("Draft autosave failed: {error}"));
             return;
         }
+        self.commit.invalidate_preview();
         let _ = self.queue.select_index(index);
         self.state.selection = selection;
     }
@@ -142,14 +151,23 @@ impl ApplicationController {
     pub fn edit_draft(&mut self, field: DraftField, value: impl Into<String>) {
         if let Some(draft) = self.drafts.active_mut() {
             draft.edit(field, value);
+            self.commit.invalidate_preview();
         }
     }
 
     pub fn undo_draft(&mut self) -> bool {
-        self.drafts.active_mut().is_some_and(ReviewDraft::undo)
+        let changed = self.drafts.active_mut().is_some_and(ReviewDraft::undo);
+        if changed {
+            self.commit.invalidate_preview();
+        }
+        changed
     }
     pub fn redo_draft(&mut self) -> bool {
-        self.drafts.active_mut().is_some_and(ReviewDraft::redo)
+        let changed = self.drafts.active_mut().is_some_and(ReviewDraft::redo);
+        if changed {
+            self.commit.invalidate_preview();
+        }
+        changed
     }
 
     #[allow(dead_code)]
@@ -161,9 +179,14 @@ impl ApplicationController {
 
     #[allow(dead_code)]
     pub fn accept_draft_change(&mut self, index: usize) -> bool {
-        self.drafts
+        let accepted = self
+            .drafts
             .active_mut()
-            .is_some_and(|draft| draft.accept(index))
+            .is_some_and(|draft| draft.accept(index));
+        if accepted {
+            self.commit.invalidate_preview();
+        }
+        accepted
     }
 
     #[allow(dead_code)]
@@ -184,6 +207,36 @@ impl ApplicationController {
                 .expect("active draft unchanged")
                 .regenerate(changes),
             Err(error) => self.report_error(error),
+        }
+    }
+
+    pub fn preview_commit<E: CommitExecutor<ReviewDraft>>(&mut self, executor: &mut E) {
+        let Some(draft) = self.active_draft().cloned() else {
+            self.report_error("Select a card before previewing changes");
+            return;
+        };
+        if let Err(error) = self.commit.preview_with(executor, &draft) {
+            self.report_error(error);
+        }
+    }
+
+    pub fn apply_commit<E: CommitExecutor<ReviewDraft>>(&mut self, executor: &mut E) {
+        let Some(draft) = self.active_draft().cloned() else {
+            self.report_error("Select a card before applying changes");
+            return;
+        };
+        if let Err(error) = self.commit.apply_with(executor, &draft) {
+            self.report_error(error);
+        }
+    }
+
+    pub fn restore_commit<E: CommitExecutor<ReviewDraft>>(
+        &mut self,
+        executor: &mut E,
+        snapshot_id: &str,
+    ) {
+        if let Err(error) = self.commit.restore_with(executor, snapshot_id) {
+            self.report_error(error);
         }
     }
 
@@ -222,7 +275,10 @@ fn service_state(result: Result<(), String>) -> ServiceState {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
+    use crate::commit_model::{CommitPreview, SnapshotHistoryItem};
 
     struct FakePort {
         anki: Result<(), String>,
@@ -326,5 +382,106 @@ mod tests {
         assert!(controller.pending_change(0).is_none());
         controller.set_draft_locked(DraftField::Kanji, true);
         assert!(controller.active_draft().unwrap().locked(DraftField::Kanji));
+    }
+
+    struct MockCommitAdapter {
+        kind: &'static str,
+        calls: Vec<String>,
+    }
+
+    impl CommitExecutor<ReviewDraft> for MockCommitAdapter {
+        fn preview(&mut self, draft: &ReviewDraft) -> Result<CommitPreview, String> {
+            self.calls
+                .push(format!("{}:preview:{}", self.kind, draft.note_id));
+            Ok(CommitPreview {
+                before: BTreeMap::from([("Meaning".into(), "old".into())]),
+                after: BTreeMap::from([("Meaning".into(), draft.meaning.clone())]),
+                media: vec!["word.mp3".into()],
+                model_changed: self.kind == "modernize",
+            })
+        }
+
+        fn apply(&mut self, draft: &ReviewDraft) -> Result<SnapshotHistoryItem, String> {
+            self.calls
+                .push(format!("{}:apply:{}", self.kind, draft.note_id));
+            Ok(SnapshotHistoryItem {
+                snapshot_id: format!("{}-{}", self.kind, draft.note_id),
+                note_id: draft.note_id,
+            })
+        }
+
+        fn restore(&mut self, snapshot_id: &str) -> Result<(), String> {
+            self.calls
+                .push(format!("{}:restore:{snapshot_id}", self.kind));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn mock_adapter_completes_modernize_and_inject_with_restoration() {
+        for (kind, note_id) in [("modernize", 42), ("inject", 100)] {
+            let mut controller = ApplicationController::default();
+            controller.replace_queue(ReviewQueueData {
+                decks: vec!["Japanese".into()],
+                rows: vec![ReviewRow {
+                    note_id,
+                    expression: "食べる".into(),
+                    detail: String::new(),
+                    state: crate::review_model::ReviewState::NeedsReview,
+                }],
+            });
+            controller.select_queue_index(0);
+            controller.edit_draft(DraftField::Meaning, "to eat");
+            let mut adapter = MockCommitAdapter {
+                kind,
+                calls: vec![],
+            };
+
+            controller.preview_commit(&mut adapter);
+            assert!(controller.commit().dry_run);
+            assert!(controller.commit().preview_ready);
+            assert_eq!(controller.commit().fields[0].after, "to eat");
+            controller.apply_commit(&mut adapter);
+            assert!(!controller.commit().dry_run);
+            let snapshot_id = controller.commit().snapshots[0].snapshot_id.clone();
+            controller.restore_commit(&mut adapter, &snapshot_id);
+
+            assert_eq!(
+                adapter.calls,
+                [
+                    format!("{kind}:preview:{note_id}"),
+                    format!("{kind}:apply:{note_id}"),
+                    format!("{kind}:restore:{snapshot_id}"),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn changing_the_draft_cancels_a_prior_preview() {
+        let mut controller = ApplicationController::default();
+        controller.replace_queue(ReviewQueueData {
+            decks: vec![],
+            rows: vec![ReviewRow {
+                note_id: 42,
+                expression: "食べる".into(),
+                detail: String::new(),
+                state: crate::review_model::ReviewState::NeedsReview,
+            }],
+        });
+        controller.select_queue_index(0);
+        let mut adapter = MockCommitAdapter {
+            kind: "modernize",
+            calls: vec![],
+        };
+        controller.preview_commit(&mut adapter);
+        controller.edit_draft(DraftField::Meaning, "changed after preview");
+        controller.apply_commit(&mut adapter);
+        assert!(!controller.commit().preview_ready);
+        assert_eq!(adapter.calls, ["modernize:preview:42"]);
+        assert_eq!(
+            controller.state().error,
+            "Preview changes before applying them"
+        );
     }
 }

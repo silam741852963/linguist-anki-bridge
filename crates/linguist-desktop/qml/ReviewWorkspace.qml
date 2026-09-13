@@ -10,7 +10,6 @@ Rectangle {
     required property color foregroundColor
     required property color mutedColor
     required property color accentColor
-    signal applyRequested()
     color: backgroundColor
 
     ScrollView {
@@ -37,7 +36,13 @@ Rectangle {
                 Button { text: qsTr("Undo"); onClicked: backend.undoDraft() }
                 Button { text: qsTr("Redo"); onClicked: backend.redoDraft() }
                 Button { text: qsTr("Regenerate"); onClicked: backend.regenerateDraft() }
-                Button { text: qsTr("Apply to Anki"); highlighted: true; onClicked: workspace.applyRequested() }
+                Button { text: qsTr("Preview changes"); onClicked: backend.previewCommit() }
+                Button {
+                    text: qsTr("Apply to Anki")
+                    highlighted: true
+                    enabled: backend.commitPreviewReady
+                    onClicked: backend.applyCommit()
+                }
             }
 
             TabBar {
@@ -100,6 +105,59 @@ Rectangle {
                         color: foregroundColor
                         wrapMode: TextEdit.Wrap
                         background: Rectangle { color: "transparent" }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 22
+                Layout.rightMargin: 22
+                implicitHeight: commitPlan.implicitHeight + 30
+                radius: 10
+                color: surfaceColor
+                border.color: Qt.alpha(mutedColor, 0.35)
+                ColumnLayout {
+                    id: commitPlan
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.margins: 15
+                    Label {
+                        text: backend.commitPreviewReady
+                            ? qsTr("PLANNED CHANGES · dry run")
+                            : qsTr("PREVIEW REQUIRED BEFORE APPLY")
+                        color: backend.commitPreviewReady ? accentColor : mutedColor
+                        font.pixelSize: 11
+                        font.letterSpacing: 1.2
+                    }
+                    Repeater {
+                        model: backend.commitFieldCount
+                        delegate: Label {
+                            required property int index
+                            text: backend.commitField(index)
+                            color: foregroundColor
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                    Label {
+                        visible: backend.commitPreviewReady && backend.commitFieldCount === 0
+                        text: qsTr("No field changes")
+                        color: mutedColor
+                    }
+                    Label {
+                        visible: backend.commitPreviewReady
+                        text: qsTr("Media: %1 · Model: %2").arg(backend.commitMediaCount)
+                            .arg(backend.commitModelChanged ? qsTr("change") : qsTr("unchanged"))
+                        color: mutedColor
+                    }
+                    Repeater {
+                        model: backend.commitSnapshotCount
+                        delegate: RowLayout {
+                            required property int index
+                            Layout.fillWidth: true
+                            Label { Layout.fillWidth: true; text: backend.commitSnapshot(index); color: mutedColor }
+                            Button { text: qsTr("Restore"); onClicked: backend.restoreSnapshot(index) }
+                        }
                     }
                 }
             }
