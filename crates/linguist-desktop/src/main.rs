@@ -1,5 +1,6 @@
 mod backend;
 mod controller;
+mod draft;
 mod review_model;
 mod theme;
 

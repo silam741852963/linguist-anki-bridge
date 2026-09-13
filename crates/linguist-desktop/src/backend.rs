@@ -25,6 +25,14 @@ pub mod qobject {
         #[qproperty(i32, selected_deck_index)]
         #[qproperty(i32, review_row_count)]
         #[qproperty(i32, selected_review_index)]
+        #[qproperty(QString, draft_expression)]
+        #[qproperty(QString, draft_meaning)]
+        #[qproperty(QString, draft_kanji)]
+        #[qproperty(QString, draft_images)]
+        #[qproperty(QString, draft_audio)]
+        #[qproperty(QString, draft_issues)]
+        #[qproperty(QString, draft_provenance)]
+        #[qproperty(bool, draft_dirty)]
         #[namespace = "linguist"]
         type AppBackend = super::AppBackendRust;
 
@@ -61,6 +69,15 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "selectReviewIndex"]
         fn select_review_index(self: Pin<&mut Self>, index: i32);
+        #[qinvokable]
+        #[cxx_name = "editDraftMeaning"]
+        fn edit_draft_meaning(self: Pin<&mut Self>, value: &QString);
+        #[qinvokable]
+        #[cxx_name = "undoDraft"]
+        fn undo_draft(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "redoDraft"]
+        fn redo_draft(self: Pin<&mut Self>);
     }
 }
 
@@ -90,6 +107,14 @@ pub struct AppBackendRust {
     selected_deck_index: i32,
     review_row_count: i32,
     selected_review_index: i32,
+    draft_expression: QString,
+    draft_meaning: QString,
+    draft_kanji: QString,
+    draft_images: QString,
+    draft_audio: QString,
+    draft_issues: QString,
+    draft_provenance: QString,
+    draft_dirty: bool,
     controller: ApplicationController,
 }
 
@@ -121,6 +146,14 @@ impl AppBackendRust {
             selected_deck_index: queue_index(controller.queue().selected_deck_index()),
             review_row_count: queue_len(controller.queue().rows().len()),
             selected_review_index: queue_index(controller.queue().selected_index()),
+            draft_expression: QString::default(),
+            draft_meaning: QString::default(),
+            draft_kanji: QString::default(),
+            draft_images: QString::default(),
+            draft_audio: QString::default(),
+            draft_issues: QString::default(),
+            draft_provenance: QString::default(),
+            draft_dirty: false,
             controller,
         }
     }
@@ -206,6 +239,24 @@ impl qobject::AppBackend {
             sync_controller_state(self);
         }
     }
+
+    pub fn edit_draft_meaning(mut self: Pin<&mut Self>, value: &QString) {
+        self.as_mut()
+            .rust_mut()
+            .controller
+            .edit_draft(crate::draft::DraftField::Meaning, value.to_string());
+        sync_controller_state(self);
+    }
+
+    pub fn undo_draft(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().controller.undo_draft();
+        sync_controller_state(self);
+    }
+
+    pub fn redo_draft(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().controller.redo_draft();
+        sync_controller_state(self);
+    }
 }
 
 fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
@@ -229,6 +280,33 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
             queue_index(queue.selected_index()),
         )
     };
+    let (
+        draft_expression,
+        draft_meaning,
+        draft_kanji,
+        draft_images,
+        draft_audio,
+        draft_issues,
+        draft_provenance,
+        draft_dirty,
+    ) = {
+        let binding = qobject.as_ref();
+        let draft = binding.rust().controller.active_draft();
+        draft
+            .map(|draft| {
+                (
+                    draft.expression.clone(),
+                    draft.meaning.clone(),
+                    draft.kanji.clone(),
+                    draft.images.join("\n"),
+                    draft.audio.join("\n"),
+                    draft.issues.join("\n"),
+                    draft.provenance.join("\n"),
+                    draft.dirty(),
+                )
+            })
+            .unwrap_or_default()
+    };
     qobject.as_mut().set_anki_status(state.anki.label().into());
     qobject
         .as_mut()
@@ -244,7 +322,21 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
         .as_mut()
         .set_selected_deck_index(selected_deck_index);
     qobject.as_mut().set_review_row_count(review_row_count);
-    qobject.set_selected_review_index(selected_review_index);
+    qobject
+        .as_mut()
+        .set_selected_review_index(selected_review_index);
+    qobject
+        .as_mut()
+        .set_draft_expression(draft_expression.into());
+    qobject.as_mut().set_draft_meaning(draft_meaning.into());
+    qobject.as_mut().set_draft_kanji(draft_kanji.into());
+    qobject.as_mut().set_draft_images(draft_images.into());
+    qobject.as_mut().set_draft_audio(draft_audio.into());
+    qobject.as_mut().set_draft_issues(draft_issues.into());
+    qobject
+        .as_mut()
+        .set_draft_provenance(draft_provenance.into());
+    qobject.set_draft_dirty(draft_dirty);
 }
 
 fn review_row_value(

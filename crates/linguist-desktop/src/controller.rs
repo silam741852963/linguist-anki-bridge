@@ -1,3 +1,4 @@
+use crate::draft::{DraftField, DraftPersistence, DraftStore, ReviewDraft};
 use crate::review_model::{ReviewQueueData, ReviewQueueModel, ReviewRow};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,6 +53,8 @@ pub trait DesktopPort {
 pub struct ApplicationController {
     state: ViewState,
     queue: ReviewQueueModel,
+    drafts: DraftStore,
+    draft_persistence: MemoryDraftPersistence,
 }
 
 impl ApplicationController {
@@ -61,6 +64,10 @@ impl ApplicationController {
 
     pub fn queue(&self) -> &ReviewQueueModel {
         &self.queue
+    }
+
+    pub fn active_draft(&self) -> Option<&ReviewDraft> {
+        self.drafts.active()
     }
 
     pub fn refresh<P: DesktopPort>(&mut self, port: &P) {
@@ -102,9 +109,17 @@ impl ApplicationController {
     }
 
     pub fn select_queue_index(&mut self, index: usize) {
-        if let Some(row) = self.queue.select_index(index) {
-            self.state.selection = selection_label(row);
+        let Some(row) = self.queue.rows().get(index) else {
+            return;
+        };
+        let note_id = row.note_id;
+        let selection = selection_label(row);
+        if let Err(error) = self.drafts.switch_to(note_id, &mut self.draft_persistence) {
+            self.report_error(format!("Draft autosave failed: {error}"));
+            return;
         }
+        let _ = self.queue.select_index(index);
+        self.state.selection = selection;
     }
 
     pub fn select_deck_index(&mut self, index: usize) {
@@ -119,6 +134,19 @@ impl ApplicationController {
         self.state.error.clear();
     }
 
+    pub fn edit_draft(&mut self, field: DraftField, value: impl Into<String>) {
+        if let Some(draft) = self.drafts.active_mut() {
+            draft.edit(field, value);
+        }
+    }
+
+    pub fn undo_draft(&mut self) -> bool {
+        self.drafts.active_mut().is_some_and(ReviewDraft::undo)
+    }
+    pub fn redo_draft(&mut self) -> bool {
+        self.drafts.active_mut().is_some_and(ReviewDraft::redo)
+    }
+
     fn sync_queue_selection(&mut self) {
         self.state.selection = self
             .queue
@@ -126,6 +154,14 @@ impl ApplicationController {
             .and_then(|index| self.queue.rows().get(index))
             .map(selection_label)
             .unwrap_or_default();
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct MemoryDraftPersistence;
+impl DraftPersistence for MemoryDraftPersistence {
+    fn save(&mut self, _draft: &ReviewDraft) -> Result<(), String> {
+        Ok(())
     }
 }
 

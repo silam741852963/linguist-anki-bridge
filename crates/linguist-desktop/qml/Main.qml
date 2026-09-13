@@ -87,6 +87,7 @@ ApplicationWindow {
             id: reviewWorkspace
             Layout.fillWidth: true
             Layout.fillHeight: true
+            backend: backend
             backgroundColor: root.background
             surfaceColor: root.surface
             foregroundColor: root.foreground

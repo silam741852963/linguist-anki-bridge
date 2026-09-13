@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 Rectangle {
     id: workspace
+    required property var backend
     required property color backgroundColor
     required property color surfaceColor
     required property color foregroundColor
@@ -23,9 +24,11 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.margins: 22
-                Label { text: "食べる"; color: foregroundColor; font.pixelSize: 30; font.weight: Font.DemiBold }
-                Label { text: "たべる"; color: mutedColor; font.pixelSize: 17 }
+                Label { text: backend.draftExpression.length > 0 ? backend.draftExpression : qsTr("Select a card"); color: foregroundColor; font.pixelSize: 30; font.weight: Font.DemiBold }
+                Label { text: backend.draftDirty ? qsTr("Unsaved draft") : qsTr("Saved draft"); color: mutedColor; font.pixelSize: 17 }
                 Item { Layout.fillWidth: true }
+                Button { text: qsTr("Undo"); onClicked: backend.undoDraft() }
+                Button { text: qsTr("Redo"); onClicked: backend.redoDraft() }
                 Button { text: qsTr("Regenerate") }
                 Button { text: qsTr("Apply to Anki"); highlighted: true; onClicked: workspace.applyRequested() }
             }
@@ -58,13 +61,15 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     Label { text: qsTr("MEANING"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.2 }
                     TextArea {
+                        id: meaningEditor
                         Layout.fillWidth: true
-                        text: qsTr("to eat; to consume\n\nUsed for ordinary eating and consuming food.")
+                        text: backend.draftMeaning
+                        onTextChanged: if (activeFocus && text !== backend.draftMeaning) backend.editDraftMeaning(text)
                         color: foregroundColor
                         wrapMode: TextEdit.Wrap
                         background: Rectangle { color: "transparent" }
                     }
-                    Label { text: qsTr("Dictionary · Jisho    Generated nuance · Ollama"); color: mutedColor; font.pixelSize: 11 }
+                    Label { text: backend.draftProvenance; color: mutedColor; font.pixelSize: 11 }
                 }
             }
 
@@ -85,8 +90,8 @@ Rectangle {
                         anchors.margins: 15
                         Label { text: qsTr("COMPREHENSION · FRONT"); color: mutedColor; font.pixelSize: 11 }
                         Item { Layout.fillHeight: true }
-                        Label { Layout.alignment: Qt.AlignHCenter; text: "食べる"; color: foregroundColor; font.pixelSize: 40 }
-                        Label { Layout.alignment: Qt.AlignHCenter; text: qsTr("▶  Play audio"); color: accentColor }
+                        Label { Layout.alignment: Qt.AlignHCenter; text: backend.draftExpression; color: foregroundColor; font.pixelSize: 40 }
+                        Label { Layout.alignment: Qt.AlignHCenter; text: backend.draftAudio; color: accentColor }
                         Item { Layout.fillHeight: true }
                     }
                 }
@@ -101,8 +106,8 @@ Rectangle {
                         anchors.margins: 15
                         Label { text: qsTr("COMPREHENSION · BACK"); color: mutedColor; font.pixelSize: 11 }
                         Item { Layout.fillHeight: true }
-                        Label { Layout.alignment: Qt.AlignHCenter; text: "たべる"; color: foregroundColor; font.pixelSize: 27 }
-                        Label { Layout.alignment: Qt.AlignHCenter; text: qsTr("to eat; to consume"); color: foregroundColor; font.pixelSize: 19 }
+                        Label { Layout.alignment: Qt.AlignHCenter; text: backend.draftKanji; color: foregroundColor; font.pixelSize: 27 }
+                        Label { Layout.alignment: Qt.AlignHCenter; text: backend.draftImages; color: foregroundColor; font.pixelSize: 19 }
                         Item { Layout.fillHeight: true }
                     }
                 }
@@ -111,7 +116,7 @@ Rectangle {
             Label {
                 Layout.leftMargin: 22
                 Layout.bottomMargin: 22
-                text: qsTr("No blocking issues · 2 generated values · 1 dictionary source")
+                text: backend.draftIssues.length > 0 ? backend.draftIssues : qsTr("No blocking issues")
                 color: mutedColor
             }
         }
