@@ -18,10 +18,15 @@ use linguist_core::{
 use serde::{Deserialize, Serialize};
 
 mod ingestion;
+mod selector;
 pub use ingestion::{
     CsvColumnMapping, CsvIngestRequest, CsvPreview, DuplicateDecision, IngestionPreview, InputRow,
     ManualIngestRequest, RowIssue, prepare_csv_input, prepare_manual_input,
     resolve_ingestion_preview,
+};
+pub use selector::{
+    BatchSelector, CompletionFilter, ImageFilter, SelectorMetadataPort, SelectorPreview,
+    selector_preview,
 };
 
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, PortError>> + Send + 'a>>;
