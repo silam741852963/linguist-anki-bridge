@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtMultimedia
 
 Rectangle {
     id: workspace
@@ -10,7 +11,33 @@ Rectangle {
     required property color foregroundColor
     required property color mutedColor
     required property color accentColor
+    property int previewTemplateIndex: 0
+    property string zoomHtml: ""
     color: backgroundColor
+
+    MediaPlayer {
+        id: previewAudio
+        audioOutput: AudioOutput { volume: 1.0 }
+    }
+
+    Dialog {
+        id: zoomDialog
+        modal: true
+        title: qsTr("Card preview")
+        width: Math.min(workspace.width * 0.92, 900)
+        height: Math.min(workspace.height * 0.9, 720)
+        standardButtons: Dialog.Close
+        contentItem: ScrollView {
+            contentWidth: availableWidth
+            Text {
+                width: parent.width
+                text: workspace.zoomHtml
+                textFormat: Text.RichText
+                wrapMode: Text.Wrap
+                color: workspace.foregroundColor
+            }
+        }
+    }
 
     ScrollView {
         anchors.fill: parent
@@ -168,6 +195,29 @@ Rectangle {
                 Layout.rightMargin: 22
                 spacing: 14
 
+                ComboBox {
+                    id: previewTemplate
+                    model: [qsTr("Comprehension"), qsTr("Spelling"), qsTr("Production")]
+                    currentIndex: workspace.previewTemplateIndex
+                    onActivated: workspace.previewTemplateIndex = currentIndex
+                }
+                Button {
+                    text: qsTr("Play audio")
+                    enabled: backend.previewAudioUrl(0).length > 0
+                    onClicked: {
+                        previewAudio.source = backend.previewAudioUrl(0)
+                        previewAudio.play()
+                    }
+                }
+                Button {
+                    text: qsTr("Zoom preview")
+                    onClicked: {
+                        workspace.zoomHtml = backend.cardPreview(workspace.previewTemplateIndex, true)
+                        zoomDialog.open()
+                    }
+                }
+                Item { Layout.fillWidth: true }
+
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 260
@@ -177,11 +227,24 @@ Rectangle {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 15
-                        Label { text: qsTr("COMPREHENSION · FRONT"); color: mutedColor; font.pixelSize: 11 }
-                        Item { Layout.fillHeight: true }
-                        Label { Layout.alignment: Qt.AlignHCenter; text: backend.draftExpression; color: foregroundColor; font.pixelSize: 40 }
-                        Label { Layout.alignment: Qt.AlignHCenter; text: backend.draftAudio; color: accentColor }
-                        Item { Layout.fillHeight: true }
+                        Label { text: qsTr("%1 · FRONT").arg(previewTemplate.currentText); color: mutedColor; font.pixelSize: 11 }
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            text: backend.cardPreview(workspace.previewTemplateIndex, false)
+                            textFormat: Text.RichText
+                            wrapMode: Text.Wrap
+                            color: foregroundColor
+                            clip: true
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    workspace.zoomHtml = backend.cardPreview(workspace.previewTemplateIndex, false)
+                                    zoomDialog.open()
+                                }
+                            }
+                        }
                     }
                 }
                 Rectangle {
@@ -193,11 +256,24 @@ Rectangle {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 15
-                        Label { text: qsTr("COMPREHENSION · BACK"); color: mutedColor; font.pixelSize: 11 }
-                        Item { Layout.fillHeight: true }
-                        Label { Layout.alignment: Qt.AlignHCenter; text: backend.draftKanji; color: foregroundColor; font.pixelSize: 27 }
-                        Label { Layout.alignment: Qt.AlignHCenter; text: backend.draftImages; color: foregroundColor; font.pixelSize: 19 }
-                        Item { Layout.fillHeight: true }
+                        Label { text: qsTr("%1 · BACK").arg(previewTemplate.currentText); color: mutedColor; font.pixelSize: 11 }
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            text: backend.cardPreview(workspace.previewTemplateIndex, true)
+                            textFormat: Text.RichText
+                            wrapMode: Text.Wrap
+                            color: foregroundColor
+                            clip: true
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    workspace.zoomHtml = backend.cardPreview(workspace.previewTemplateIndex, true)
+                                    zoomDialog.open()
+                                }
+                            }
+                        }
                     }
                 }
             }

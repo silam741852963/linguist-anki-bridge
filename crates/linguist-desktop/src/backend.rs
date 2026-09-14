@@ -122,6 +122,12 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "commitSnapshot"]
         fn commit_snapshot(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "cardPreview"]
+        fn card_preview(self: &AppBackend, template_index: i32, back: bool) -> QString;
+        #[qinvokable]
+        #[cxx_name = "previewAudioUrl"]
+        fn preview_audio_url(self: &AppBackend, index: i32) -> QString;
     }
 }
 
@@ -432,6 +438,59 @@ impl qobject::AppBackend {
             .ok()
             .and_then(|index| self.rust().controller.commit().snapshots.get(index))
             .map(|snapshot| format!("{} · note {}", snapshot.snapshot_id, snapshot.note_id))
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn card_preview(&self, template_index: i32, back: bool) -> QString {
+        let Some(draft) = self.rust().controller.active_draft() else {
+            return QString::default();
+        };
+        let document = linguist_core::CardDocument {
+            schema_version: linguist_core::CONTRACT_VERSION,
+            expression: draft.expression.clone(),
+            values: linguist_core::LogicalFields {
+                meaning_image: draft
+                    .images
+                    .first()
+                    .map(|filename| format!("<img src=\"{filename}\">")),
+                meaning_text: Some(draft.meaning.clone()),
+                kanji_construction: Some(draft.kanji.clone()),
+                audio: Some(draft.audio.join("<br/>")),
+            },
+            media: vec![],
+            obsolete_media: vec![],
+            issues: vec![],
+            tags: vec![],
+            provenance: Default::default(),
+        };
+        usize::try_from(template_index)
+            .ok()
+            .and_then(|index| {
+                crate::preview_model::render_managed_card(
+                    &document,
+                    index,
+                    if back {
+                        crate::preview_model::CardFace::Back
+                    } else {
+                        crate::preview_model::CardFace::Front
+                    },
+                )
+            })
+            .map(|rendered| rendered.html)
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn preview_audio_url(&self, index: i32) -> QString {
+        let Some(draft) = self.rust().controller.active_draft() else {
+            return QString::default();
+        };
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| {
+                crate::preview_model::audio_media_url(&draft.audio.join("<br/>"), index)
+            })
             .unwrap_or_default()
             .into()
     }

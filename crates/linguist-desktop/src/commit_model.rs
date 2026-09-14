@@ -13,7 +13,7 @@ pub struct SnapshotHistoryItem {
     pub note_id: i64,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommitViewState {
     pub dry_run: bool,
     pub preview_ready: bool,
@@ -41,7 +41,11 @@ impl CommitViewState {
     pub fn new() -> Self {
         Self {
             dry_run: true,
-            ..Self::default()
+            preview_ready: false,
+            fields: vec![],
+            media: vec![],
+            model_changed: false,
+            snapshots: vec![],
         }
     }
 
@@ -114,7 +118,7 @@ impl CommitViewState {
         let snapshot = executor.apply(request)?;
         self.dry_run = false;
         self.preview_ready = false;
-        self.snapshots.insert(0, snapshot);
+        self.record_snapshot(snapshot.snapshot_id, snapshot.note_id);
         Ok(())
     }
 
@@ -131,6 +135,12 @@ impl CommitViewState {
             return Err("Snapshot is not available in this history".into());
         }
         executor.restore(snapshot_id)
+    }
+}
+
+impl Default for CommitViewState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
