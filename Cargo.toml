@@ -9,6 +9,7 @@ members = [
     "crates/linguist-ollama",
     "crates/linguist-ocr",
     "crates/linguist-dictionary",
+    "crates/linguist-media",
 ]
 resolver = "2"
 
@@ -33,3 +34,4 @@ cxx = "1.0"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["full"] }
 cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
+image = { version = "0.24.9", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
