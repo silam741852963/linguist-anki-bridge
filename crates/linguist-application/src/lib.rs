@@ -17,6 +17,12 @@ use linguist_core::{
 };
 use serde::{Deserialize, Serialize};
 
+mod ingestion;
+pub use ingestion::{
+    DuplicateDecision, IngestionPreview, InputRow, ManualIngestRequest, RowIssue,
+    prepare_manual_input, resolve_ingestion_preview,
+};
+
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, PortError>> + Send + 'a>>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
