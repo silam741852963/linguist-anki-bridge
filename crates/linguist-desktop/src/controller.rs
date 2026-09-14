@@ -82,6 +82,14 @@ impl ApplicationController {
     pub fn batch(&self) -> &BatchViewState {
         &self.batch
     }
+    pub fn create_batch<P: BatchManagementPort>(
+        &mut self,
+        port: &mut P,
+        job: linguist_jobs::NewJob,
+    ) {
+        self.batch.create(port, job);
+        self.report_batch_error();
+    }
     pub fn refresh_batches<P: BatchManagementPort>(&mut self, port: &P) {
         self.batch.refresh(port);
         self.report_batch_error();

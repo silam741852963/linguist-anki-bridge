@@ -162,6 +162,9 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "cancelBatchAction"]
         fn cancel_batch_action(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "createBatch"]
+        fn create_batch(self: Pin<&mut Self>, deck_name: &QString, rows: &QString);
     }
 }
 
@@ -718,6 +721,25 @@ impl qobject::AppBackend {
             .cancel_batch_confirmation();
         sync_controller_state(self);
     }
+    pub fn create_batch(mut self: Pin<&mut Self>, deck_name: &QString, rows: &QString) {
+        let parsed = parse_batch_rows(&rows.to_string());
+        match parsed {
+            Ok(items) => {
+                let job = linguist_jobs::NewJob {
+                    deck_key: deck_name.to_string(),
+                    deck_name: deck_name.to_string(),
+                    dry_run: true,
+                    settings: Default::default(),
+                    items,
+                };
+                self.batch_command(|controller, port| controller.create_batch(port, job));
+            }
+            Err(error) => {
+                self.as_mut().rust_mut().controller.report_error(error);
+                sync_controller_state(self);
+            }
+        }
+    }
 }
 
 impl qobject::AppBackend {
@@ -730,6 +752,34 @@ impl qobject::AppBackend {
         self.as_mut().rust_mut().batch_port = port;
         sync_controller_state(self);
     }
+}
+
+fn parse_batch_rows(rows: &str) -> Result<Vec<linguist_jobs::BatchItemSeed>, String> {
+    let items = rows
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let (note_id, word) = line
+                .split_once('\t')
+                .ok_or_else(|| "Each batch row needs: note ID, tab, expression".to_owned())?;
+            let note_id = note_id
+                .trim()
+                .parse()
+                .map_err(|_| format!("Invalid note ID: {note_id}"))?;
+            let word = word.trim();
+            if word.is_empty() {
+                return Err("Batch expression cannot be empty".into());
+            }
+            Ok(linguist_jobs::BatchItemSeed {
+                note_id,
+                word: word.into(),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    if items.is_empty() {
+        return Err("Enter at least one batch row".into());
+    }
+    Ok(items)
 }
 
 fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {

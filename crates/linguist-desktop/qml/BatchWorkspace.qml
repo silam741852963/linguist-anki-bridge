@@ -16,6 +16,7 @@ Item {
             Layout.fillWidth: true
             Label { text: qsTr("BATCH JOBS"); color: mutedColor; font.letterSpacing: 1.2 }
             Item { Layout.fillWidth: true }
+            Button { text: qsTr("New job"); onClicked: createJob.open() }
             Button { text: qsTr("Refresh"); onClicked: backend.refreshBatches() }
         }
         ListView {
@@ -67,5 +68,24 @@ Item {
         onAccepted: backend.confirmBatchAction()
         onRejected: backend.cancelBatchAction()
         Label { text: backend.batchConfirmation; color: foregroundColor }
+    }
+
+    Dialog {
+        id: createJob
+        modal: true
+        title: qsTr("Create batch job")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: { backend.createBatch(deckName.text, rows.text); backend.refreshBatches() }
+        ColumnLayout {
+            width: 460
+            TextField { id: deckName; Layout.fillWidth: true; placeholderText: qsTr("Deck name") }
+            TextArea {
+                id: rows
+                Layout.fillWidth: true
+                Layout.preferredHeight: 180
+                placeholderText: qsTr("Note ID<Tab>Expression\n42<Tab>食べる")
+                wrapMode: TextEdit.NoWrap
+            }
+        }
     }
 }
