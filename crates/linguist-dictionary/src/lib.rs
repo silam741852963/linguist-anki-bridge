@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::{future::Future, pin::Pin, time::Duration};
 
 pub mod cambridge;
+pub mod dictcc;
 pub mod moedict;
 
 pub type BrowserFuture<'a> =
