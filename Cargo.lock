@@ -996,6 +996,7 @@ dependencies = [
  "cxx-qt-lib",
  "linguist-application",
  "linguist-core",
+ "linguist-jobs",
 ]
 
 [[package]]

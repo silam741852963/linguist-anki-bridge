@@ -1,4 +1,6 @@
 mod backend;
+#[allow(dead_code)] // N21 backend/QML binding follows this bounded model.
+mod batch_model;
 mod commit_model;
 mod controller;
 mod draft;
