@@ -6,6 +6,7 @@ members = [
     "crates/linguist-application",
     "crates/linguist-jobs",
     "crates/linguist-desktop",
+    "crates/linguist-ollama",
 ]
 resolver = "2"
 

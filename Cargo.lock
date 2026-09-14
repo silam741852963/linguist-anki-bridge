@@ -1010,6 +1010,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "linguist-ollama"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "linguist-snapshots"
 version = "0.1.0"
 dependencies = [
