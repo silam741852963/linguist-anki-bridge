@@ -15,6 +15,12 @@ ApplicationWindow {
 
     AppBackend { id: backend }
     Component.onCompleted: backend.refreshState()
+    Timer {
+        interval: 1500
+        running: root.visible
+        repeat: true
+        onTriggered: backend.reloadTheme()
+    }
 
     readonly property color background: backend.themeBackground
     readonly property color surface: backend.themeSurface

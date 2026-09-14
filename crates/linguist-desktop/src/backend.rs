@@ -175,7 +175,7 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 
 use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort};
-use crate::theme::ThemePalette;
+use crate::theme::{ThemePalette, ThemeWatch, omarchy_palette_path};
 
 #[derive(Default)]
 struct LocalBatchPort(Option<linguist_jobs::JobRepository>, String);
@@ -301,6 +301,7 @@ pub struct AppBackendRust {
     batch_item_count: i32,
     batch_item_total: i32,
     batch_confirmation: QString,
+    theme_watch: Option<ThemeWatch>,
     batch_port: LocalBatchPort,
     controller: ApplicationController,
 }
@@ -354,6 +355,7 @@ impl AppBackendRust {
             batch_item_count: 0,
             batch_item_total: 0,
             batch_confirmation: QString::default(),
+            theme_watch: omarchy_palette_path().map(ThemeWatch::new),
             batch_port,
             controller,
         }
@@ -362,7 +364,13 @@ impl AppBackendRust {
 
 impl qobject::AppBackend {
     pub fn reload_theme(mut self: Pin<&mut Self>) {
-        let palette = ThemePalette::load();
+        let palette = self
+            .as_mut()
+            .rust_mut()
+            .theme_watch
+            .as_mut()
+            .and_then(ThemeWatch::poll)
+            .unwrap_or_else(ThemePalette::load);
         self.as_mut()
             .set_theme_background(palette.background.into());
         self.as_mut().set_theme_surface(palette.surface.into());

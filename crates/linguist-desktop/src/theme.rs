@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 
 pub struct ThemePalette {
     pub background: String,
@@ -11,14 +16,21 @@ pub struct ThemePalette {
 impl ThemePalette {
     pub fn load() -> Self {
         let fallback = Self::default();
-        let Some(home) = std::env::var_os("HOME") else {
+        let Some(path) = omarchy_palette_path() else {
             return fallback;
         };
-        let path = PathBuf::from(home).join(".config/omarchy/current/theme/colors.toml");
+        Self::load_from(&path)
+    }
+    pub fn load_from(path: &Path) -> Self {
+        let fallback = Self::default();
         let Ok(contents) = fs::read_to_string(path) else {
             return fallback;
         };
-        let colors = parse_top_level_strings(&contents);
+        Self::from_contents(&contents)
+    }
+    pub fn from_contents(contents: &str) -> Self {
+        let fallback = Self::default();
+        let colors = parse_top_level_strings(contents);
         Self {
             background: color(&colors, "background", fallback.background),
             surface: color(&colors, "lighter_background", fallback.surface),
@@ -26,6 +38,31 @@ impl ThemePalette {
             muted: color(&colors, "muted", fallback.muted),
             accent: color(&colors, "accent", fallback.accent),
         }
+    }
+}
+pub fn omarchy_palette_path() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .map(|root| root.join("omarchy/current/theme/colors.toml"))
+}
+pub struct ThemeWatch {
+    path: PathBuf,
+    stamp: Option<SystemTime>,
+}
+impl ThemeWatch {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path, stamp: None }
+    }
+    pub fn poll(&mut self) -> Option<ThemePalette> {
+        let stamp = fs::metadata(&self.path)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        if stamp == self.stamp {
+            return None;
+        }
+        self.stamp = stamp;
+        Some(ThemePalette::load_from(&self.path))
     }
 }
 
@@ -92,5 +129,15 @@ mod tests {
         assert!(valid_hex_color("#89b4fa"));
         assert!(!valid_hex_color("red"));
         assert!(!valid_hex_color("#abcd"));
+    }
+    #[test]
+    fn malformed_and_missing_palettes_fall_back() {
+        let palette = ThemePalette::from_contents("background = \"red\"\naccent = \"#abcd\"");
+        assert_eq!(palette.background, "#121212");
+        assert_eq!(palette.accent, "#e68e0d");
+        assert_eq!(
+            ThemePalette::load_from(Path::new("/not/a/theme")).foreground,
+            "#e8e8e8"
+        );
     }
 }

@@ -1042,6 +1042,14 @@ name = "linguist-audio"
 version = "0.1.0"
 
 [[package]]
+name = "linguist-config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "linguist-core"
 version = "0.1.0"
 dependencies = [
