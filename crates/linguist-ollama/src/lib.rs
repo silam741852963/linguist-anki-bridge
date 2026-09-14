@@ -61,6 +61,23 @@ impl OllamaClient {
         model: &str,
         prompt: &str,
     ) -> Result<VocabularyGeneration, OllamaError> {
+        match self.generate_vocabulary_once(model, prompt).await {
+            Ok(generation) => Ok(generation),
+            Err(OllamaError::Parse(_)) => {
+                self.generate_vocabulary_once(
+                    model,
+                    &format!("{prompt}\nReturn only JSON with nuances and examples."),
+                )
+                .await
+            }
+            Err(error) => Err(error),
+        }
+    }
+    async fn generate_vocabulary_once(
+        &self,
+        model: &str,
+        prompt: &str,
+    ) -> Result<VocabularyGeneration, OllamaError> {
         let response = self
             .client
             .post(self.endpoint("api/generate")?)
