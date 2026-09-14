@@ -3,6 +3,8 @@
 use serde::Deserialize;
 use std::{future::Future, pin::Pin, time::Duration};
 
+pub mod cambridge;
+
 pub type BrowserFuture<'a> =
     Pin<Box<dyn Future<Output = Result<String, DictionaryError>> + Send + 'a>>;
 
