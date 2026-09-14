@@ -1010,6 +1010,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "linguist-ocr"
+version = "0.1.0"
+
+[[package]]
 name = "linguist-ollama"
 version = "0.1.0"
 dependencies = [
