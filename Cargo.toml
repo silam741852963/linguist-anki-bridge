@@ -8,6 +8,7 @@ members = [
     "crates/linguist-desktop",
     "crates/linguist-ollama",
     "crates/linguist-ocr",
+    "crates/linguist-dictionary",
 ]
 resolver = "2"
 
