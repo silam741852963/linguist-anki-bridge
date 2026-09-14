@@ -1,4 +1,7 @@
-use linguist_jobs::{ItemPage, JobSummary, NewJob, RollbackReport};
+use linguist_core::BatchJobState;
+use linguist_jobs::{
+    BatchRollbackPort, ItemPage, JobRepository, JobSummary, NewJob, RollbackReport,
+};
 
 pub const PAGE_SIZE: usize = 200;
 
@@ -28,6 +31,68 @@ pub trait BatchManagementPort {
     fn cancel(&mut self, job_id: &str) -> Result<(), String>;
     fn rollback(&mut self, job_id: &str) -> Result<RollbackReport, String>;
     fn delete(&mut self, job_id: &str) -> Result<(), String>;
+}
+
+pub struct RepositoryBatchPort<'a, Restore> {
+    pub repository: &'a JobRepository,
+    pub restore: &'a Restore,
+}
+
+impl<Restore: BatchRollbackPort> BatchManagementPort for RepositoryBatchPort<'_, Restore> {
+    fn job_summaries(&self) -> Result<Vec<JobSummary>, String> {
+        self.repository
+            .job_summaries()
+            .map_err(|error| error.to_string())
+    }
+
+    fn item_page(&self, job_id: &str, limit: usize, offset: usize) -> Result<ItemPage, String> {
+        self.repository
+            .item_page(job_id, limit, offset)
+            .map_err(|error| error.to_string())
+    }
+
+    fn create(&mut self, job: NewJob) -> Result<String, String> {
+        self.repository
+            .create_job(job)
+            .map_err(|error| error.to_string())
+    }
+
+    fn pause(&mut self, job_id: &str) -> Result<(), String> {
+        self.repository
+            .set_job_state(job_id, BatchJobState::Paused, "")
+            .map_err(|error| error.to_string())
+    }
+
+    fn resume(&mut self, job_id: &str) -> Result<(), String> {
+        self.repository
+            .set_job_state(job_id, BatchJobState::Running, "")
+            .map_err(|error| error.to_string())
+    }
+
+    fn retry(&mut self, job_id: &str) -> Result<(), String> {
+        self.repository
+            .set_job_state(job_id, BatchJobState::Running, "")
+            .map_err(|error| error.to_string())
+    }
+
+    fn cancel(&mut self, job_id: &str) -> Result<(), String> {
+        self.repository
+            .cancel(job_id)
+            .map_err(|error| error.to_string())
+    }
+
+    fn rollback(&mut self, job_id: &str) -> Result<RollbackReport, String> {
+        self.repository
+            .rollback(job_id, self.restore)
+            .map_err(|error| error.to_string())
+    }
+
+    fn delete(&mut self, job_id: &str) -> Result<(), String> {
+        self.repository
+            .delete_job(job_id)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
 }
 
 impl BatchViewState {
@@ -131,6 +196,10 @@ mod tests {
     use super::*;
     use linguist_core::{BatchItemContract, BatchJobContract};
     use std::collections::BTreeMap;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     #[derive(Default)]
     struct FakePort {
@@ -222,5 +291,46 @@ mod tests {
                 "delete:batch-1"
             ]
         );
+    }
+
+    struct NoRestore;
+    impl BatchRollbackPort for NoRestore {
+        fn restore_snapshot(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn repository_adapter_reopens_paused_job_and_pages_without_all_rows() {
+        let path = PathBuf::from(format!(
+            "/tmp/linguist-desktop-batch-{}",
+            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let repository = JobRepository::open(&path).unwrap();
+        let mut adapter = RepositoryBatchPort {
+            repository: &repository,
+            restore: &NoRestore,
+        };
+        let id = adapter
+            .create(NewJob {
+                deck_key: "jp".into(),
+                deck_name: "Japanese".into(),
+                dry_run: true,
+                settings: BTreeMap::new(),
+                items: (0..500)
+                    .map(|note_id| linguist_jobs::BatchItemSeed {
+                        note_id,
+                        word: format!("word-{note_id}"),
+                    })
+                    .collect(),
+            })
+            .unwrap();
+        adapter.resume(&id).unwrap();
+        repository.recover_interrupted().unwrap();
+        assert_eq!(repository.job(&id).unwrap().unwrap().status, "paused");
+        let page = adapter.item_page(&id, PAGE_SIZE, 200).unwrap();
+        assert_eq!(page.items.len(), PAGE_SIZE);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(repository.artifact_root());
     }
 }
