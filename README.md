@@ -31,6 +31,11 @@ pytest
 linguist-anki-bridge --debug
 ```
 
+The additive native GUI preview is packaged separately as
+`linguist-anki-bridge-native`; it never replaces the Python executable. See
+[the native preview release guide](docs/native-preview-release.md) for Arch
+packaging, backup locations, and rollback instructions.
+
 Python 3.14 requires Crawl4AI 0.9.2 or newer so that pip can use lxml 6.
 If an earlier failed install cached dependency metadata, rerun the install with
 `--upgrade`.

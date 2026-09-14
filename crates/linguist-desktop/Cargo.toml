@@ -6,6 +6,10 @@ license.workspace = true
 rust-version.workspace = true
 build = "build.rs"
 
+[[bin]]
+name = "linguist-anki-bridge-native"
+path = "src/main.rs"
+
 [dependencies]
 linguist-core.workspace = true
 linguist-application.workspace = true
