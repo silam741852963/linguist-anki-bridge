@@ -175,6 +175,7 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 
 use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort};
+use crate::review_model::{ReviewQueueData, ReviewRow, ReviewState};
 use crate::theme::{ThemePalette, ThemeWatch, omarchy_palette_path};
 
 #[derive(Default)]
@@ -381,10 +382,10 @@ impl qobject::AppBackend {
     }
 
     pub fn refresh_state(mut self: Pin<&mut Self>) {
-        self.as_mut()
-            .rust_mut()
-            .controller
-            .refresh(&DisconnectedPort);
+        match LiveDesktopPort::from_environment() {
+            Ok(port) => self.as_mut().rust_mut().controller.refresh(&port),
+            Err(error) => self.as_mut().rust_mut().controller.report_error(error),
+        }
         sync_controller_state(self);
     }
 
@@ -959,7 +960,88 @@ fn queue_index(index: Option<usize>) -> i32 {
     index.and_then(|index| index.try_into().ok()).unwrap_or(-1)
 }
 
-struct DisconnectedPort;
+const MAX_LIVE_QUEUE_NOTES: usize = 1_000;
+struct LiveDesktopPort {
+    runtime: tokio::runtime::Runtime,
+    anki: linguist_anki::AnkiConnectTransport,
+    ollama: linguist_ollama::OllamaClient,
+}
+impl LiveDesktopPort {
+    fn from_environment() -> Result<Self, String> {
+        let anki_url =
+            std::env::var("LINGUIST_ANKI_URL").unwrap_or_else(|_| "http://127.0.0.1:8765".into());
+        let ollama_url = std::env::var("LINGUIST_OLLAMA_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:11434".into());
+        Ok(Self {
+            runtime: tokio::runtime::Runtime::new().map_err(|error| error.to_string())?,
+            anki: linguist_anki::AnkiConnectTransport::new(&anki_url)
+                .map_err(|error| error.to_string())?,
+            ollama: linguist_ollama::OllamaClient::new(&ollama_url)
+                .map_err(|error| error.to_string())?,
+        })
+    }
+    fn decks(&self) -> Result<Vec<String>, String> {
+        self.runtime
+            .block_on(self.anki.deck_names())
+            .map(|decks| decks.into_iter().map(|deck| deck.0).collect())
+            .map_err(|error| error.to_string())
+    }
+}
+impl DesktopPort for LiveDesktopPort {
+    fn anki_available(&self) -> Result<(), String> {
+        self.runtime
+            .block_on(self.anki.version())
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+    fn ollama_available(&self) -> Result<(), String> {
+        self.runtime
+            .block_on(self.ollama.models())
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+    fn active_deck(&self) -> Result<String, String> {
+        self.decks()?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "No Anki decks are available".into())
+    }
+    fn review_queue(&self) -> Result<ReviewQueueData, String> {
+        let decks = self.decks()?;
+        let Some(deck) = decks.first() else {
+            return Ok(ReviewQueueData {
+                decks,
+                rows: Vec::new(),
+            });
+        };
+        let query = format!("deck:\"{}\"", deck.replace('"', "\\\""));
+        let mut ids = self
+            .runtime
+            .block_on(self.anki.find_notes(&query))
+            .map_err(|error| error.to_string())?;
+        ids.truncate(MAX_LIVE_QUEUE_NOTES);
+        let notes = self
+            .runtime
+            .block_on(self.anki.notes_info(&ids))
+            .map_err(|error| error.to_string())?;
+        let rows = notes.into_iter().map(review_row).collect();
+        Ok(ReviewQueueData { decks, rows })
+    }
+}
+fn review_row(note: linguist_application::NoteInfo) -> ReviewRow {
+    let expression = ["Expression", "Word", "Front", "Vocabulary"]
+        .into_iter()
+        .find_map(|name| note.fields.get(name))
+        .cloned()
+        .or_else(|| note.fields.values().next().cloned())
+        .unwrap_or_else(|| format!("Note {}", note.note_id));
+    ReviewRow {
+        note_id: note.note_id,
+        expression,
+        detail: note.model_name.0,
+        state: ReviewState::Ready,
+    }
+}
 
 struct DisconnectedGenerator;
 
@@ -991,20 +1073,5 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for Disconne
 
     fn restore(&mut self, _snapshot_id: &str) -> Result<(), String> {
         Err("Commit adapter is not connected yet".into())
-    }
-}
-
-impl DesktopPort for DisconnectedPort {
-    fn anki_available(&self) -> Result<(), String> {
-        Err("adapter not connected".into())
-    }
-    fn ollama_available(&self) -> Result<(), String> {
-        Err("adapter not connected".into())
-    }
-    fn active_deck(&self) -> Result<String, String> {
-        Err("Connect Anki to load its active deck".into())
-    }
-    fn review_queue(&self) -> Result<crate::review_model::ReviewQueueData, String> {
-        Err("Connect Anki to load review cards".into())
     }
 }

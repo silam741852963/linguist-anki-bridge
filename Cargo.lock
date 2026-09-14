@@ -1065,9 +1065,12 @@ dependencies = [
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
+ "linguist-anki",
  "linguist-application",
  "linguist-core",
  "linguist-jobs",
+ "linguist-ollama",
+ "tokio",
 ]
 
 [[package]]
