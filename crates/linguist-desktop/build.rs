@@ -6,7 +6,8 @@ fn main() {
             .qml_file("qml/Main.qml")
             .qml_file("qml/NavigationRail.qml")
             .qml_file("qml/ReviewQueue.qml")
-            .qml_file("qml/ReviewWorkspace.qml"),
+            .qml_file("qml/ReviewWorkspace.qml")
+            .qml_file("qml/BatchWorkspace.qml"),
     )
     .qt_module("Network")
     .qt_module("QuickControls2")

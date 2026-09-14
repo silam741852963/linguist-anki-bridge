@@ -1,5 +1,6 @@
 use crate::review_model::{ReviewQueueData, ReviewQueueModel, ReviewRow};
 use crate::{
+    batch_model::{BatchAction, BatchManagementPort, BatchViewState},
     commit_model::{CommitExecutor, CommitViewState},
     draft::{DraftField, DraftPersistence, DraftStore, GeneratedChange, ReviewDraft},
 };
@@ -59,6 +60,7 @@ pub struct ApplicationController {
     drafts: DraftStore,
     draft_persistence: MemoryDraftPersistence,
     commit: CommitViewState,
+    batch: BatchViewState,
 }
 
 impl ApplicationController {
@@ -76,6 +78,39 @@ impl ApplicationController {
 
     pub fn commit(&self) -> &CommitViewState {
         &self.commit
+    }
+    pub fn batch(&self) -> &BatchViewState {
+        &self.batch
+    }
+    pub fn refresh_batches<P: BatchManagementPort>(&mut self, port: &P) {
+        self.batch.refresh(port);
+        self.report_batch_error();
+    }
+    pub fn select_batch<P: BatchManagementPort>(&mut self, port: &P, id: &str, offset: usize) {
+        self.batch.select(port, id, offset);
+        self.report_batch_error();
+    }
+    pub fn pause_batch<P: BatchManagementPort>(&mut self, port: &mut P) {
+        self.batch.pause(port);
+        self.report_batch_error();
+    }
+    pub fn resume_batch<P: BatchManagementPort>(&mut self, port: &mut P) {
+        self.batch.resume(port);
+        self.report_batch_error();
+    }
+    pub fn retry_batch<P: BatchManagementPort>(&mut self, port: &mut P) {
+        self.batch.retry(port);
+        self.report_batch_error();
+    }
+    pub fn request_batch_confirmation(&mut self, action: BatchAction) {
+        self.batch.request_confirmation(action);
+    }
+    pub fn confirm_batch<P: BatchManagementPort>(&mut self, port: &mut P) {
+        self.batch.confirm(port);
+        self.report_batch_error();
+    }
+    pub fn cancel_batch_confirmation(&mut self) {
+        self.batch.pending_confirmation = None;
     }
 
     #[allow(dead_code)]
@@ -247,6 +282,11 @@ impl ApplicationController {
             .and_then(|index| self.queue.rows().get(index))
             .map(selection_label)
             .unwrap_or_default();
+    }
+    fn report_batch_error(&mut self) {
+        if !self.batch.error.is_empty() {
+            self.state.error = self.batch.error.clone();
+        }
     }
 }
 

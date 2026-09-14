@@ -59,6 +59,10 @@ ApplicationWindow {
                 text: qsTr("Refresh state")
                 onClicked: backend.refreshState()
             }
+            ToolButton {
+                text: qsTr("Batch jobs")
+                onClicked: { backend.refreshBatches(); batchDialog.open() }
+            }
         }
     }
 
@@ -111,6 +115,21 @@ ApplicationWindow {
             }
             Item { Layout.fillWidth: true }
             Label { text: qsTr("Tab navigate  ·  Ctrl Enter apply"); color: root.muted }
+        }
+    }
+
+    Dialog {
+        id: batchDialog
+        modal: true
+        title: qsTr("Batch management")
+        width: Math.min(root.width * 0.82, 980)
+        height: Math.min(root.height * 0.8, 700)
+        standardButtons: Dialog.Close
+        contentItem: BatchWorkspace {
+            backend: backend
+            foregroundColor: root.foreground
+            mutedColor: root.muted
+            accentColor: root.accent
         }
     }
 }

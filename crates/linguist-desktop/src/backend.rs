@@ -41,6 +41,10 @@ pub mod qobject {
         #[qproperty(i32, commit_media_count)]
         #[qproperty(bool, commit_model_changed)]
         #[qproperty(i32, commit_snapshot_count)]
+        #[qproperty(i32, batch_job_count)]
+        #[qproperty(i32, batch_item_count)]
+        #[qproperty(i32, batch_item_total)]
+        #[qproperty(QString, batch_confirmation)]
         #[namespace = "linguist"]
         type AppBackend = super::AppBackendRust;
 
@@ -128,9 +132,40 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "previewAudioUrl"]
         fn preview_audio_url(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "refreshBatches"]
+        fn refresh_batches(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "selectBatch"]
+        fn select_batch(self: Pin<&mut Self>, index: i32);
+        #[qinvokable]
+        #[cxx_name = "batchJob"]
+        fn batch_job(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "batchItem"]
+        fn batch_item(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "pauseBatch"]
+        fn pause_batch(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "resumeBatch"]
+        fn resume_batch(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "retryBatch"]
+        fn retry_batch(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "requestBatchAction"]
+        fn request_batch_action(self: Pin<&mut Self>, action: i32);
+        #[qinvokable]
+        #[cxx_name = "confirmBatchAction"]
+        fn confirm_batch_action(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "cancelBatchAction"]
+        fn cancel_batch_action(self: Pin<&mut Self>);
     }
 }
 
+use std::path::PathBuf;
 use std::pin::Pin;
 
 use cxx_qt::CxxQtType;
@@ -138,6 +173,92 @@ use cxx_qt_lib::QString;
 
 use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort};
 use crate::theme::ThemePalette;
+
+#[derive(Default)]
+struct LocalBatchPort(Option<linguist_jobs::JobRepository>, String);
+
+impl LocalBatchPort {
+    fn open() -> Self {
+        let root = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+            .map(|root| {
+                root.join("linguist-anki-bridge")
+                    .join("batch_jobs.native.sqlite3")
+            });
+        match root {
+            Some(path) => match linguist_jobs::JobRepository::open(path) {
+                Ok(repository) => {
+                    let _ = repository.recover_interrupted();
+                    Self(Some(repository), String::new())
+                }
+                Err(error) => Self(None, error.to_string()),
+            },
+            None => Self(None, "XDG config directory is unavailable".into()),
+        }
+    }
+    fn repository(&self) -> Result<&linguist_jobs::JobRepository, String> {
+        self.0.as_ref().ok_or_else(|| self.1.clone())
+    }
+}
+
+struct NoBatchRestore;
+impl linguist_jobs::BatchRollbackPort for NoBatchRestore {
+    fn restore_snapshot(&self, _: &str) -> Result<(), String> {
+        Err("Snapshot restore adapter is not connected yet".into())
+    }
+}
+impl crate::batch_model::BatchManagementPort for LocalBatchPort {
+    fn job_summaries(&self) -> Result<Vec<linguist_jobs::JobSummary>, String> {
+        self.repository()?
+            .job_summaries()
+            .map_err(|error| error.to_string())
+    }
+    fn item_page(
+        &self,
+        id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<linguist_jobs::ItemPage, String> {
+        self.repository()?
+            .item_page(id, limit, offset)
+            .map_err(|error| error.to_string())
+    }
+    fn create(&mut self, job: linguist_jobs::NewJob) -> Result<String, String> {
+        self.repository()?
+            .create_job(job)
+            .map_err(|error| error.to_string())
+    }
+    fn pause(&mut self, id: &str) -> Result<(), String> {
+        self.repository()?
+            .set_job_state(id, linguist_core::BatchJobState::Paused, "")
+            .map_err(|error| error.to_string())
+    }
+    fn resume(&mut self, id: &str) -> Result<(), String> {
+        self.repository()?
+            .set_job_state(id, linguist_core::BatchJobState::Running, "")
+            .map_err(|error| error.to_string())
+    }
+    fn retry(&mut self, id: &str) -> Result<(), String> {
+        self.resume(id)
+    }
+    fn cancel(&mut self, id: &str) -> Result<(), String> {
+        self.repository()?
+            .cancel(id)
+            .map_err(|error| error.to_string())
+    }
+    fn rollback(&mut self, id: &str) -> Result<linguist_jobs::RollbackReport, String> {
+        self.repository()?
+            .rollback(id, &NoBatchRestore)
+            .map_err(|error| error.to_string())
+    }
+    fn delete(&mut self, id: &str) -> Result<(), String> {
+        self.repository()?
+            .delete_job(id)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+}
 
 pub struct AppBackendRust {
     theme_background: QString,
@@ -173,6 +294,11 @@ pub struct AppBackendRust {
     commit_media_count: i32,
     commit_model_changed: bool,
     commit_snapshot_count: i32,
+    batch_job_count: i32,
+    batch_item_count: i32,
+    batch_item_total: i32,
+    batch_confirmation: QString,
+    batch_port: LocalBatchPort,
     controller: ApplicationController,
 }
 
@@ -185,6 +311,7 @@ impl Default for AppBackendRust {
 impl AppBackendRust {
     fn from_palette(palette: ThemePalette) -> Self {
         let controller = ApplicationController::default();
+        let batch_port = LocalBatchPort::open();
         let state = controller.state();
         Self {
             theme_background: palette.background.into(),
@@ -220,6 +347,11 @@ impl AppBackendRust {
             commit_media_count: 0,
             commit_model_changed: false,
             commit_snapshot_count: 0,
+            batch_job_count: 0,
+            batch_item_count: 0,
+            batch_item_total: 0,
+            batch_confirmation: QString::default(),
+            batch_port,
             controller,
         }
     }
@@ -494,6 +626,110 @@ impl qobject::AppBackend {
             .unwrap_or_default()
             .into()
     }
+
+    pub fn refresh_batches(mut self: Pin<&mut Self>) {
+        let port = std::mem::take(&mut self.as_mut().rust_mut().batch_port);
+        self.as_mut().rust_mut().controller.refresh_batches(&port);
+        self.as_mut().rust_mut().batch_port = port;
+        sync_controller_state(self);
+    }
+
+    pub fn select_batch(mut self: Pin<&mut Self>, index: i32) {
+        let id = {
+            let binding = self.as_ref();
+            usize::try_from(index)
+                .ok()
+                .and_then(|index| binding.rust().controller.batch().jobs.get(index))
+                .map(|job| job.job.id.clone())
+        };
+        if let Some(id) = id {
+            let port = std::mem::take(&mut self.as_mut().rust_mut().batch_port);
+            self.as_mut()
+                .rust_mut()
+                .controller
+                .select_batch(&port, &id, 0);
+            self.as_mut().rust_mut().batch_port = port;
+        }
+        sync_controller_state(self);
+    }
+
+    pub fn batch_job(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().controller.batch().jobs.get(index))
+            .map(|job| {
+                format!(
+                    "{} · {} · {} items",
+                    job.job.deck_name, job.job.status, job.total
+                )
+            })
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn batch_item(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| {
+                self.rust()
+                    .controller
+                    .batch()
+                    .page
+                    .as_ref()?
+                    .items
+                    .get(index)
+            })
+            .map(|item| format!("{} · {} · {}", item.note_id, item.word, item.status))
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn pause_batch(self: Pin<&mut Self>) {
+        self.batch_command(ApplicationController::pause_batch);
+    }
+    pub fn resume_batch(self: Pin<&mut Self>) {
+        self.batch_command(ApplicationController::resume_batch);
+    }
+    pub fn retry_batch(self: Pin<&mut Self>) {
+        self.batch_command(ApplicationController::retry_batch);
+    }
+    pub fn request_batch_action(mut self: Pin<&mut Self>, action: i32) {
+        let action = match action {
+            0 => Some(crate::batch_model::BatchAction::Cancel),
+            1 => Some(crate::batch_model::BatchAction::Rollback),
+            2 => Some(crate::batch_model::BatchAction::Delete),
+            _ => None,
+        };
+        if let Some(action) = action {
+            self.as_mut()
+                .rust_mut()
+                .controller
+                .request_batch_confirmation(action);
+        }
+        sync_controller_state(self);
+    }
+    pub fn confirm_batch_action(self: Pin<&mut Self>) {
+        self.batch_command(ApplicationController::confirm_batch);
+    }
+    pub fn cancel_batch_action(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .rust_mut()
+            .controller
+            .cancel_batch_confirmation();
+        sync_controller_state(self);
+    }
+}
+
+impl qobject::AppBackend {
+    fn batch_command(
+        mut self: Pin<&mut Self>,
+        command: impl FnOnce(&mut ApplicationController, &mut LocalBatchPort),
+    ) {
+        let mut port = std::mem::take(&mut self.as_mut().rust_mut().batch_port);
+        command(&mut self.as_mut().rust_mut().controller, &mut port);
+        self.as_mut().rust_mut().batch_port = port;
+        sync_controller_state(self);
+    }
 }
 
 fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
@@ -515,6 +751,27 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
             queue_index(queue.selected_deck_index()),
             queue_len(queue.rows().len()),
             queue_index(queue.selected_index()),
+        )
+    };
+    let (batch_job_count, batch_item_count, batch_item_total, batch_confirmation) = {
+        let binding = qobject.as_ref();
+        let batch = binding.rust().controller.batch();
+        (
+            queue_len(batch.jobs.len()),
+            queue_len(batch.page.as_ref().map_or(0, |page| page.items.len())),
+            batch
+                .page
+                .as_ref()
+                .map_or(0, |page| page.total.try_into().unwrap_or(i32::MAX)),
+            batch
+                .pending_confirmation
+                .map(|action| match action {
+                    crate::batch_model::BatchAction::Cancel => "Cancel this job?",
+                    crate::batch_model::BatchAction::Rollback => "Restore completed cards?",
+                    crate::batch_model::BatchAction::Delete => "Delete job artifacts?",
+                })
+                .unwrap_or_default()
+                .to_owned(),
         )
     };
     let (
@@ -615,6 +872,12 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
     qobject
         .as_mut()
         .set_commit_snapshot_count(commit_snapshot_count);
+    qobject.as_mut().set_batch_job_count(batch_job_count);
+    qobject.as_mut().set_batch_item_count(batch_item_count);
+    qobject.as_mut().set_batch_item_total(batch_item_total);
+    qobject
+        .as_mut()
+        .set_batch_confirmation(batch_confirmation.into());
 }
 
 fn review_row_value(
