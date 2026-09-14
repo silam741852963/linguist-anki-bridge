@@ -1,0 +1,11 @@
+[package]
+name = "linguist-pipeline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+linguist-application.workspace = true
+linguist-core.workspace = true
+tokio.workspace = true

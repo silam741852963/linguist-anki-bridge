@@ -1103,6 +1103,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "linguist-pipeline"
+version = "0.1.0"
+dependencies = [
+ "linguist-application",
+ "linguist-core",
+ "tokio",
+]
+
+[[package]]
 name = "linguist-snapshots"
 version = "0.1.0"
 dependencies = [

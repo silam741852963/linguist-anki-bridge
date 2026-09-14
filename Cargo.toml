@@ -11,6 +11,7 @@ members = [
     "crates/linguist-dictionary",
     "crates/linguist-media",
     "crates/linguist-audio",
+    "crates/linguist-pipeline",
 ]
 resolver = "2"
 
