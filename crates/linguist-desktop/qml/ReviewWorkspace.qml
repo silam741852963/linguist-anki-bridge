@@ -52,6 +52,9 @@ Rectangle {
                 Layout.margins: 22
                 TextField {
                     id: expressionEditor
+                    Accessible.name: qsTr("Expression")
+                    Accessible.description: qsTr("Edit the card expression")
+                    inputMethodHints: Qt.ImhNoPredictiveText
                     Layout.preferredWidth: 260
                     text: backend.draftExpression
                     placeholderText: qsTr("Select a card")
@@ -60,12 +63,14 @@ Rectangle {
                 }
                 Label { text: backend.draftDirty ? qsTr("Unsaved draft") : qsTr("Saved draft"); color: mutedColor; font.pixelSize: 17 }
                 Item { Layout.fillWidth: true }
-                Button { text: qsTr("Undo"); onClicked: backend.undoDraft() }
-                Button { text: qsTr("Redo"); onClicked: backend.redoDraft() }
-                Button { text: qsTr("Regenerate"); onClicked: backend.regenerateDraft() }
-                Button { text: qsTr("Preview changes"); onClicked: backend.previewCommit() }
+                Button { text: qsTr("Undo"); Accessible.name: text; onClicked: backend.undoDraft() }
+                Button { text: qsTr("Redo"); Accessible.name: text; onClicked: backend.redoDraft() }
+                Button { text: qsTr("Regenerate"); Accessible.name: text; onClicked: backend.regenerateDraft() }
+                Button { text: qsTr("Preview changes"); Accessible.name: text; onClicked: backend.previewCommit() }
                 Button {
                     text: qsTr("Apply to Anki")
+                    Accessible.name: text
+                    Accessible.description: qsTr("Apply the previewed changes to Anki")
                     highlighted: true
                     enabled: backend.commitPreviewReady
                     onClicked: backend.applyCommit()
@@ -101,10 +106,12 @@ Rectangle {
                     RowLayout {
                         Label { text: qsTr("MEANING"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.2 }
                         Item { Layout.fillWidth: true }
-                        CheckBox { text: qsTr("Lock"); checked: backend.draftMeaningLocked; onToggled: backend.toggleDraftMeaningLock(checked) }
+                        CheckBox { text: qsTr("Lock"); Accessible.name: qsTr("Lock meaning field"); checked: backend.draftMeaningLocked; onToggled: backend.toggleDraftMeaningLock(checked) }
                     }
                     TextArea {
                         id: meaningEditor
+                        Accessible.name: qsTr("Meaning")
+                        Accessible.description: qsTr("Editable card meaning")
                         Layout.fillWidth: true
                         text: backend.draftMeaning
                         onTextChanged: if (activeFocus && text !== backend.draftMeaning) backend.editDraftMeaning(text)
@@ -119,13 +126,14 @@ Rectangle {
                             required property int index
                             Layout.fillWidth: true
                             Label { Layout.fillWidth: true; text: backend.draftChangeValue(index); color: accentColor; elide: Text.ElideRight }
-                            Button { text: qsTr("Accept"); onClicked: backend.acceptDraftChange(index) }
-                            Button { text: qsTr("Reject"); onClicked: backend.rejectDraftChange(index) }
+                            Button { text: qsTr("Accept"); Accessible.name: qsTr("Accept pending change %1").arg(index + 1); onClicked: backend.acceptDraftChange(index) }
+                            Button { text: qsTr("Reject"); Accessible.name: qsTr("Reject pending change %1").arg(index + 1); onClicked: backend.rejectDraftChange(index) }
                         }
                     }
                     Label { text: qsTr("KANJI"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.2 }
                     TextArea {
                         id: kanjiEditor
+                        Accessible.name: qsTr("Kanji construction")
                         Layout.fillWidth: true
                         text: backend.draftKanji
                         onTextChanged: if (activeFocus && text !== backend.draftKanji) backend.editDraftKanji(text)

@@ -16,8 +16,8 @@ Item {
             Layout.fillWidth: true
             Label { text: qsTr("BATCH JOBS"); color: mutedColor; font.letterSpacing: 1.2 }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("New job"); onClicked: createJob.open() }
-            Button { text: qsTr("Refresh"); onClicked: backend.refreshBatches() }
+            Button { text: qsTr("New job"); Accessible.name: text; onClicked: createJob.open() }
+            Button { text: qsTr("Refresh"); Accessible.name: text; onClicked: backend.refreshBatches() }
         }
         ListView {
             id: jobs
@@ -34,13 +34,13 @@ Item {
         }
         RowLayout {
             Layout.fillWidth: true
-            Button { text: qsTr("Pause"); onClicked: backend.pauseBatch() }
-            Button { text: qsTr("Resume"); onClicked: backend.resumeBatch() }
-            Button { text: qsTr("Retry"); onClicked: backend.retryBatch() }
+            Button { text: qsTr("Pause"); Accessible.name: text; onClicked: backend.pauseBatch() }
+            Button { text: qsTr("Resume"); Accessible.name: text; onClicked: backend.resumeBatch() }
+            Button { text: qsTr("Retry"); Accessible.name: text; onClicked: backend.retryBatch() }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Cancel"); onClicked: backend.requestBatchAction(0) }
-            Button { text: qsTr("Rollback"); onClicked: backend.requestBatchAction(1) }
-            Button { text: qsTr("Delete"); onClicked: backend.requestBatchAction(2) }
+            Button { text: qsTr("Cancel"); Accessible.name: text; onClicked: backend.requestBatchAction(0) }
+            Button { text: qsTr("Rollback"); Accessible.name: text; onClicked: backend.requestBatchAction(1) }
+            Button { text: qsTr("Delete"); Accessible.name: text; onClicked: backend.requestBatchAction(2) }
         }
         Label { text: qsTr("%1 / %2 items loaded").arg(backend.batchItemCount).arg(backend.batchItemTotal); color: mutedColor }
         ListView {
@@ -78,9 +78,11 @@ Item {
         onAccepted: { backend.createBatch(deckName.text, rows.text); backend.refreshBatches() }
         ColumnLayout {
             width: 460
-            TextField { id: deckName; Layout.fillWidth: true; placeholderText: qsTr("Deck name") }
+            TextField { id: deckName; Layout.fillWidth: true; placeholderText: qsTr("Deck name"); Accessible.name: qsTr("Batch deck name") }
             TextArea {
                 id: rows
+                Accessible.name: qsTr("Batch rows")
+                Accessible.description: qsTr("One note id and expression per line, separated by a tab")
                 Layout.fillWidth: true
                 Layout.preferredHeight: 180
                 placeholderText: qsTr("Note ID<Tab>Expression\n42<Tab>食べる")

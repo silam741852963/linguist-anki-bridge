@@ -12,6 +12,8 @@ ApplicationWindow {
     minimumHeight: 640
     title: qsTr("Linguist Anki Bridge")
     color: backend.themeBackground
+    Accessible.name: title
+    Accessible.description: qsTr("Language-card review workspace")
 
     AppBackend { id: backend }
     Component.onCompleted: backend.refreshState()
@@ -31,6 +33,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+K"; onActivated: search.forceActiveFocus() }
     Shortcut { sequence: "Ctrl+Return"; onActivated: backend.previewCommit() }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: backend.reloadTheme() }
+    Shortcut { sequence: "Ctrl+Shift+B"; onActivated: { backend.refreshBatches(); batchDialog.open() } }
 
     header: ToolBar {
         background: Rectangle { color: root.background }
@@ -48,6 +51,9 @@ ApplicationWindow {
             }
             TextField {
                 id: search
+                Accessible.name: qsTr("Search cards, decks, or commands")
+                Accessible.description: qsTr("Press Ctrl K to focus search")
+                focusPolicy: Qt.StrongFocus
                 Layout.fillWidth: true
                 Layout.maximumWidth: 520
                 placeholderText: qsTr("Search cards, decks, or commands   Ctrl K")
@@ -63,10 +69,14 @@ ApplicationWindow {
             }
             ToolButton {
                 text: qsTr("Refresh state")
+                Accessible.name: text
+                Accessible.description: qsTr("Refresh Anki and Ollama connection status")
                 onClicked: backend.refreshState()
             }
             ToolButton {
                 text: qsTr("Batch jobs")
+                Accessible.name: text
+                Accessible.description: qsTr("Open batch management. Shortcut Ctrl Shift B")
                 onClicked: { backend.refreshBatches(); batchDialog.open() }
             }
         }

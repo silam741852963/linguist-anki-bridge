@@ -87,6 +87,8 @@ Rectangle {
                 model: backend.reviewRowCount
                 currentIndex: backend.selectedReviewIndex
                 focus: true
+                Accessible.name: qsTr("Review queue")
+                Accessible.description: qsTr("Use arrow keys to select a card")
                 keyNavigationEnabled: true
                 highlightFollowsCurrentItem: true
                 onCurrentIndexChanged: {
@@ -102,6 +104,7 @@ Rectangle {
                     color: ListView.isCurrentItem ? Qt.alpha(accentColor, 0.22) : "transparent"
                     border.color: ListView.isCurrentItem ? accentColor : Qt.alpha(mutedColor, 0.35)
                     focus: ListView.isCurrentItem
+                    Accessible.name: qsTr("Review item %1: %2").arg(index + 1).arg(backend.reviewExpression(index))
 
                     MouseArea {
                         anchors.fill: parent
