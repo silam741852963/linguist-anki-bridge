@@ -2,6 +2,7 @@
 
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct OllamaClient {
@@ -27,6 +28,9 @@ impl std::fmt::Display for OllamaError {
 impl std::error::Error for OllamaError {}
 impl OllamaClient {
     pub fn new(base: &str) -> Result<Self, OllamaError> {
+        Self::with_timeout(base, Duration::from_secs(30))
+    }
+    pub fn with_timeout(base: &str, timeout: Duration) -> Result<Self, OllamaError> {
         let base =
             reqwest::Url::parse(base).map_err(|error| OllamaError::Url(error.to_string()))?;
         if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
@@ -35,7 +39,10 @@ impl OllamaClient {
             ));
         }
         Ok(Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(timeout)
+                .build()
+                .map_err(|error| OllamaError::Transport(error.to_string()))?,
             base,
         })
     }
@@ -108,6 +115,14 @@ impl OllamaClient {
             .join(path)
             .map_err(|error| OllamaError::Url(error.to_string()))
     }
+}
+pub fn vocabulary_cache_key(model: &str, prompt: &str) -> String {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in model.bytes().chain([0]).chain(prompt.bytes()) {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("ollama-v1-{hash:016x}")
 }
 pub fn vocabulary_request(model: &str, prompt: &str) -> Value {
     json!({"model":model,"prompt":prompt,"stream":false,"format":{"type":"object","properties":{"nuances":{"type":"string"},"examples":{"type":"array","items":{"type":"object","properties":{"sentence":{"type":"string"},"translation":{"type":"string"}},"required":["sentence","translation"]}}},"required":["nuances","examples"]},"options":{"temperature":0.2}})
