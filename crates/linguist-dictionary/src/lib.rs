@@ -69,7 +69,7 @@ impl std::fmt::Display for DictionaryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Url(e) | Self::Transport(e) | Self::Json(e) => f.write_str(e),
-            Self::Http(s) => write!(f, "Jisho HTTP {s}"),
+            Self::Http(s) => write!(f, "dictionary provider HTTP {s}"),
             Self::EmptyResult => f.write_str("Jisho returned no dictionary entries"),
         }
     }

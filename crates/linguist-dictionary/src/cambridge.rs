@@ -1,11 +1,91 @@
 //! Cambridge HTML conversion. Transport/browser concerns stay outside this parser.
 
+use std::time::Duration;
+
+use crate::DictionaryError;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CambridgeEntry {
     pub query: String,
     pub headword: String,
     pub definitions: Vec<String>,
     pub audio_url: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CambridgeClient {
+    client: reqwest::Client,
+    base: reqwest::Url,
+}
+
+impl CambridgeClient {
+    pub fn new() -> Result<Self, DictionaryError> {
+        Self::with_config("https://dictionary.cambridge.org/", Duration::from_secs(10))
+    }
+
+    pub fn with_config(base: &str, timeout: Duration) -> Result<Self, DictionaryError> {
+        let base =
+            reqwest::Url::parse(base).map_err(|error| DictionaryError::Url(error.to_string()))?;
+        if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
+            return Err(DictionaryError::Url(
+                "Cambridge URL must be http(s) with a host".into(),
+            ));
+        }
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .user_agent("LinguistAnkiBridge/0.1")
+            .build()
+            .map_err(|error| DictionaryError::Transport(error.to_string()))?;
+        Ok(Self { client, base })
+    }
+
+    pub async fn search(&self, query: &str) -> Result<CambridgeEntry, DictionaryError> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Err(DictionaryError::EmptyResult);
+        }
+        let mut url = self.base.clone();
+        url.path_segments_mut()
+            .map_err(|_| DictionaryError::Url("Cambridge base URL cannot be a base".into()))?
+            .extend(["dictionary", "english", query]);
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| DictionaryError::Transport(error.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(DictionaryError::Http(status.as_u16()));
+        }
+        let body = response
+            .text()
+            .await
+            .map_err(|error| DictionaryError::Transport(error.to_string()))?;
+        let entry = parse_html(query, &body);
+        if entry.definitions.is_empty() {
+            return Err(DictionaryError::EmptyResult);
+        }
+        Ok(entry)
+    }
+}
+
+pub fn cache_key(query: &str) -> String {
+    provider_cache_key("cambridge-v1", query)
+}
+
+fn provider_cache_key(provider: &str, query: &str) -> String {
+    let normalized = query
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in provider.bytes().chain([0]).chain(normalized.bytes()) {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{provider}-{hash:016x}")
 }
 
 /// Parse the stable definition and pronunciation URL markers emitted by
@@ -86,5 +166,16 @@ mod tests {
             entry.audio_url.as_deref(),
             Some("https://dictionary.cambridge.org/media.mp3")
         );
+    }
+
+    #[test]
+    fn cache_identity_normalizes_case_and_spacing() {
+        assert_eq!(cache_key("  Take  Off "), cache_key("take off"));
+        assert_ne!(cache_key("take off"), cache_key("take on"));
+    }
+
+    #[test]
+    fn rejects_invalid_transport_configuration() {
+        assert!(CambridgeClient::with_config("file:///tmp", Duration::from_secs(1)).is_err());
     }
 }
