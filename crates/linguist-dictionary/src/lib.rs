@@ -115,6 +115,9 @@ impl JishoClient {
         query: &str,
         browser: Option<&dyn BrowserFallback>,
     ) -> Result<Vec<DictionaryEntry>, DictionaryError> {
+        if query.trim().is_empty() {
+            return Err(DictionaryError::EmptyResult);
+        }
         let mut last = None;
         for attempt in 1..=self.attempts {
             match self.search_once(query).await {
@@ -155,6 +158,16 @@ impl JishoClient {
         }
         parse_jisho(query, &body)
     }
+}
+
+pub fn jisho_cache_key(query: &str) -> String {
+    let normalized = query.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in normalized.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("jisho-v1-{hash:016x}")
 }
 
 #[derive(Deserialize)]
@@ -290,5 +303,11 @@ mod tests {
             DictionaryError::Http(404).retry_class(),
             RetryClass::Permanent
         );
+    }
+
+    #[test]
+    fn cache_key_normalizes_query_whitespace() {
+        assert_eq!(jisho_cache_key("  食べる  "), jisho_cache_key("食べる"));
+        assert_ne!(jisho_cache_key("食べる"), jisho_cache_key("食べ物"));
     }
 }
