@@ -49,6 +49,9 @@ pub mod qobject {
         #[qproperty(i32, manual_issue_count)]
         #[qproperty(QString, csv_headers)]
         #[qproperty(QString, csv_mapping)]
+        #[qproperty(QString, selector_total)]
+        #[qproperty(i32, selector_preview_count)]
+        #[qproperty(bool, selector_limited)]
         #[namespace = "linguist"]
         type AppBackend = super::AppBackendRust;
 
@@ -205,6 +208,15 @@ pub mod qobject {
             language_key: &QString,
             type_tag: &QString,
         );
+        #[qinvokable]
+        #[cxx_name = "previewBatchSelector"]
+        fn preview_batch_selector(self: Pin<&mut Self>, selector_json: &QString);
+        #[qinvokable]
+        #[cxx_name = "selectorPreviewRow"]
+        fn selector_preview_row(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "createBatchFromSelector"]
+        fn create_batch_from_selector(self: Pin<&mut Self>);
     }
 }
 
@@ -218,9 +230,9 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 
 use linguist_application::{
-    CommitRequest, CommitSource, CsvIngestRequest, DuplicateDecision, IngestionPreview,
-    ManualIngestRequest, commit_card, prepare_csv_input, prepare_manual_input,
-    resolve_ingestion_preview, restore_snapshot,
+    BatchSelector, CommitRequest, CommitSource, CsvIngestRequest, DuplicateDecision,
+    IngestionPreview, ManualIngestRequest, commit_card, prepare_csv_input, prepare_manual_input,
+    resolve_ingestion_preview, restore_snapshot, selector_preview,
 };
 use linguist_core::{
     CONTRACT_VERSION, CardDocument, CardMode, FieldMapping, LogicalFields, ManagedTemplatePlan,
@@ -363,6 +375,11 @@ pub struct AppBackendRust {
     manual_pending: Vec<(linguist_application::InputRow, DuplicateDecision)>,
     csv_headers: QString,
     csv_mapping: QString,
+    selector_total: QString,
+    selector_preview_count: i32,
+    selector_limited: bool,
+    selector_preview_rows: Vec<String>,
+    selector_pending: Option<BatchSelector>,
     theme_watch: Option<ThemeWatch>,
     batch_port: LocalBatchPort,
     controller: ApplicationController,
@@ -424,6 +441,11 @@ impl AppBackendRust {
             manual_pending: Vec::new(),
             csv_headers: QString::default(),
             csv_mapping: QString::default(),
+            selector_total: QString::from("0"),
+            selector_preview_count: 0,
+            selector_limited: false,
+            selector_preview_rows: Vec::new(),
+            selector_pending: None,
             theme_watch: omarchy_palette_path().map(ThemeWatch::new),
             batch_port,
             controller,
@@ -1089,6 +1111,96 @@ impl qobject::AppBackend {
             }
         }
     }
+
+    pub fn preview_batch_selector(mut self: Pin<&mut Self>, selector_json: &QString) {
+        let selector: BatchSelector = match serde_json::from_str(&selector_json.to_string()) {
+            Ok(selector) => selector,
+            Err(error) => {
+                self.as_mut()
+                    .rust_mut()
+                    .controller
+                    .report_error(format!("Invalid batch selector: {error}"));
+                sync_controller_state(self);
+                return;
+            }
+        };
+        match LiveDesktopPort::from_environment().and_then(|port| port.preview_selector(&selector))
+        {
+            Ok(preview) => {
+                let rows = preview
+                    .notes
+                    .into_iter()
+                    .map(|note| {
+                        format!(
+                            "{} · {} · {} · {}",
+                            note.note_id, note.expression, note.deck_key, note.model_name
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let count = queue_len(rows.len());
+                self.as_mut().rust_mut().selector_preview_rows = rows;
+                self.as_mut().rust_mut().selector_pending = Some(selector);
+                self.as_mut()
+                    .set_selector_total(preview.total.to_string().into());
+                self.as_mut().set_selector_preview_count(count);
+                self.as_mut().set_selector_limited(preview.limited);
+            }
+            Err(error) => self.as_mut().rust_mut().controller.report_error(error),
+        }
+        sync_controller_state(self);
+    }
+
+    pub fn selector_preview_row(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().selector_preview_rows.get(index))
+            .cloned()
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn create_batch_from_selector(mut self: Pin<&mut Self>) {
+        let Some(selector) = self.as_ref().rust().selector_pending.clone() else {
+            self.as_mut()
+                .rust_mut()
+                .controller
+                .report_error("Preview a selector before creating its batch");
+            sync_controller_state(self);
+            return;
+        };
+        let items = match LiveDesktopPort::from_environment()
+            .and_then(|port| port.selector_items(&selector))
+        {
+            Ok(items) if !items.is_empty() => items,
+            Ok(_) => {
+                self.as_mut()
+                    .rust_mut()
+                    .controller
+                    .report_error("Selector returned no notes");
+                sync_controller_state(self);
+                return;
+            }
+            Err(error) => {
+                self.as_mut().rust_mut().controller.report_error(error);
+                sync_controller_state(self);
+                return;
+            }
+        };
+        let deck_name = selector.deck.clone().unwrap_or_default();
+        let settings = BTreeMap::from([(
+            "selector".into(),
+            serde_json::to_value(&selector).expect("batch selector is serializable"),
+        )]);
+        let job = linguist_jobs::NewJob {
+            deck_key: deck_name.clone(),
+            deck_name,
+            dry_run: true,
+            settings,
+            items,
+        };
+        self.as_mut().rust_mut().selector_pending = None;
+        self.batch_command(|controller, port| controller.create_batch(port, job));
+    }
 }
 
 fn ingestion_decision_label(decision: &DuplicateDecision) -> String {
@@ -1432,6 +1544,44 @@ impl LiveDesktopPort {
         self.runtime
             .block_on(self.anki.notes_info(&ids.into_iter().collect::<Vec<_>>()))
             .map_err(|error| error.to_string())
+    }
+
+    fn preview_selector(
+        &self,
+        selector: &BatchSelector,
+    ) -> Result<linguist_application::SelectorPreview, String> {
+        self.runtime
+            .block_on(selector_preview(&self.anki, selector))
+            .map_err(|error| error.to_string())
+    }
+
+    fn selector_items(
+        &self,
+        selector: &BatchSelector,
+    ) -> Result<Vec<linguist_jobs::BatchItemSeed>, String> {
+        let ids = self
+            .runtime
+            .block_on(self.anki.find_notes(&selector.query()))
+            .map_err(|error| error.to_string())?;
+        let mut items = Vec::with_capacity(ids.len());
+        for chunk in ids.chunks(500) {
+            let notes = self
+                .runtime
+                .block_on(self.anki.notes_info(chunk))
+                .map_err(|error| error.to_string())?;
+            items.extend(notes.into_iter().map(|note| {
+                linguist_jobs::BatchItemSeed {
+                    note_id: note.note_id,
+                    word: ["Expression", "Word", "Front", "Vocabulary"]
+                        .into_iter()
+                        .find_map(|field| note.fields.get(field))
+                        .cloned()
+                        .or_else(|| note.fields.values().next().cloned())
+                        .unwrap_or_default(),
+                }
+            }));
+        }
+        Ok(items)
     }
 }
 impl DesktopPort for LiveDesktopPort {

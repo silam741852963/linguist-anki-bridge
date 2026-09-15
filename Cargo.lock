@@ -1075,6 +1075,7 @@ dependencies = [
  "linguist-jobs",
  "linguist-ollama",
  "linguist-snapshots",
+ "serde_json",
  "tokio",
 ]
 

@@ -13,8 +13,9 @@ use std::{
 use linguist_application::{
     CardTemplate, CommitPort, CommitSource, DeckName, ExactExpressionRequest, ExpressionResolution,
     MediaFile, MediaPort, ModelFields, ModelName, ModelStyling, ModelTemplates,
-    NATIVE_POST_WRITE_EXTENSION, NoteInfo, NoteMutation, PortError, PortFuture, PostWriteState,
-    RestorePort, SnapshotCapture, SnapshotHandle, TemplateMutation, resolve_exact_expression,
+    NATIVE_POST_WRITE_EXTENSION, NoteInfo, NoteMutation, NoteSummary, PortError, PortFuture,
+    PostWriteState, RestorePort, SelectorMetadataPort, SnapshotCapture, SnapshotHandle,
+    TemplateMutation, resolve_exact_expression,
 };
 use linguist_core::{
     CONTRACT_VERSION, CardMode, ManagedTemplatePlan, SnapshotContract, SnapshotDocument,
@@ -413,6 +414,50 @@ impl MediaPort for AnkiConnectTransport {
             self.delete_media_file(filename)
                 .await
                 .map_err(|error| media_port_error("delete media", error))
+        })
+    }
+}
+
+impl SelectorMetadataPort for AnkiConnectTransport {
+    fn count<'a>(&'a self, query: &'a str) -> PortFuture<'a, u64> {
+        Box::pin(async move {
+            self.find_notes(query)
+                .await
+                .map(|notes| notes.len() as u64)
+                .map_err(|error| media_port_error("selector count", error))
+        })
+    }
+
+    fn notes<'a>(&'a self, query: &'a str, limit: usize) -> PortFuture<'a, Vec<NoteSummary>> {
+        Box::pin(async move {
+            let mut ids = self
+                .find_notes(query)
+                .await
+                .map_err(|error| media_port_error("selector notes", error))?;
+            ids.truncate(limit);
+            self.notes_info(&ids)
+                .await
+                .map(|notes| {
+                    notes
+                        .into_iter()
+                        .map(|note| NoteSummary {
+                            note_id: note.note_id,
+                            expression: ["Expression", "Word", "Front", "Vocabulary"]
+                                .into_iter()
+                                .find_map(|field| note.fields.get(field))
+                                .cloned()
+                                .or_else(|| note.fields.values().next().cloned())
+                                .unwrap_or_default(),
+                            deck_key: note
+                                .deck_names
+                                .first()
+                                .map(|deck| deck.0.clone())
+                                .unwrap_or_default(),
+                            model_name: note.model_name.0,
+                        })
+                        .collect()
+                })
+                .map_err(|error| media_port_error("selector notes", error))
         })
     }
 }

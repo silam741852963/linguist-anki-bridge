@@ -74,10 +74,9 @@ Item {
         id: createJob
         modal: true
         title: qsTr("Create batch job")
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: { backend.createBatch(deckName.text, rows.text); backend.refreshBatches() }
+        standardButtons: Dialog.Cancel
         ColumnLayout {
-            width: 460
+            width: 620
             TextField { id: deckName; Layout.fillWidth: true; placeholderText: qsTr("Deck name"); Accessible.name: qsTr("Batch deck name") }
             TextArea {
                 id: rows
@@ -87,6 +86,68 @@ Item {
                 Layout.preferredHeight: 180
                 placeholderText: qsTr("Note ID<Tab>Expression\n42<Tab>食べる")
                 wrapMode: TextEdit.NoWrap
+            }
+            Button {
+                text: qsTr("Create from explicit rows")
+                Accessible.name: text
+                enabled: deckName.text.trim().length > 0 && rows.text.trim().length > 0
+                onClicked: { backend.createBatch(deckName.text, rows.text); backend.refreshBatches(); createJob.close() }
+            }
+            Label { text: qsTr("OR SELECT FROM ANKI"); color: mutedColor; font.letterSpacing: 1.2 }
+            GridLayout {
+                columns: 2
+                Layout.fillWidth: true
+                TextField { id: selectorModel; Layout.fillWidth: true; placeholderText: qsTr("Model (optional)"); Accessible.name: qsTr("Selector model") }
+                TextField { id: selectorTemplate; Layout.fillWidth: true; placeholderText: qsTr("Template (optional)"); Accessible.name: qsTr("Selector template") }
+                TextField { id: selectorAfter; Layout.fillWidth: true; placeholderText: qsTr("Created after, Anki date syntax"); Accessible.name: qsTr("Created after") }
+                TextField { id: selectorBefore; Layout.fillWidth: true; placeholderText: qsTr("Created before, Anki date syntax"); Accessible.name: qsTr("Created before") }
+                TextField { id: selectorTags; Layout.fillWidth: true; placeholderText: qsTr("Tags, comma separated"); Accessible.name: qsTr("Selector tags") }
+                TextField { id: selectorQuery; Layout.fillWidth: true; placeholderText: qsTr("Additional Anki query"); Accessible.name: qsTr("Additional selector query") }
+                ComboBox { id: selectorImage; Layout.fillWidth: true; model: [qsTr("Any image"), qsTr("Has image"), qsTr("No image")]; Accessible.name: qsTr("Image filter") }
+                ComboBox { id: selectorCompletion; Layout.fillWidth: true; model: [qsTr("Any completion"), qsTr("Incomplete"), qsTr("Complete")]; Accessible.name: qsTr("Completion filter") }
+            }
+            RowLayout {
+                Button {
+                    text: qsTr("Preview selector")
+                    Accessible.name: text
+                    onClicked: backend.previewBatchSelector(JSON.stringify({
+                        deck: deckName.text.trim().length > 0 ? deckName.text.trim() : null,
+                        created_after: selectorAfter.text.trim().length > 0 ? selectorAfter.text.trim() : null,
+                        created_before: selectorBefore.text.trim().length > 0 ? selectorBefore.text.trim() : null,
+                        model: selectorModel.text.trim().length > 0 ? selectorModel.text.trim() : null,
+                        template: selectorTemplate.text.trim().length > 0 ? selectorTemplate.text.trim() : null,
+                        query: selectorQuery.text,
+                        tags: selectorTags.text.split(",").map(tag => tag.trim()).filter(tag => tag.length > 0),
+                        image: ["any", "has_image", "no_image"][selectorImage.currentIndex],
+                        completion: ["any", "incomplete", "complete"][selectorCompletion.currentIndex]
+                    }))
+                }
+                Button {
+                    text: qsTr("Create selector batch")
+                    Accessible.name: text
+                    highlighted: true
+                    enabled: backend.selectorPreviewCount > 0
+                    onClicked: { backend.createBatchFromSelector(); backend.refreshBatches(); createJob.close() }
+                }
+                Label {
+                    text: backend.selectorLimited
+                        ? qsTr("%1 total · first %2 shown").arg(backend.selectorTotal).arg(backend.selectorPreviewCount)
+                        : qsTr("%1 matches").arg(backend.selectorTotal)
+                    color: mutedColor
+                }
+            }
+            ListView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 120
+                model: backend.selectorPreviewCount
+                clip: true
+                delegate: Label {
+                    required property int index
+                    width: ListView.view.width
+                    text: backend.selectorPreviewRow(index)
+                    color: foregroundColor
+                    elide: Text.ElideRight
+                }
             }
         }
     }
