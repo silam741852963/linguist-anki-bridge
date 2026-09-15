@@ -14,7 +14,7 @@ use linguist_application::{
     CardTemplate, CommitPort, CommitSource, DeckName, ExactExpressionRequest, ExpressionResolution,
     MediaFile, MediaPort, ModelFields, ModelName, ModelStyling, ModelTemplates,
     NATIVE_POST_WRITE_EXTENSION, NoteInfo, NoteMutation, PortError, PortFuture, PostWriteState,
-    SnapshotCapture, SnapshotHandle, TemplateMutation, resolve_exact_expression,
+    RestorePort, SnapshotCapture, SnapshotHandle, TemplateMutation, resolve_exact_expression,
 };
 use linguist_core::{
     CONTRACT_VERSION, CardMode, ManagedTemplatePlan, SnapshotContract, SnapshotDocument,
@@ -650,6 +650,74 @@ impl CommitPort for AnkiCommitPort {
             } else {
                 Ok(())
             }
+        })
+    }
+}
+
+impl RestorePort for AnkiCommitPort {
+    fn snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, bool> {
+        Box::pin(async move {
+            let document = find_snapshot(&self.snapshots, snapshot_id)?;
+            Ok(document.snapshot.status == "reverted" || document.snapshot.reverted_at.is_some())
+        })
+    }
+
+    fn note_info<'a>(&'a self, note_id: i64) -> PortFuture<'a, Option<NoteInfo>> {
+        Box::pin(async move {
+            self.transport
+                .notes_info(&[note_id])
+                .await
+                .map(|mut notes| notes.pop())
+                .map_err(|error| PortError {
+                    operation: "note info",
+                    message: error.to_string(),
+                    retryable: false,
+                })
+        })
+    }
+
+    fn delete_notes<'a>(&'a self, note_ids: &'a [i64]) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            self.transport
+                .delete_notes(note_ids)
+                .await
+                .map_err(|error| PortError {
+                    operation: "delete notes",
+                    message: error.to_string(),
+                    retryable: false,
+                })
+        })
+    }
+
+    fn restore_note<'a>(&'a self, original: &'a SnapshotOriginalNote) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            let note_id = original.note_id.ok_or_else(|| PortError {
+                operation: "restore note",
+                message: "original note has no id".into(),
+                retryable: false,
+            })?;
+            self.transport
+                .update_note(
+                    note_id,
+                    &original.model_name,
+                    &original.fields,
+                    &original.tags,
+                )
+                .await
+                .map_err(|error| PortError {
+                    operation: "restore note",
+                    message: error.to_string(),
+                    retryable: false,
+                })
+        })
+    }
+
+    fn mark_snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            let mut document = find_snapshot(&self.snapshots, snapshot_id)?;
+            document.snapshot.status = "reverted".into();
+            document.snapshot.reverted_at = Some(unix_timestamp());
+            self.snapshots.replace(&document).map_err(snapshot_error)
         })
     }
 }
