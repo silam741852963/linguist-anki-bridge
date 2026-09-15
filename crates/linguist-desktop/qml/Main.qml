@@ -34,6 +34,16 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Return"; onActivated: backend.previewCommit() }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: backend.reloadTheme() }
     Shortcut { sequence: "Ctrl+Shift+B"; onActivated: { backend.refreshBatches(); batchDialog.open() } }
+    Shortcut {
+        sequence: "Alt+Down"
+        enabled: backend.reviewRowCount > 0
+        onActivated: backend.selectReviewIndex(Math.min(backend.reviewRowCount - 1, backend.selectedReviewIndex + 1))
+    }
+    Shortcut {
+        sequence: "Alt+Up"
+        enabled: backend.reviewRowCount > 0
+        onActivated: backend.selectReviewIndex(Math.max(0, backend.selectedReviewIndex - 1))
+    }
 
     header: ToolBar {
         background: Rectangle { color: root.background }
