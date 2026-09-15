@@ -971,10 +971,17 @@ impl qobject::AppBackend {
                     {
                         synthetic_id -= 1;
                     }
-                    let model = match row.language_key.as_str() {
-                        "japanese_vocab" | "japanese" | "ja" => "Linguist Japanese Vocabulary",
-                        _ => "Linguist Vocabulary",
-                    };
+                    let config = runtime_config().unwrap_or_default();
+                    let model = config
+                        .decks
+                        .get(&row.language_key)
+                        .and_then(|deck| deck.model_name.clone())
+                        .unwrap_or_else(|| match row.language_key.as_str() {
+                            "japanese_vocab" | "japanese" | "ja" => {
+                                "Linguist Japanese Vocabulary".into()
+                            }
+                            _ => "Linguist Vocabulary".into(),
+                        });
                     let draft = crate::draft::ReviewDraft::injection(
                         synthetic_id,
                         row.expression,
@@ -1497,6 +1504,28 @@ fn queue_index(index: Option<usize>) -> i32 {
     index.and_then(|index| index.try_into().ok()).unwrap_or(-1)
 }
 
+fn runtime_config() -> Result<linguist_config::NativeConfig, String> {
+    let root = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .ok_or_else(|| "XDG config directory is unavailable".to_owned())?;
+    let path = linguist_config::native_config_path(&root);
+    if !path.exists() {
+        return Ok(linguist_config::NativeConfig::default());
+    }
+    linguist_config::load_native(&path).map_err(|error| error.to_string())
+}
+
+fn configured_value(variable: &str, configured: &str, fallback: &str) -> String {
+    std::env::var(variable).unwrap_or_else(|_| {
+        if configured.trim().is_empty() {
+            fallback.into()
+        } else {
+            configured.into()
+        }
+    })
+}
+
 const MAX_LIVE_QUEUE_NOTES: usize = 1_000;
 struct LiveDesktopPort {
     runtime: tokio::runtime::Runtime,
@@ -1505,10 +1534,17 @@ struct LiveDesktopPort {
 }
 impl LiveDesktopPort {
     fn from_environment() -> Result<Self, String> {
-        let anki_url =
-            std::env::var("LINGUIST_ANKI_URL").unwrap_or_else(|_| "http://127.0.0.1:8765".into());
-        let ollama_url = std::env::var("LINGUIST_OLLAMA_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:11434".into());
+        let config = runtime_config()?;
+        let anki_url = configured_value(
+            "LINGUIST_ANKI_URL",
+            &config.anki_url,
+            "http://127.0.0.1:8765",
+        );
+        let ollama_url = configured_value(
+            "LINGUIST_OLLAMA_URL",
+            &config.ollama_url,
+            "http://127.0.0.1:11434",
+        );
         Ok(Self {
             runtime: tokio::runtime::Runtime::new().map_err(|error| error.to_string())?,
             anki: linguist_anki::AnkiConnectTransport::new(&anki_url)
@@ -1658,9 +1694,17 @@ struct LiveGenerationAdapter {
 
 impl LiveGenerationAdapter {
     fn from_environment() -> Result<Self, String> {
-        let url = std::env::var("LINGUIST_OLLAMA_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:11434".into());
-        let model = std::env::var("LINGUIST_OLLAMA_MODEL").unwrap_or_else(|_| "llama3.2".into());
+        let config = runtime_config()?;
+        let url = configured_value(
+            "LINGUIST_OLLAMA_URL",
+            &config.ollama_url,
+            "http://127.0.0.1:11434",
+        );
+        let model = configured_value(
+            "LINGUIST_OLLAMA_MODEL",
+            config.ollama_model.as_deref().unwrap_or_default(),
+            "llama3.2",
+        );
         Ok(Self {
             runtime: tokio::runtime::Runtime::new().map_err(|error| error.to_string())?,
             client: linguist_ollama::OllamaClient::new(&url).map_err(|error| error.to_string())?,
@@ -1712,8 +1756,12 @@ struct LiveCommitAdapter {
 
 impl LiveCommitAdapter {
     fn from_environment() -> Result<Self, String> {
-        let url =
-            std::env::var("LINGUIST_ANKI_URL").unwrap_or_else(|_| "http://127.0.0.1:8765".into());
+        let config = runtime_config()?;
+        let url = configured_value(
+            "LINGUIST_ANKI_URL",
+            &config.anki_url,
+            "http://127.0.0.1:8765",
+        );
         let runtime = tokio::runtime::Runtime::new().map_err(|error| error.to_string())?;
         let transport =
             linguist_anki::AnkiConnectTransport::new(&url).map_err(|error| error.to_string())?;

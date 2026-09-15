@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 linguist-core.workspace = true
+linguist-config.workspace = true
 linguist-application.workspace = true
 linguist-jobs.workspace = true
 linguist-anki.workspace = true

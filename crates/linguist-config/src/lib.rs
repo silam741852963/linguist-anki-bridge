@@ -32,15 +32,28 @@ pub struct ImportReport {
 pub enum ConfigError {
     Read(String),
     Parse(String),
+    UnsupportedVersion(u16),
     NativeExists(PathBuf),
 }
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Read(v) | Self::Parse(v) => f.write_str(v),
+            Self::UnsupportedVersion(version) => {
+                write!(f, "unsupported native config version {version}")
+            }
             Self::NativeExists(v) => write!(f, "native config already exists: {}", v.display()),
         }
     }
+}
+pub fn load_native(path: &Path) -> Result<NativeConfig, ConfigError> {
+    let bytes = fs::read(path).map_err(|error| ConfigError::Read(error.to_string()))?;
+    let config: NativeConfig =
+        serde_json::from_slice(&bytes).map_err(|error| ConfigError::Parse(error.to_string()))?;
+    if config.version != NATIVE_CONFIG_VERSION {
+        return Err(ConfigError::UnsupportedVersion(config.version));
+    }
+    Ok(config)
 }
 impl std::error::Error for ConfigError {}
 pub fn import_legacy_yaml(contents: &str) -> Result<ImportReport, ConfigError> {
@@ -171,9 +184,27 @@ mod tests {
             ..Default::default()
         };
         save_native_new(&path, &config).unwrap();
+        assert_eq!(load_native(&path).unwrap(), config);
         assert!(matches!(
             save_native_new(&path, &config),
             Err(ConfigError::NativeExists(_))
+        ));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_loader_rejects_unknown_schema_versions() {
+        let path = std::env::temp_dir().join(format!(
+            "config-version-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&path, r#"{"version":99,"anki_url":"","ollama_url":"","ollama_model":null,"dictionary_preset":"","dry_run":true,"decks":{}}"#).unwrap();
+        assert!(matches!(
+            load_native(&path),
+            Err(ConfigError::UnsupportedVersion(99))
         ));
         let _ = fs::remove_file(path);
     }

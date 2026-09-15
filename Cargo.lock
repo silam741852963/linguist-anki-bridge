@@ -1071,6 +1071,7 @@ dependencies = [
  "cxx-qt-lib",
  "linguist-anki",
  "linguist-application",
+ "linguist-config",
  "linguist-core",
  "linguist-jobs",
  "linguist-ollama",
