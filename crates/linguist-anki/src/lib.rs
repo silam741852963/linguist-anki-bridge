@@ -195,6 +195,53 @@ impl AnkiConnectTransport {
         self.send("findNotes", json!({"query": query})).await
     }
 
+    pub async fn create_backup(&self) -> Result<(), AnkiConnectError> {
+        let _: Value = self.send("createBackup", Value::Null).await?;
+        Ok(())
+    }
+
+    pub async fn add_note(
+        &self,
+        deck_name: &str,
+        model_name: &str,
+        fields: &std::collections::BTreeMap<String, String>,
+        tags: &[String],
+    ) -> Result<i64, AnkiConnectError> {
+        self.send("addNote", json!({"note":{"deckName":deck_name,"modelName":model_name,"fields":fields,"tags":tags}})).await
+    }
+
+    pub async fn update_note(
+        &self,
+        note_id: i64,
+        model_name: &str,
+        fields: &std::collections::BTreeMap<String, String>,
+        tags: &[String],
+    ) -> Result<(), AnkiConnectError> {
+        let _: Value = self
+            .send(
+                "updateNote",
+                json!({"note":{"id":note_id,"modelName":model_name,"fields":fields,"tags":tags}}),
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn delete_notes(&self, note_ids: &[i64]) -> Result<(), AnkiConnectError> {
+        let _: Value = self.send("deleteNotes", json!({"notes":note_ids})).await?;
+        Ok(())
+    }
+
+    pub async fn change_deck(
+        &self,
+        note_ids: &[i64],
+        deck_name: &str,
+    ) -> Result<(), AnkiConnectError> {
+        let _: Value = self
+            .send("changeDeck", json!({"cards":note_ids,"deck":deck_name}))
+            .await?;
+        Ok(())
+    }
+
     /// Ask Anki for indexed candidates, then defer exact comparison and mode
     /// selection to the application use case.
     pub async fn resolve_exact_expression(
@@ -545,6 +592,37 @@ mod tests {
                 .unwrap()
                 .contains(r#"{"action":"requestPermission","version":6}"#)
         );
+    }
+
+    #[tokio::test]
+    async fn mutation_methods_use_typed_write_actions() {
+        let (url, requests) = mock_sequence(vec![
+            r#"{"result":null,"error":null}"#,
+            r#"{"result":91,"error":null}"#,
+            r#"{"result":null,"error":null}"#,
+            r#"{"result":null,"error":null}"#,
+        ])
+        .await;
+        let transport = AnkiConnectTransport::new(&url).unwrap();
+        let fields = std::collections::BTreeMap::from([("Word".into(), "俳優".into())]);
+        transport.create_backup().await.unwrap();
+        assert_eq!(
+            transport
+                .add_note("Japanese", "Basic", &fields, &["linguist".into()])
+                .await
+                .unwrap(),
+            91
+        );
+        transport
+            .update_note(91, "Basic", &fields, &[])
+            .await
+            .unwrap();
+        transport.delete_notes(&[91]).await.unwrap();
+        let requests = requests.await.unwrap();
+        assert!(requests[0].contains(r#""action":"createBackup""#));
+        assert!(requests[1].contains(r#""action":"addNote""#) && requests[1].contains("俳優"));
+        assert!(requests[2].contains(r#""action":"updateNote""#));
+        assert!(requests[3].contains(r#""action":"deleteNotes""#));
     }
 
     #[tokio::test]
