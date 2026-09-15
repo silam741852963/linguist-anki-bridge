@@ -174,7 +174,7 @@ use std::pin::Pin;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 
-use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort};
+use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort, DraftNotePort};
 use crate::review_model::{ReviewQueueData, ReviewRow, ReviewState};
 use crate::theme::{ThemePalette, ThemeWatch, omarchy_palette_path};
 
@@ -442,10 +442,16 @@ impl qobject::AppBackend {
 
     pub fn select_review_index(mut self: Pin<&mut Self>, index: i32) {
         if let Ok(index) = usize::try_from(index) {
-            self.as_mut()
+            let mut backend = self.as_mut();
+            backend
+                .as_mut()
                 .rust_mut()
                 .controller
                 .select_queue_index(index);
+            match LiveDesktopPort::from_environment() {
+                Ok(port) => backend.rust_mut().controller.hydrate_selected(&port),
+                Err(error) => backend.rust_mut().controller.report_error(error),
+            }
             sync_controller_state(self);
         }
     }
@@ -1026,6 +1032,16 @@ impl DesktopPort for LiveDesktopPort {
             .map_err(|error| error.to_string())?;
         let rows = notes.into_iter().map(review_row).collect();
         Ok(ReviewQueueData { decks, rows })
+    }
+}
+impl DraftNotePort for LiveDesktopPort {
+    fn note(&self, note_id: i64) -> Result<linguist_application::NoteInfo, String> {
+        self.runtime
+            .block_on(self.anki.notes_info(&[note_id]))
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .next()
+            .ok_or_else(|| format!("Anki note {note_id} was not found"))
     }
 }
 fn review_row(note: linguist_application::NoteInfo) -> ReviewRow {

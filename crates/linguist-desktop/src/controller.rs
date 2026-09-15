@@ -4,6 +4,7 @@ use crate::{
     commit_model::{CommitExecutor, CommitViewState},
     draft::{DraftField, DraftPersistence, DraftStore, GeneratedChange, ReviewDraft},
 };
+use linguist_application::NoteInfo;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServiceState {
@@ -51,6 +52,9 @@ pub trait DesktopPort {
     fn ollama_available(&self) -> Result<(), String>;
     fn active_deck(&self) -> Result<String, String>;
     fn review_queue(&self) -> Result<ReviewQueueData, String>;
+}
+pub trait DraftNotePort {
+    fn note(&self, note_id: i64) -> Result<NoteInfo, String>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -177,6 +181,20 @@ impl ApplicationController {
         self.commit.invalidate_preview();
         let _ = self.queue.select_index(index);
         self.state.selection = selection;
+    }
+    pub fn hydrate_selected<P: DraftNotePort>(&mut self, port: &P) {
+        let Some(note_id) = self
+            .queue
+            .selected_index()
+            .and_then(|index| self.queue.rows().get(index))
+            .map(|row| row.note_id)
+        else {
+            return;
+        };
+        match port.note(note_id) {
+            Ok(note) => self.drafts.hydrate(&note, &mut self.draft_persistence),
+            Err(error) => self.report_error(error),
+        }
     }
 
     pub fn select_deck_index(&mut self, index: usize) {

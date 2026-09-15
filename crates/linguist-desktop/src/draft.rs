@@ -1,3 +1,4 @@
+use linguist_application::NoteInfo;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -42,6 +43,50 @@ pub struct ReviewDraft {
 
 #[allow(dead_code)] // N18 command surface is completed as enrichment ports arrive.
 impl ReviewDraft {
+    pub fn from_note(note: &NoteInfo) -> Self {
+        let expression = ["Expression", "Word", "Front", "Vocabulary"]
+            .into_iter()
+            .find_map(|name| note.fields.get(name))
+            .cloned()
+            .or_else(|| note.fields.values().next().cloned())
+            .unwrap_or_default();
+        let meaning = ["Meaning", "Definition", "Back"]
+            .into_iter()
+            .find_map(|name| note.fields.get(name))
+            .cloned()
+            .unwrap_or_default();
+        let kanji = ["Kanji", "Kanji Construction"]
+            .into_iter()
+            .find_map(|name| note.fields.get(name))
+            .cloned()
+            .unwrap_or_default();
+        let images = note
+            .fields
+            .values()
+            .flat_map(|value| media_names(value, "img", "src"))
+            .collect();
+        let audio = note
+            .fields
+            .values()
+            .flat_map(|value| media_names(value, "sound", ""))
+            .collect();
+        Self {
+            note_id: note.note_id,
+            expression,
+            meaning,
+            kanji,
+            images,
+            audio,
+            issues: Vec::new(),
+            provenance: vec![format!("{} · {}", note.model_name.0, note.tags.join(", "))],
+            locked: BTreeSet::new(),
+            user_edited: BTreeSet::new(),
+            pending: Vec::new(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+            dirty: false,
+        }
+    }
     pub fn empty(note_id: i64) -> Self {
         Self {
             note_id,
@@ -166,6 +211,32 @@ impl ReviewDraft {
     }
 }
 
+fn media_names(value: &str, marker: &str, attribute: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut rest = value;
+    while let Some(start) = rest.find(marker) {
+        rest = &rest[start + marker.len()..];
+        let tail = if attribute.is_empty() {
+            rest
+        } else {
+            let Some(attribute_start) = rest.find(&format!("{attribute}=")) else {
+                continue;
+            };
+            &rest[attribute_start + attribute.len() + 1..]
+        };
+        let tail = tail.trim_start_matches(['"', '\'']);
+        let end = tail
+            .find(|ch: char| ch == '"' || ch == '\'' || ch == ']' || ch.is_whitespace())
+            .unwrap_or(tail.len());
+        let candidate = tail[..end].trim_matches(|ch| ch == ':' || ch == '=' || ch == '[');
+        if !candidate.is_empty() && !candidate.contains("http") {
+            names.push(candidate.to_owned());
+        }
+        rest = tail.get(end..).unwrap_or("");
+    }
+    names
+}
+
 pub trait DraftPersistence {
     fn save(&mut self, draft: &ReviewDraft) -> Result<(), String>;
 }
@@ -201,6 +272,16 @@ impl DraftStore {
             .or_insert_with(|| ReviewDraft::empty(note_id));
         self.active_note_id = Some(note_id);
         Ok(())
+    }
+    pub fn hydrate<P: DraftPersistence>(&mut self, note: &NoteInfo, _persistence: &mut P) {
+        let entry = self
+            .drafts
+            .entry(note.note_id)
+            .or_insert_with(|| ReviewDraft::from_note(note));
+        if !entry.dirty() && entry.undo.is_empty() && entry.pending.is_empty() {
+            *entry = ReviewDraft::from_note(note);
+        }
+        self.active_note_id = Some(note.note_id);
     }
 }
 
@@ -275,5 +356,27 @@ mod tests {
             Err("disk full".into())
         );
         assert_eq!(store.active().unwrap().note_id, 2);
+    }
+
+    #[test]
+    fn hydrates_note_fields_and_media_without_marking_dirty() {
+        let note = NoteInfo {
+            note_id: 8,
+            model_name: linguist_application::ModelName("Japanese".into()),
+            deck_names: vec![],
+            fields: BTreeMap::from([
+                ("Word".into(), "食べる".into()),
+                ("Meaning".into(), "to eat".into()),
+                ("Picture".into(), r#"<img src="food.jpg">"#.into()),
+                ("Audio".into(), "[sound:taberu.mp3]".into()),
+            ]),
+            tags: vec!["source".into()],
+        };
+        let draft = ReviewDraft::from_note(&note);
+        assert_eq!(draft.expression, "食べる");
+        assert_eq!(draft.meaning, "to eat");
+        assert_eq!(draft.images, ["food.jpg"]);
+        assert_eq!(draft.audio, ["taberu.mp3"]);
+        assert!(!draft.dirty());
     }
 }
