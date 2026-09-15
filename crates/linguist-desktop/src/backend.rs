@@ -498,10 +498,14 @@ impl qobject::AppBackend {
     }
 
     pub fn regenerate_draft(mut self: Pin<&mut Self>) {
-        self.as_mut()
-            .rust_mut()
-            .controller
-            .regenerate_draft(&DisconnectedGenerator);
+        match LiveGenerationAdapter::from_environment() {
+            Ok(adapter) => self
+                .as_mut()
+                .rust_mut()
+                .controller
+                .regenerate_draft(&adapter),
+            Err(error) => self.as_mut().rust_mut().controller.report_error(error),
+        }
         sync_controller_state(self);
     }
 
@@ -1077,7 +1081,59 @@ fn review_row(note: linguist_application::NoteInfo) -> ReviewRow {
     }
 }
 
-struct DisconnectedGenerator;
+struct LiveGenerationAdapter {
+    runtime: tokio::runtime::Runtime,
+    client: linguist_ollama::OllamaClient,
+    model: String,
+}
+
+impl LiveGenerationAdapter {
+    fn from_environment() -> Result<Self, String> {
+        let url = std::env::var("LINGUIST_OLLAMA_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:11434".into());
+        let model = std::env::var("LINGUIST_OLLAMA_MODEL").unwrap_or_else(|_| "llama3.2".into());
+        Ok(Self {
+            runtime: tokio::runtime::Runtime::new().map_err(|error| error.to_string())?,
+            client: linguist_ollama::OllamaClient::new(&url).map_err(|error| error.to_string())?,
+            model,
+        })
+    }
+}
+
+impl DraftGenerationPort for LiveGenerationAdapter {
+    fn generate(
+        &self,
+        draft: &crate::draft::ReviewDraft,
+    ) -> Result<Vec<crate::draft::GeneratedChange>, String> {
+        let prompt = format!(
+            "Explain the vocabulary item `{}`. Existing meaning: {}. Return concise nuance and examples.",
+            draft.expression, draft.meaning
+        );
+        let result = self
+            .runtime
+            .block_on(self.client.generate_vocabulary(&self.model, &prompt))
+            .map_err(|error| error.to_string())?;
+        let examples = result
+            .examples
+            .iter()
+            .map(|example| format!("{} — {}", example.sentence, example.translation))
+            .collect::<Vec<_>>()
+            .join("<br/>");
+        let value = [result.nuances, examples]
+            .into_iter()
+            .filter(|part| !part.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("<br/>");
+        if value.trim().is_empty() {
+            return Err("Ollama returned no usable meaning".into());
+        }
+        Ok(vec![crate::draft::GeneratedChange {
+            field: crate::draft::DraftField::Meaning,
+            value,
+            provenance: format!("Ollama · {}", self.model),
+        }])
+    }
+}
 
 struct LiveCommitAdapter {
     runtime: tokio::runtime::Runtime,
@@ -1248,14 +1304,5 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
 
     fn restore(&mut self, snapshot_id: &str) -> Result<(), String> {
         self.restore_snapshot_id(snapshot_id)
-    }
-}
-
-impl DraftGenerationPort for DisconnectedGenerator {
-    fn generate(
-        &self,
-        _draft: &crate::draft::ReviewDraft,
-    ) -> Result<Vec<crate::draft::GeneratedChange>, String> {
-        Err("Generation adapter is not connected yet".into())
     }
 }
