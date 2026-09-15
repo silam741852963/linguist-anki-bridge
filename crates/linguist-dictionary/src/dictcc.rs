@@ -1,9 +1,83 @@
 //! dict.cc result-table parser; callers own locale and transport selection.
 
+use std::time::Duration;
+
+use crate::DictionaryError;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Translation {
     pub source: String,
     pub target: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct DictCcClient {
+    client: reqwest::Client,
+    base: reqwest::Url,
+}
+
+impl DictCcClient {
+    pub fn new(base: &str) -> Result<Self, DictionaryError> {
+        Self::with_config(base, Duration::from_secs(10))
+    }
+
+    pub fn with_config(base: &str, timeout: Duration) -> Result<Self, DictionaryError> {
+        let base =
+            reqwest::Url::parse(base).map_err(|error| DictionaryError::Url(error.to_string()))?;
+        if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
+            return Err(DictionaryError::Url(
+                "dict.cc URL must be http(s) with a host".into(),
+            ));
+        }
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .user_agent("LinguistAnkiBridge/0.1")
+            .build()
+            .map_err(|error| DictionaryError::Transport(error.to_string()))?;
+        Ok(Self { client, base })
+    }
+
+    pub async fn search(&self, query: &str) -> Result<Vec<Translation>, DictionaryError> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Err(DictionaryError::EmptyResult);
+        }
+        let mut url = self.base.clone();
+        url.query_pairs_mut().append_pair("s", query);
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| DictionaryError::Transport(error.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(DictionaryError::Http(status.as_u16()));
+        }
+        let body = response
+            .text()
+            .await
+            .map_err(|error| DictionaryError::Transport(error.to_string()))?;
+        let entries = parse_html(&body);
+        if entries.is_empty() {
+            return Err(DictionaryError::EmptyResult);
+        }
+        Ok(entries)
+    }
+}
+
+pub fn cache_key(locale_base: &str, query: &str) -> String {
+    let normalized = query
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in locale_base.bytes().chain([0]).chain(normalized.bytes()) {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("dictcc-v1-{hash:016x}")
 }
 
 pub fn parse_html(html: &str) -> Vec<Translation> {
@@ -68,6 +142,18 @@ mod tests {
                     target: "home".into()
                 }
             ]
+        );
+    }
+
+    #[test]
+    fn cache_identity_includes_locale() {
+        assert_eq!(
+            cache_key("https://deen.dict.cc/", "  Haus "),
+            cache_key("https://deen.dict.cc/", "haus")
+        );
+        assert_ne!(
+            cache_key("https://deen.dict.cc/", "Haus"),
+            cache_key("https://defr.dict.cc/", "Haus")
         );
     }
 }
