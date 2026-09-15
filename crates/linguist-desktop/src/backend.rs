@@ -214,8 +214,9 @@ impl LocalBatchPort {
 
 struct NoBatchRestore;
 impl linguist_jobs::BatchRollbackPort for NoBatchRestore {
-    fn restore_snapshot(&self, _: &str) -> Result<(), String> {
-        Err("Snapshot restore adapter is not connected yet".into())
+    fn restore_snapshot(&self, snapshot_id: &str) -> Result<(), String> {
+        let mut adapter = LiveCommitAdapter::from_environment()?;
+        adapter.restore_snapshot_id(snapshot_id)
     }
 }
 impl crate::batch_model::BatchManagementPort for LocalBatchPort {
@@ -1170,6 +1171,21 @@ impl LiveCommitAdapter {
             .map_err(|error| error.to_string())?
             .ok_or_else(|| format!("Anki note {} was not found", draft.note_id))
     }
+
+    fn restore_snapshot_id(&mut self, snapshot_id: &str) -> Result<(), String> {
+        let document = self
+            .snapshots
+            .load()
+            .map_err(|error| error.to_string())?
+            .snapshots
+            .into_iter()
+            .find(|document| document.snapshot.id == snapshot_id)
+            .ok_or_else(|| format!("Snapshot {snapshot_id} was not found"))?;
+        self.runtime
+            .block_on(restore_snapshot(&self.commit, &document))
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
 }
 
 fn find_field(fields: &BTreeMap<String, String>, aliases: &[&str]) -> Option<String> {
@@ -1231,18 +1247,7 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
     }
 
     fn restore(&mut self, snapshot_id: &str) -> Result<(), String> {
-        let document = self
-            .snapshots
-            .load()
-            .map_err(|error| error.to_string())?
-            .snapshots
-            .into_iter()
-            .find(|document| document.snapshot.id == snapshot_id)
-            .ok_or_else(|| format!("Snapshot {snapshot_id} was not found"))?;
-        self.runtime
-            .block_on(restore_snapshot(&self.commit, &document))
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+        self.restore_snapshot_id(snapshot_id)
     }
 }
 
