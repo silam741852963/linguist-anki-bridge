@@ -52,6 +52,12 @@ pub mod qobject {
         #[qproperty(QString, selector_total)]
         #[qproperty(i32, selector_preview_count)]
         #[qproperty(bool, selector_limited)]
+        #[qproperty(QString, settings_anki_url)]
+        #[qproperty(QString, settings_ollama_url)]
+        #[qproperty(QString, settings_ollama_model)]
+        #[qproperty(QString, settings_dictionary_preset)]
+        #[qproperty(bool, settings_dry_run)]
+        #[qproperty(QString, settings_message)]
         #[namespace = "linguist"]
         type AppBackend = super::AppBackendRust;
 
@@ -217,6 +223,19 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "createBatchFromSelector"]
         fn create_batch_from_selector(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "saveSettings"]
+        fn save_settings(
+            self: Pin<&mut Self>,
+            anki_url: &QString,
+            ollama_url: &QString,
+            ollama_model: &QString,
+            dictionary_preset: &QString,
+            dry_run: bool,
+        );
+        #[qinvokable]
+        #[cxx_name = "importLegacyConfig"]
+        fn import_legacy_config(self: Pin<&mut Self>, file_url: &QString);
     }
 }
 
@@ -378,6 +397,12 @@ pub struct AppBackendRust {
     selector_total: QString,
     selector_preview_count: i32,
     selector_limited: bool,
+    settings_anki_url: QString,
+    settings_ollama_url: QString,
+    settings_ollama_model: QString,
+    settings_dictionary_preset: QString,
+    settings_dry_run: bool,
+    settings_message: QString,
     selector_preview_rows: Vec<String>,
     selector_pending: Option<BatchSelector>,
     theme_watch: Option<ThemeWatch>,
@@ -393,6 +418,7 @@ impl Default for AppBackendRust {
 
 impl AppBackendRust {
     fn from_palette(palette: ThemePalette) -> Self {
+        let config = runtime_config().unwrap_or_default();
         let controller = ApplicationController::default();
         let batch_port = LocalBatchPort::open();
         let state = controller.state();
@@ -444,6 +470,12 @@ impl AppBackendRust {
             selector_total: QString::from("0"),
             selector_preview_count: 0,
             selector_limited: false,
+            settings_anki_url: config.anki_url.into(),
+            settings_ollama_url: config.ollama_url.into(),
+            settings_ollama_model: config.ollama_model.unwrap_or_default().into(),
+            settings_dictionary_preset: config.dictionary_preset.into(),
+            settings_dry_run: config.dry_run,
+            settings_message: QString::default(),
             selector_preview_rows: Vec::new(),
             selector_pending: None,
             theme_watch: omarchy_palette_path().map(ThemeWatch::new),
@@ -454,6 +486,55 @@ impl AppBackendRust {
 }
 
 impl qobject::AppBackend {
+    pub fn save_settings(
+        mut self: Pin<&mut Self>,
+        anki_url: &QString,
+        ollama_url: &QString,
+        ollama_model: &QString,
+        dictionary_preset: &QString,
+        dry_run: bool,
+    ) {
+        let mut config = runtime_config().unwrap_or_default();
+        config.version = linguist_config::NATIVE_CONFIG_VERSION;
+        config.anki_url = anki_url.to_string().trim().to_owned();
+        config.ollama_url = ollama_url.to_string().trim().to_owned();
+        config.ollama_model = nonempty_setting(&ollama_model.to_string());
+        config.dictionary_preset = dictionary_preset.to_string().trim().to_owned();
+        config.dry_run = dry_run;
+        match native_config_path().and_then(|path| {
+            linguist_config::save_native_replace(&path, &config).map_err(|error| error.to_string())
+        }) {
+            Ok(()) => apply_settings(self.as_mut(), config, "Settings saved"),
+            Err(error) => self.set_settings_message(error.into()),
+        }
+    }
+
+    pub fn import_legacy_config(mut self: Pin<&mut Self>, file_url: &QString) {
+        let result: Result<(linguist_config::NativeConfig, String), String> = (|| {
+            let source = local_file_path(&file_url.to_string())?;
+            let metadata = std::fs::metadata(&source).map_err(|error| error.to_string())?;
+            if metadata.len() > 1024 * 1024 {
+                return Err("Legacy config exceeds 1 MiB limit".into());
+            }
+            let contents = std::fs::read_to_string(source).map_err(|error| error.to_string())?;
+            let report = linguist_config::import_legacy_yaml(&contents)
+                .map_err(|error| error.to_string())?;
+            let path = native_config_path()?;
+            linguist_config::save_native_new(&path, &report.config)
+                .map_err(|error| error.to_string())?;
+            let message = if report.warnings.is_empty() {
+                "Legacy config imported".into()
+            } else {
+                format!("Imported with warnings: {}", report.warnings.join("; "))
+            };
+            Ok((report.config, message))
+        })();
+        match result {
+            Ok((config, message)) => apply_settings(self.as_mut(), config, &message),
+            Err(error) => self.set_settings_message(error.into()),
+        }
+    }
+
     pub fn reload_theme(mut self: Pin<&mut Self>) {
         let palette = self
             .as_mut()
@@ -1504,16 +1585,46 @@ fn queue_index(index: Option<usize>) -> i32 {
     index.and_then(|index| index.try_into().ok()).unwrap_or(-1)
 }
 
-fn runtime_config() -> Result<linguist_config::NativeConfig, String> {
+fn native_config_path() -> Result<PathBuf, String> {
     let root = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
         .ok_or_else(|| "XDG config directory is unavailable".to_owned())?;
-    let path = linguist_config::native_config_path(&root);
+    Ok(linguist_config::native_config_path(&root))
+}
+
+fn runtime_config() -> Result<linguist_config::NativeConfig, String> {
+    let path = native_config_path()?;
     if !path.exists() {
         return Ok(linguist_config::NativeConfig::default());
     }
     linguist_config::load_native(&path).map_err(|error| error.to_string())
+}
+
+fn nonempty_setting(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+fn apply_settings(
+    mut backend: Pin<&mut qobject::AppBackend>,
+    config: linguist_config::NativeConfig,
+    message: &str,
+) {
+    backend
+        .as_mut()
+        .set_settings_anki_url(config.anki_url.into());
+    backend
+        .as_mut()
+        .set_settings_ollama_url(config.ollama_url.into());
+    backend
+        .as_mut()
+        .set_settings_ollama_model(config.ollama_model.unwrap_or_default().into());
+    backend
+        .as_mut()
+        .set_settings_dictionary_preset(config.dictionary_preset.into());
+    backend.as_mut().set_settings_dry_run(config.dry_run);
+    backend.set_settings_message(message.into());
 }
 
 fn configured_value(variable: &str, configured: &str, fallback: &str) -> String {

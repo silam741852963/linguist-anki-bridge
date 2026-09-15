@@ -36,6 +36,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: backend.reloadTheme() }
     Shortcut { sequence: "Ctrl+Shift+B"; onActivated: { backend.refreshBatches(); batchDialog.open() } }
     Shortcut { sequence: "Ctrl+Shift+I"; onActivated: manualDialog.open() }
+    Shortcut { sequence: "Ctrl+,"; onActivated: settingsDialog.open() }
     Shortcut {
         sequence: "Alt+Down"
         enabled: backend.reviewRowCount > 0
@@ -96,6 +97,12 @@ ApplicationWindow {
                 Accessible.name: text
                 Accessible.description: qsTr("Preview pasted words. Shortcut Ctrl Shift I")
                 onClicked: manualDialog.open()
+            }
+            ToolButton {
+                text: qsTr("Settings")
+                Accessible.name: text
+                Accessible.description: qsTr("Open native settings. Shortcut Ctrl comma")
+                onClicked: settingsDialog.open()
             }
         }
     }
@@ -255,10 +262,71 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: settingsDialog
+        modal: true
+        title: qsTr("Native settings")
+        width: Math.min(root.width * 0.62, 720)
+        standardButtons: Dialog.Close
+        onOpened: {
+            settingsAnki.text = backend.settingsAnkiUrl
+            settingsOllama.text = backend.settingsOllamaUrl
+            settingsModel.text = backend.settingsOllamaModel
+            settingsDictionary.text = backend.settingsDictionaryPreset
+            settingsDryRun.checked = backend.settingsDryRun
+            settingsAnki.forceActiveFocus()
+        }
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label { text: qsTr("AnkiConnect URL"); color: root.foreground }
+            TextField { id: settingsAnki; Accessible.name: qsTr("AnkiConnect URL"); Layout.fillWidth: true; placeholderText: "http://127.0.0.1:8765" }
+            Label { text: qsTr("Ollama URL"); color: root.foreground }
+            TextField { id: settingsOllama; Accessible.name: qsTr("Ollama URL"); Layout.fillWidth: true; placeholderText: "http://127.0.0.1:11434" }
+            Label { text: qsTr("Ollama model"); color: root.foreground }
+            TextField { id: settingsModel; Accessible.name: qsTr("Ollama model"); Layout.fillWidth: true; placeholderText: qsTr("Optional model override") }
+            Label { text: qsTr("Dictionary preset"); color: root.foreground }
+            TextField { id: settingsDictionary; Accessible.name: qsTr("Dictionary preset"); Layout.fillWidth: true; placeholderText: qsTr("Dictionary preset") }
+            CheckBox { id: settingsDryRun; text: qsTr("Default to dry run"); Accessible.name: text }
+            RowLayout {
+                Button {
+                    text: qsTr("Save native settings")
+                    Accessible.name: text
+                    highlighted: true
+                    onClicked: backend.saveSettings(settingsAnki.text, settingsOllama.text, settingsModel.text, settingsDictionary.text, settingsDryRun.checked)
+                }
+                Button {
+                    text: qsTr("Import legacy YAML")
+                    Accessible.name: text
+                    Accessible.description: qsTr("One-time read-only import. Existing native settings are never overwritten.")
+                    onClicked: legacyConfigDialog.open()
+                }
+            }
+            Label {
+                Layout.fillWidth: true
+                text: backend.settingsMessage
+                color: root.muted
+                wrapMode: Text.Wrap
+                Accessible.name: text
+            }
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Environment variables still override these values. Legacy YAML is read only when explicitly imported.")
+                color: root.muted
+                wrapMode: Text.Wrap
+            }
+        }
+    }
+
     FileDialog {
         id: csvFileDialog
         title: qsTr("Choose CSV file")
         nameFilters: [qsTr("CSV files (*.csv)"), qsTr("All files (*)")]
         onAccepted: backend.previewCsvFile(selectedFile, importDeck.text, importLanguage.text, importType.text)
+    }
+    FileDialog {
+        id: legacyConfigDialog
+        title: qsTr("Import legacy YAML config")
+        nameFilters: [qsTr("YAML files (*.yaml *.yml)"), qsTr("All files (*)")]
+        onAccepted: backend.importLegacyConfig(selectedFile)
     }
 }

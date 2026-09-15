@@ -104,6 +104,27 @@ pub fn save_native_new(path: &Path, config: &NativeConfig) -> Result<(), ConfigE
     fs::write(&temporary, bytes).map_err(|e| ConfigError::Read(e.to_string()))?;
     fs::rename(temporary, path).map_err(|e| ConfigError::Read(e.to_string()))
 }
+/// Atomically replace only the native config. Legacy input is never opened here.
+pub fn save_native_replace(path: &Path, config: &NativeConfig) -> Result<(), ConfigError> {
+    if config.version != NATIVE_CONFIG_VERSION {
+        return Err(ConfigError::UnsupportedVersion(config.version));
+    }
+    let bytes = serde_json::to_vec_pretty(config).map_err(|e| ConfigError::Parse(e.to_string()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| ConfigError::Read("native config has no parent".into()))?;
+    fs::create_dir_all(parent).map_err(|e| ConfigError::Read(e.to_string()))?;
+    let temporary = path.with_extension(format!("json.tmp-{}", std::process::id()));
+    let mut file = fs::File::create(&temporary).map_err(|e| ConfigError::Read(e.to_string()))?;
+    use std::io::Write;
+    file.write_all(&bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|e| ConfigError::Read(e.to_string()))?;
+    fs::rename(&temporary, path).map_err(|e| ConfigError::Read(e.to_string()))?;
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|e| ConfigError::Read(e.to_string()))
+}
 pub fn native_config_path(config_root: &Path) -> PathBuf {
     config_root
         .join("linguist-anki-bridge")
@@ -204,6 +225,31 @@ mod tests {
         fs::write(&path, r#"{"version":99,"anki_url":"","ollama_url":"","ollama_model":null,"dictionary_preset":"","dry_run":true,"decks":{}}"#).unwrap();
         assert!(matches!(
             load_native(&path),
+            Err(ConfigError::UnsupportedVersion(99))
+        ));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_replace_is_versioned_and_replaces_existing_file() {
+        let path = std::env::temp_dir().join(format!(
+            "config-replace-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut config = NativeConfig {
+            version: NATIVE_CONFIG_VERSION,
+            ..Default::default()
+        };
+        save_native_replace(&path, &config).unwrap();
+        config.anki_url = "http://localhost:8765".into();
+        save_native_replace(&path, &config).unwrap();
+        assert_eq!(load_native(&path).unwrap(), config);
+        config.version = 99;
+        assert!(matches!(
+            save_native_replace(&path, &config),
             Err(ConfigError::UnsupportedVersion(99))
         ));
         let _ = fs::remove_file(path);
