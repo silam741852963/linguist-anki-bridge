@@ -27,6 +27,7 @@ linguist-core = { path = "crates/linguist-core" }
 linguist-application = { path = "crates/linguist-application" }
 linguist-config = { path = "crates/linguist-config" }
 linguist-anki = { path = "crates/linguist-anki" }
+linguist-snapshots = { path = "crates/linguist-snapshots" }
 linguist-ollama = { path = "crates/linguist-ollama" }
 linguist-jobs = { path = "crates/linguist-jobs" }
 serde = { version = "1.0.229", features = ["derive"] }

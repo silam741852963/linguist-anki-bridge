@@ -4,16 +4,28 @@
 //! and write actions are added in later slices after their domain boundaries
 //! have tests, so the desktop cannot mutate Anki by accident.
 
-use std::{collections::BTreeSet, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use linguist_application::{
-    CardTemplate, DeckName, ExactExpressionRequest, ExpressionResolution, MediaFile, MediaPort,
-    ModelFields, ModelName, ModelStyling, ModelTemplates, NoteInfo, PortError, PortFuture,
-    resolve_exact_expression,
+    CardTemplate, CommitPort, CommitSource, DeckName, ExactExpressionRequest, ExpressionResolution,
+    MediaFile, MediaPort, ModelFields, ModelName, ModelStyling, ModelTemplates,
+    NATIVE_POST_WRITE_EXTENSION, NoteInfo, NoteMutation, PortError, PortFuture, PostWriteState,
+    SnapshotCapture, SnapshotHandle, TemplateMutation, resolve_exact_expression,
 };
+use linguist_core::{
+    CONTRACT_VERSION, CardMode, ManagedTemplatePlan, SnapshotContract, SnapshotDocument,
+    SnapshotOriginalNote,
+};
+use linguist_snapshots::SnapshotRepository;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+
+static SNAPSHOT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// AnkiConnect v6 envelope version used by the existing Python application.
 pub const ANKI_CONNECT_VERSION: u8 = 6;
@@ -403,6 +415,282 @@ impl MediaPort for AnkiConnectTransport {
                 .map_err(|error| media_port_error("delete media", error))
         })
     }
+}
+
+/// Native commit adapter. Snapshot persistence is completed before any note
+/// mutation and finalized only after the write succeeds.
+#[derive(Clone, Debug)]
+pub struct AnkiCommitPort {
+    transport: AnkiConnectTransport,
+    snapshots: SnapshotRepository,
+}
+
+impl AnkiCommitPort {
+    pub fn new(transport: AnkiConnectTransport, snapshots: SnapshotRepository) -> Self {
+        Self {
+            transport,
+            snapshots,
+        }
+    }
+}
+
+impl MediaPort for AnkiCommitPort {
+    fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
+        self.transport.retrieve_media(filename)
+    }
+    fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
+        self.transport.store_media(media)
+    }
+    fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
+        self.transport.delete_media(filename)
+    }
+}
+
+impl CommitPort for AnkiCommitPort {
+    fn backup_deck<'a>(&'a self, _deck_name: &'a str) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            self.transport
+                .create_backup()
+                .await
+                .map_err(|error| PortError {
+                    operation: "create backup",
+                    message: error.to_string(),
+                    retryable: false,
+                })
+        })
+    }
+
+    fn capture_snapshot<'a>(
+        &'a self,
+        capture: &'a SnapshotCapture,
+    ) -> PortFuture<'a, SnapshotHandle> {
+        Box::pin(async move {
+            let id = format!(
+                "native-{}-{}",
+                unix_millis(),
+                SNAPSHOT_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            );
+            let original_note = capture.source.as_ref().map(|source| SnapshotOriginalNote {
+                note_id: Some(source.note_id),
+                model_name: source.model_name.clone(),
+                deck_name: String::new(),
+                tags: source.tags.clone(),
+                fields: source.fields.clone(),
+                extensions: BTreeMap::new(),
+            });
+            let media_before = capture
+                .media_before
+                .iter()
+                .map(|(name, media)| {
+                    (
+                        name.clone(),
+                        media.as_ref().map(|file| file.data_base64.clone()),
+                    )
+                })
+                .collect();
+            let processed = serde_json::to_value(&capture.document).map_err(|error| PortError {
+                operation: "snapshot",
+                message: error.to_string(),
+                retryable: false,
+            })?;
+            let document = SnapshotDocument {
+                schema_version: CONTRACT_VERSION,
+                snapshot: SnapshotContract {
+                    id: id.clone(),
+                    created_at: unix_timestamp(),
+                    word: capture.word.clone(),
+                    mode: mode_name(capture.mode),
+                    deck_key: capture.deck_key.clone(),
+                    dry_run: false,
+                    status: "started".into(),
+                    original_note,
+                    processed,
+                    media_before,
+                    result_note_id: None,
+                    created_note_ids: Vec::new(),
+                    error: String::new(),
+                    reverted_at: None,
+                    extensions: BTreeMap::new(),
+                },
+            };
+            self.snapshots.save(&document).map_err(snapshot_error)?;
+            Ok(SnapshotHandle(id))
+        })
+    }
+
+    fn finalize_snapshot<'a>(
+        &'a self,
+        snapshot: &'a SnapshotHandle,
+        state: &'a PostWriteState,
+    ) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            let mut document = find_snapshot(&self.snapshots, &snapshot.0)?;
+            document.snapshot.status = "committed".into();
+            document.snapshot.result_note_id = Some(state.note.note_id);
+            document.snapshot.extensions.insert(
+                NATIVE_POST_WRITE_EXTENSION.into(),
+                serde_json::to_value(state).map_err(|error| PortError {
+                    operation: "snapshot",
+                    message: error.to_string(),
+                    retryable: false,
+                })?,
+            );
+            self.snapshots.replace(&document).map_err(snapshot_error)
+        })
+    }
+
+    fn fail_snapshot<'a>(
+        &'a self,
+        snapshot: &'a SnapshotHandle,
+        error: &'a str,
+    ) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            let mut document = find_snapshot(&self.snapshots, &snapshot.0)?;
+            document.snapshot.status = "failed".into();
+            document.snapshot.error = error.into();
+            self.snapshots.replace(&document).map_err(snapshot_error)
+        })
+    }
+
+    fn apply_template<'a>(
+        &'a self,
+        plan: &'a ManagedTemplatePlan,
+    ) -> PortFuture<'a, TemplateMutation> {
+        Box::pin(async move {
+            match plan {
+                ManagedTemplatePlan::NoChange => Ok(TemplateMutation),
+                _ => Err(PortError {
+                    operation: "template",
+                    message: "managed model mutation is not yet supported by Anki adapter".into(),
+                    retryable: false,
+                }),
+            }
+        })
+    }
+
+    fn rollback_template<'a>(&'a self, _mutation: &'a TemplateMutation) -> PortFuture<'a, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn update_note<'a>(
+        &'a self,
+        source: &'a CommitSource,
+        fields: &'a BTreeMap<String, String>,
+        target_model: &'a str,
+    ) -> PortFuture<'a, NoteMutation> {
+        Box::pin(async move {
+            self.transport
+                .update_note(source.note_id, target_model, fields, &source.tags)
+                .await
+                .map_err(|error| PortError {
+                    operation: "update note",
+                    message: error.to_string(),
+                    retryable: false,
+                })?;
+            Ok(NoteMutation {
+                note_id: source.note_id,
+                created: false,
+            })
+        })
+    }
+
+    fn create_note<'a>(
+        &'a self,
+        deck_name: &'a str,
+        model_name: &'a str,
+        fields: &'a BTreeMap<String, String>,
+        tags: &'a [String],
+    ) -> PortFuture<'a, NoteMutation> {
+        Box::pin(async move {
+            let note_id = self
+                .transport
+                .add_note(deck_name, model_name, fields, tags)
+                .await
+                .map_err(|error| PortError {
+                    operation: "create note",
+                    message: error.to_string(),
+                    retryable: false,
+                })?;
+            Ok(NoteMutation {
+                note_id,
+                created: true,
+            })
+        })
+    }
+
+    fn rollback_note<'a>(
+        &'a self,
+        mutation: &'a NoteMutation,
+        source: Option<&'a CommitSource>,
+    ) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            if mutation.created {
+                self.transport
+                    .delete_notes(&[mutation.note_id])
+                    .await
+                    .map_err(|error| PortError {
+                        operation: "rollback note",
+                        message: error.to_string(),
+                        retryable: false,
+                    })
+            } else if let Some(source) = source {
+                self.transport
+                    .update_note(
+                        source.note_id,
+                        &source.model_name,
+                        &source.fields,
+                        &source.tags,
+                    )
+                    .await
+                    .map_err(|error| PortError {
+                        operation: "rollback note",
+                        message: error.to_string(),
+                        retryable: false,
+                    })
+            } else {
+                Ok(())
+            }
+        })
+    }
+}
+
+fn find_snapshot(repository: &SnapshotRepository, id: &str) -> Result<SnapshotDocument, PortError> {
+    repository
+        .load()
+        .map_err(snapshot_error)?
+        .snapshots
+        .into_iter()
+        .find(|document| document.snapshot.id == id)
+        .ok_or_else(|| PortError {
+            operation: "snapshot",
+            message: format!("snapshot {id} not found"),
+            retryable: false,
+        })
+}
+
+fn snapshot_error(error: impl std::fmt::Display) -> PortError {
+    PortError {
+        operation: "snapshot",
+        message: error.to_string(),
+        retryable: false,
+    }
+}
+
+fn unix_timestamp() -> String {
+    unix_millis().to_string()
+}
+fn unix_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+fn mode_name(mode: CardMode) -> String {
+    match mode {
+        CardMode::Modernize => "modernize",
+        CardMode::Inject => "inject",
+    }
+    .into()
 }
 
 fn media_port_error(operation: &'static str, error: AnkiConnectError) -> PortError {
