@@ -1,4 +1,5 @@
 use linguist_application::NoteInfo;
+use linguist_core::CardMode;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -26,6 +27,9 @@ struct Edit {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReviewDraft {
     pub note_id: i64,
+    pub mode: CardMode,
+    pub deck_name: String,
+    pub target_model: String,
     pub expression: String,
     pub meaning: String,
     pub kanji: String,
@@ -72,6 +76,13 @@ impl ReviewDraft {
             .collect();
         Self {
             note_id: note.note_id,
+            mode: CardMode::Modernize,
+            deck_name: note
+                .deck_names
+                .first()
+                .map(|deck| deck.0.clone())
+                .unwrap_or_default(),
+            target_model: note.model_name.0.clone(),
             expression,
             meaning,
             kanji,
@@ -90,6 +101,9 @@ impl ReviewDraft {
     pub fn empty(note_id: i64) -> Self {
         Self {
             note_id,
+            mode: CardMode::Modernize,
+            deck_name: String::new(),
+            target_model: String::new(),
             expression: String::new(),
             meaning: String::new(),
             kanji: String::new(),
@@ -104,6 +118,23 @@ impl ReviewDraft {
             redo: Vec::new(),
             dirty: false,
         }
+    }
+
+    pub fn injection(
+        note_id: i64,
+        expression: impl Into<String>,
+        context: impl Into<String>,
+        deck_name: impl Into<String>,
+        target_model: impl Into<String>,
+    ) -> Self {
+        let mut draft = Self::empty(note_id);
+        draft.mode = CardMode::Inject;
+        draft.expression = expression.into();
+        draft.meaning = context.into();
+        draft.deck_name = deck_name.into();
+        draft.target_model = target_model.into();
+        draft.provenance = vec!["Manual import".into()];
+        draft
     }
 
     pub fn dirty(&self) -> bool {
@@ -282,6 +313,11 @@ impl DraftStore {
             *entry = ReviewDraft::from_note(note);
         }
         self.active_note_id = Some(note.note_id);
+    }
+
+    pub fn insert(&mut self, draft: ReviewDraft) {
+        self.active_note_id = Some(draft.note_id);
+        self.drafts.insert(draft.note_id, draft);
     }
 }
 

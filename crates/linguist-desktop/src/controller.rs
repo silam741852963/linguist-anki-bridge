@@ -1,4 +1,4 @@
-use crate::review_model::{ReviewQueueData, ReviewQueueModel, ReviewRow};
+use crate::review_model::{ReviewQueueData, ReviewQueueModel, ReviewRow, ReviewState};
 use crate::{
     batch_model::{BatchAction, BatchManagementPort, BatchViewState},
     commit_model::{CommitExecutor, CommitViewState},
@@ -160,6 +160,18 @@ impl ApplicationController {
 
     pub fn replace_queue(&mut self, data: ReviewQueueData) {
         self.queue.replace(data);
+        self.sync_queue_selection();
+    }
+
+    pub fn enqueue_draft(&mut self, draft: ReviewDraft, detail: impl Into<String>) {
+        let row = ReviewRow {
+            note_id: draft.note_id,
+            expression: draft.expression.clone(),
+            detail: detail.into(),
+            state: ReviewState::NeedsReview,
+        };
+        self.queue.append(row);
+        self.drafts.insert(draft);
         self.sync_queue_selection();
     }
 

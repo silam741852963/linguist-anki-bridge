@@ -143,6 +143,19 @@ impl ReviewQueueModel {
         self.selected_deck = Some(deck.clone());
         self.selected_deck.as_deref()
     }
+
+    pub fn append(&mut self, row: ReviewRow) {
+        if let Some(existing) = self
+            .rows
+            .iter_mut()
+            .find(|existing| existing.note_id == row.note_id)
+        {
+            *existing = row;
+        } else {
+            self.rows.push(row);
+        }
+        self.state = QueueState::Ready;
+    }
 }
 
 #[cfg(test)]

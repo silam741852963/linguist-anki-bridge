@@ -189,11 +189,21 @@ ApplicationWindow {
                 placeholderText: qsTr("食べる<Tab>meal verb\n新語<Tab>optional context")
                 wrapMode: TextEdit.Wrap
             }
-            Button {
-                text: qsTr("Preview import")
-                Accessible.name: text
-                enabled: manualRows.text.trim().length > 0 && importDeck.text.trim().length > 0
-                onClicked: backend.previewManualInput(manualRows.text, importDeck.text, importLanguage.text, importType.text)
+            RowLayout {
+                Button {
+                    text: qsTr("Preview import")
+                    Accessible.name: text
+                    enabled: manualRows.text.trim().length > 0 && importDeck.text.trim().length > 0
+                    onClicked: backend.previewManualInput(manualRows.text, importDeck.text, importLanguage.text, importType.text)
+                }
+                Button {
+                    text: qsTr("Enqueue preview")
+                    Accessible.name: text
+                    Accessible.description: qsTr("Add resolved imports to the review queue without writing Anki")
+                    highlighted: true
+                    enabled: backend.manualPreviewCount > 0
+                    onClicked: { backend.enqueueManualInput(); manualDialog.close() }
+                }
             }
             Label { text: qsTr("%1 rows · %2 issues").arg(backend.manualPreviewCount).arg(backend.manualIssueCount); color: root.muted }
             ScrollView {

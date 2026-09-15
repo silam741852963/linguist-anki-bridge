@@ -182,6 +182,9 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "manualPreviewIssue"]
         fn manual_preview_issue(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "enqueueManualInput"]
+        fn enqueue_manual_input(self: Pin<&mut Self>);
     }
 }
 
@@ -336,6 +339,7 @@ pub struct AppBackendRust {
     manual_issue_count: i32,
     manual_preview_rows: Vec<String>,
     manual_preview_issues: Vec<String>,
+    manual_pending: Vec<(linguist_application::InputRow, DuplicateDecision)>,
     theme_watch: Option<ThemeWatch>,
     batch_port: LocalBatchPort,
     controller: ApplicationController,
@@ -394,6 +398,7 @@ impl AppBackendRust {
             manual_issue_count: 0,
             manual_preview_rows: Vec::new(),
             manual_preview_issues: Vec::new(),
+            manual_pending: Vec::new(),
             theme_watch: omarchy_palette_path().map(ThemeWatch::new),
             batch_port,
             controller,
@@ -481,14 +486,24 @@ impl qobject::AppBackend {
     pub fn select_review_index(mut self: Pin<&mut Self>, index: i32) {
         if let Ok(index) = usize::try_from(index) {
             let mut backend = self.as_mut();
+            let needs_hydration = backend
+                .as_ref()
+                .rust()
+                .controller
+                .queue()
+                .rows()
+                .get(index)
+                .is_some_and(|row| row.note_id >= 0);
             backend
                 .as_mut()
                 .rust_mut()
                 .controller
                 .select_queue_index(index);
-            match LiveDesktopPort::from_environment() {
-                Ok(port) => backend.rust_mut().controller.hydrate_selected(&port),
-                Err(error) => backend.rust_mut().controller.report_error(error),
+            if needs_hydration {
+                match LiveDesktopPort::from_environment() {
+                    Ok(port) => backend.rust_mut().controller.hydrate_selected(&port),
+                    Err(error) => backend.rust_mut().controller.report_error(error),
+                }
             }
             sync_controller_state(self);
         }
@@ -836,19 +851,16 @@ impl qobject::AppBackend {
         let decisions = match LiveDesktopPort::from_environment()
             .and_then(|port| port.ingestion_candidates(&preview))
         {
-            Ok(notes) => resolve_ingestion_preview(&preview, notes)
-                .into_iter()
-                .map(ingestion_decision_label)
-                .collect::<Vec<_>>(),
+            Ok(notes) => resolve_ingestion_preview(&preview, notes),
             Err(error) => {
                 issues.push(format!("Duplicate check unavailable · {error}"));
-                vec!["Unchecked".into(); preview.rows.len()]
+                vec![DuplicateDecision::Skip; preview.rows.len()]
             }
         };
         let rows = preview
             .rows
             .iter()
-            .zip(decisions)
+            .zip(&decisions)
             .map(|(row, decision)| {
                 let context = if row.context.is_empty() {
                     String::new()
@@ -856,15 +868,22 @@ impl qobject::AppBackend {
                     format!(" · {}", row.context)
                 };
                 format!(
-                    "{} · {}{} · {} · {} · {decision}",
-                    row.ordinal, row.expression, context, row.language_key, row.type_tag
+                    "{} · {}{} · {} · {} · {}",
+                    row.ordinal,
+                    row.expression,
+                    context,
+                    row.language_key,
+                    row.type_tag,
+                    ingestion_decision_label(decision)
                 )
             })
             .collect::<Vec<_>>();
+        let pending = preview.rows.into_iter().zip(decisions).collect();
         let row_count = queue_len(rows.len());
         let issue_count = queue_len(issues.len());
         self.as_mut().rust_mut().manual_preview_rows = rows;
         self.as_mut().rust_mut().manual_preview_issues = issues;
+        self.as_mut().rust_mut().manual_pending = pending;
         self.as_mut().set_manual_preview_count(row_count);
         self.as_mut().set_manual_issue_count(issue_count);
     }
@@ -886,9 +905,66 @@ impl qobject::AppBackend {
             .unwrap_or_default()
             .into()
     }
+
+    pub fn enqueue_manual_input(mut self: Pin<&mut Self>) {
+        let pending = std::mem::take(&mut self.as_mut().rust_mut().manual_pending);
+        let mut synthetic_id = -1_i64;
+        let mut blocked = 0_usize;
+        for (row, decision) in pending {
+            match decision {
+                DuplicateDecision::Inject => {
+                    while self
+                        .as_ref()
+                        .rust()
+                        .controller
+                        .queue()
+                        .rows()
+                        .iter()
+                        .any(|existing| existing.note_id == synthetic_id)
+                    {
+                        synthetic_id -= 1;
+                    }
+                    let model = match row.language_key.as_str() {
+                        "japanese_vocab" | "japanese" | "ja" => "Linguist Japanese Vocabulary",
+                        _ => "Linguist Vocabulary",
+                    };
+                    let draft = crate::draft::ReviewDraft::injection(
+                        synthetic_id,
+                        row.expression,
+                        row.context,
+                        row.deck_key,
+                        model,
+                    );
+                    self.as_mut().rust_mut().controller.enqueue_draft(
+                        draft,
+                        format!("{} · {} · injection", row.language_key, row.type_tag),
+                    );
+                    synthetic_id -= 1;
+                }
+                DuplicateDecision::Modernize { note } => {
+                    let detail = format!("{} · {} · modernization", row.language_key, row.type_tag);
+                    self.as_mut()
+                        .rust_mut()
+                        .controller
+                        .enqueue_draft(crate::draft::ReviewDraft::from_note(&note), detail);
+                }
+                DuplicateDecision::Ambiguous { .. } | DuplicateDecision::Skip => blocked += 1,
+            }
+        }
+        self.as_mut().rust_mut().manual_preview_rows.clear();
+        self.as_mut().rust_mut().manual_preview_issues.clear();
+        self.as_mut().set_manual_preview_count(0);
+        self.as_mut().set_manual_issue_count(0);
+        if blocked > 0 {
+            self.as_mut().rust_mut().controller.report_error(format!(
+                "{blocked} ambiguous or unchecked rows were not enqueued"
+            ));
+        }
+        sync_controller_state(self);
+    }
 }
 
-fn ingestion_decision_label(decision: DuplicateDecision) -> String {
+fn ingestion_decision_label(decision: &DuplicateDecision) -> String {
     match decision {
         DuplicateDecision::Inject => "Inject new card".into(),
         DuplicateDecision::Modernize { note } => format!("Modernize note {}", note.note_id),
@@ -1305,7 +1381,6 @@ impl LiveCommitAdapter {
         draft: &crate::draft::ReviewDraft,
         dry_run: bool,
     ) -> Result<CommitRequest, String> {
-        let note = self.runtime.block_on(self.commit_note(draft))?;
         let expression = draft.expression.trim().to_owned();
         if expression.is_empty() {
             return Err("Expression cannot be empty".into());
@@ -1319,6 +1394,51 @@ impl LiveCommitAdapter {
             kanji_construction: Some(draft.kanji.clone()),
             audio: Some(draft.audio.join("<br/>")),
         };
+        let (deck_name, target_model, source, mapping, tags) = match draft.mode {
+            CardMode::Modernize => {
+                let note = self.runtime.block_on(self.commit_note(draft))?;
+                let mapping = FieldMapping {
+                    expression: find_field(
+                        &note.fields,
+                        &["Expression", "Word", "Front", "Vocabulary"],
+                    ),
+                    meaning_image: find_field(&note.fields, &["Meaning Image", "Image", "Picture"]),
+                    meaning_text: find_field(&note.fields, &["Meaning", "Definition", "Back"]),
+                    kanji_construction: find_field(&note.fields, &["Kanji", "Kanji Construction"]),
+                    audio: find_field(&note.fields, &["Audio", "Pronunciation"]),
+                };
+                let deck_name = note
+                    .deck_names
+                    .first()
+                    .map(|deck| deck.0.clone())
+                    .unwrap_or_else(|| draft.deck_name.clone());
+                let target_model = note.model_name.0.clone();
+                let tags = note.tags.clone();
+                let source = Some(CommitSource {
+                    note_id: note.note_id,
+                    model_name: note.model_name.0,
+                    fields: note.fields,
+                    tags: note.tags,
+                });
+                (deck_name, target_model, source, mapping, tags)
+            }
+            CardMode::Inject => (
+                draft.deck_name.clone(),
+                draft.target_model.clone(),
+                None,
+                FieldMapping {
+                    expression: Some("Expression".into()),
+                    meaning_image: Some("Picture".into()),
+                    meaning_text: Some("Meaning".into()),
+                    kanji_construction: Some("Kanji".into()),
+                    audio: Some("Audio".into()),
+                },
+                Vec::new(),
+            ),
+        };
+        if deck_name.trim().is_empty() || target_model.trim().is_empty() {
+            return Err("Deck and target model are required".into());
+        }
         let document = CardDocument {
             schema_version: CONTRACT_VERSION,
             expression,
@@ -1326,33 +1446,16 @@ impl LiveCommitAdapter {
             media: Vec::new(),
             obsolete_media: Vec::new(),
             issues: draft.issues.clone(),
-            tags: note.tags.clone(),
+            tags,
             provenance: BTreeMap::new(),
         };
-        let mapping = FieldMapping {
-            expression: find_field(&note.fields, &["Expression", "Word", "Front", "Vocabulary"]),
-            meaning_image: find_field(&note.fields, &["Meaning Image", "Image"]),
-            meaning_text: find_field(&note.fields, &["Meaning", "Definition", "Back"]),
-            kanji_construction: find_field(&note.fields, &["Kanji", "Kanji Construction"]),
-            audio: find_field(&note.fields, &["Audio", "Pronunciation"]),
-        };
-        let deck_name = note
-            .deck_names
-            .first()
-            .map(|deck| deck.0.clone())
-            .unwrap_or_default();
         Ok(CommitRequest {
-            mode: CardMode::Modernize,
+            mode: draft.mode,
             dry_run,
             deck_key: deck_name.clone(),
             deck_name,
-            target_model: note.model_name.0.clone(),
-            source: Some(CommitSource {
-                note_id: note.note_id,
-                model_name: note.model_name.0,
-                fields: note.fields,
-                tags: note.tags,
-            }),
+            target_model,
+            source,
             document,
             field_mapping: mapping,
             template_plan: ManagedTemplatePlan::NoChange,
@@ -1404,6 +1507,10 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
             .as_ref()
             .map(|source| source.fields.clone())
             .unwrap_or_default();
+        let model_changed = request
+            .source
+            .as_ref()
+            .is_none_or(|source| source.model_name != request.target_model);
         let outcome = self
             .runtime
             .block_on(commit_card(&self.commit, request))
@@ -1418,7 +1525,7 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
             before,
             after,
             media: Vec::new(),
-            model_changed: false,
+            model_changed,
         })
     }
 
