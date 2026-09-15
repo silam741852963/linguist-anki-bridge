@@ -432,6 +432,13 @@ impl AnkiCommitPort {
             snapshots,
         }
     }
+
+    pub async fn note_info(&self, note_id: i64) -> Result<Option<NoteInfo>, AnkiConnectError> {
+        self.transport
+            .notes_info(&[note_id])
+            .await
+            .map(|mut notes| notes.pop())
+    }
 }
 
 impl MediaPort for AnkiCommitPort {

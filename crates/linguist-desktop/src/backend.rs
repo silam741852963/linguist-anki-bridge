@@ -168,11 +168,17 @@ pub mod qobject {
     }
 }
 
-use std::path::PathBuf;
 use std::pin::Pin;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
+
+use linguist_application::{CommitRequest, CommitSource, commit_card, restore_snapshot};
+use linguist_core::{
+    CONTRACT_VERSION, CardDocument, CardMode, FieldMapping, LogicalFields, ManagedTemplatePlan,
+};
+use linguist_snapshots::SnapshotRepository;
 
 use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort, DraftNotePort};
 use crate::review_model::{ReviewQueueData, ReviewRow, ReviewState};
@@ -536,18 +542,26 @@ impl qobject::AppBackend {
     }
 
     pub fn preview_commit(mut self: Pin<&mut Self>) {
-        self.as_mut()
-            .rust_mut()
-            .controller
-            .preview_commit(&mut DisconnectedCommitAdapter);
+        match LiveCommitAdapter::from_environment() {
+            Ok(mut adapter) => self
+                .as_mut()
+                .rust_mut()
+                .controller
+                .preview_commit(&mut adapter),
+            Err(error) => self.as_mut().rust_mut().controller.report_error(error),
+        }
         sync_controller_state(self);
     }
 
     pub fn apply_commit(mut self: Pin<&mut Self>) {
-        self.as_mut()
-            .rust_mut()
-            .controller
-            .apply_commit(&mut DisconnectedCommitAdapter);
+        match LiveCommitAdapter::from_environment() {
+            Ok(mut adapter) => self
+                .as_mut()
+                .rust_mut()
+                .controller
+                .apply_commit(&mut adapter),
+            Err(error) => self.as_mut().rust_mut().controller.report_error(error),
+        }
         sync_controller_state(self);
     }
 
@@ -560,11 +574,14 @@ impl qobject::AppBackend {
                 .map(|snapshot| snapshot.snapshot_id.clone())
         };
         match snapshot_id {
-            Some(snapshot_id) => self
-                .as_mut()
-                .rust_mut()
-                .controller
-                .restore_commit(&mut DisconnectedCommitAdapter, &snapshot_id),
+            Some(snapshot_id) => match LiveCommitAdapter::from_environment() {
+                Ok(mut adapter) => self
+                    .as_mut()
+                    .rust_mut()
+                    .controller
+                    .restore_commit(&mut adapter, &snapshot_id),
+                Err(error) => self.as_mut().rust_mut().controller.report_error(error),
+            },
             None => self
                 .as_mut()
                 .rust_mut()
@@ -1061,7 +1078,173 @@ fn review_row(note: linguist_application::NoteInfo) -> ReviewRow {
 
 struct DisconnectedGenerator;
 
-struct DisconnectedCommitAdapter;
+struct LiveCommitAdapter {
+    runtime: tokio::runtime::Runtime,
+    commit: linguist_anki::AnkiCommitPort,
+    snapshots: SnapshotRepository,
+}
+
+impl LiveCommitAdapter {
+    fn from_environment() -> Result<Self, String> {
+        let url =
+            std::env::var("LINGUIST_ANKI_URL").unwrap_or_else(|_| "http://127.0.0.1:8765".into());
+        let runtime = tokio::runtime::Runtime::new().map_err(|error| error.to_string())?;
+        let transport =
+            linguist_anki::AnkiConnectTransport::new(&url).map_err(|error| error.to_string())?;
+        let snapshots =
+            SnapshotRepository::default_location().map_err(|error| error.to_string())?;
+        let commit = linguist_anki::AnkiCommitPort::new(transport, snapshots.clone());
+        Ok(Self {
+            runtime,
+            commit,
+            snapshots,
+        })
+    }
+
+    fn request(
+        &self,
+        draft: &crate::draft::ReviewDraft,
+        dry_run: bool,
+    ) -> Result<CommitRequest, String> {
+        let note = self.runtime.block_on(self.commit_note(draft))?;
+        let expression = draft.expression.trim().to_owned();
+        if expression.is_empty() {
+            return Err("Expression cannot be empty".into());
+        }
+        let values = LogicalFields {
+            meaning_image: draft
+                .images
+                .first()
+                .map(|name| format!("<img src=\"{name}\">")),
+            meaning_text: Some(draft.meaning.clone()),
+            kanji_construction: Some(draft.kanji.clone()),
+            audio: Some(draft.audio.join("<br/>")),
+        };
+        let document = CardDocument {
+            schema_version: CONTRACT_VERSION,
+            expression,
+            values,
+            media: Vec::new(),
+            obsolete_media: Vec::new(),
+            issues: draft.issues.clone(),
+            tags: note.tags.clone(),
+            provenance: BTreeMap::new(),
+        };
+        let mapping = FieldMapping {
+            expression: find_field(&note.fields, &["Expression", "Word", "Front", "Vocabulary"]),
+            meaning_image: find_field(&note.fields, &["Meaning Image", "Image"]),
+            meaning_text: find_field(&note.fields, &["Meaning", "Definition", "Back"]),
+            kanji_construction: find_field(&note.fields, &["Kanji", "Kanji Construction"]),
+            audio: find_field(&note.fields, &["Audio", "Pronunciation"]),
+        };
+        let deck_name = note
+            .deck_names
+            .first()
+            .map(|deck| deck.0.clone())
+            .unwrap_or_default();
+        Ok(CommitRequest {
+            mode: CardMode::Modernize,
+            dry_run,
+            deck_key: deck_name.clone(),
+            deck_name,
+            target_model: note.model_name.0.clone(),
+            source: Some(CommitSource {
+                note_id: note.note_id,
+                model_name: note.model_name.0,
+                fields: note.fields,
+                tags: note.tags,
+            }),
+            document,
+            field_mapping: mapping,
+            template_plan: ManagedTemplatePlan::NoChange,
+        })
+    }
+
+    async fn commit_note(
+        &self,
+        draft: &crate::draft::ReviewDraft,
+    ) -> Result<linguist_application::NoteInfo, String> {
+        self.commit
+            .note_info(draft.note_id)
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| format!("Anki note {} was not found", draft.note_id))
+    }
+}
+
+fn find_field(fields: &BTreeMap<String, String>, aliases: &[&str]) -> Option<String> {
+    aliases
+        .iter()
+        .find(|alias| fields.contains_key(**alias))
+        .map(|alias| (*alias).into())
+}
+
+impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveCommitAdapter {
+    fn preview(
+        &mut self,
+        draft: &crate::draft::ReviewDraft,
+    ) -> Result<crate::commit_model::CommitPreview, String> {
+        let request = self.request(draft, true)?;
+        let before = request
+            .source
+            .as_ref()
+            .map(|source| source.fields.clone())
+            .unwrap_or_default();
+        let outcome = self
+            .runtime
+            .block_on(commit_card(&self.commit, request))
+            .map_err(|error| error.to_string())?;
+        let after = match outcome {
+            linguist_application::CommitOutcome::DryRun { fields } => fields,
+            linguist_application::CommitOutcome::Committed(_) => {
+                return Err("Preview unexpectedly performed a write".into());
+            }
+        };
+        Ok(crate::commit_model::CommitPreview {
+            before,
+            after,
+            media: Vec::new(),
+            model_changed: false,
+        })
+    }
+
+    fn apply(
+        &mut self,
+        draft: &crate::draft::ReviewDraft,
+    ) -> Result<crate::commit_model::SnapshotHistoryItem, String> {
+        let request = self.request(draft, false)?;
+        let outcome = self
+            .runtime
+            .block_on(commit_card(&self.commit, request))
+            .map_err(|error| error.to_string())?;
+        match outcome {
+            linguist_application::CommitOutcome::Committed(receipt) => {
+                Ok(crate::commit_model::SnapshotHistoryItem {
+                    snapshot_id: receipt.snapshot_id,
+                    note_id: receipt.note_id,
+                })
+            }
+            linguist_application::CommitOutcome::DryRun { .. } => {
+                Err("Apply unexpectedly remained dry-run".into())
+            }
+        }
+    }
+
+    fn restore(&mut self, snapshot_id: &str) -> Result<(), String> {
+        let document = self
+            .snapshots
+            .load()
+            .map_err(|error| error.to_string())?
+            .snapshots
+            .into_iter()
+            .find(|document| document.snapshot.id == snapshot_id)
+            .ok_or_else(|| format!("Snapshot {snapshot_id} was not found"))?;
+        self.runtime
+            .block_on(restore_snapshot(&self.commit, &document))
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+}
 
 impl DraftGenerationPort for DisconnectedGenerator {
     fn generate(
@@ -1069,25 +1252,5 @@ impl DraftGenerationPort for DisconnectedGenerator {
         _draft: &crate::draft::ReviewDraft,
     ) -> Result<Vec<crate::draft::GeneratedChange>, String> {
         Err("Generation adapter is not connected yet".into())
-    }
-}
-
-impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for DisconnectedCommitAdapter {
-    fn preview(
-        &mut self,
-        _draft: &crate::draft::ReviewDraft,
-    ) -> Result<crate::commit_model::CommitPreview, String> {
-        Err("Commit adapter is not connected yet".into())
-    }
-
-    fn apply(
-        &mut self,
-        _draft: &crate::draft::ReviewDraft,
-    ) -> Result<crate::commit_model::SnapshotHistoryItem, String> {
-        Err("Commit adapter is not connected yet".into())
-    }
-
-    fn restore(&mut self, _snapshot_id: &str) -> Result<(), String> {
-        Err("Commit adapter is not connected yet".into())
     }
 }
