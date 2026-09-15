@@ -34,6 +34,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Return"; onActivated: backend.previewCommit() }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: backend.reloadTheme() }
     Shortcut { sequence: "Ctrl+Shift+B"; onActivated: { backend.refreshBatches(); batchDialog.open() } }
+    Shortcut { sequence: "Ctrl+Shift+I"; onActivated: manualDialog.open() }
     Shortcut {
         sequence: "Alt+Down"
         enabled: backend.reviewRowCount > 0
@@ -88,6 +89,12 @@ ApplicationWindow {
                 Accessible.name: text
                 Accessible.description: qsTr("Open batch management. Shortcut Ctrl Shift B")
                 onClicked: { backend.refreshBatches(); batchDialog.open() }
+            }
+            ToolButton {
+                text: qsTr("Import words")
+                Accessible.name: text
+                Accessible.description: qsTr("Preview pasted words. Shortcut Ctrl Shift I")
+                onClicked: manualDialog.open()
             }
         }
     }
@@ -156,6 +163,54 @@ ApplicationWindow {
             foregroundColor: root.foreground
             mutedColor: root.muted
             accentColor: root.accent
+        }
+    }
+
+    Dialog {
+        id: manualDialog
+        modal: true
+        title: qsTr("Import words")
+        width: Math.min(root.width * 0.76, 900)
+        height: Math.min(root.height * 0.8, 700)
+        standardButtons: Dialog.Close
+        contentItem: ColumnLayout {
+            spacing: 10
+            RowLayout {
+                TextField { id: importDeck; Accessible.name: qsTr("Target deck"); Layout.fillWidth: true; text: backend.activeDeck; placeholderText: qsTr("Deck") }
+                TextField { id: importLanguage; Accessible.name: qsTr("Language key"); Layout.fillWidth: true; text: "japanese_vocab"; placeholderText: qsTr("Language") }
+                TextField { id: importType; Accessible.name: qsTr("Card type"); Layout.fillWidth: true; text: "vocab"; placeholderText: qsTr("Type") }
+            }
+            TextArea {
+                id: manualRows
+                Accessible.name: qsTr("Words and optional context")
+                Accessible.description: qsTr("One expression per line. Add context after a tab.")
+                Layout.fillWidth: true
+                Layout.preferredHeight: 180
+                placeholderText: qsTr("食べる<Tab>meal verb\n新語<Tab>optional context")
+                wrapMode: TextEdit.Wrap
+            }
+            Button {
+                text: qsTr("Preview import")
+                Accessible.name: text
+                enabled: manualRows.text.trim().length > 0 && importDeck.text.trim().length > 0
+                onClicked: backend.previewManualInput(manualRows.text, importDeck.text, importLanguage.text, importType.text)
+            }
+            Label { text: qsTr("%1 rows · %2 issues").arg(backend.manualPreviewCount).arg(backend.manualIssueCount); color: root.muted }
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                ColumnLayout {
+                    width: parent.width
+                    Repeater {
+                        model: backend.manualPreviewCount
+                        delegate: Label { required property int index; Layout.fillWidth: true; text: backend.manualPreviewRow(index); color: root.foreground; wrapMode: Text.Wrap }
+                    }
+                    Repeater {
+                        model: backend.manualIssueCount
+                        delegate: Label { required property int index; Layout.fillWidth: true; text: backend.manualPreviewIssue(index); color: root.accent; wrapMode: Text.Wrap }
+                    }
+                }
+            }
         }
     }
 }

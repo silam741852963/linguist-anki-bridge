@@ -45,6 +45,8 @@ pub mod qobject {
         #[qproperty(i32, batch_item_count)]
         #[qproperty(i32, batch_item_total)]
         #[qproperty(QString, batch_confirmation)]
+        #[qproperty(i32, manual_preview_count)]
+        #[qproperty(i32, manual_issue_count)]
         #[namespace = "linguist"]
         type AppBackend = super::AppBackendRust;
 
@@ -165,16 +167,37 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "createBatch"]
         fn create_batch(self: Pin<&mut Self>, deck_name: &QString, rows: &QString);
+        #[qinvokable]
+        #[cxx_name = "previewManualInput"]
+        fn preview_manual_input(
+            self: Pin<&mut Self>,
+            raw: &QString,
+            deck_key: &QString,
+            language_key: &QString,
+            type_tag: &QString,
+        );
+        #[qinvokable]
+        #[cxx_name = "manualPreviewRow"]
+        fn manual_preview_row(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "manualPreviewIssue"]
+        fn manual_preview_issue(self: &AppBackend, index: i32) -> QString;
     }
 }
 
 use std::pin::Pin;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+};
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 
-use linguist_application::{CommitRequest, CommitSource, commit_card, restore_snapshot};
+use linguist_application::{
+    CommitRequest, CommitSource, DuplicateDecision, IngestionPreview, ManualIngestRequest,
+    commit_card, prepare_manual_input, resolve_ingestion_preview, restore_snapshot,
+};
 use linguist_core::{
     CONTRACT_VERSION, CardDocument, CardMode, FieldMapping, LogicalFields, ManagedTemplatePlan,
 };
@@ -309,6 +332,10 @@ pub struct AppBackendRust {
     batch_item_count: i32,
     batch_item_total: i32,
     batch_confirmation: QString,
+    manual_preview_count: i32,
+    manual_issue_count: i32,
+    manual_preview_rows: Vec<String>,
+    manual_preview_issues: Vec<String>,
     theme_watch: Option<ThemeWatch>,
     batch_port: LocalBatchPort,
     controller: ApplicationController,
@@ -363,6 +390,10 @@ impl AppBackendRust {
             batch_item_count: 0,
             batch_item_total: 0,
             batch_confirmation: QString::default(),
+            manual_preview_count: 0,
+            manual_issue_count: 0,
+            manual_preview_rows: Vec::new(),
+            manual_preview_issues: Vec::new(),
             theme_watch: omarchy_palette_path().map(ThemeWatch::new),
             batch_port,
             controller,
@@ -777,6 +808,95 @@ impl qobject::AppBackend {
             }
         }
     }
+
+    pub fn preview_manual_input(
+        mut self: Pin<&mut Self>,
+        raw: &QString,
+        deck_key: &QString,
+        language_key: &QString,
+        type_tag: &QString,
+    ) {
+        let preview = prepare_manual_input(&ManualIngestRequest {
+            raw: raw.to_string(),
+            deck_key: deck_key.to_string(),
+            language_key: language_key.to_string(),
+            type_tag: type_tag.to_string(),
+        });
+        let mut issues = preview
+            .issues
+            .iter()
+            .map(|issue| format!("Line {} · {}", issue.line, issue.message))
+            .collect::<Vec<_>>();
+        issues.extend(
+            preview
+                .duplicates
+                .iter()
+                .map(|line| format!("Line {line} · duplicate in pasted input")),
+        );
+        let decisions = match LiveDesktopPort::from_environment()
+            .and_then(|port| port.ingestion_candidates(&preview))
+        {
+            Ok(notes) => resolve_ingestion_preview(&preview, notes)
+                .into_iter()
+                .map(ingestion_decision_label)
+                .collect::<Vec<_>>(),
+            Err(error) => {
+                issues.push(format!("Duplicate check unavailable · {error}"));
+                vec!["Unchecked".into(); preview.rows.len()]
+            }
+        };
+        let rows = preview
+            .rows
+            .iter()
+            .zip(decisions)
+            .map(|(row, decision)| {
+                let context = if row.context.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {}", row.context)
+                };
+                format!(
+                    "{} · {}{} · {} · {} · {decision}",
+                    row.ordinal, row.expression, context, row.language_key, row.type_tag
+                )
+            })
+            .collect::<Vec<_>>();
+        let row_count = queue_len(rows.len());
+        let issue_count = queue_len(issues.len());
+        self.as_mut().rust_mut().manual_preview_rows = rows;
+        self.as_mut().rust_mut().manual_preview_issues = issues;
+        self.as_mut().set_manual_preview_count(row_count);
+        self.as_mut().set_manual_issue_count(issue_count);
+    }
+
+    pub fn manual_preview_row(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().manual_preview_rows.get(index))
+            .cloned()
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn manual_preview_issue(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().manual_preview_issues.get(index))
+            .cloned()
+            .unwrap_or_default()
+            .into()
+    }
+}
+
+fn ingestion_decision_label(decision: DuplicateDecision) -> String {
+    match decision {
+        DuplicateDecision::Inject => "Inject new card".into(),
+        DuplicateDecision::Modernize { note } => format!("Modernize note {}", note.note_id),
+        DuplicateDecision::Ambiguous { matches } => {
+            format!("Ambiguous · {} exact notes", matches.len())
+        }
+        DuplicateDecision::Skip => "Skip".into(),
+    }
 }
 
 impl qobject::AppBackend {
@@ -1012,6 +1132,28 @@ impl LiveDesktopPort {
         self.runtime
             .block_on(self.anki.deck_names())
             .map(|decks| decks.into_iter().map(|deck| deck.0).collect())
+            .map_err(|error| error.to_string())
+    }
+
+    fn ingestion_candidates(
+        &self,
+        preview: &IngestionPreview,
+    ) -> Result<Vec<linguist_application::NoteInfo>, String> {
+        let mut ids = BTreeSet::new();
+        for row in &preview.rows {
+            let query = format!(
+                "deck:\"{}\" \"{}\"",
+                row.deck_key.replace('"', "\\\""),
+                row.expression.replace('"', "\\\"")
+            );
+            ids.extend(
+                self.runtime
+                    .block_on(self.anki.find_notes(&query))
+                    .map_err(|error| error.to_string())?,
+            );
+        }
+        self.runtime
+            .block_on(self.anki.notes_info(&ids.into_iter().collect::<Vec<_>>()))
             .map_err(|error| error.to_string())
     }
 }
