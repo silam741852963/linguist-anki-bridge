@@ -155,6 +155,45 @@ impl SnapshotRepository {
         write_result
     }
 
+    /// Atomically replace one native record while retaining its stable ID.
+    /// Legacy Python history is never eligible for replacement.
+    pub fn replace(&self, document: &SnapshotDocument) -> Result<(), SnapshotRepositoryError> {
+        if !document.is_current_version() {
+            return Err(SnapshotRepositoryError::InvalidDocument(
+                "unsupported schema version".into(),
+            ));
+        }
+        validate_id(&document.snapshot.id)?;
+        let directory = self.native_dir();
+        let destination = directory.join(format!("{}.json", document.snapshot.id));
+        if !destination.is_file() {
+            return Err(SnapshotRepositoryError::InvalidId(
+                document.snapshot.id.clone(),
+            ));
+        }
+        let temporary = directory.join(format!(
+            ".{}-replace-{}.tmp",
+            document.snapshot.id,
+            temp_suffix()
+        ));
+        let result = (|| {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)?;
+            serde_json::to_writer_pretty(&mut file, document)?;
+            file.write_all(b"\n")?;
+            file.sync_all()?;
+            fs::rename(&temporary, &destination)?;
+            sync_directory(&directory)?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        result
+    }
+
     fn load_legacy(
         &self,
         snapshots: &mut Vec<SnapshotDocument>,
@@ -444,6 +483,20 @@ mod tests {
         assert_eq!(loaded.snapshots.len(), 1);
         assert_eq!(loaded.snapshots[0].snapshot.id, "one");
         assert_eq!(loaded.warnings.len(), 1);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn replaces_only_native_record_atomically() {
+        let directory = temporary_directory("replace");
+        let repository = SnapshotRepository::at_config_dir(&directory);
+        let mut original = document("replace-me");
+        repository.save(&original).unwrap();
+        original.snapshot.status = "committed".into();
+        original.snapshot.result_note_id = Some(99);
+        repository.replace(&original).unwrap();
+        let loaded = repository.load().unwrap();
+        assert_eq!(loaded.snapshots[0].snapshot.result_note_id, Some(99));
         fs::remove_dir_all(directory).unwrap();
     }
 
