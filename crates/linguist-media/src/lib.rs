@@ -3,7 +3,14 @@
 use image::{
     DynamicImage, ImageEncoder, Rgba, RgbaImage, codecs::jpeg::JpegEncoder, imageops::overlay,
 };
-use std::{future::Future, pin::Pin};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 pub type SearchFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<ImageCandidate>, String>> + Send + 'a>>;
@@ -11,6 +18,19 @@ pub type SearchFuture<'a> =
 /// browser automation, or a network client.
 pub trait ImageSearchPort: Send + Sync {
     fn search<'a>(&'a self, query: &'a str) -> SearchFuture<'a>;
+}
+pub type FetchFuture<'a> = Pin<Box<dyn Future<Output = Result<Vec<u8>, String>> + Send + 'a>>;
+pub trait ImageFetchPort: Send + Sync {
+    fn fetch<'a>(&'a self, candidate: &'a ImageCandidate) -> FetchFuture<'a>;
+}
+pub type ClassifyFuture<'a> = Pin<Box<dyn Future<Output = Result<ImageClass, String>> + Send + 'a>>;
+pub trait ImageClassifierPort: Send + Sync {
+    fn classify<'a>(
+        &'a self,
+        query: &'a str,
+        candidate: &'a ImageCandidate,
+        normalized_jpeg: &'a [u8],
+    ) -> ClassifyFuture<'a>;
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageCandidate {
@@ -21,13 +41,104 @@ pub struct ImageCandidate {
     pub height: Option<u32>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ImageClass {
     Dictionary,
     VisualRecall,
     Mixed,
     Uncertain,
     NoImage,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedImage {
+    pub candidate: ImageCandidate,
+    pub filename: String,
+    pub jpeg: Vec<u8>,
+    pub quality: ImageQuality,
+    pub classification: ImageClass,
+}
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ImageDiscovery {
+    pub selected: Option<PreparedImage>,
+    pub issues: Vec<String>,
+    pub retain_existing: bool,
+    pub cancelled: bool,
+}
+
+pub async fn discover_image<S, F, C>(
+    search: &S,
+    fetch: &F,
+    classifier: &C,
+    query: &str,
+    existing_class: Option<ImageClass>,
+    cancelled: Arc<AtomicBool>,
+    max_candidates: usize,
+) -> ImageDiscovery
+where
+    S: ImageSearchPort + ?Sized,
+    F: ImageFetchPort + ?Sized,
+    C: ImageClassifierPort + ?Sized,
+{
+    let mut result = ImageDiscovery::default();
+    if cancelled.load(Ordering::Relaxed) {
+        result.cancelled = true;
+        result.retain_existing = true;
+        return result;
+    }
+    let candidates = match search.search(query).await {
+        Ok(candidates) => usable_candidates(candidates),
+        Err(error) => {
+            result.issues.push(format!("Image search: {error}"));
+            result.retain_existing = true;
+            return result;
+        }
+    };
+    for candidate in candidates.into_iter().take(max_candidates.max(1)) {
+        if cancelled.load(Ordering::Relaxed) {
+            result.cancelled = true;
+            break;
+        }
+        let bytes = match fetch.fetch(&candidate).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                result
+                    .issues
+                    .push(format!("Image fetch from {}: {error}", candidate.provider));
+                continue;
+            }
+        };
+        let (jpeg, quality) = match normalize_jpeg(&bytes, &candidate.mime) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                result.issues.push(format!(
+                    "Image rejected from {}: {error}",
+                    candidate.provider
+                ));
+                continue;
+            }
+        };
+        let classification = match classifier.classify(query, &candidate, &jpeg).await {
+            Ok(classification) => classification,
+            Err(error) => {
+                result.issues.push(format!("Image classification: {error}"));
+                ImageClass::Uncertain
+            }
+        };
+        if classification == ImageClass::NoImage {
+            continue;
+        }
+        result.selected = Some(PreparedImage {
+            filename: indexed_filename(&candidate.provider, query),
+            candidate,
+            jpeg,
+            quality,
+            classification,
+        });
+        break;
+    }
+    result.retain_existing = existing_class
+        .is_some_and(|class| visual_recall_retained(class, result.selected.is_some()));
+    result
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImageQuality {
@@ -78,7 +189,25 @@ pub fn visual_recall_retained(classification: ImageClass, replacement_available:
     ) || !replacement_available
 }
 pub fn indexed_filename(provider: &str, query: &str) -> String {
-    format!("{}-{}.jpg", safe_stem(provider), safe_stem(query))
+    format!(
+        "{}-{}-{:08x}.jpg",
+        safe_stem(provider),
+        safe_stem(query),
+        short_hash(query)
+    )
+}
+pub fn cache_key(provider_revision: &str, query: &str) -> String {
+    format!(
+        "image-v1-{:016x}",
+        stable_hash(
+            provider_revision
+                .as_bytes()
+                .iter()
+                .copied()
+                .chain([0])
+                .chain(query.trim().as_bytes().iter().copied())
+        )
+    )
 }
 pub fn normalize_jpeg(bytes: &[u8], mime: &str) -> Result<(Vec<u8>, ImageQuality), ImageError> {
     if !supported_mime(mime) {
@@ -137,6 +266,17 @@ fn safe_stem(value: &str) -> String {
         stem.into()
     }
 }
+fn short_hash(value: &str) -> u32 {
+    stable_hash(value.as_bytes().iter().copied()) as u32
+}
+fn stable_hash(bytes: impl IntoIterator<Item = u8>) -> u64 {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
 
 #[cfg(test)]
 mod tests {
@@ -159,7 +299,9 @@ mod tests {
             .unwrap();
         let (jpeg, _) = normalize_jpeg(&png, "image/png").unwrap();
         assert!(jpeg.starts_with(&[0xff, 0xd8]));
-        assert_eq!(indexed_filename("wiki", "食べる!"), "wiki-media.jpg");
+        let filename = indexed_filename("wiki", "食べる!");
+        assert!(filename.starts_with("wiki-media-"));
+        assert!(filename.ends_with(".jpg"));
     }
     #[test]
     fn rejects_unusable_and_keeps_visual_recall() {
@@ -196,5 +338,81 @@ mod tests {
             },
         ]);
         assert_eq!(candidates.len(), 1);
+    }
+
+    struct Search;
+    impl ImageSearchPort for Search {
+        fn search<'a>(&'a self, _: &'a str) -> SearchFuture<'a> {
+            Box::pin(async {
+                Ok(vec![ImageCandidate {
+                    url: "https://img.example/food.png".into(),
+                    provider: "fixture".into(),
+                    mime: "image/png".into(),
+                    width: Some(20),
+                    height: Some(20),
+                }])
+            })
+        }
+    }
+    struct Fetch;
+    impl ImageFetchPort for Fetch {
+        fn fetch<'a>(&'a self, _: &'a ImageCandidate) -> FetchFuture<'a> {
+            Box::pin(async {
+                let mut image = RgbaImage::from_pixel(20, 20, Rgba([255, 255, 255, 255]));
+                image.put_pixel(0, 0, Rgba([0, 0, 0, 255]));
+                let mut bytes = Vec::new();
+                image::codecs::png::PngEncoder::new(&mut bytes)
+                    .write_image(&image, 20, 20, image::ColorType::Rgba8)
+                    .unwrap();
+                Ok(bytes)
+            })
+        }
+    }
+    struct Classifier;
+    impl ImageClassifierPort for Classifier {
+        fn classify<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a ImageCandidate,
+            _: &'a [u8],
+        ) -> ClassifyFuture<'a> {
+            Box::pin(async { Ok(ImageClass::Dictionary) })
+        }
+    }
+
+    #[tokio::test]
+    async fn composes_discovery_fetch_normalization_and_classification() {
+        let result = discover_image(
+            &Search,
+            &Fetch,
+            &Classifier,
+            "食べる",
+            Some(ImageClass::VisualRecall),
+            Arc::new(AtomicBool::new(false)),
+            3,
+        )
+        .await;
+        let selected = result.selected.unwrap();
+        assert!(selected.jpeg.starts_with(&[0xff, 0xd8]));
+        assert_eq!(selected.classification, ImageClass::Dictionary);
+        assert!(result.retain_existing);
+        assert!(result.issues.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancellation_never_calls_providers() {
+        let result = discover_image(
+            &Search,
+            &Fetch,
+            &Classifier,
+            "term",
+            None,
+            Arc::new(AtomicBool::new(true)),
+            3,
+        )
+        .await;
+        assert!(result.cancelled);
+        assert!(result.selected.is_none());
+        assert!(result.retain_existing);
     }
 }
