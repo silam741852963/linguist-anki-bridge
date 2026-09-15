@@ -47,6 +47,8 @@ pub mod qobject {
         #[qproperty(QString, batch_confirmation)]
         #[qproperty(i32, manual_preview_count)]
         #[qproperty(i32, manual_issue_count)]
+        #[qproperty(QString, csv_headers)]
+        #[qproperty(QString, csv_mapping)]
         #[namespace = "linguist"]
         type AppBackend = super::AppBackendRust;
 
@@ -185,6 +187,24 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "enqueueManualInput"]
         fn enqueue_manual_input(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "previewCsvInput"]
+        fn preview_csv_input(
+            self: Pin<&mut Self>,
+            content: &QString,
+            deck_key: &QString,
+            language_key: &QString,
+            type_tag: &QString,
+        );
+        #[qinvokable]
+        #[cxx_name = "previewCsvFile"]
+        fn preview_csv_file(
+            self: Pin<&mut Self>,
+            file_url: &QString,
+            deck_key: &QString,
+            language_key: &QString,
+            type_tag: &QString,
+        );
     }
 }
 
@@ -198,8 +218,9 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 
 use linguist_application::{
-    CommitRequest, CommitSource, DuplicateDecision, IngestionPreview, ManualIngestRequest,
-    commit_card, prepare_manual_input, resolve_ingestion_preview, restore_snapshot,
+    CommitRequest, CommitSource, CsvIngestRequest, DuplicateDecision, IngestionPreview,
+    ManualIngestRequest, commit_card, prepare_csv_input, prepare_manual_input,
+    resolve_ingestion_preview, restore_snapshot,
 };
 use linguist_core::{
     CONTRACT_VERSION, CardDocument, CardMode, FieldMapping, LogicalFields, ManagedTemplatePlan,
@@ -340,6 +361,8 @@ pub struct AppBackendRust {
     manual_preview_rows: Vec<String>,
     manual_preview_issues: Vec<String>,
     manual_pending: Vec<(linguist_application::InputRow, DuplicateDecision)>,
+    csv_headers: QString,
+    csv_mapping: QString,
     theme_watch: Option<ThemeWatch>,
     batch_port: LocalBatchPort,
     controller: ApplicationController,
@@ -399,6 +422,8 @@ impl AppBackendRust {
             manual_preview_rows: Vec::new(),
             manual_preview_issues: Vec::new(),
             manual_pending: Vec::new(),
+            csv_headers: QString::default(),
+            csv_mapping: QString::default(),
             theme_watch: omarchy_palette_path().map(ThemeWatch::new),
             batch_port,
             controller,
@@ -962,6 +987,108 @@ impl qobject::AppBackend {
         }
         sync_controller_state(self);
     }
+
+    pub fn preview_csv_input(
+        mut self: Pin<&mut Self>,
+        content: &QString,
+        deck_key: &QString,
+        language_key: &QString,
+        type_tag: &QString,
+    ) {
+        let csv = match prepare_csv_input(&CsvIngestRequest {
+            content: content.to_string(),
+            deck_key: deck_key.to_string(),
+            language_key: language_key.to_string(),
+            type_tag: type_tag.to_string(),
+            mapping: None,
+        }) {
+            Ok(csv) => csv,
+            Err(error) => {
+                self.as_mut().rust_mut().controller.report_error(error);
+                sync_controller_state(self);
+                return;
+            }
+        };
+        let header = |column: Option<usize>| {
+            column
+                .and_then(|column| csv.headers.get(column))
+                .cloned()
+                .unwrap_or_else(|| "—".into())
+        };
+        let mapping = format!(
+            "Expression: {} · Language: {} · Type: {} · Context: {}",
+            header(Some(csv.mapping.expression)),
+            header(csv.mapping.language),
+            header(csv.mapping.type_tag),
+            header(csv.mapping.context)
+        );
+        let preview = IngestionPreview {
+            rows: csv.rows,
+            issues: csv.issues,
+            duplicates: csv.duplicates,
+        };
+        let (rows, issues, pending) = build_ingestion_display(&preview);
+        let row_count = queue_len(rows.len());
+        let issue_count = queue_len(issues.len());
+        self.as_mut().rust_mut().manual_preview_rows = rows;
+        self.as_mut().rust_mut().manual_preview_issues = issues;
+        self.as_mut().rust_mut().manual_pending = pending;
+        self.as_mut().set_manual_preview_count(row_count);
+        self.as_mut().set_manual_issue_count(issue_count);
+        self.as_mut()
+            .set_csv_headers(csv.headers.join(" · ").into());
+        self.as_mut().set_csv_mapping(mapping.into());
+        sync_controller_state(self);
+    }
+
+    pub fn preview_csv_file(
+        mut self: Pin<&mut Self>,
+        file_url: &QString,
+        deck_key: &QString,
+        language_key: &QString,
+        type_tag: &QString,
+    ) {
+        let path = match local_file_path(&file_url.to_string()) {
+            Ok(path) => path,
+            Err(error) => {
+                self.as_mut().rust_mut().controller.report_error(error);
+                sync_controller_state(self);
+                return;
+            }
+        };
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.len() <= 10 * 1024 * 1024 => metadata,
+            Ok(_) => {
+                self.as_mut()
+                    .rust_mut()
+                    .controller
+                    .report_error("CSV file exceeds the 10 MiB preview limit");
+                sync_controller_state(self);
+                return;
+            }
+            Err(error) => {
+                self.as_mut()
+                    .rust_mut()
+                    .controller
+                    .report_error(error.to_string());
+                sync_controller_state(self);
+                return;
+            }
+        };
+        let _ = metadata;
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                self.preview_csv_input(&content.into(), deck_key, language_key, type_tag)
+            }
+            Err(error) => {
+                self.as_mut()
+                    .rust_mut()
+                    .controller
+                    .report_error(error.to_string());
+                sync_controller_state(self);
+            }
+        }
+    }
 }
 
 fn ingestion_decision_label(decision: &DuplicateDecision) -> String {
@@ -973,6 +1100,80 @@ fn ingestion_decision_label(decision: &DuplicateDecision) -> String {
         }
         DuplicateDecision::Skip => "Skip".into(),
     }
+}
+
+fn build_ingestion_display(
+    preview: &IngestionPreview,
+) -> (
+    Vec<String>,
+    Vec<String>,
+    Vec<(linguist_application::InputRow, DuplicateDecision)>,
+) {
+    let mut issues = preview
+        .issues
+        .iter()
+        .map(|issue| format!("Line {} · {}", issue.line, issue.message))
+        .collect::<Vec<_>>();
+    issues.extend(
+        preview
+            .duplicates
+            .iter()
+            .map(|line| format!("Line {line} · duplicate in imported input")),
+    );
+    let decisions = match LiveDesktopPort::from_environment()
+        .and_then(|port| port.ingestion_candidates(preview))
+    {
+        Ok(notes) => resolve_ingestion_preview(preview, notes),
+        Err(error) => {
+            issues.push(format!("Duplicate check unavailable · {error}"));
+            vec![DuplicateDecision::Skip; preview.rows.len()]
+        }
+    };
+    let rows = preview
+        .rows
+        .iter()
+        .zip(&decisions)
+        .map(|(row, decision)| {
+            format!(
+                "{} · {} · {} · {} · {}",
+                row.ordinal,
+                row.expression,
+                row.language_key,
+                row.type_tag,
+                ingestion_decision_label(decision)
+            )
+        })
+        .collect();
+    let pending = preview.rows.iter().cloned().zip(decisions).collect();
+    (rows, issues, pending)
+}
+
+fn local_file_path(value: &str) -> Result<PathBuf, String> {
+    let encoded = value
+        .strip_prefix("file://")
+        .ok_or_else(|| "Only local file URLs are accepted".to_owned())?;
+    let encoded = encoded.strip_prefix("localhost").unwrap_or(encoded);
+    let bytes = encoded.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let pair = bytes
+                .get(index + 1..index + 3)
+                .ok_or_else(|| "Invalid percent escape in file URL".to_owned())?;
+            let text = std::str::from_utf8(pair).map_err(|error| error.to_string())?;
+            decoded.push(u8::from_str_radix(text, 16).map_err(|_| "Invalid file URL escape")?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    let path = String::from_utf8(decoded).map_err(|error| error.to_string())?;
+    if !path.starts_with('/') {
+        return Err("CSV file URL must be absolute".into());
+    }
+    Ok(PathBuf::from(path))
 }
 
 impl qobject::AppBackend {
@@ -1553,5 +1754,20 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
 
     fn restore(&mut self, snapshot_id: &str) -> Result<(), String> {
         self.restore_snapshot_id(snapshot_id)
+    }
+}
+
+#[cfg(test)]
+mod backend_tests {
+    use super::*;
+
+    #[test]
+    fn local_csv_urls_decode_without_accepting_remote_schemes() {
+        assert_eq!(
+            local_file_path("file:///tmp/words%20one.csv").unwrap(),
+            PathBuf::from("/tmp/words one.csv")
+        );
+        assert!(local_file_path("https://example.test/words.csv").is_err());
+        assert!(local_file_path("file://relative.csv").is_err());
     }
 }

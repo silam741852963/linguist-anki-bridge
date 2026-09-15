@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import io.github.lam.linguist_anki_bridge
 
 ApplicationWindow {
@@ -189,6 +190,36 @@ ApplicationWindow {
                 placeholderText: qsTr("食べる<Tab>meal verb\n新語<Tab>optional context")
                 wrapMode: TextEdit.Wrap
             }
+            Label { text: qsTr("CSV input"); color: root.muted }
+            TextArea {
+                id: csvRows
+                Accessible.name: qsTr("CSV content or drop target")
+                Accessible.description: qsTr("Paste CSV with a header row, or drop a local CSV file")
+                Layout.fillWidth: true
+                Layout.preferredHeight: 100
+                placeholderText: qsTr("Word,Language,Type,Context")
+                DropArea {
+                    anchors.fill: parent
+                    onDropped: function(drop) {
+                        if (drop.urls.length > 0)
+                            backend.previewCsvFile(drop.urls[0], importDeck.text, importLanguage.text, importType.text)
+                        else if (drop.text.length > 0) {
+                            csvRows.text = drop.text
+                            backend.previewCsvInput(csvRows.text, importDeck.text, importLanguage.text, importType.text)
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Button {
+                    text: qsTr("Preview CSV")
+                    Accessible.name: text
+                    enabled: csvRows.text.trim().length > 0 && importDeck.text.trim().length > 0
+                    onClicked: backend.previewCsvInput(csvRows.text, importDeck.text, importLanguage.text, importType.text)
+                }
+                Button { text: qsTr("Choose CSV file"); Accessible.name: text; onClicked: csvFileDialog.open() }
+                Label { Layout.fillWidth: true; text: backend.csvMapping; color: root.muted; elide: Text.ElideRight }
+            }
             RowLayout {
                 Button {
                     text: qsTr("Preview import")
@@ -222,5 +253,12 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    FileDialog {
+        id: csvFileDialog
+        title: qsTr("Choose CSV file")
+        nameFilters: [qsTr("CSV files (*.csv)"), qsTr("All files (*)")]
+        onAccepted: backend.previewCsvFile(selectedFile, importDeck.text, importLanguage.text, importType.text)
     }
 }
