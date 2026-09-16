@@ -542,8 +542,15 @@ pub struct SnapshotCapture {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SnapshotHandle(pub String);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TemplateMutation;
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TemplateMutation {
+    pub model_name: String,
+    pub created: bool,
+    pub previous_templates: Vec<ModelTemplate>,
+    pub previous_css: String,
+    pub added_templates: Vec<String>,
+    pub renamed_template: Option<(String, String)>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoteMutation {
@@ -1419,7 +1426,7 @@ mod tests {
         ) -> PortFuture<'a, TemplateMutation> {
             Box::pin(async move {
                 self.event("template")?;
-                Ok(TemplateMutation)
+                Ok(TemplateMutation::default())
             })
         }
 

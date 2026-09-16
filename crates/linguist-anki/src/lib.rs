@@ -18,8 +18,9 @@ use linguist_application::{
     TemplateMutation, resolve_exact_expression,
 };
 use linguist_core::{
-    CONTRACT_VERSION, CardMode, ManagedTemplatePlan, SnapshotContract, SnapshotDocument,
-    SnapshotOriginalNote,
+    CONTRACT_VERSION, CardMode, ManagedModelSpec, ManagedTemplatePlan, ModelTemplate,
+    ObservedModel, SnapshotContract, SnapshotDocument, SnapshotOriginalNote, japanese_vocab_spec,
+    plan_japanese_vocab_template,
 };
 use linguist_snapshots::SnapshotRepository;
 use reqwest::{Client, Url};
@@ -232,9 +233,113 @@ impl AnkiConnectTransport {
     ) -> Result<(), AnkiConnectError> {
         let _: Value = self
             .send(
-                "updateNote",
+                "updateNoteModel",
                 json!({"note":{"id":note_id,"modelName":model_name,"fields":fields,"tags":tags}}),
             )
+            .await?;
+        Ok(())
+    }
+
+    async fn create_model(&self, spec: &ManagedModelSpec) -> Result<(), AnkiConnectError> {
+        let templates = spec.templates.iter().map(template_json).collect::<Vec<_>>();
+        let _: Value = self
+            .send(
+                "createModel",
+                json!({
+                    "modelName": spec.model_name,
+                    "inOrderFields": spec.fields,
+                    "css": spec.css,
+                    "isCloze": false,
+                    "cardTemplates": templates,
+                }),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn update_model_templates(
+        &self,
+        model_name: &str,
+        templates: &[ModelTemplate],
+    ) -> Result<(), AnkiConnectError> {
+        let templates = templates
+            .iter()
+            .map(|template| {
+                (
+                    template.name.clone(),
+                    json!({"Front":template.front,"Back":template.back}),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
+        let _: Value = self
+            .send(
+                "updateModelTemplates",
+                json!({"model":{"name":model_name,"templates":templates}}),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn update_model_styling(
+        &self,
+        model_name: &str,
+        css: &str,
+    ) -> Result<(), AnkiConnectError> {
+        let _: Value = self
+            .send(
+                "updateModelStyling",
+                json!({"model":{"name":model_name,"css":css}}),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn add_model_template(
+        &self,
+        model_name: &str,
+        template: &ModelTemplate,
+    ) -> Result<(), AnkiConnectError> {
+        let _: Value = self
+            .send(
+                "modelTemplateAdd",
+                json!({"modelName":model_name,"template":template_json(template)}),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn rename_model_template(
+        &self,
+        model_name: &str,
+        old: &str,
+        new: &str,
+    ) -> Result<(), AnkiConnectError> {
+        let _: Value = self
+            .send(
+                "modelTemplateRename",
+                json!({"modelName":model_name,"oldTemplateName":old,"newTemplateName":new}),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn remove_model_template(
+        &self,
+        model_name: &str,
+        name: &str,
+    ) -> Result<(), AnkiConnectError> {
+        let _: Value = self
+            .send(
+                "modelTemplateRemove",
+                json!({"modelName":model_name,"templateName":name}),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn delete_model(&self, model_name: &str) -> Result<(), AnkiConnectError> {
+        let _: Value = self
+            .send("deleteModels", json!({"modelNames":[model_name]}))
             .await?;
         Ok(())
     }
@@ -484,6 +589,43 @@ impl AnkiCommitPort {
             .await
             .map(|mut notes| notes.pop())
     }
+
+    pub async fn japanese_template_plan(&self) -> Result<ManagedTemplatePlan, AnkiConnectError> {
+        let spec = japanese_vocab_spec();
+        if !self
+            .transport
+            .model_names()
+            .await?
+            .iter()
+            .any(|model| model.0 == spec.model_name)
+        {
+            return Ok(ManagedTemplatePlan::Create { spec });
+        }
+        let name = ModelName(spec.model_name.clone());
+        let fields = self.transport.model_fields(&name).await?.fields;
+        let templates = self
+            .transport
+            .model_templates(&name)
+            .await?
+            .templates
+            .into_iter()
+            .map(|template| ModelTemplate {
+                name: template.name,
+                front: template.front,
+                back: template.back,
+            })
+            .collect();
+        let css = self.transport.model_styling(&name).await?.css;
+        plan_japanese_vocab_template(Some(&ObservedModel {
+            model_name: spec.model_name,
+            fields,
+            templates,
+            css,
+        }))
+        .map_err(|error| AnkiConnectError::MalformedResponse {
+            message: error.to_string(),
+        })
+    }
 }
 
 impl MediaPort for AnkiCommitPort {
@@ -609,19 +751,111 @@ impl CommitPort for AnkiCommitPort {
         plan: &'a ManagedTemplatePlan,
     ) -> PortFuture<'a, TemplateMutation> {
         Box::pin(async move {
-            match plan {
-                ManagedTemplatePlan::NoChange => Ok(TemplateMutation),
-                _ => Err(PortError {
-                    operation: "template",
-                    message: "managed model mutation is not yet supported by Anki adapter".into(),
-                    retryable: false,
-                }),
+            if matches!(plan, ManagedTemplatePlan::NoChange) {
+                return Ok(TemplateMutation::default());
             }
+            let spec = match plan {
+                ManagedTemplatePlan::Create { spec } => spec.clone(),
+                _ => japanese_vocab_spec(),
+            };
+            let mut mutation = TemplateMutation {
+                model_name: spec.model_name.clone(),
+                created: matches!(plan, ManagedTemplatePlan::Create { .. }),
+                ..Default::default()
+            };
+            if mutation.created {
+                self.transport
+                    .create_model(&spec)
+                    .await
+                    .map_err(template_error)?;
+                return Ok(mutation);
+            }
+            let model = ModelName(spec.model_name.clone());
+            mutation.previous_templates = self
+                .transport
+                .model_templates(&model)
+                .await
+                .map_err(template_error)?
+                .templates
+                .into_iter()
+                .map(|template| ModelTemplate {
+                    name: template.name,
+                    front: template.front,
+                    back: template.back,
+                })
+                .collect();
+            mutation.previous_css = self
+                .transport
+                .model_styling(&model)
+                .await
+                .map_err(template_error)?
+                .css;
+
+            let apply_result = async {
+                if let ManagedTemplatePlan::UpgradeLegacy { rename, add, .. } = plan {
+                    self.transport
+                        .rename_model_template(&spec.model_name, &rename.0, &rename.1)
+                        .await?;
+                    mutation.renamed_template = Some(rename.clone());
+                    for template in add {
+                        self.transport
+                            .add_model_template(&spec.model_name, template)
+                            .await?;
+                        mutation.added_templates.push(template.name.clone());
+                    }
+                }
+                let refresh_templates = matches!(
+                    plan,
+                    ManagedTemplatePlan::UpgradeLegacy {
+                        refresh_templates: true,
+                        ..
+                    } | ManagedTemplatePlan::Refresh {
+                        templates: true,
+                        ..
+                    }
+                );
+                let refresh_css = matches!(
+                    plan,
+                    ManagedTemplatePlan::UpgradeLegacy {
+                        refresh_css: true,
+                        ..
+                    } | ManagedTemplatePlan::Refresh { css: true, .. }
+                );
+                if refresh_templates {
+                    self.transport
+                        .update_model_templates(&spec.model_name, &spec.templates)
+                        .await?;
+                }
+                if refresh_css {
+                    self.transport
+                        .update_model_styling(&spec.model_name, &spec.css)
+                        .await?;
+                }
+                Ok::<(), AnkiConnectError>(())
+            }
+            .await;
+            if let Err(error) = apply_result {
+                let rollback = rollback_template_mutation(&self.transport, &mutation).await;
+                let message = match rollback {
+                    Ok(()) => error.to_string(),
+                    Err(rollback) => format!("{error}; rollback failed: {rollback}"),
+                };
+                return Err(PortError {
+                    operation: "template",
+                    message,
+                    retryable: false,
+                });
+            }
+            Ok(mutation)
         })
     }
 
-    fn rollback_template<'a>(&'a self, _mutation: &'a TemplateMutation) -> PortFuture<'a, ()> {
-        Box::pin(async { Ok(()) })
+    fn rollback_template<'a>(&'a self, mutation: &'a TemplateMutation) -> PortFuture<'a, ()> {
+        Box::pin(async move {
+            rollback_template_mutation(&self.transport, mutation)
+                .await
+                .map_err(template_error)
+        })
     }
 
     fn update_note<'a>(
@@ -794,6 +1028,46 @@ fn snapshot_error(error: impl std::fmt::Display) -> PortError {
         message: error.to_string(),
         retryable: false,
     }
+}
+
+fn template_json(template: &ModelTemplate) -> Value {
+    json!({"Name":template.name,"Front":template.front,"Back":template.back})
+}
+
+fn template_error(error: AnkiConnectError) -> PortError {
+    PortError {
+        operation: "template",
+        message: error.to_string(),
+        retryable: false,
+    }
+}
+
+async fn rollback_template_mutation(
+    transport: &AnkiConnectTransport,
+    mutation: &TemplateMutation,
+) -> Result<(), AnkiConnectError> {
+    if mutation.model_name.is_empty() {
+        return Ok(());
+    }
+    if mutation.created {
+        return transport.delete_model(&mutation.model_name).await;
+    }
+    for name in mutation.added_templates.iter().rev() {
+        transport
+            .remove_model_template(&mutation.model_name, name)
+            .await?;
+    }
+    if let Some((old, new)) = &mutation.renamed_template {
+        transport
+            .rename_model_template(&mutation.model_name, new, old)
+            .await?;
+    }
+    transport
+        .update_model_templates(&mutation.model_name, &mutation.previous_templates)
+        .await?;
+    transport
+        .update_model_styling(&mutation.model_name, &mutation.previous_css)
+        .await
 }
 
 fn unix_timestamp() -> String {
@@ -1029,8 +1303,33 @@ mod tests {
         let requests = requests.await.unwrap();
         assert!(requests[0].contains(r#""action":"createBackup""#));
         assert!(requests[1].contains(r#""action":"addNote""#) && requests[1].contains("俳優"));
-        assert!(requests[2].contains(r#""action":"updateNote""#));
+        assert!(requests[2].contains(r#""action":"updateNoteModel""#));
         assert!(requests[3].contains(r#""action":"deleteNotes""#));
+    }
+
+    #[tokio::test]
+    async fn managed_model_create_has_compensating_delete() {
+        let (url, requests) = mock_sequence(vec![
+            r#"{"result":1,"error":null}"#,
+            r#"{"result":null,"error":null}"#,
+        ])
+        .await;
+        let port = AnkiCommitPort::new(
+            AnkiConnectTransport::new(&url).unwrap(),
+            SnapshotRepository::at_config_dir(std::env::temp_dir()),
+        );
+        let mutation = port
+            .apply_template(&ManagedTemplatePlan::Create {
+                spec: japanese_vocab_spec(),
+            })
+            .await
+            .unwrap();
+        assert!(mutation.created);
+        port.rollback_template(&mutation).await.unwrap();
+        let requests = requests.await.unwrap();
+        assert!(requests[0].contains(r#""action":"createModel""#));
+        assert!(requests[0].contains("Comprehension"));
+        assert!(requests[1].contains(r#""action":"deleteModels""#));
     }
 
     #[tokio::test]

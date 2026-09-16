@@ -253,9 +253,7 @@ use linguist_application::{
     IngestionPreview, ManualIngestRequest, commit_card, prepare_csv_input, prepare_manual_input,
     resolve_ingestion_preview, restore_snapshot, selector_preview,
 };
-use linguist_core::{
-    CONTRACT_VERSION, CardDocument, CardMode, FieldMapping, LogicalFields, ManagedTemplatePlan,
-};
+use linguist_core::{CONTRACT_VERSION, CardDocument, CardMode, FieldMapping, LogicalFields};
 use linguist_snapshots::SnapshotRepository;
 
 use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort, DraftNotePort};
@@ -1904,25 +1902,23 @@ impl LiveCommitAdapter {
             kanji_construction: Some(draft.kanji.clone()),
             audio: Some(draft.audio.join("<br/>")),
         };
+        let managed_spec = linguist_core::japanese_vocab_spec();
+        let managed_mapping = FieldMapping {
+            expression: Some("Expression".into()),
+            meaning_image: Some("Picture".into()),
+            meaning_text: Some("Meaning".into()),
+            kanji_construction: Some("Kanji".into()),
+            audio: Some("Audio".into()),
+        };
         let (deck_name, target_model, source, mapping, tags) = match draft.mode {
             CardMode::Modernize => {
                 let note = self.runtime.block_on(self.commit_note(draft))?;
-                let mapping = FieldMapping {
-                    expression: find_field(
-                        &note.fields,
-                        &["Expression", "Word", "Front", "Vocabulary"],
-                    ),
-                    meaning_image: find_field(&note.fields, &["Meaning Image", "Image", "Picture"]),
-                    meaning_text: find_field(&note.fields, &["Meaning", "Definition", "Back"]),
-                    kanji_construction: find_field(&note.fields, &["Kanji", "Kanji Construction"]),
-                    audio: find_field(&note.fields, &["Audio", "Pronunciation"]),
-                };
                 let deck_name = note
                     .deck_names
                     .first()
                     .map(|deck| deck.0.clone())
                     .unwrap_or_else(|| draft.deck_name.clone());
-                let target_model = note.model_name.0.clone();
+                let target_model = managed_spec.model_name.clone();
                 let tags = note.tags.clone();
                 let source = Some(CommitSource {
                     note_id: note.note_id,
@@ -1930,19 +1926,19 @@ impl LiveCommitAdapter {
                     fields: note.fields,
                     tags: note.tags,
                 });
-                (deck_name, target_model, source, mapping, tags)
+                (
+                    deck_name,
+                    target_model,
+                    source,
+                    managed_mapping.clone(),
+                    tags,
+                )
             }
             CardMode::Inject => (
                 draft.deck_name.clone(),
-                draft.target_model.clone(),
+                managed_spec.model_name.clone(),
                 None,
-                FieldMapping {
-                    expression: Some("Expression".into()),
-                    meaning_image: Some("Picture".into()),
-                    meaning_text: Some("Meaning".into()),
-                    kanji_construction: Some("Kanji".into()),
-                    audio: Some("Audio".into()),
-                },
+                managed_mapping,
                 Vec::new(),
             ),
         };
@@ -1959,6 +1955,10 @@ impl LiveCommitAdapter {
             tags,
             provenance: BTreeMap::new(),
         };
+        let template_plan = self
+            .runtime
+            .block_on(self.commit.japanese_template_plan())
+            .map_err(|error| error.to_string())?;
         Ok(CommitRequest {
             mode: draft.mode,
             dry_run,
@@ -1968,7 +1968,7 @@ impl LiveCommitAdapter {
             source,
             document,
             field_mapping: mapping,
-            template_plan: ManagedTemplatePlan::NoChange,
+            template_plan,
         })
     }
 
@@ -1997,13 +1997,6 @@ impl LiveCommitAdapter {
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
-}
-
-fn find_field(fields: &BTreeMap<String, String>, aliases: &[&str]) -> Option<String> {
-    aliases
-        .iter()
-        .find(|alias| fields.contains_key(**alias))
-        .map(|alias| (*alias).into())
 }
 
 impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveCommitAdapter {
