@@ -1883,6 +1883,7 @@ struct LiveEnrichmentServices {
     ollama: linguist_ollama::OllamaClient,
     model: String,
     tts: linguist_audio::EspeakTts,
+    kanji: linguist_dictionary::kanji::KanjiApiClient,
 }
 
 impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
@@ -1956,8 +1957,41 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
         })
     }
 
-    fn kanji<'a>(&'a self, _: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
-        Box::pin(async { Ok(linguist_pipeline::ProviderOutput::Kanji(String::new())) })
+    fn kanji<'a>(&'a self, expression: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
+        Box::pin(async move {
+            let result = linguist_dictionary::kanji::lookup_word(
+                &self.kanji,
+                expression,
+                "",
+                Some("https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji"),
+            )
+            .await;
+            if result.summaries.is_empty() && !result.warnings.is_empty() {
+                return Err(linguist_pipeline::PipelineError::Provider {
+                    service: "kanji",
+                    message: result.warnings.join("; "),
+                    retryable: true,
+                });
+            }
+            let summary = result
+                .summaries
+                .into_iter()
+                .map(|summary| {
+                    format!(
+                        "{} · {} · readings: {} · strokes: {}",
+                        summary.character,
+                        summary.meanings.join(", "),
+                        summary.readings.join(", "),
+                        summary
+                            .strokes
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "unknown".into())
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("<br/>");
+            Ok(linguist_pipeline::ProviderOutput::Kanji(summary))
+        })
     }
 
     fn image<'a>(&'a self, _: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
@@ -2026,6 +2060,7 @@ impl LiveGenerationAdapter {
                         .map_err(|error| error.to_string())?,
                     model,
                     tts: linguist_audio::EspeakTts::default(),
+                    kanji: linguist_dictionary::kanji::KanjiApiClient::new()?,
                 },
                 linguist_pipeline::PipelineConfig::default(),
             ),

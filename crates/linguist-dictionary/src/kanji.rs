@@ -1,12 +1,116 @@
 //! Provider-neutral Kanji summaries and an offline KANJIDIC2 fallback parser.
 
-use std::{collections::BTreeSet, future::Future, pin::Pin};
+use serde::Deserialize;
+use std::{collections::BTreeSet, future::Future, pin::Pin, time::Duration};
 
 pub type KanjiFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Option<KanjiSummary>, String>> + Send + 'a>>;
 
 pub trait KanjiLookupPort: Send + Sync {
     fn lookup<'a>(&'a self, character: char) -> KanjiFuture<'a>;
+}
+
+#[derive(Clone, Debug)]
+pub struct KanjiApiClient {
+    client: reqwest::Client,
+    base: reqwest::Url,
+    stroke_media_base: Option<String>,
+}
+
+impl KanjiApiClient {
+    pub fn new() -> Result<Self, String> {
+        Self::with_config(
+            "https://kanjiapi.dev/v1/kanji/",
+            Duration::from_secs(10),
+            Some("https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji"),
+        )
+    }
+
+    pub fn with_config(
+        base: &str,
+        timeout: Duration,
+        stroke_media_base: Option<&str>,
+    ) -> Result<Self, String> {
+        let base = reqwest::Url::parse(base).map_err(|error| error.to_string())?;
+        if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
+            return Err("Kanji API URL must be http(s) with a host".into());
+        }
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .user_agent("LinguistAnkiBridge/0.1")
+            .build()
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            client,
+            base,
+            stroke_media_base: stroke_media_base.map(str::to_owned),
+        })
+    }
+}
+
+impl KanjiLookupPort for KanjiApiClient {
+    fn lookup<'a>(&'a self, character: char) -> KanjiFuture<'a> {
+        Box::pin(async move {
+            let url = self
+                .base
+                .join(&character.to_string())
+                .map_err(|error| error.to_string())?;
+            let response = self
+                .client
+                .get(url)
+                .send()
+                .await
+                .map_err(|error| error.to_string())?;
+            if response.status() == reqwest::StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            if !response.status().is_success() {
+                return Err(format!("Kanji API HTTP {}", response.status().as_u16()));
+            }
+            let body = response.text().await.map_err(|error| error.to_string())?;
+            parse_kanji_api(character, &body, self.stroke_media_base.as_deref()).map(Some)
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct KanjiApiResponse {
+    kanji: String,
+    #[serde(default)]
+    meanings: Vec<String>,
+    #[serde(default)]
+    kun_readings: Vec<String>,
+    #[serde(default)]
+    on_readings: Vec<String>,
+    stroke_count: Option<u16>,
+}
+
+pub fn parse_kanji_api(
+    expected: char,
+    body: &str,
+    media_base: Option<&str>,
+) -> Result<KanjiSummary, String> {
+    let response: KanjiApiResponse =
+        serde_json::from_str(body).map_err(|error| format!("Kanji API JSON: {error}"))?;
+    let mut characters = response.kanji.chars();
+    if characters.next() != Some(expected) || characters.next().is_some() {
+        return Err(format!(
+            "Kanji API returned a mismatched character for {expected}"
+        ));
+    }
+    let readings = response
+        .kun_readings
+        .into_iter()
+        .chain(response.on_readings)
+        .collect();
+    Ok(KanjiSummary {
+        character: expected,
+        meanings: response.meanings,
+        readings,
+        strokes: response.stroke_count,
+        radical: None,
+        stroke_order_url: media_base.and_then(|base| stroke_order_url(base, expected)),
+    })
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -168,6 +272,20 @@ mod tests {
             summary.stroke_order_url.as_deref(),
             Some("https://assets.example/kanjivg/05b66.svg")
         );
+    }
+
+    #[test]
+    fn parses_typed_kanji_api_response_and_rejects_mismatch() {
+        let body = r#"{"kanji":"猫","meanings":["cat"],"kun_readings":["ねこ"],"on_readings":["ビョウ"],"stroke_count":11}"#;
+        let summary = parse_kanji_api('猫', body, Some("https://raw.example/kanji")).unwrap();
+        assert_eq!(summary.meanings, ["cat"]);
+        assert_eq!(summary.readings, ["ねこ", "ビョウ"]);
+        assert_eq!(summary.strokes, Some(11));
+        assert_eq!(
+            summary.stroke_order_url.as_deref(),
+            Some("https://raw.example/kanji/0732b.svg")
+        );
+        assert!(parse_kanji_api('犬', body, None).is_err());
     }
 
     #[tokio::test]
