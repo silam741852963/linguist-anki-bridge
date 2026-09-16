@@ -48,6 +48,7 @@ pub enum PipelineState {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProviderOutput {
+    Unavailable,
     Dictionary(DictionaryData),
     Generation(LlmResponse),
     Kanji(String),

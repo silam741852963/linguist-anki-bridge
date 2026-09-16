@@ -1875,8 +1875,97 @@ fn review_row(note: linguist_application::NoteInfo) -> ReviewRow {
 
 struct LiveGenerationAdapter {
     runtime: tokio::runtime::Runtime,
-    client: linguist_ollama::OllamaClient,
+    pipeline: linguist_pipeline::NativePipeline<LiveEnrichmentServices>,
+}
+
+struct LiveEnrichmentServices {
+    dictionary: linguist_dictionary::JishoClient,
+    ollama: linguist_ollama::OllamaClient,
     model: String,
+}
+
+impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
+    fn dictionary<'a>(&'a self, expression: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
+        Box::pin(async move {
+            let entries = self
+                .dictionary
+                .search(expression, None)
+                .await
+                .map_err(|error| linguist_pipeline::PipelineError::Provider {
+                    service: "dictionary",
+                    message: error.to_string(),
+                    retryable: error.retry_class() == linguist_dictionary::RetryClass::Retryable,
+                })?;
+            let Some(entry) = entries.first() else {
+                return Ok(linguist_pipeline::ProviderOutput::Dictionary(
+                    Default::default(),
+                ));
+            };
+            let definition = entry
+                .senses
+                .iter()
+                .flat_map(|sense| sense.definitions.iter())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("; ");
+            Ok(linguist_pipeline::ProviderOutput::Dictionary(
+                linguist_core::DictionaryData {
+                    found: true,
+                    word: entry.word.clone(),
+                    reading: entry.reading.clone(),
+                    definition,
+                },
+            ))
+        })
+    }
+
+    fn generation<'a>(
+        &'a self,
+        expression: &'a str,
+        dictionary: &'a linguist_core::DictionaryData,
+    ) -> linguist_pipeline::PipelineFuture<'a> {
+        Box::pin(async move {
+            let prompt = format!(
+                "Explain `{expression}`. Reading: {}. Dictionary: {}. Return concise nuance and examples.",
+                dictionary.reading, dictionary.definition
+            );
+            let generated = self
+                .ollama
+                .generate_vocabulary(&self.model, &prompt)
+                .await
+                .map_err(|error| linguist_pipeline::PipelineError::Provider {
+                    service: "generation",
+                    message: error.to_string(),
+                    retryable: true,
+                })?;
+            Ok(linguist_pipeline::ProviderOutput::Generation(
+                linguist_core::LlmResponse {
+                    nuances: generated.nuances,
+                    examples: generated
+                        .examples
+                        .into_iter()
+                        .map(|example| linguist_core::ExamplePair {
+                            sentence: example.sentence,
+                            translation: example.translation,
+                        })
+                        .collect(),
+                    ..Default::default()
+                },
+            ))
+        })
+    }
+
+    fn kanji<'a>(&'a self, _: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
+        Box::pin(async { Ok(linguist_pipeline::ProviderOutput::Kanji(String::new())) })
+    }
+
+    fn image<'a>(&'a self, _: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
+        Box::pin(async { Ok(linguist_pipeline::ProviderOutput::Unavailable) })
+    }
+
+    fn audio<'a>(&'a self, _: &'a str, _: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
+        Box::pin(async { Ok(linguist_pipeline::ProviderOutput::Unavailable) })
+    }
 }
 
 impl LiveGenerationAdapter {
@@ -1894,9 +1983,28 @@ impl LiveGenerationAdapter {
         );
         Ok(Self {
             runtime: tokio::runtime::Runtime::new().map_err(|error| error.to_string())?,
-            client: linguist_ollama::OllamaClient::new(&url).map_err(|error| error.to_string())?,
-            model,
+            pipeline: linguist_pipeline::NativePipeline::new(
+                LiveEnrichmentServices {
+                    dictionary: linguist_dictionary::JishoClient::new()
+                        .map_err(|error| error.to_string())?,
+                    ollama: linguist_ollama::OllamaClient::new(&url)
+                        .map_err(|error| error.to_string())?,
+                    model,
+                },
+                linguist_pipeline::PipelineConfig::default(),
+            ),
         })
+    }
+
+    fn document(&self, draft: &crate::draft::ReviewDraft) -> Result<CardDocument, String> {
+        self.runtime
+            .block_on(self.pipeline.enrich(
+                draft.mode,
+                &draft.deck_name,
+                &draft.expression,
+                &draft.meaning,
+            ))
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -1905,32 +2013,15 @@ impl DraftGenerationPort for LiveGenerationAdapter {
         &self,
         draft: &crate::draft::ReviewDraft,
     ) -> Result<Vec<crate::draft::GeneratedChange>, String> {
-        let prompt = format!(
-            "Explain the vocabulary item `{}`. Existing meaning: {}. Return concise nuance and examples.",
-            draft.expression, draft.meaning
-        );
-        let result = self
-            .runtime
-            .block_on(self.client.generate_vocabulary(&self.model, &prompt))
-            .map_err(|error| error.to_string())?;
-        let examples = result
-            .examples
-            .iter()
-            .map(|example| format!("{} — {}", example.sentence, example.translation))
-            .collect::<Vec<_>>()
-            .join("<br/>");
-        let value = [result.nuances, examples]
-            .into_iter()
-            .filter(|part| !part.trim().is_empty())
-            .collect::<Vec<_>>()
-            .join("<br/>");
+        let document = self.document(draft)?;
+        let value = document.values.meaning_text.unwrap_or_default();
         if value.trim().is_empty() {
             return Err("Ollama returned no usable meaning".into());
         }
         Ok(vec![crate::draft::GeneratedChange {
             field: crate::draft::DraftField::Meaning,
             value,
-            provenance: format!("Ollama · {}", self.model),
+            provenance: "Native enrichment pipeline · Jisho + Ollama".into(),
         }])
     }
 }
@@ -1965,14 +2056,9 @@ impl linguist_jobs::BatchWorkerPort for LiveBatchWorker {
         _: &linguist_core::BatchJobContract,
         item: &linguist_core::BatchItemContract,
     ) -> Result<serde_json::Value, String> {
-        let mut draft = self.draft(item.note_id)?;
-        let changes = self.generation.generate(&draft)?;
-        draft.regenerate(changes);
-        while !draft.pending().is_empty() {
-            draft.accept(0);
-        }
-        let request = self.commit.request(&draft, true)?;
-        serde_json::to_value(request.document).map_err(|error| error.to_string())
+        let draft = self.draft(item.note_id)?;
+        let document = self.generation.document(&draft)?;
+        serde_json::to_value(document).map_err(|error| error.to_string())
     }
 
     fn commit(
