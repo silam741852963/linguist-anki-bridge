@@ -23,6 +23,8 @@ pub trait EnrichmentServices: Send + Sync {
     fn generation<'a>(
         &'a self,
         expression: &'a str,
+        deck_key: &'a str,
+        context: &'a str,
         dictionary: &'a DictionaryData,
     ) -> PipelineFuture<'a>;
     fn kanji<'a>(&'a self, expression: &'a str) -> PipelineFuture<'a>;
@@ -225,14 +227,14 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             _ => return Err(PipelineError::Unexpected("dictionary")),
         };
         let generation_key = format!(
-            "{expression}\0{}\0{}",
+            "{deck_key}\0{expression}\0{context}\0{}\0{}",
             dictionary.reading, dictionary.definition
         );
         let audio_key = format!("{expression}\0{}", dictionary.reading);
         let (generation_result, kanji_result, image_result, audio_result) = tokio::join!(
             self.call(expression, &generation_key, "generation", || self
                 .services
-                .generation(expression, &dictionary)),
+                .generation(expression, deck_key, context, &dictionary)),
             self.call(expression, expression, "kanji", || self
                 .services
                 .kanji(expression)),
@@ -484,7 +486,13 @@ mod tests {
                 definition: "to eat".into(),
             }))
         }
-        fn generation<'a>(&'a self, _: &'a str, _: &'a DictionaryData) -> PipelineFuture<'a> {
+        fn generation<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
             Self::output(ProviderOutput::Generation(LlmResponse {
                 nuances: "ordinary verb".into(),
                 examples: vec![linguist_core::ExamplePair {
@@ -576,7 +584,13 @@ mod tests {
                 }))
             })
         }
-        fn generation<'a>(&'a self, _: &'a str, _: &'a DictionaryData) -> PipelineFuture<'a> {
+        fn generation<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
             self.wait(ProviderOutput::Generation(LlmResponse::default()))
         }
         fn kanji<'a>(&'a self, _: &'a str) -> PipelineFuture<'a> {

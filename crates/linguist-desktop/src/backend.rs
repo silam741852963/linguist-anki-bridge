@@ -2044,9 +2044,41 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
     fn generation<'a>(
         &'a self,
         expression: &'a str,
+        deck_key: &'a str,
+        context: &'a str,
         dictionary: &'a linguist_core::DictionaryData,
     ) -> linguist_pipeline::PipelineFuture<'a> {
         Box::pin(async move {
+            if deck_key.ends_with("grammar") {
+                let prompt = format!(
+                    "Explain grammar point `{expression}` for a language learner. Context: {context}"
+                );
+                let generated = self
+                    .ollama
+                    .generate_grammar(&self.model, &prompt)
+                    .await
+                    .map_err(|error| linguist_pipeline::PipelineError::Provider {
+                        service: "generation",
+                        message: error.to_string(),
+                        retryable: error.retryable(),
+                    })?;
+                return Ok(linguist_pipeline::ProviderOutput::Generation(
+                    linguist_core::LlmResponse {
+                        grammar_point: Some(generated.grammar_point),
+                        meaning: generated.meaning,
+                        rules: generated.rules,
+                        examples: generated
+                            .examples
+                            .into_iter()
+                            .map(|example| linguist_core::ExamplePair {
+                                sentence: example.sentence,
+                                translation: example.translation,
+                            })
+                            .collect(),
+                        ..Default::default()
+                    },
+                ));
+            }
             let prompt = format!(
                 "Explain `{expression}`. Reading: {}. Dictionary: {}. Return concise nuance and examples.",
                 dictionary.reading, dictionary.definition

@@ -120,6 +120,56 @@ impl OllamaClient {
         normalize_vocabulary(raw).map_err(OllamaError::Parse)
     }
 
+    pub async fn generate_grammar(
+        &self,
+        model: &str,
+        prompt: &str,
+    ) -> Result<GrammarGeneration, OllamaError> {
+        match self.generate_grammar_once(model, prompt).await {
+            Ok(generation) => Ok(generation),
+            Err(OllamaError::Parse(_)) => {
+                self.generate_grammar_once(
+                    model,
+                    &format!(
+                        "{prompt}\nReturn only JSON with grammar_point, meaning, rules, and examples."
+                    ),
+                )
+                .await
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn generate_grammar_once(
+        &self,
+        model: &str,
+        prompt: &str,
+    ) -> Result<GrammarGeneration, OllamaError> {
+        let response = self
+            .client
+            .post(self.endpoint("api/generate")?)
+            .json(&grammar_request(model, prompt))
+            .send()
+            .await
+            .map_err(|error| OllamaError::Transport(error.to_string()))?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| OllamaError::Transport(error.to_string()))?;
+        if !status.is_success() {
+            return Err(OllamaError::Http(status.as_u16()));
+        }
+        let envelope: Value = serde_json::from_str(&body).map_err(|error| {
+            OllamaError::Parse(OllamaParseError::InvalidJson(error.to_string()))
+        })?;
+        let raw = envelope
+            .get("response")
+            .and_then(Value::as_str)
+            .ok_or(OllamaError::Parse(OllamaParseError::Missing("response")))?;
+        normalize_grammar(raw).map_err(OllamaError::Parse)
+    }
+
     pub async fn classify_image(
         &self,
         model: &str,
@@ -169,6 +219,32 @@ pub fn vocabulary_request(model: &str, prompt: &str) -> Value {
     json!({"model":model,"prompt":prompt,"stream":false,"format":{"type":"object","properties":{"nuances":{"type":"string"},"examples":{"type":"array","items":{"type":"object","properties":{"sentence":{"type":"string"},"translation":{"type":"string"}},"required":["sentence","translation"]}}},"required":["nuances","examples"]},"options":{"temperature":0.2}})
 }
 
+pub fn grammar_request(model: &str, prompt: &str) -> Value {
+    json!({
+        "model": model,
+        "prompt": prompt,
+        "stream": false,
+        "format": {
+            "type": "object",
+            "properties": {
+                "grammar_point": {"type": "string"},
+                "meaning": {"type": "string"},
+                "rules": {"type": "string"},
+                "examples": {"type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                        "sentence": {"type": "string"},
+                        "translation": {"type": "string"}
+                    },
+                    "required": ["sentence", "translation"]
+                }}
+            },
+            "required": ["grammar_point", "meaning", "rules", "examples"]
+        },
+        "options": {"temperature": 0.2}
+    })
+}
+
 pub fn image_classification_request(model: &str, encoded_image: &str) -> Value {
     json!({
         "model": model,
@@ -192,6 +268,13 @@ use std::collections::{BTreeMap, VecDeque};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VocabularyGeneration {
     pub nuances: String,
+    pub examples: Vec<Example>,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GrammarGeneration {
+    pub grammar_point: String,
+    pub meaning: String,
+    pub rules: String,
     pub examples: Vec<Example>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -287,6 +370,30 @@ pub fn normalize_vocabulary(raw: &str) -> Result<VocabularyGeneration, OllamaPar
     Ok(VocabularyGeneration {
         nuances,
         examples: rows.into_iter().filter_map(example).collect(),
+    })
+}
+
+pub fn normalize_grammar(raw: &str) -> Result<GrammarGeneration, OllamaParseError> {
+    #[derive(Deserialize)]
+    struct RawGrammar {
+        grammar_point: String,
+        meaning: String,
+        rules: String,
+        examples: Vec<Value>,
+    }
+    let raw: RawGrammar = serde_json::from_str(raw)
+        .map_err(|error| OllamaParseError::InvalidJson(error.to_string()))?;
+    let grammar_point = raw.grammar_point.trim().to_owned();
+    let meaning = raw.meaning.trim().to_owned();
+    let rules = raw.rules.trim().to_owned();
+    if grammar_point.is_empty() || meaning.is_empty() {
+        return Err(OllamaParseError::InvalidShape);
+    }
+    Ok(GrammarGeneration {
+        grammar_point,
+        meaning,
+        rules,
+        examples: raw.examples.into_iter().filter_map(example).collect(),
     })
 }
 
@@ -402,5 +509,24 @@ mod tests {
         assert!(OllamaError::Http(503).retryable());
         assert!(!OllamaError::Http(400).retryable());
         assert!(!OllamaError::Parse(OllamaParseError::InvalidShape).retryable());
+    }
+
+    #[test]
+    fn grammar_request_and_response_are_typed() {
+        let request = grammar_request("model", "prompt");
+        assert_eq!(request["stream"], false);
+        assert_eq!(
+            normalize_grammar(
+                r#"{"grammar_point":"〜ながら","meaning":"while","rules":"verb stem","examples":[{"sentence":"歩きながら話す。","translation":"Talk while walking."}]}"#
+            )
+            .unwrap()
+            .examples[0]
+            .translation,
+            "Talk while walking."
+        );
+        assert!(
+            normalize_grammar(r#"{"grammar_point":"","meaning":"while","rules":"","examples":[]}"#)
+                .is_err()
+        );
     }
 }
