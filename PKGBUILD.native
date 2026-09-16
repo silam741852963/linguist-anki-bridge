@@ -2,16 +2,18 @@
 pkgname=linguist-anki-bridge-native-git
 _pkgname=linguist-anki-bridge
 pkgver=0.0.1
-pkgrel=1
+pkgrel=2
 pkgdesc="Native Qt preview for Linguist Anki Bridge"
 arch=('x86_64')
 url="https://github.com/silam741852963/linguist-anki-bridge"
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'tesseract')
+depends=('qt6-base' 'qt6-declarative' 'qt6-multimedia' 'tesseract' 'tesseract-data-jpn')
 makedepends=('cargo' 'clang' 'cmake' 'git' 'qt6-declarative')
 provides=('linguist-anki-bridge-native')
-source=("git+$url.git")
-md5sums=('SKIP')
+source=("git+$url.git"
+        'linguist-anki-bridge-native.desktop')
+md5sums=('SKIP'
+         'SKIP')
 
 pkgver() {
     cd "$srcdir/$_pkgname"
@@ -26,5 +28,8 @@ build() {
 package() {
     cd "$srcdir/$_pkgname"
     install -Dm755 target/release/linguist-anki-bridge-native "$pkgdir/usr/bin/linguist-anki-bridge-native"
+    install -Dm644 "$srcdir/linguist-anki-bridge-native.desktop" "$pkgdir/usr/share/applications/linguist-anki-bridge-native.desktop"
     install -Dm644 docs/native-preview-release.md "$pkgdir/usr/share/doc/$pkgname/native-preview-release.md"
+    install -Dm644 docs/native-accessibility.md "$pkgdir/usr/share/doc/$pkgname/native-accessibility.md"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

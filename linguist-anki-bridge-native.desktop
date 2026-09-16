@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Linguist Anki Bridge (Native Preview)
+Comment=Review and enrich language cards before writing to Anki
+Exec=linguist-anki-bridge-native
+Terminal=false
+Categories=Education;Languages;
+Keywords=Anki;language;Japanese;flashcards;
+StartupNotify=true

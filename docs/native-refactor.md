@@ -55,9 +55,8 @@ cargo test --workspace
 cargo run -p linguist-desktop
 ```
 
-The current QML data is intentionally local sample state. It validates the
-desktop composition, theme bridge, editing defaults, focus behavior, and the
-review-first information layout before adapters can mutate Anki.
+The QML view is backed by native controller state and live Anki/Ollama adapters.
+All writes remain behind preview, backup, snapshot, and rollback boundaries.
 
 ## Regenerating card fixtures
 
