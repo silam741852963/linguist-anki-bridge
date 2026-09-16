@@ -1887,6 +1887,37 @@ struct LiveEnrichmentServices {
     image: linguist_media::WikimediaCommons,
 }
 
+struct OllamaImageClassifier<'a> {
+    client: &'a linguist_ollama::OllamaClient,
+    model: &'a str,
+}
+
+impl linguist_media::ImageClassifierPort for OllamaImageClassifier<'_> {
+    fn classify<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a linguist_media::ImageCandidate,
+        normalized_jpeg: &'a [u8],
+    ) -> linguist_media::ClassifyFuture<'a> {
+        Box::pin(async move {
+            let result = self
+                .client
+                .classify_image(self.model, normalized_jpeg)
+                .await
+                .map_err(|error| error.to_string())?;
+            if result.confidence < 0.95 {
+                return Ok(linguist_media::ImageClass::Uncertain);
+            }
+            Ok(match result.classification {
+                linguist_ollama::VisionClass::Dictionary => linguist_media::ImageClass::Dictionary,
+                linguist_ollama::VisionClass::VisualRecall => {
+                    linguist_media::ImageClass::VisualRecall
+                }
+            })
+        })
+    }
+}
+
 impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
     fn dictionary<'a>(&'a self, expression: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
         Box::pin(async move {
@@ -1939,7 +1970,7 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
                 .map_err(|error| linguist_pipeline::PipelineError::Provider {
                     service: "generation",
                     message: error.to_string(),
-                    retryable: true,
+                    retryable: error.retryable(),
                 })?;
             Ok(linguist_pipeline::ProviderOutput::Generation(
                 linguist_core::LlmResponse {
@@ -2002,7 +2033,10 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
             let result = linguist_media::discover_image(
                 &self.image,
                 &self.image,
-                &linguist_media::ConservativeClassifier,
+                &OllamaImageClassifier {
+                    client: &self.ollama,
+                    model: &self.model,
+                },
                 expression,
                 None,
                 Arc::new(AtomicBool::new(false)),
@@ -2022,7 +2056,14 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
             Ok(linguist_pipeline::ProviderOutput::Image {
                 filename: selected.filename,
                 b64: base64::engine::general_purpose::STANDARD.encode(selected.jpeg),
-                classification: "uncertain".into(),
+                classification: match selected.classification {
+                    linguist_media::ImageClass::Dictionary => "dictionary",
+                    linguist_media::ImageClass::VisualRecall => "visual_recall",
+                    linguist_media::ImageClass::Mixed => "mixed",
+                    linguist_media::ImageClass::Uncertain => "uncertain",
+                    linguist_media::ImageClass::NoImage => "No Image",
+                }
+                .into(),
             })
         })
     }

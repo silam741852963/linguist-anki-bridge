@@ -26,6 +26,15 @@ impl std::fmt::Display for OllamaError {
     }
 }
 impl std::error::Error for OllamaError {}
+impl OllamaError {
+    pub fn retryable(&self) -> bool {
+        match self {
+            Self::Transport(_) => true,
+            Self::Http(status) => matches!(*status, 408 | 425 | 429 | 500..=599),
+            Self::Url(_) | Self::Parse(_) => false,
+        }
+    }
+}
 impl OllamaClient {
     pub fn new(base: &str) -> Result<Self, OllamaError> {
         Self::with_timeout(base, Duration::from_secs(30))
@@ -110,6 +119,38 @@ impl OllamaClient {
             .ok_or(OllamaError::Parse(OllamaParseError::Missing("response")))?;
         normalize_vocabulary(raw).map_err(OllamaError::Parse)
     }
+
+    pub async fn classify_image(
+        &self,
+        model: &str,
+        image: &[u8],
+    ) -> Result<VisionClassification, OllamaError> {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(image);
+        let response = self
+            .client
+            .post(self.endpoint("api/generate")?)
+            .json(&image_classification_request(model, &encoded))
+            .send()
+            .await
+            .map_err(|error| OllamaError::Transport(error.to_string()))?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| OllamaError::Transport(error.to_string()))?;
+        if !status.is_success() {
+            return Err(OllamaError::Http(status.as_u16()));
+        }
+        let envelope: Value = serde_json::from_str(&body).map_err(|error| {
+            OllamaError::Parse(OllamaParseError::InvalidJson(error.to_string()))
+        })?;
+        let raw = envelope
+            .get("response")
+            .and_then(Value::as_str)
+            .ok_or(OllamaError::Parse(OllamaParseError::Missing("response")))?;
+        normalize_image_classification(raw).map_err(OllamaError::Parse)
+    }
     fn endpoint(&self, path: &str) -> Result<reqwest::Url, OllamaError> {
         self.base
             .join(path)
@@ -127,6 +168,25 @@ pub fn vocabulary_cache_key(model: &str, prompt: &str) -> String {
 pub fn vocabulary_request(model: &str, prompt: &str) -> Value {
     json!({"model":model,"prompt":prompt,"stream":false,"format":{"type":"object","properties":{"nuances":{"type":"string"},"examples":{"type":"array","items":{"type":"object","properties":{"sentence":{"type":"string"},"translation":{"type":"string"}},"required":["sentence","translation"]}}},"required":["nuances","examples"]},"options":{"temperature":0.2}})
 }
+
+pub fn image_classification_request(model: &str, encoded_image: &str) -> Value {
+    json!({
+        "model": model,
+        "prompt": "Classify this language-learning card image. dictionary means a flat dictionary screenshot with entries, readings, definitions, senses, or dictionary controls. visual_recall means a photo, drawing, mnemonic, scene, comic, sign, or other real-world visual. Return JSON only. Confidence must reflect visible pixels.",
+        "images": [encoded_image],
+        "stream": false,
+        "format": {
+            "type": "object",
+            "properties": {
+                "classification": {"type": "string", "enum": ["dictionary", "visual_recall"]},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "reason": {"type": "string"}
+            },
+            "required": ["classification", "confidence", "reason"]
+        },
+        "options": {"temperature": 0}
+    })
+}
 use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -138,6 +198,17 @@ pub struct VocabularyGeneration {
 pub struct Example {
     pub sentence: String,
     pub translation: String,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VisionClass {
+    Dictionary,
+    VisualRecall,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct VisionClassification {
+    pub classification: VisionClass,
+    pub confidence: f32,
+    pub reason: String,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OllamaParseError {
@@ -218,6 +289,31 @@ pub fn normalize_vocabulary(raw: &str) -> Result<VocabularyGeneration, OllamaPar
         examples: rows.into_iter().filter_map(example).collect(),
     })
 }
+
+pub fn normalize_image_classification(raw: &str) -> Result<VisionClassification, OllamaParseError> {
+    #[derive(Deserialize)]
+    struct RawClassification {
+        classification: String,
+        confidence: f32,
+        #[serde(default)]
+        reason: String,
+    }
+    let value: RawClassification = serde_json::from_str(raw)
+        .map_err(|error| OllamaParseError::InvalidJson(error.to_string()))?;
+    let classification = match value.classification.trim().to_ascii_lowercase().as_str() {
+        "dictionary" => VisionClass::Dictionary,
+        "visual_recall" => VisionClass::VisualRecall,
+        _ => return Err(OllamaParseError::InvalidShape),
+    };
+    if !value.confidence.is_finite() {
+        return Err(OllamaParseError::InvalidShape);
+    }
+    Ok(VisionClassification {
+        classification,
+        confidence: value.confidence.clamp(0.0, 1.0),
+        reason: value.reason.trim().to_owned(),
+    })
+}
 fn normalized(key: &str) -> String {
     key.to_ascii_lowercase()
         .chars()
@@ -277,5 +373,34 @@ mod tests {
             request["format"]["required"],
             json!(["nuances", "examples"])
         );
+    }
+
+    #[test]
+    fn image_request_and_response_are_typed() {
+        let request = image_classification_request("vision", "YWJj");
+        assert_eq!(request["images"], json!(["YWJj"]));
+        assert_eq!(request["stream"], false);
+        assert_eq!(request["options"]["temperature"], 0);
+        assert_eq!(
+            normalize_image_classification(
+                r#"{"classification":"visual_recall","confidence":1.4,"reason":" scene "}"#
+            )
+            .unwrap(),
+            VisionClassification {
+                classification: VisionClass::VisualRecall,
+                confidence: 1.0,
+                reason: "scene".into(),
+            }
+        );
+        assert!(
+            normalize_image_classification(
+                r#"{"classification":"other","confidence":0.5,"reason":""}"#
+            )
+            .is_err()
+        );
+        assert!(OllamaError::Http(429).retryable());
+        assert!(OllamaError::Http(503).retryable());
+        assert!(!OllamaError::Http(400).retryable());
+        assert!(!OllamaError::Parse(OllamaParseError::InvalidShape).retryable());
     }
 }
