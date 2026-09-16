@@ -1078,6 +1078,7 @@ dependencies = [
  "linguist-dictionary",
  "linguist-jobs",
  "linguist-media",
+ "linguist-ocr",
  "linguist-ollama",
  "linguist-pipeline",
  "linguist-snapshots",

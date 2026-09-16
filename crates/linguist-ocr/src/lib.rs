@@ -1,8 +1,15 @@
 //! Cancellable Tesseract process boundary; image preprocessing stays caller-owned.
 use std::{
+    fs,
     io::Cursor,
     path::Path,
     process::{Child, Command, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    thread,
+    time::Duration,
 };
 
 use image::{DynamicImage, ImageFormat};
@@ -111,6 +118,45 @@ impl Tesseract {
         let _ = child.wait();
         Err(OcrError::Cancelled)
     }
+
+    pub fn recognize_bytes(
+        &self,
+        bytes: &[u8],
+        languages: &str,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<OcrEvidence, OcrError> {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(OcrError::Cancelled);
+        }
+        let prepared = preprocess(bytes)?;
+        let path = temporary_image_path();
+        fs::write(&path, prepared).map_err(|error| OcrError::Failed(error.to_string()))?;
+        let result = (|| {
+            let mut child = self.start(&path, languages)?;
+            loop {
+                if cancelled.load(Ordering::Acquire) {
+                    let _ = Self::cancel(&mut child);
+                    return Err(OcrError::Cancelled);
+                }
+                match child.try_wait() {
+                    Ok(Some(_)) => return Self::finish(child, languages, true),
+                    Ok(None) => thread::sleep(Duration::from_millis(20)),
+                    Err(error) => return Err(OcrError::Failed(error.to_string())),
+                }
+            }
+        })();
+        let _ = fs::remove_file(path);
+        result
+    }
+}
+
+fn temporary_image_path() -> std::path::PathBuf {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(1);
+    std::env::temp_dir().join(format!(
+        "linguist-ocr-{}-{}.png",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ))
 }
 
 pub fn preprocess(bytes: &[u8]) -> Result<Vec<u8>, OcrError> {
@@ -137,6 +183,29 @@ pub fn normalize_text(text: &str) -> String {
         .join("\n")
         .trim()
         .to_owned()
+}
+
+pub fn dictionary_evidence_score(text: &str) -> usize {
+    let lower = text.to_lowercase();
+    [
+        "definition",
+        "meaning",
+        "pronunciation",
+        "reading",
+        "part of speech",
+        "noun",
+        "verb",
+        "adjective",
+        "example sentence",
+        "definitions",
+        "意味",
+        "読み",
+        "例文",
+        "品詞",
+    ]
+    .into_iter()
+    .filter(|marker| lower.contains(marker))
+    .count()
 }
 
 pub fn cache_key(bytes: &[u8], languages: &str, preprocessed: bool) -> String {
@@ -223,5 +292,10 @@ mod tests {
             classify_error(&OcrError::Failed("invalid OCR image: bad".into())),
             OcrFailureKind::InvalidInput
         );
+        assert_eq!(
+            dictionary_evidence_score("Noun\nMeaning\nPronunciation\nExample sentence"),
+            4
+        );
+        assert_eq!(dictionary_evidence_score("a cat in a garden"), 0);
     }
 }

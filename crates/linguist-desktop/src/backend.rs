@@ -260,7 +260,9 @@ use linguist_application::{
     IngestionPreview, ManualIngestRequest, commit_card, prepare_csv_input, prepare_manual_input,
     resolve_ingestion_preview, restore_snapshot, selector_preview,
 };
-use linguist_core::{CONTRACT_VERSION, CardDocument, CardMode, FieldMapping, LogicalFields};
+use linguist_core::{
+    CONTRACT_VERSION, CardDocument, CardMode, FieldMapping, LogicalFields, Provenance, SourceKind,
+};
 use linguist_snapshots::SnapshotRepository;
 
 use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort, DraftNotePort};
@@ -1876,6 +1878,10 @@ fn review_row(note: linguist_application::NoteInfo) -> ReviewRow {
 struct LiveGenerationAdapter {
     runtime: tokio::runtime::Runtime,
     pipeline: linguist_pipeline::NativePipeline<LiveEnrichmentServices>,
+    anki: linguist_anki::AnkiConnectTransport,
+    ollama: linguist_ollama::OllamaClient,
+    model: String,
+    ocr: linguist_ocr::Tesseract,
 }
 
 struct LiveEnrichmentServices {
@@ -2110,43 +2116,186 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
 impl LiveGenerationAdapter {
     fn from_environment() -> Result<Self, String> {
         let config = runtime_config()?;
-        let url = configured_value(
+        let ollama_url = configured_value(
             "LINGUIST_OLLAMA_URL",
             &config.ollama_url,
             "http://127.0.0.1:11434",
+        );
+        let anki_url = configured_value(
+            "LINGUIST_ANKI_URL",
+            &config.anki_url,
+            "http://127.0.0.1:8765",
         );
         let model = configured_value(
             "LINGUIST_OLLAMA_MODEL",
             config.ollama_model.as_deref().unwrap_or_default(),
             "llama3.2",
         );
+        let ollama =
+            linguist_ollama::OllamaClient::new(&ollama_url).map_err(|error| error.to_string())?;
+        let pipeline = linguist_pipeline::NativePipeline::new(
+            LiveEnrichmentServices {
+                dictionary: linguist_dictionary::JishoClient::new()
+                    .map_err(|error| error.to_string())?,
+                ollama: ollama.clone(),
+                model: model.clone(),
+                tts: linguist_audio::EspeakTts::default(),
+                kanji: linguist_dictionary::kanji::KanjiApiClient::new()?,
+                image: linguist_media::WikimediaCommons::new()?,
+            },
+            linguist_pipeline::PipelineConfig::default(),
+        );
         Ok(Self {
             runtime: tokio::runtime::Runtime::new().map_err(|error| error.to_string())?,
-            pipeline: linguist_pipeline::NativePipeline::new(
-                LiveEnrichmentServices {
-                    dictionary: linguist_dictionary::JishoClient::new()
-                        .map_err(|error| error.to_string())?,
-                    ollama: linguist_ollama::OllamaClient::new(&url)
-                        .map_err(|error| error.to_string())?,
-                    model,
-                    tts: linguist_audio::EspeakTts::default(),
-                    kanji: linguist_dictionary::kanji::KanjiApiClient::new()?,
-                    image: linguist_media::WikimediaCommons::new()?,
-                },
-                linguist_pipeline::PipelineConfig::default(),
-            ),
+            pipeline,
+            anki: linguist_anki::AnkiConnectTransport::new(&anki_url)
+                .map_err(|error| error.to_string())?,
+            ollama,
+            model,
+            ocr: linguist_ocr::Tesseract::new("tesseract"),
         })
     }
 
     fn document(&self, draft: &crate::draft::ReviewDraft) -> Result<CardDocument, String> {
-        self.runtime
-            .block_on(self.pipeline.enrich(
-                draft.mode,
-                &draft.deck_name,
-                &draft.expression,
-                &draft.meaning,
-            ))
-            .map_err(|error| error.to_string())
+        self.runtime.block_on(async {
+            let mut document = self
+                .pipeline
+                .enrich(
+                    draft.mode,
+                    &draft.deck_name,
+                    &draft.expression,
+                    &draft.meaning,
+                )
+                .await
+                .map_err(|error| error.to_string())?;
+            if draft.mode == CardMode::Inject || draft.images.is_empty() {
+                return Ok(document);
+            }
+            self.apply_existing_image_policy(draft, &mut document).await;
+            Ok(document)
+        })
+    }
+
+    async fn apply_existing_image_policy(
+        &self,
+        draft: &crate::draft::ReviewDraft,
+        document: &mut CardDocument,
+    ) {
+        use base64::Engine;
+        let mut retained = Vec::new();
+        let mut dictionary = Vec::new();
+        for filename in &draft.images {
+            let media = match self.anki.retrieve_media_file(filename).await {
+                Ok(Some(media)) => media,
+                Ok(None) => {
+                    document
+                        .issues
+                        .push(format!("OCR media missing: {filename}"));
+                    retained.push(filename.clone());
+                    continue;
+                }
+                Err(error) => {
+                    document
+                        .issues
+                        .push(format!("OCR media {filename}: {error}"));
+                    retained.push(filename.clone());
+                    continue;
+                }
+            };
+            let bytes = match base64::engine::general_purpose::STANDARD.decode(media.data_base64) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    document
+                        .issues
+                        .push(format!("OCR media {filename}: invalid base64: {error}"));
+                    retained.push(filename.clone());
+                    continue;
+                }
+            };
+            let evidence =
+                self.ocr
+                    .recognize_bytes(&bytes, "jpn+eng", Arc::new(AtomicBool::new(false)));
+            let score = match evidence {
+                Ok(evidence) => linguist_ocr::dictionary_evidence_score(&evidence.text),
+                Err(error) => {
+                    document.issues.push(format!("OCR {filename}: {error}"));
+                    0
+                }
+            };
+            if score >= 3 {
+                dictionary.push(filename.clone());
+                continue;
+            }
+            match self.ollama.classify_image(&self.model, &bytes).await {
+                Ok(result)
+                    if result.confidence >= 0.95
+                        && result.classification == linguist_ollama::VisionClass::Dictionary =>
+                {
+                    dictionary.push(filename.clone());
+                }
+                Ok(_) => retained.push(filename.clone()),
+                Err(error) => {
+                    document
+                        .issues
+                        .push(format!("Image classification {filename}: {error}"));
+                    retained.push(filename.clone());
+                }
+            }
+        }
+
+        apply_existing_image_result(document, &draft.images, &mut retained, dictionary);
+        if !retained.is_empty() {
+            document.values.meaning_image = Some(
+                retained
+                    .iter()
+                    .map(|name| format!("<img src=\"{name}\">"))
+                    .collect::<Vec<_>>()
+                    .join("<br/>"),
+            );
+            document
+                .provenance
+                .entry("meaning_image".into())
+                .or_default()
+                .push(Provenance {
+                    source: SourceKind::Ocr,
+                    label: "Existing image retained after OCR/vision review".into(),
+                    confidence_percent: None,
+                });
+        }
+        document.obsolete_media.sort();
+        document.obsolete_media.dedup();
+    }
+}
+
+fn is_image_filename(filename: &str) -> bool {
+    let lower = filename.to_ascii_lowercase();
+    [".jpg", ".jpeg", ".png", ".webp", ".gif"]
+        .iter()
+        .any(|extension| lower.ends_with(extension))
+}
+
+fn apply_existing_image_result(
+    document: &mut CardDocument,
+    originals: &[String],
+    retained: &mut Vec<String>,
+    dictionary: Vec<String>,
+) {
+    let replacement_available = document
+        .values
+        .meaning_image
+        .as_deref()
+        .is_some_and(|html| !html.trim().is_empty());
+    if retained.is_empty() {
+        if replacement_available {
+            document.obsolete_media.extend(originals.iter().cloned());
+        } else {
+            retained.extend(originals.iter().cloned());
+        }
+    } else {
+        document
+            .media
+            .retain(|media| !is_image_filename(&media.filename));
+        document.obsolete_media.extend(dictionary);
     }
 }
 
@@ -2518,5 +2667,66 @@ mod backend_tests {
         assert_eq!(mapping.expression.as_deref(), Some("Word"));
         assert_eq!(mapping.meaning_text.as_deref(), Some("Back"));
         assert_eq!(mapping.kanji_construction.as_deref(), Some("Back"));
+    }
+
+    #[test]
+    fn visual_existing_image_wins_over_discovered_replacement() {
+        let mut document = CardDocument {
+            schema_version: CONTRACT_VERSION,
+            expression: "猫".into(),
+            values: LogicalFields {
+                meaning_image: Some("<img src=\"commons.jpg\">".into()),
+                ..Default::default()
+            },
+            media: vec![
+                linguist_core::MediaAsset {
+                    filename: "commons.jpg".into(),
+                    data_base64: "image".into(),
+                },
+                linguist_core::MediaAsset {
+                    filename: "voice.wav".into(),
+                    data_base64: "audio".into(),
+                },
+            ],
+            obsolete_media: Vec::new(),
+            issues: Vec::new(),
+            tags: Vec::new(),
+            provenance: BTreeMap::new(),
+        };
+        let originals = vec!["photo.png".into(), "dictionary.png".into()];
+        let mut retained = vec!["photo.png".into()];
+        apply_existing_image_result(
+            &mut document,
+            &originals,
+            &mut retained,
+            vec!["dictionary.png".into()],
+        );
+        assert_eq!(retained, ["photo.png"]);
+        assert_eq!(document.obsolete_media, ["dictionary.png"]);
+        assert_eq!(document.media[0].filename, "voice.wav");
+    }
+
+    #[test]
+    fn dictionary_image_is_only_removed_when_replacement_exists() {
+        let original = vec!["dictionary.png".into()];
+        let mut without_replacement = CardDocument {
+            schema_version: CONTRACT_VERSION,
+            expression: "語".into(),
+            values: LogicalFields::default(),
+            media: Vec::new(),
+            obsolete_media: Vec::new(),
+            issues: Vec::new(),
+            tags: Vec::new(),
+            provenance: BTreeMap::new(),
+        };
+        let mut retained = Vec::new();
+        apply_existing_image_result(
+            &mut without_replacement,
+            &original,
+            &mut retained,
+            original.clone(),
+        );
+        assert_eq!(retained, original);
+        assert!(without_replacement.obsolete_media.is_empty());
     }
 }

@@ -22,6 +22,7 @@ linguist-dictionary.workspace = true
 linguist-pipeline.workspace = true
 linguist-audio.workspace = true
 linguist-media = { path = "../linguist-media" }
+linguist-ocr = { path = "../linguist-ocr" }
 tokio.workspace = true
 serde_json.workspace = true
 base64.workspace = true
