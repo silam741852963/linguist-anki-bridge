@@ -21,6 +21,8 @@ Item {
         }
         ListView {
             id: jobs
+            Accessible.name: qsTr("Batch jobs")
+            Accessible.role: Accessible.List
             Layout.fillWidth: true
             Layout.preferredHeight: 160
             model: backend.batchJobCount
@@ -29,6 +31,8 @@ Item {
                 required property int index
                 width: jobs.width
                 text: backend.batchJob(index)
+                Accessible.name: text
+                Accessible.role: Accessible.ListItem
                 onClicked: backend.selectBatch(index)
             }
         }
@@ -45,6 +49,8 @@ Item {
         Label { text: qsTr("%1 / %2 items loaded").arg(backend.batchItemCount).arg(backend.batchItemTotal); color: mutedColor }
         ListView {
             id: items
+            Accessible.name: qsTr("Items in selected batch job")
+            Accessible.role: Accessible.List
             Layout.fillWidth: true
             Layout.fillHeight: true
             model: backend.batchItemCount
@@ -53,6 +59,8 @@ Item {
                 required property int index
                 width: items.width
                 text: backend.batchItem(index)
+                Accessible.name: text
+                Accessible.role: Accessible.ListItem
                 color: foregroundColor
                 elide: Text.ElideRight
             }
@@ -86,6 +94,7 @@ Item {
                 Layout.preferredHeight: 180
                 placeholderText: qsTr("Note ID<Tab>Expression\n42<Tab>食べる")
                 wrapMode: TextEdit.NoWrap
+                inputMethodHints: Qt.ImhNoPredictiveText
             }
             Button {
                 text: qsTr("Create from explicit rows")

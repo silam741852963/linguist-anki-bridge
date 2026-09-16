@@ -30,6 +30,8 @@ ApplicationWindow {
     readonly property color foreground: backend.themeForeground
     readonly property color muted: backend.themeMuted
     readonly property color accent: backend.themeAccent
+    // Qt Quick units follow display scale. Keep motion absent unless user-triggered.
+    readonly property bool reducedMotion: Qt.application.arguments.indexOf("--reduce-motion") >= 0
 
     Shortcut { sequence: "Ctrl+K"; onActivated: search.forceActiveFocus() }
     Shortcut { sequence: "Ctrl+Return"; onActivated: backend.previewCommit() }
@@ -59,7 +61,7 @@ ApplicationWindow {
             Label {
                 text: qsTr("Linguist")
                 color: root.foreground
-                font.pixelSize: 19
+                font.pointSize: 14
                 font.weight: Font.DemiBold
             }
             TextField {
@@ -70,6 +72,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.maximumWidth: 520
                 placeholderText: qsTr("Search cards, decks, or commands   Ctrl K")
+                KeyNavigation.tab: refreshButton
             }
             Item { Layout.fillWidth: true }
             Label {
@@ -81,28 +84,33 @@ ApplicationWindow {
                 color: backend.ollamaStatus === "Ready" ? "#a6e3a1" : root.muted
             }
             ToolButton {
+                id: refreshButton
                 text: qsTr("Refresh state")
                 Accessible.name: text
                 Accessible.description: qsTr("Refresh Anki and Ollama connection status")
                 onClicked: backend.refreshState()
             }
             ToolButton {
+                id: batchButton
                 text: qsTr("Batch jobs")
                 Accessible.name: text
                 Accessible.description: qsTr("Open batch management. Shortcut Ctrl Shift B")
                 onClicked: { backend.refreshBatches(); batchDialog.open() }
             }
             ToolButton {
+                id: importButton
                 text: qsTr("Import words")
                 Accessible.name: text
                 Accessible.description: qsTr("Preview pasted words. Shortcut Ctrl Shift I")
                 onClicked: manualDialog.open()
             }
             ToolButton {
+                id: settingsButton
                 text: qsTr("Settings")
                 Accessible.name: text
                 Accessible.description: qsTr("Open native settings. Shortcut Ctrl comma")
                 onClicked: settingsDialog.open()
+                KeyNavigation.tab: search
             }
         }
     }
@@ -196,6 +204,7 @@ ApplicationWindow {
                 Layout.preferredHeight: 180
                 placeholderText: qsTr("食べる<Tab>meal verb\n新語<Tab>optional context")
                 wrapMode: TextEdit.Wrap
+                inputMethodHints: Qt.ImhNoPredictiveText
             }
             Label { text: qsTr("CSV input"); color: root.muted }
             TextArea {
@@ -205,6 +214,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 100
                 placeholderText: qsTr("Word,Language,Type,Context")
+                inputMethodHints: Qt.ImhNoPredictiveText
                 DropArea {
                     anchors.fill: parent
                     onDropped: function(drop) {

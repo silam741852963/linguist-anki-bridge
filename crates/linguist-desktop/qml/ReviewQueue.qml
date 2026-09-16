@@ -17,7 +17,7 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
-            Label { text: qsTr("Review queue"); color: foregroundColor; font.pixelSize: 18; font.weight: Font.DemiBold }
+            Label { text: qsTr("Review queue"); color: foregroundColor; font.pointSize: 13; font.weight: Font.DemiBold }
             Item { Layout.fillWidth: true }
             Label {
                 text: qsTr("%1 cards").arg(backend.reviewRowCount)
@@ -67,7 +67,7 @@ Rectangle {
                         Layout.alignment: Qt.AlignHCenter
                         text: backend.queueState
                         color: foregroundColor
-                        font.pixelSize: 16
+                        font.pointSize: 12
                         font.weight: Font.DemiBold
                     }
                     Label {
@@ -89,6 +89,7 @@ Rectangle {
                 focus: true
                 Accessible.name: qsTr("Review queue")
                 Accessible.description: qsTr("Use arrow keys to select a card")
+                Accessible.role: Accessible.List
                 keyNavigationEnabled: true
                 highlightFollowsCurrentItem: true
                 onCurrentIndexChanged: {
@@ -105,6 +106,9 @@ Rectangle {
                     border.color: ListView.isCurrentItem ? accentColor : Qt.alpha(mutedColor, 0.35)
                     focus: ListView.isCurrentItem
                     Accessible.name: qsTr("Review item %1: %2").arg(index + 1).arg(backend.reviewExpression(index))
+                    Accessible.description: qsTr("%1. State: %2").arg(backend.reviewDetail(index)).arg(rowState)
+                    Accessible.role: Accessible.ListItem
+                    Accessible.selected: ListView.isCurrentItem
 
                     MouseArea {
                         anchors.fill: parent
@@ -114,12 +118,12 @@ Rectangle {
                         anchors.fill: parent
                         anchors.margins: 11
                         spacing: 4
-                        Label { text: backend.reviewExpression(index); color: foregroundColor; font.pixelSize: 17 }
+                        Label { text: backend.reviewExpression(index); color: foregroundColor; font.pointSize: 12 }
                         Label { text: backend.reviewDetail(index); color: mutedColor }
                         Label {
                             text: rowState
                             color: rowState === "Ready" ? "#a6e3a1" : accentColor
-                            font.pixelSize: 11
+                            font.pointSize: 8
                         }
                     }
                 }

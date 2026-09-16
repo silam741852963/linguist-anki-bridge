@@ -14,13 +14,14 @@ Rectangle {
         anchors.margins: 12
         spacing: 7
 
-        Label { text: qsTr("WORKSPACE"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.3 }
+        Label { text: qsTr("WORKSPACE"); color: mutedColor; font.pointSize: 8; font.letterSpacing: 1.3 }
         Repeater {
             model: [qsTr("Review"), qsTr("Add cards"), qsTr("Batch jobs"), qsTr("History")]
             delegate: Button {
                 required property string modelData
                 Layout.fillWidth: true
                 text: modelData
+                Accessible.name: modelData
                 flat: true
                 highlighted: index === 0
             }
@@ -29,7 +30,7 @@ Rectangle {
             Layout.topMargin: 18
             text: qsTr("DECKS")
             color: mutedColor
-            font.pixelSize: 11
+            font.pointSize: 8
             font.letterSpacing: 1.3
         }
         Repeater {
@@ -38,6 +39,7 @@ Rectangle {
                 required property string modelData
                 Layout.fillWidth: true
                 text: modelData
+                Accessible.name: modelData
                 flat: true
             }
         }

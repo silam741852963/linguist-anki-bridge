@@ -58,10 +58,10 @@ Rectangle {
                     Layout.preferredWidth: 260
                     text: backend.draftExpression
                     placeholderText: qsTr("Select a card")
-                    font.pixelSize: 30
+                    font.pointSize: 22
                     onTextChanged: if (activeFocus && text !== backend.draftExpression) backend.editDraftExpression(text)
                 }
-                Label { text: backend.draftDirty ? qsTr("Unsaved draft") : qsTr("Saved draft"); color: mutedColor; font.pixelSize: 17 }
+                Label { text: backend.draftDirty ? qsTr("Unsaved draft") : qsTr("Saved draft"); color: mutedColor; font.pointSize: 12 }
                 Item { Layout.fillWidth: true }
                 Button { text: qsTr("Undo"); Accessible.name: text; onClicked: backend.undoDraft() }
                 Button { text: qsTr("Redo"); Accessible.name: text; onClicked: backend.redoDraft() }
@@ -104,7 +104,7 @@ Rectangle {
                     anchors.margins: 15
                     anchors.verticalCenter: parent.verticalCenter
                     RowLayout {
-                        Label { text: qsTr("MEANING"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.2 }
+                        Label { text: qsTr("MEANING"); color: mutedColor; font.pointSize: 8; font.letterSpacing: 1.2 }
                         Item { Layout.fillWidth: true }
                         CheckBox { text: qsTr("Lock"); Accessible.name: qsTr("Lock meaning field"); checked: backend.draftMeaningLocked; onToggled: backend.toggleDraftMeaningLock(checked) }
                     }
@@ -117,9 +117,15 @@ Rectangle {
                         onTextChanged: if (activeFocus && text !== backend.draftMeaning) backend.editDraftMeaning(text)
                         color: foregroundColor
                         wrapMode: TextEdit.Wrap
-                        background: Rectangle { color: "transparent" }
+                        inputMethodHints: Qt.ImhNoPredictiveText
+                        background: Rectangle {
+                            color: "transparent"
+                            border.width: meaningEditor.activeFocus ? 2 : 0
+                            border.color: accentColor
+                            radius: 4
+                        }
                     }
-                    Label { text: backend.draftProvenance; color: mutedColor; font.pixelSize: 11 }
+                    Label { text: backend.draftProvenance; color: mutedColor; font.pointSize: 8 }
                     Repeater {
                         model: backend.draftPendingCount
                         delegate: RowLayout {
@@ -130,7 +136,7 @@ Rectangle {
                             Button { text: qsTr("Reject"); Accessible.name: qsTr("Reject pending change %1").arg(index + 1); onClicked: backend.rejectDraftChange(index) }
                         }
                     }
-                    Label { text: qsTr("KANJI"); color: mutedColor; font.pixelSize: 11; font.letterSpacing: 1.2 }
+                    Label { text: qsTr("KANJI"); color: mutedColor; font.pointSize: 8; font.letterSpacing: 1.2 }
                     TextArea {
                         id: kanjiEditor
                         Accessible.name: qsTr("Kanji construction")
@@ -139,7 +145,13 @@ Rectangle {
                         onTextChanged: if (activeFocus && text !== backend.draftKanji) backend.editDraftKanji(text)
                         color: foregroundColor
                         wrapMode: TextEdit.Wrap
-                        background: Rectangle { color: "transparent" }
+                        inputMethodHints: Qt.ImhNoPredictiveText
+                        background: Rectangle {
+                            color: "transparent"
+                            border.width: kanjiEditor.activeFocus ? 2 : 0
+                            border.color: accentColor
+                            radius: 4
+                        }
                     }
                 }
             }
@@ -162,7 +174,7 @@ Rectangle {
                             ? qsTr("PLANNED CHANGES · dry run")
                             : qsTr("PREVIEW REQUIRED BEFORE APPLY")
                         color: backend.commitPreviewReady ? accentColor : mutedColor
-                        font.pixelSize: 11
+                        font.pointSize: 8
                         font.letterSpacing: 1.2
                     }
                     Repeater {
@@ -191,7 +203,7 @@ Rectangle {
                             required property int index
                             Layout.fillWidth: true
                             Label { Layout.fillWidth: true; text: backend.commitSnapshot(index); color: mutedColor }
-                            Button { text: qsTr("Restore"); onClicked: backend.restoreSnapshot(index) }
+                            Button { text: qsTr("Restore"); Accessible.name: qsTr("Restore snapshot %1").arg(index + 1); onClicked: backend.restoreSnapshot(index) }
                         }
                     }
                 }
@@ -205,12 +217,14 @@ Rectangle {
 
                 ComboBox {
                     id: previewTemplate
+                    Accessible.name: qsTr("Card preview template")
                     model: [qsTr("Comprehension"), qsTr("Spelling"), qsTr("Production")]
                     currentIndex: workspace.previewTemplateIndex
                     onActivated: workspace.previewTemplateIndex = currentIndex
                 }
                 Button {
                     text: qsTr("Play audio")
+                    Accessible.name: text
                     enabled: backend.previewAudioUrl(0).length > 0
                     onClicked: {
                         previewAudio.source = backend.previewAudioUrl(0)
@@ -219,6 +233,7 @@ Rectangle {
                 }
                 Button {
                     text: qsTr("Zoom preview")
+                    Accessible.name: text
                     onClicked: {
                         workspace.zoomHtml = backend.cardPreview(workspace.previewTemplateIndex, true)
                         zoomDialog.open()
@@ -235,7 +250,7 @@ Rectangle {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 15
-                        Label { text: qsTr("%1 · FRONT").arg(previewTemplate.currentText); color: mutedColor; font.pixelSize: 11 }
+                        Label { text: qsTr("%1 · FRONT").arg(previewTemplate.currentText); color: mutedColor; font.pointSize: 8 }
                         Text {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
@@ -264,7 +279,7 @@ Rectangle {
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 15
-                        Label { text: qsTr("%1 · BACK").arg(previewTemplate.currentText); color: mutedColor; font.pixelSize: 11 }
+                        Label { text: qsTr("%1 · BACK").arg(previewTemplate.currentText); color: mutedColor; font.pointSize: 8 }
                         Text {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
