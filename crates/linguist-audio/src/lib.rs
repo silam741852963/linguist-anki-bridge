@@ -3,6 +3,7 @@
 use std::{
     future::Future,
     pin::Pin,
+    process::Command,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -14,6 +15,59 @@ pub trait DictionaryAudioPort: Send + Sync {
 }
 pub trait TtsPort: Send + Sync {
     fn synthesize<'a>(&'a self, text: &'a str, voice: &'a Voice) -> AudioFuture<'a>;
+}
+
+#[derive(Clone, Debug)]
+pub struct EspeakTts {
+    binary: String,
+}
+
+impl Default for EspeakTts {
+    fn default() -> Self {
+        Self::new("espeak-ng")
+    }
+}
+
+impl EspeakTts {
+    pub fn new(binary: impl Into<String>) -> Self {
+        Self {
+            binary: binary.into(),
+        }
+    }
+}
+
+impl TtsPort for EspeakTts {
+    fn synthesize<'a>(&'a self, text: &'a str, voice: &'a Voice) -> AudioFuture<'a> {
+        let binary = self.binary.clone();
+        let text = text.to_owned();
+        let voice = voice.clone();
+        Box::pin(async move {
+            let (output, voice_id) = tokio::task::spawn_blocking(move || {
+                Command::new(binary)
+                    .args(["--stdout", "-v", &voice.id, "--", &text])
+                    .output()
+                    .map(|output| (output, voice.id))
+            })
+            .await
+            .map_err(|error| AudioError::Unavailable(error.to_string()))?
+            .map_err(|error| AudioError::Unavailable(error.to_string()))?;
+            if !output.status.success() {
+                return Err(AudioError::Unavailable(
+                    String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+                ));
+            }
+            if output.stdout.len() < 12 || &output.stdout[..4] != b"RIFF" {
+                return Err(AudioError::Invalid(
+                    "espeak-ng returned invalid WAV audio".into(),
+                ));
+            }
+            Ok(AudioClip {
+                data: output.stdout,
+                mime: "audio/wav".into(),
+                source: format!("espeak-ng · {voice_id}"),
+            })
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -114,10 +168,11 @@ where
                 .push(format!("Invalid audio returned for {}", pronunciation.text));
             continue;
         }
-        let filename = media_filename(
+        let filename = media_filename_for_mime(
             &pronunciation.text,
             &pronunciation.locale,
             result.clips.len(),
+            &clip.mime,
         );
         result.clips.push(PreparedPronunciation {
             pronunciation,
@@ -196,8 +251,21 @@ fn select_by_locale<'a>(
         .or_else(|| voices.into_iter().next())
 }
 pub fn media_filename(expression: &str, locale: &str, ordinal: usize) -> String {
+    media_filename_for_mime(expression, locale, ordinal, "audio/mpeg")
+}
+pub fn media_filename_for_mime(
+    expression: &str,
+    locale: &str,
+    ordinal: usize,
+    mime: &str,
+) -> String {
+    let extension = match mime {
+        "audio/wav" | "audio/x-wav" => "wav",
+        "audio/ogg" => "ogg",
+        _ => "mp3",
+    };
     format!(
-        "audio-{}-{}-{:08x}-{:02}.mp3",
+        "audio-{}-{}-{:08x}-{:02}.{extension}",
         stem(expression),
         stem(locale),
         stable_hash(expression.as_bytes().iter().copied()),
@@ -377,5 +445,21 @@ mod tests {
         .await;
         assert!(result.cancelled);
         assert!(result.clips.is_empty());
+    }
+
+    #[tokio::test]
+    async fn local_tts_reports_missing_binary_without_panicking() {
+        let error = EspeakTts::new("linguist-missing-espeak-binary")
+            .synthesize(
+                "食べる",
+                &Voice {
+                    id: "ja".into(),
+                    locale: "ja-JP".into(),
+                    local: true,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AudioError::Unavailable(_)));
     }
 }

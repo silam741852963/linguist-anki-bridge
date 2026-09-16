@@ -1882,6 +1882,7 @@ struct LiveEnrichmentServices {
     dictionary: linguist_dictionary::JishoClient,
     ollama: linguist_ollama::OllamaClient,
     model: String,
+    tts: linguist_audio::EspeakTts,
 }
 
 impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
@@ -1963,8 +1964,42 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
         Box::pin(async { Ok(linguist_pipeline::ProviderOutput::Unavailable) })
     }
 
-    fn audio<'a>(&'a self, _: &'a str, _: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
-        Box::pin(async { Ok(linguist_pipeline::ProviderOutput::Unavailable) })
+    fn audio<'a>(
+        &'a self,
+        expression: &'a str,
+        reading: &'a str,
+    ) -> linguist_pipeline::PipelineFuture<'a> {
+        Box::pin(async move {
+            use base64::Engine;
+            use linguist_audio::TtsPort;
+            let text = if reading.trim().is_empty() {
+                expression
+            } else {
+                reading
+            };
+            let voice = linguist_audio::Voice {
+                id: "ja".into(),
+                locale: "ja-JP".into(),
+                local: true,
+            };
+            let clip = self.tts.synthesize(text, &voice).await.map_err(|error| {
+                linguist_pipeline::PipelineError::Provider {
+                    service: "audio",
+                    message: error.to_string(),
+                    retryable: false,
+                }
+            })?;
+            Ok(linguist_pipeline::ProviderOutput::Audio {
+                filename: linguist_audio::media_filename_for_mime(
+                    expression,
+                    &voice.locale,
+                    0,
+                    &clip.mime,
+                ),
+                b64: base64::engine::general_purpose::STANDARD.encode(clip.data),
+                reading: text.to_owned(),
+            })
+        })
     }
 }
 
@@ -1990,6 +2025,7 @@ impl LiveGenerationAdapter {
                     ollama: linguist_ollama::OllamaClient::new(&url)
                         .map_err(|error| error.to_string())?,
                     model,
+                    tts: linguist_audio::EspeakTts::default(),
                 },
                 linguist_pipeline::PipelineConfig::default(),
             ),
