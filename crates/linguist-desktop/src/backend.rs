@@ -2146,6 +2146,12 @@ impl LiveCommitAdapter {
             kanji_construction: Some("Kanji".into()),
             audio: Some("Audio".into()),
         };
+        let config = runtime_config()?;
+        let deck_config = config.decks.iter().find_map(|(key, configured)| {
+            (key == &draft.deck_name
+                || configured.deck_name.as_deref() == Some(draft.deck_name.as_str()))
+            .then_some(configured)
+        });
         let (deck_name, target_model, source, mapping, tags) = match draft.mode {
             CardMode::Modernize => {
                 let note = self.runtime.block_on(self.commit_note(draft))?;
@@ -2154,7 +2160,19 @@ impl LiveCommitAdapter {
                     .first()
                     .map(|deck| deck.0.clone())
                     .unwrap_or_else(|| draft.deck_name.clone());
-                let target_model = managed_spec.model_name.clone();
+                let target_model = deck_config
+                    .and_then(|configured| configured.model_name.clone())
+                    .unwrap_or_else(|| note.model_name.0.clone());
+                let mapping = deck_config
+                    .map(|configured| configured_mapping(&configured.fields))
+                    .filter(mapping_has_expression)
+                    .unwrap_or_else(|| {
+                        if target_model == managed_spec.model_name {
+                            managed_mapping.clone()
+                        } else {
+                            mapping_from_fields(&note.fields)
+                        }
+                    });
                 let tags = note.tags.clone();
                 let source = Some(CommitSource {
                     note_id: note.note_id,
@@ -2162,19 +2180,19 @@ impl LiveCommitAdapter {
                     fields: note.fields,
                     tags: note.tags,
                 });
-                (
-                    deck_name,
-                    target_model,
-                    source,
-                    managed_mapping.clone(),
-                    tags,
-                )
+                (deck_name, target_model, source, mapping, tags)
             }
             CardMode::Inject => (
                 draft.deck_name.clone(),
-                managed_spec.model_name.clone(),
+                deck_config
+                    .and_then(|configured| configured.model_name.clone())
+                    .filter(|model| !model.trim().is_empty())
+                    .unwrap_or_else(|| draft.target_model.clone()),
                 None,
-                managed_mapping,
+                deck_config
+                    .map(|configured| configured_mapping(&configured.fields))
+                    .filter(mapping_has_expression)
+                    .unwrap_or(managed_mapping),
                 Vec::new(),
             ),
         };
@@ -2191,10 +2209,13 @@ impl LiveCommitAdapter {
             tags,
             provenance: BTreeMap::new(),
         };
-        let template_plan = self
-            .runtime
-            .block_on(self.commit.japanese_template_plan())
-            .map_err(|error| error.to_string())?;
+        let template_plan = if target_model == managed_spec.model_name {
+            self.runtime
+                .block_on(self.commit.japanese_template_plan())
+                .map_err(|error| error.to_string())?
+        } else {
+            linguist_core::ManagedTemplatePlan::NoChange
+        };
         Ok(CommitRequest {
             mode: draft.mode,
             dry_run,
@@ -2232,6 +2253,42 @@ impl LiveCommitAdapter {
             .block_on(restore_snapshot(&self.commit, &document))
             .map(|_| ())
             .map_err(|error| error.to_string())
+    }
+}
+
+fn configured_mapping(fields: &BTreeMap<String, String>) -> FieldMapping {
+    let field = |name: &str| {
+        fields
+            .get(name)
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+    };
+    FieldMapping {
+        expression: field("expression"),
+        meaning_image: field("meaning_image"),
+        meaning_text: field("meaning_text"),
+        kanji_construction: field("kanji_construction"),
+        audio: field("audio"),
+    }
+}
+
+fn mapping_has_expression(mapping: &FieldMapping) -> bool {
+    mapping.expression.is_some()
+}
+
+fn mapping_from_fields(fields: &BTreeMap<String, String>) -> FieldMapping {
+    let find = |aliases: &[&str]| {
+        aliases
+            .iter()
+            .find(|alias| fields.contains_key(**alias))
+            .map(|alias| (*alias).to_owned())
+    };
+    FieldMapping {
+        expression: find(&["Expression", "Word", "Front", "Vocabulary"]),
+        meaning_image: find(&["Meaning Image", "Image", "Picture"]),
+        meaning_text: find(&["Meaning", "Definition", "Back"]),
+        kanji_construction: find(&["Kanji", "Kanji Construction"]),
+        audio: find(&["Audio", "Pronunciation"]),
     }
 }
 
@@ -2307,5 +2364,17 @@ mod backend_tests {
         );
         assert!(local_file_path("https://example.test/words.csv").is_err());
         assert!(local_file_path("file://relative.csv").is_err());
+    }
+
+    #[test]
+    fn native_field_mapping_preserves_shared_legacy_targets() {
+        let mapping = configured_mapping(&BTreeMap::from([
+            ("expression".into(), "Word".into()),
+            ("meaning_text".into(), "Back".into()),
+            ("kanji_construction".into(), "Back".into()),
+        ]));
+        assert_eq!(mapping.expression.as_deref(), Some("Word"));
+        assert_eq!(mapping.meaning_text.as_deref(), Some("Back"));
+        assert_eq!(mapping.kanji_construction.as_deref(), Some("Back"));
     }
 }
