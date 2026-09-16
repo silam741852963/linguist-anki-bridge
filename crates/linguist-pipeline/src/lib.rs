@@ -19,7 +19,7 @@ use std::{
 pub type PipelineFuture<'a> =
     Pin<Box<dyn Future<Output = Result<ProviderOutput, PipelineError>> + Send + 'a>>;
 pub trait EnrichmentServices: Send + Sync {
-    fn dictionary<'a>(&'a self, expression: &'a str) -> PipelineFuture<'a>;
+    fn dictionary<'a>(&'a self, expression: &'a str, deck_key: &'a str) -> PipelineFuture<'a>;
     fn generation<'a>(
         &'a self,
         expression: &'a str,
@@ -217,7 +217,7 @@ impl<S: EnrichmentServices> NativePipeline<S> {
     ) -> Result<CardDocument, PipelineError> {
         let dictionary = match self
             .call(expression, expression, "dictionary", || {
-                self.services.dictionary(expression)
+                self.services.dictionary(expression, deck_key)
             })
             .await?
         {
@@ -475,7 +475,7 @@ mod tests {
         }
     }
     impl EnrichmentServices for Fake {
-        fn dictionary<'a>(&'a self, _: &'a str) -> PipelineFuture<'a> {
+        fn dictionary<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
             self.calls.fetch_add(1, Ordering::Relaxed);
             Self::output(ProviderOutput::Dictionary(DictionaryData {
                 found: true,
@@ -566,7 +566,7 @@ mod tests {
         }
     }
     impl EnrichmentServices for Concurrent {
-        fn dictionary<'a>(&'a self, _: &'a str) -> PipelineFuture<'a> {
+        fn dictionary<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
             Box::pin(async {
                 Ok(ProviderOutput::Dictionary(DictionaryData {
                     found: true,

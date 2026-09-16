@@ -1885,7 +1885,11 @@ struct LiveGenerationAdapter {
 }
 
 struct LiveEnrichmentServices {
-    dictionary: linguist_dictionary::JishoClient,
+    jisho: linguist_dictionary::JishoClient,
+    cambridge: linguist_dictionary::cambridge::CambridgeClient,
+    moedict: linguist_dictionary::moedict::MoedictClient,
+    dictcc: linguist_dictionary::dictcc::DictCcClient,
+    dictionary_preset: String,
     ollama: linguist_ollama::OllamaClient,
     model: String,
     tts: linguist_audio::EspeakTts,
@@ -1896,6 +1900,29 @@ struct LiveEnrichmentServices {
 struct OllamaImageClassifier<'a> {
     client: &'a linguist_ollama::OllamaClient,
     model: &'a str,
+}
+
+fn dictionary_provider<'a>(preset: &'a str, deck_key: &'a str) -> &'a str {
+    match preset.trim().to_ascii_lowercase().as_str() {
+        "jisho" | "japanese" => "jisho",
+        "cambridge" | "english" => "cambridge",
+        "moedict" | "taiwanese" => "moedict",
+        "dict_cc" | "dict.cc" | "german" => "dict_cc",
+        _ if deck_key.starts_with("english") => "cambridge",
+        _ if deck_key.starts_with("taiwanese") => "moedict",
+        _ if deck_key.starts_with("german") => "dict_cc",
+        _ => "jisho",
+    }
+}
+
+fn dictionary_pipeline_error(
+    error: linguist_dictionary::DictionaryError,
+) -> linguist_pipeline::PipelineError {
+    linguist_pipeline::PipelineError::Provider {
+        service: "dictionary",
+        retryable: error.retry_class() == linguist_dictionary::RetryClass::Retryable,
+        message: error.to_string(),
+    }
 }
 
 impl linguist_media::ImageClassifierPort for OllamaImageClassifier<'_> {
@@ -1925,37 +1952,92 @@ impl linguist_media::ImageClassifierPort for OllamaImageClassifier<'_> {
 }
 
 impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
-    fn dictionary<'a>(&'a self, expression: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
+    fn dictionary<'a>(
+        &'a self,
+        expression: &'a str,
+        deck_key: &'a str,
+    ) -> linguist_pipeline::PipelineFuture<'a> {
         Box::pin(async move {
-            let entries = self
-                .dictionary
-                .search(expression, None)
-                .await
-                .map_err(|error| linguist_pipeline::PipelineError::Provider {
-                    service: "dictionary",
-                    message: error.to_string(),
-                    retryable: error.retry_class() == linguist_dictionary::RetryClass::Retryable,
-                })?;
-            let Some(entry) = entries.first() else {
+            if deck_key.ends_with("grammar") {
                 return Ok(linguist_pipeline::ProviderOutput::Dictionary(
-                    Default::default(),
+                    linguist_core::DictionaryData {
+                        found: true,
+                        word: expression.into(),
+                        ..Default::default()
+                    },
                 ));
+            }
+            let provider = dictionary_provider(&self.dictionary_preset, deck_key);
+            let data = match provider {
+                "cambridge" => {
+                    let entry = self
+                        .cambridge
+                        .search(expression)
+                        .await
+                        .map_err(dictionary_pipeline_error)?;
+                    linguist_core::DictionaryData {
+                        found: true,
+                        word: entry.headword,
+                        reading: String::new(),
+                        definition: entry.definitions.join("; "),
+                    }
+                }
+                "moedict" => {
+                    let entry = self
+                        .moedict
+                        .search(expression)
+                        .await
+                        .map_err(dictionary_pipeline_error)?;
+                    linguist_core::DictionaryData {
+                        found: true,
+                        word: entry.title,
+                        reading: entry.readings.join(" / "),
+                        definition: entry.definitions.join("; "),
+                    }
+                }
+                "dict_cc" => {
+                    let entries = self
+                        .dictcc
+                        .search(expression)
+                        .await
+                        .map_err(dictionary_pipeline_error)?;
+                    linguist_core::DictionaryData {
+                        found: !entries.is_empty(),
+                        word: expression.into(),
+                        reading: String::new(),
+                        definition: entries
+                            .into_iter()
+                            .map(|entry| format!("{} — {}", entry.source, entry.target))
+                            .collect::<Vec<_>>()
+                            .join("; "),
+                    }
+                }
+                _ => {
+                    let entries = self
+                        .jisho
+                        .search(expression, None)
+                        .await
+                        .map_err(dictionary_pipeline_error)?;
+                    let Some(entry) = entries.first() else {
+                        return Ok(linguist_pipeline::ProviderOutput::Dictionary(
+                            Default::default(),
+                        ));
+                    };
+                    linguist_core::DictionaryData {
+                        found: true,
+                        word: entry.word.clone(),
+                        reading: entry.reading.clone(),
+                        definition: entry
+                            .senses
+                            .iter()
+                            .flat_map(|sense| sense.definitions.iter())
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join("; "),
+                    }
+                }
             };
-            let definition = entry
-                .senses
-                .iter()
-                .flat_map(|sense| sense.definitions.iter())
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("; ");
-            Ok(linguist_pipeline::ProviderOutput::Dictionary(
-                linguist_core::DictionaryData {
-                    found: true,
-                    word: entry.word.clone(),
-                    reading: entry.reading.clone(),
-                    definition,
-                },
-            ))
+            Ok(linguist_pipeline::ProviderOutput::Dictionary(data))
         })
     }
 
@@ -2135,8 +2217,15 @@ impl LiveGenerationAdapter {
             linguist_ollama::OllamaClient::new(&ollama_url).map_err(|error| error.to_string())?;
         let pipeline = linguist_pipeline::NativePipeline::new(
             LiveEnrichmentServices {
-                dictionary: linguist_dictionary::JishoClient::new()
+                jisho: linguist_dictionary::JishoClient::new()
                     .map_err(|error| error.to_string())?,
+                cambridge: linguist_dictionary::cambridge::CambridgeClient::new()
+                    .map_err(|error| error.to_string())?,
+                moedict: linguist_dictionary::moedict::MoedictClient::new()
+                    .map_err(|error| error.to_string())?,
+                dictcc: linguist_dictionary::dictcc::DictCcClient::new("https://deen.dict.cc/")
+                    .map_err(|error| error.to_string())?,
+                dictionary_preset: config.dictionary_preset.clone(),
                 ollama: ollama.clone(),
                 model: model.clone(),
                 tts: linguist_audio::EspeakTts::default(),
@@ -2728,5 +2817,17 @@ mod backend_tests {
         );
         assert_eq!(retained, original);
         assert!(without_replacement.obsolete_media.is_empty());
+    }
+
+    #[test]
+    fn dictionary_provider_uses_preset_then_deck_family() {
+        assert_eq!(
+            dictionary_provider("cambridge", "japanese_vocab"),
+            "cambridge"
+        );
+        assert_eq!(dictionary_provider("", "english_vocab"), "cambridge");
+        assert_eq!(dictionary_provider("", "taiwanese_vocab"), "moedict");
+        assert_eq!(dictionary_provider("", "german_vocab"), "dict_cc");
+        assert_eq!(dictionary_provider("", "japanese_vocab"), "jisho");
     }
 }
