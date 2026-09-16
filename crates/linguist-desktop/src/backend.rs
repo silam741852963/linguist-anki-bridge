@@ -1884,6 +1884,7 @@ struct LiveEnrichmentServices {
     model: String,
     tts: linguist_audio::EspeakTts,
     kanji: linguist_dictionary::kanji::KanjiApiClient,
+    image: linguist_media::WikimediaCommons,
 }
 
 impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
@@ -1994,8 +1995,36 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
         })
     }
 
-    fn image<'a>(&'a self, _: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
-        Box::pin(async { Ok(linguist_pipeline::ProviderOutput::Unavailable) })
+    fn image<'a>(&'a self, expression: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
+        Box::pin(async move {
+            use base64::Engine;
+            use std::sync::{Arc, atomic::AtomicBool};
+            let result = linguist_media::discover_image(
+                &self.image,
+                &self.image,
+                &linguist_media::ConservativeClassifier,
+                expression,
+                None,
+                Arc::new(AtomicBool::new(false)),
+                4,
+            )
+            .await;
+            let Some(selected) = result.selected else {
+                if result.issues.is_empty() {
+                    return Ok(linguist_pipeline::ProviderOutput::Unavailable);
+                }
+                return Err(linguist_pipeline::PipelineError::Provider {
+                    service: "image",
+                    message: result.issues.join("; "),
+                    retryable: true,
+                });
+            };
+            Ok(linguist_pipeline::ProviderOutput::Image {
+                filename: selected.filename,
+                b64: base64::engine::general_purpose::STANDARD.encode(selected.jpeg),
+                classification: "uncertain".into(),
+            })
+        })
     }
 
     fn audio<'a>(
@@ -2061,6 +2090,7 @@ impl LiveGenerationAdapter {
                     model,
                     tts: linguist_audio::EspeakTts::default(),
                     kanji: linguist_dictionary::kanji::KanjiApiClient::new()?,
+                    image: linguist_media::WikimediaCommons::new()?,
                 },
                 linguist_pipeline::PipelineConfig::default(),
             ),

@@ -3,6 +3,7 @@
 use image::{
     DynamicImage, ImageEncoder, Rgba, RgbaImage, codecs::jpeg::JpegEncoder, imageops::overlay,
 };
+use serde::Deserialize;
 use std::{
     future::Future,
     pin::Pin,
@@ -10,7 +11,12 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
+
+const COMMONS_API: &str = "https://commons.wikimedia.org/w/api.php";
+const COMMONS_MEDIA_HOST: &str = "upload.wikimedia.org";
+const DEFAULT_MAX_BYTES: usize = 8 * 1024 * 1024;
 
 pub type SearchFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<ImageCandidate>, String>> + Send + 'a>>;
@@ -32,6 +38,185 @@ pub trait ImageClassifierPort: Send + Sync {
         normalized_jpeg: &'a [u8],
     ) -> ClassifyFuture<'a>;
 }
+
+/// Wikimedia Commons bitmap search and bounded media fetcher.
+#[derive(Clone)]
+pub struct WikimediaCommons {
+    client: reqwest::Client,
+    endpoint: reqwest::Url,
+    media_host: String,
+    max_bytes: usize,
+    search_limit: usize,
+}
+
+impl WikimediaCommons {
+    pub fn new() -> Result<Self, String> {
+        Self::with_endpoint(COMMONS_API, COMMONS_MEDIA_HOST)
+    }
+
+    fn with_endpoint(endpoint: &str, media_host: &str) -> Result<Self, String> {
+        let endpoint = reqwest::Url::parse(endpoint).map_err(|error| error.to_string())?;
+        if endpoint.scheme() != "https" || endpoint.host_str().is_none() {
+            return Err("Wikimedia endpoint must be an HTTPS URL".into());
+        }
+        if media_host.trim().is_empty() {
+            return Err("Wikimedia media host must not be empty".into());
+        }
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(12))
+            .user_agent("linguist-anki-bridge/0.1 image-discovery")
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            client,
+            endpoint,
+            media_host: media_host.into(),
+            max_bytes: DEFAULT_MAX_BYTES,
+            search_limit: 6,
+        })
+    }
+
+    fn trusted_media_url(&self, value: &str) -> Result<reqwest::Url, String> {
+        let url = reqwest::Url::parse(value).map_err(|error| error.to_string())?;
+        if url.scheme() != "https" || url.host_str() != Some(self.media_host.as_str()) {
+            return Err("untrusted Wikimedia media URL".into());
+        }
+        Ok(url)
+    }
+
+    async fn search_commons(&self, query: &str) -> Result<Vec<ImageCandidate>, String> {
+        if query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        let response = self
+            .client
+            .get(self.endpoint.clone())
+            .query(&[
+                ("action", "query".to_owned()),
+                ("format", "json".to_owned()),
+                ("formatversion", "2".to_owned()),
+                ("generator", "search".to_owned()),
+                ("gsrsearch", format!("{} filetype:bitmap", query.trim())),
+                ("gsrnamespace", "6".to_owned()),
+                ("gsrlimit", self.search_limit.to_string()),
+                ("prop", "imageinfo".to_owned()),
+                ("iiprop", "url|mime|size".to_owned()),
+                ("iiurlwidth", "1200".to_owned()),
+            ])
+            .send()
+            .await
+            .map_err(|error| error.to_string())?
+            .error_for_status()
+            .map_err(|error| error.to_string())?;
+        let payload: CommonsResponse = response.json().await.map_err(|error| error.to_string())?;
+        Ok(parse_commons(payload))
+    }
+
+    async fn fetch_media(&self, candidate: &ImageCandidate) -> Result<Vec<u8>, String> {
+        let url = self.trusted_media_url(&candidate.url)?;
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        if response.status().is_redirection() {
+            return Err("Wikimedia media redirect rejected".into());
+        }
+        let mut response = response
+            .error_for_status()
+            .map_err(|error| error.to_string())?;
+        self.trusted_media_url(response.url().as_str())?;
+        if response
+            .content_length()
+            .is_some_and(|length| length > self.max_bytes as u64)
+        {
+            return Err(format!("image exceeds {} byte limit", self.max_bytes));
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
+            if bytes.len().saturating_add(chunk.len()) > self.max_bytes {
+                return Err(format!("image exceeds {} byte limit", self.max_bytes));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+}
+
+impl ImageSearchPort for WikimediaCommons {
+    fn search<'a>(&'a self, query: &'a str) -> SearchFuture<'a> {
+        Box::pin(async move { self.search_commons(query).await })
+    }
+}
+
+impl ImageFetchPort for WikimediaCommons {
+    fn fetch<'a>(&'a self, candidate: &'a ImageCandidate) -> FetchFuture<'a> {
+        Box::pin(async move { self.fetch_media(candidate).await })
+    }
+}
+
+/// Retains normalized candidates until semantic adjudication is available.
+pub struct ConservativeClassifier;
+impl ImageClassifierPort for ConservativeClassifier {
+    fn classify<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a ImageCandidate,
+        _: &'a [u8],
+    ) -> ClassifyFuture<'a> {
+        Box::pin(async { Ok(ImageClass::Uncertain) })
+    }
+}
+
+#[derive(Deserialize)]
+struct CommonsResponse {
+    #[serde(default)]
+    query: CommonsQuery,
+}
+#[derive(Default, Deserialize)]
+struct CommonsQuery {
+    #[serde(default)]
+    pages: Vec<CommonsPage>,
+}
+#[derive(Deserialize)]
+struct CommonsPage {
+    #[serde(default)]
+    imageinfo: Vec<CommonsImageInfo>,
+}
+#[derive(Deserialize)]
+struct CommonsImageInfo {
+    url: String,
+    #[serde(default)]
+    thumburl: Option<String>,
+    mime: String,
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+    #[serde(default)]
+    thumbwidth: Option<u32>,
+    #[serde(default)]
+    thumbheight: Option<u32>,
+}
+
+fn parse_commons(payload: CommonsResponse) -> Vec<ImageCandidate> {
+    payload
+        .query
+        .pages
+        .into_iter()
+        .filter_map(|page| page.imageinfo.into_iter().next())
+        .map(|info| ImageCandidate {
+            url: info.thumburl.unwrap_or(info.url),
+            provider: "wikimedia-commons".into(),
+            mime: info.mime,
+            width: info.thumbwidth.or(info.width),
+            height: info.thumbheight.or(info.height),
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageCandidate {
     pub url: String,
@@ -281,6 +466,61 @@ fn stable_hash(bytes: impl IntoIterator<Item = u8>) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_commons_imageinfo_and_prefers_thumbnail() {
+        let payload: CommonsResponse = serde_json::from_str(
+            r#"{
+              "query": {"pages": [
+                {"imageinfo": [{
+                  "url": "https://upload.wikimedia.org/original.png",
+                  "thumburl": "https://upload.wikimedia.org/thumb.jpg",
+                  "mime": "image/png",
+                  "width": 2400,
+                  "height": 1600,
+                  "thumbwidth": 1200,
+                  "thumbheight": 800
+                }]},
+                {"imageinfo": []}
+              ]}
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            parse_commons(payload),
+            vec![ImageCandidate {
+                url: "https://upload.wikimedia.org/thumb.jpg".into(),
+                provider: "wikimedia-commons".into(),
+                mime: "image/png".into(),
+                width: Some(1200),
+                height: Some(800),
+            }]
+        );
+    }
+
+    #[test]
+    fn rejects_insecure_endpoint_and_untrusted_media() {
+        assert!(
+            WikimediaCommons::with_endpoint("http://example.test/api", "example.test").is_err()
+        );
+        let commons = WikimediaCommons::new().unwrap();
+        assert!(
+            commons
+                .trusted_media_url("http://upload.wikimedia.org/a.jpg")
+                .is_err()
+        );
+        assert!(
+            commons
+                .trusted_media_url("https://upload.wikimedia.org.evil.test/a.jpg")
+                .is_err()
+        );
+        assert!(
+            commons
+                .trusted_media_url("https://upload.wikimedia.org/a.jpg")
+                .is_ok()
+        );
+    }
+
     fn test_image(color: [u8; 4]) -> Vec<u8> {
         let image = RgbaImage::from_pixel(20, 20, Rgba(color));
         let mut bytes = Vec::new();
