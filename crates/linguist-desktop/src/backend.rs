@@ -149,6 +149,9 @@ pub mod qobject {
         #[cxx_name = "refreshBatches"]
         fn refresh_batches(self: Pin<&mut Self>);
         #[qinvokable]
+        #[cxx_name = "runBatchTick"]
+        fn run_batch_tick(self: Pin<&mut Self>);
+        #[qinvokable]
         #[cxx_name = "selectBatch"]
         fn select_batch(self: Pin<&mut Self>, index: i32);
         #[qinvokable]
@@ -177,7 +180,7 @@ pub mod qobject {
         fn cancel_batch_action(self: Pin<&mut Self>);
         #[qinvokable]
         #[cxx_name = "createBatch"]
-        fn create_batch(self: Pin<&mut Self>, deck_name: &QString, rows: &QString);
+        fn create_batch(self: Pin<&mut Self>, deck_name: &QString, rows: &QString, dry_run: bool);
         #[qinvokable]
         #[cxx_name = "previewManualInput"]
         fn preview_manual_input(
@@ -222,7 +225,7 @@ pub mod qobject {
         fn selector_preview_row(self: &AppBackend, index: i32) -> QString;
         #[qinvokable]
         #[cxx_name = "createBatchFromSelector"]
-        fn create_batch_from_selector(self: Pin<&mut Self>);
+        fn create_batch_from_selector(self: Pin<&mut Self>, dry_run: bool);
         #[qinvokable]
         #[cxx_name = "saveSettings"]
         fn save_settings(
@@ -243,6 +246,10 @@ use std::pin::Pin;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use cxx_qt::CxxQtType;
@@ -260,7 +267,7 @@ use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort,
 use crate::review_model::{ReviewQueueData, ReviewRow, ReviewState};
 use crate::theme::{ThemePalette, ThemeWatch, omarchy_palette_path};
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct LocalBatchPort(Option<linguist_jobs::JobRepository>, String);
 
 impl LocalBatchPort {
@@ -285,6 +292,30 @@ impl LocalBatchPort {
     }
     fn repository(&self) -> Result<&linguist_jobs::JobRepository, String> {
         self.0.as_ref().ok_or_else(|| self.1.clone())
+    }
+
+    fn run_tick(&self) -> Result<(), String> {
+        let repository = self.repository()?;
+        let Some(job_id) = repository
+            .job_summaries()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .find(|summary| summary.job.status == "running")
+            .map(|summary| summary.job.id)
+        else {
+            return Ok(());
+        };
+        let Some(_lease) = repository
+            .acquire_runner_lease()
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(());
+        };
+        let mut worker = LiveBatchWorker::from_environment()?;
+        repository
+            .run_next(&job_id, &mut worker, 3, 2)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -405,6 +436,8 @@ pub struct AppBackendRust {
     selector_pending: Option<BatchSelector>,
     theme_watch: Option<ThemeWatch>,
     batch_port: LocalBatchPort,
+    batch_worker_active: Arc<AtomicBool>,
+    batch_worker_error: Arc<Mutex<Option<String>>>,
     controller: ApplicationController,
 }
 
@@ -478,12 +511,52 @@ impl AppBackendRust {
             selector_pending: None,
             theme_watch: omarchy_palette_path().map(ThemeWatch::new),
             batch_port,
+            batch_worker_active: Arc::new(AtomicBool::new(false)),
+            batch_worker_error: Arc::new(Mutex::new(None)),
             controller,
         }
     }
 }
 
 impl qobject::AppBackend {
+    pub fn run_batch_tick(mut self: Pin<&mut Self>) {
+        let error = self
+            .as_ref()
+            .rust()
+            .batch_worker_error
+            .lock()
+            .ok()
+            .and_then(|mut error| error.take());
+        if let Some(error) = error {
+            self.as_mut().rust_mut().controller.report_error(error);
+            sync_controller_state(self.as_mut());
+        }
+        let (port, active, error) = {
+            let pinned = self.as_ref();
+            let state = pinned.rust();
+            if state
+                .batch_worker_active
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                return;
+            }
+            (
+                state.batch_port.clone(),
+                state.batch_worker_active.clone(),
+                state.batch_worker_error.clone(),
+            )
+        };
+        std::thread::spawn(move || {
+            if let Err(message) = port.run_tick()
+                && let Ok(mut slot) = error.lock()
+            {
+                *slot = Some(message);
+            }
+            active.store(false, Ordering::Release);
+        });
+    }
+
     pub fn save_settings(
         mut self: Pin<&mut Self>,
         anki_url: &QString,
@@ -930,14 +1003,19 @@ impl qobject::AppBackend {
             .cancel_batch_confirmation();
         sync_controller_state(self);
     }
-    pub fn create_batch(mut self: Pin<&mut Self>, deck_name: &QString, rows: &QString) {
+    pub fn create_batch(
+        mut self: Pin<&mut Self>,
+        deck_name: &QString,
+        rows: &QString,
+        dry_run: bool,
+    ) {
         let parsed = parse_batch_rows(&rows.to_string());
         match parsed {
             Ok(items) => {
                 let job = linguist_jobs::NewJob {
                     deck_key: deck_name.to_string(),
                     deck_name: deck_name.to_string(),
-                    dry_run: true,
+                    dry_run,
                     settings: Default::default(),
                     items,
                 };
@@ -1245,7 +1323,7 @@ impl qobject::AppBackend {
             .into()
     }
 
-    pub fn create_batch_from_selector(mut self: Pin<&mut Self>) {
+    pub fn create_batch_from_selector(mut self: Pin<&mut Self>, dry_run: bool) {
         let Some(selector) = self.as_ref().rust().selector_pending.clone() else {
             self.as_mut()
                 .rust_mut()
@@ -1280,7 +1358,7 @@ impl qobject::AppBackend {
         let job = linguist_jobs::NewJob {
             deck_key: deck_name.clone(),
             deck_name,
-            dry_run: true,
+            dry_run,
             settings,
             items,
         };
@@ -1854,6 +1932,78 @@ impl DraftGenerationPort for LiveGenerationAdapter {
             value,
             provenance: format!("Ollama · {}", self.model),
         }])
+    }
+}
+
+struct LiveBatchWorker {
+    generation: LiveGenerationAdapter,
+    commit: LiveCommitAdapter,
+}
+
+impl LiveBatchWorker {
+    fn from_environment() -> Result<Self, String> {
+        Ok(Self {
+            generation: LiveGenerationAdapter::from_environment()?,
+            commit: LiveCommitAdapter::from_environment()?,
+        })
+    }
+
+    fn draft(&self, note_id: i64) -> Result<crate::draft::ReviewDraft, String> {
+        let note = self
+            .commit
+            .runtime
+            .block_on(self.commit.commit.note_info(note_id))
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| format!("Anki note {note_id} was not found"))?;
+        Ok(crate::draft::ReviewDraft::from_note(&note))
+    }
+}
+
+impl linguist_jobs::BatchWorkerPort for LiveBatchWorker {
+    fn process(
+        &mut self,
+        _: &linguist_core::BatchJobContract,
+        item: &linguist_core::BatchItemContract,
+    ) -> Result<serde_json::Value, String> {
+        let mut draft = self.draft(item.note_id)?;
+        let changes = self.generation.generate(&draft)?;
+        draft.regenerate(changes);
+        while !draft.pending().is_empty() {
+            draft.accept(0);
+        }
+        let request = self.commit.request(&draft, true)?;
+        serde_json::to_value(request.document).map_err(|error| error.to_string())
+    }
+
+    fn commit(
+        &mut self,
+        job: &linguist_core::BatchJobContract,
+        item: &linguist_core::BatchItemContract,
+        artifact: &serde_json::Value,
+    ) -> Result<linguist_jobs::BatchCommitResult, String> {
+        let draft = self.draft(item.note_id)?;
+        let mut request = self.commit.request(&draft, job.dry_run)?;
+        request.document = serde_json::from_value(artifact.clone())
+            .map_err(|error| format!("Invalid processed artifact: {error}"))?;
+        match self
+            .commit
+            .runtime
+            .block_on(commit_card(&self.commit.commit, request))
+            .map_err(|error| error.to_string())?
+        {
+            linguist_application::CommitOutcome::Committed(receipt) => {
+                Ok(linguist_jobs::BatchCommitResult {
+                    snapshot_id: receipt.snapshot_id,
+                    result_note_id: receipt.note_id,
+                })
+            }
+            linguist_application::CommitOutcome::DryRun { .. } => {
+                Ok(linguist_jobs::BatchCommitResult {
+                    snapshot_id: "dry-run".into(),
+                    result_note_id: item.note_id,
+                })
+            }
+        }
     }
 }
 

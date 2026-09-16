@@ -65,6 +65,36 @@ pub trait BatchRollbackPort {
     fn restore_snapshot(&self, snapshot_id: &str) -> Result<(), String>;
 }
 
+pub trait BatchWorkerPort {
+    fn process(
+        &mut self,
+        job: &BatchJobContract,
+        item: &BatchItemContract,
+    ) -> Result<Value, String>;
+    fn commit(
+        &mut self,
+        job: &BatchJobContract,
+        item: &BatchItemContract,
+        artifact: &Value,
+    ) -> Result<BatchCommitResult, String>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchCommitResult {
+    pub snapshot_id: String,
+    pub result_note_id: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WorkerStep {
+    Idle,
+    Processed(i64),
+    Committed(i64),
+    Retrying(i64),
+    Failed(i64),
+    Completed,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RollbackReport {
     pub reverted_item_ids: Vec<i64>,
@@ -412,6 +442,72 @@ impl JobRepository {
         Ok(Some(ClaimedItem { item, stage }))
     }
 
+    /// Run one durable stage. Processing always persists an artifact before a
+    /// later call may contact Anki for commit.
+    pub fn run_next<P: BatchWorkerPort>(
+        &self,
+        job_id: &str,
+        port: &mut P,
+        max_attempts: u32,
+        backoff_seconds: u64,
+    ) -> Result<WorkerStep, JobRepositoryError> {
+        let job = self
+            .job(job_id)?
+            .ok_or_else(|| JobRepositoryError::UnknownJob(job_id.into()))?;
+        if job.status != "running" {
+            return Ok(WorkerStep::Idle);
+        }
+        let Some(claim) = self.claim_next(job_id)? else {
+            return Ok(if self.finish_if_complete(job_id)? {
+                WorkerStep::Completed
+            } else {
+                WorkerStep::Idle
+            });
+        };
+        let item_id = claim.item.id.expect("native claimed items have ids");
+        let result = match claim.stage {
+            ClaimStage::Process => port.process(&job, &claim.item).and_then(|artifact| {
+                self.replace_artifact(job_id, item_id, &artifact)
+                    .map(|_| WorkerStep::Processed(item_id))
+                    .map_err(|error| error.to_string())
+            }),
+            ClaimStage::Commit => {
+                let artifact = claim
+                    .item
+                    .artifact
+                    .as_ref()
+                    .ok_or_else(|| "processed item has no artifact".to_owned())
+                    .and_then(|reference| {
+                        self.load_artifact(reference)
+                            .map_err(|error| error.to_string())
+                    });
+                artifact.and_then(|artifact| {
+                    port.commit(&job, &claim.item, &artifact)
+                        .and_then(|receipt| {
+                            self.complete_item(
+                                item_id,
+                                &receipt.snapshot_id,
+                                receipt.result_note_id,
+                            )
+                            .map(|_| WorkerStep::Committed(item_id))
+                            .map_err(|error| error.to_string())
+                        })
+                })
+            }
+        };
+        match result {
+            Ok(step) => Ok(step),
+            Err(error) => {
+                let retry = self.retry_or_fail(item_id, &error, max_attempts, backoff_seconds)?;
+                Ok(if retry {
+                    WorkerStep::Retrying(item_id)
+                } else {
+                    WorkerStep::Failed(item_id)
+                })
+            }
+        }
+    }
+
     pub fn retry_or_fail(
         &self,
         item_id: i64,
@@ -499,6 +595,28 @@ impl JobRepository {
         job_id: &str,
         port: &P,
     ) -> Result<RollbackReport, JobRepositoryError> {
+        let job = self
+            .job(job_id)?
+            .ok_or_else(|| JobRepositoryError::UnknownJob(job_id.into()))?;
+        if job.dry_run {
+            let connection = self.connect()?;
+            let mut statement = connection.prepare(
+                "SELECT id FROM batch_items WHERE job_id=? AND status='completed' ORDER BY ordinal DESC",
+            )?;
+            let ids = statement
+                .query_map([job_id], |row| row.get::<_, i64>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            drop(statement);
+            connection.execute(
+                "UPDATE batch_items SET status='reverted', updated_at=? WHERE job_id=? AND status='completed'",
+                params![now(), job_id],
+            )?;
+            self.set_job_state(job_id, BatchJobState::RolledBack, "")?;
+            return Ok(RollbackReport {
+                reverted_item_ids: ids,
+                ..RollbackReport::default()
+            });
+        }
         self.set_job_state(job_id, BatchJobState::RollingBack, "")?;
         let connection = self.connect()?;
         let mut statement = connection.prepare(
@@ -1557,5 +1675,65 @@ mod tests {
             json!({"word": "done"})
         );
         fs::remove_dir_all(source.parent().unwrap()).unwrap();
+    }
+
+    #[derive(Default)]
+    struct Worker {
+        events: Vec<String>,
+    }
+
+    impl BatchWorkerPort for Worker {
+        fn process(
+            &mut self,
+            _: &BatchJobContract,
+            item: &BatchItemContract,
+        ) -> Result<Value, String> {
+            self.events.push(format!("process:{}", item.note_id));
+            Ok(json!({"note_id":item.note_id,"document":{"expression":item.word}}))
+        }
+
+        fn commit(
+            &mut self,
+            _: &BatchJobContract,
+            item: &BatchItemContract,
+            artifact: &Value,
+        ) -> Result<BatchCommitResult, String> {
+            assert_eq!(artifact["note_id"], item.note_id);
+            self.events.push(format!("commit:{}", item.note_id));
+            Ok(BatchCommitResult {
+                snapshot_id: format!("snapshot-{}", item.note_id),
+                result_note_id: item.note_id,
+            })
+        }
+    }
+
+    #[test]
+    fn worker_persists_processed_artifact_before_commit() {
+        let path = temporary_path("worker");
+        let repository = JobRepository::open(&path).unwrap();
+        let id = repository.create_job(job(&[11])).unwrap();
+        repository
+            .set_job_state(&id, BatchJobState::Running, "")
+            .unwrap();
+        let mut worker = Worker::default();
+        assert!(matches!(
+            repository.run_next(&id, &mut worker, 3, 0).unwrap(),
+            WorkerStep::Processed(_)
+        ));
+        let processed = repository.item_page(&id, 1, 0).unwrap().items.remove(0);
+        assert_eq!(processed.status, "processed");
+        assert!(processed.artifact.is_some());
+        assert!(matches!(
+            repository.run_next(&id, &mut worker, 3, 0).unwrap(),
+            WorkerStep::Committed(_)
+        ));
+        assert_eq!(
+            repository.run_next(&id, &mut worker, 3, 0).unwrap(),
+            WorkerStep::Completed
+        );
+        assert_eq!(worker.events, ["process:11", "commit:11"]);
+        let completed = repository.item_page(&id, 1, 0).unwrap().items.remove(0);
+        assert_eq!(completed.snapshot_id.as_deref(), Some("snapshot-11"));
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

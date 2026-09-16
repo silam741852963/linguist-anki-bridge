@@ -24,6 +24,12 @@ ApplicationWindow {
         repeat: true
         onTriggered: backend.reloadTheme()
     }
+    Timer {
+        interval: 500
+        running: root.visible
+        repeat: true
+        onTriggered: backend.runBatchTick()
+    }
 
     readonly property color background: backend.themeBackground
     readonly property color surface: backend.themeSurface

@@ -96,11 +96,17 @@ Item {
                 wrapMode: TextEdit.NoWrap
                 inputMethodHints: Qt.ImhNoPredictiveText
             }
+            CheckBox {
+                id: batchDryRun
+                text: qsTr("Dry run (no Anki writes)")
+                checked: true
+                Accessible.name: text
+            }
             Button {
                 text: qsTr("Create from explicit rows")
                 Accessible.name: text
                 enabled: deckName.text.trim().length > 0 && rows.text.trim().length > 0
-                onClicked: { backend.createBatch(deckName.text, rows.text); backend.refreshBatches(); createJob.close() }
+                onClicked: { backend.createBatch(deckName.text, rows.text, batchDryRun.checked); backend.refreshBatches(); createJob.close() }
             }
             Label { text: qsTr("OR SELECT FROM ANKI"); color: mutedColor; font.letterSpacing: 1.2 }
             GridLayout {
@@ -136,7 +142,7 @@ Item {
                     Accessible.name: text
                     highlighted: true
                     enabled: backend.selectorPreviewCount > 0
-                    onClicked: { backend.createBatchFromSelector(); backend.refreshBatches(); createJob.close() }
+                    onClicked: { backend.createBatchFromSelector(batchDryRun.checked); backend.refreshBatches(); createJob.close() }
                 }
                 Label {
                     text: backend.selectorLimited
