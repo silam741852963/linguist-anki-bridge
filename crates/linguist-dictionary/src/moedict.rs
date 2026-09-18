@@ -10,6 +10,7 @@ pub struct MoedictEntry {
     pub title: String,
     pub readings: Vec<String>,
     pub definitions: Vec<String>,
+    pub audio_urls: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -84,6 +85,7 @@ pub fn parse_json(body: &str) -> Result<MoedictEntry, String> {
     let raw: Raw = serde_json::from_str(body).map_err(|error| error.to_string())?;
     let mut readings = Vec::new();
     let mut definitions = Vec::new();
+    let mut audio_urls = Vec::new();
     for heteronym in raw.heteronyms {
         if !heteronym.pinyin.is_empty() {
             readings.push(heteronym.pinyin);
@@ -94,31 +96,40 @@ pub fn parse_json(body: &str) -> Result<MoedictEntry, String> {
                 .into_iter()
                 .map(|definition| definition.definition),
         );
+        if !heteronym.audio_id.is_empty() {
+            audio_urls.push(format!(
+                "https://t.moedict.tw/mp3/{}.mp3",
+                heteronym.audio_id
+            ));
+        }
     }
     Ok(MoedictEntry {
         title: raw.title,
         readings,
         definitions,
+        audio_urls,
     })
 }
 
 #[derive(Deserialize)]
 struct Raw {
-    #[serde(default)]
+    #[serde(default, alias = "t")]
     title: String,
-    #[serde(default)]
+    #[serde(default, alias = "h")]
     heteronyms: Vec<Heteronym>,
 }
 #[derive(Deserialize)]
 struct Heteronym {
-    #[serde(default)]
+    #[serde(default, alias = "T", alias = "p")]
     pinyin: String,
-    #[serde(default)]
+    #[serde(default, alias = "d")]
     definitions: Vec<Definition>,
+    #[serde(default, rename = "_")]
+    audio_id: String,
 }
 #[derive(Deserialize)]
 struct Definition {
-    #[serde(rename = "def", default)]
+    #[serde(rename = "def", alias = "f", default)]
     definition: String,
 }
 
@@ -130,6 +141,12 @@ mod tests {
         let entry=parse_json(r#"{"title":"學","heteronyms":[{"pinyin":"xué","definitions":[{"def":"學習。"}]},{"pinyin":"xiào","definitions":[{"def":"學校的簡稱。"}]}]}"#).unwrap();
         assert_eq!(entry.readings, ["xué", "xiào"]);
         assert_eq!(entry.definitions.len(), 2);
+        assert!(entry.audio_urls.is_empty());
+        let compact =
+            parse_json(r#"{"t":"食","h":[{"T":"tsia̍h","_":"123","d":[{"f":"吃。"}]}]}"#).unwrap();
+        assert_eq!(compact.readings, ["tsia̍h"]);
+        assert_eq!(compact.definitions, ["吃。"]);
+        assert_eq!(compact.audio_urls, ["https://t.moedict.tw/mp3/123.mp3"]);
     }
 
     #[test]

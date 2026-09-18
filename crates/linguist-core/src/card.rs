@@ -131,6 +131,20 @@ pub struct DictionaryData {
     pub reading: String,
     #[serde(default)]
     pub definition: String,
+    #[serde(default)]
+    pub pronunciations: Vec<DictionaryPronunciation>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DictionaryPronunciation {
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub locale: String,
+    #[serde(default)]
+    pub audio_url: Option<String>,
+    #[serde(default)]
+    pub source: String,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

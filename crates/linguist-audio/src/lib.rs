@@ -1,6 +1,8 @@
 //! Audio selection and provider boundaries; all pronunciations remain visible.
 
+use std::time::Duration;
 use std::{
+    collections::BTreeSet,
     future::Future,
     pin::Pin,
     process::Command,
@@ -9,12 +11,209 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+
+const MAX_AUDIO_BYTES: usize = 6 * 1024 * 1024;
 pub type AudioFuture<'a> = Pin<Box<dyn Future<Output = Result<AudioClip, AudioError>> + Send + 'a>>;
 pub trait DictionaryAudioPort: Send + Sync {
     fn fetch<'a>(&'a self, url: &'a str) -> AudioFuture<'a>;
 }
 pub trait TtsPort: Send + Sync {
     fn synthesize<'a>(&'a self, text: &'a str, voice: &'a Voice) -> AudioFuture<'a>;
+}
+
+#[derive(Clone, Debug)]
+pub struct HttpAudioFetcher {
+    client: reqwest::Client,
+    trusted_hosts: BTreeSet<String>,
+    max_bytes: usize,
+}
+
+impl HttpAudioFetcher {
+    pub fn dictionary_defaults() -> Result<Self, AudioError> {
+        let client = network_client()?;
+        Ok(Self {
+            client,
+            trusted_hosts: [
+                "dictionary.cambridge.org",
+                "t.moedict.tw",
+                "203146b5091e8f0aafda-15d8553a928a30eef40a64ebd36ed408.ssl.cf2.rackcdn.com",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+            max_bytes: MAX_AUDIO_BYTES,
+        })
+    }
+
+    fn trusted_url(&self, value: &str) -> Result<reqwest::Url, AudioError> {
+        let url =
+            reqwest::Url::parse(value).map_err(|error| AudioError::Invalid(error.to_string()))?;
+        if url.scheme() != "https"
+            || !url
+                .host_str()
+                .is_some_and(|host| self.trusted_hosts.contains(host))
+        {
+            return Err(AudioError::Invalid("untrusted dictionary audio URL".into()));
+        }
+        Ok(url)
+    }
+}
+
+impl DictionaryAudioPort for HttpAudioFetcher {
+    fn fetch<'a>(&'a self, url: &'a str) -> AudioFuture<'a> {
+        Box::pin(async move {
+            let url = self.trusted_url(url)?;
+            let response = self
+                .client
+                .get(url)
+                .send()
+                .await
+                .map_err(|error| AudioError::Unavailable(error.to_string()))?;
+            if response.status().is_redirection() {
+                return Err(AudioError::Invalid("audio redirect rejected".into()));
+            }
+            let mut response = response
+                .error_for_status()
+                .map_err(|error| AudioError::Unavailable(error.to_string()))?;
+            self.trusted_url(response.url().as_str())?;
+            if response
+                .content_length()
+                .is_some_and(|size| size > self.max_bytes as u64)
+            {
+                return Err(AudioError::Invalid("dictionary audio is too large".into()));
+            }
+            let mime = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.split(';').next())
+                .unwrap_or("audio/mpeg")
+                .to_ascii_lowercase();
+            if !mime.starts_with("audio/") && mime != "application/octet-stream" {
+                return Err(AudioError::Invalid(format!(
+                    "dictionary returned {mime}, not audio"
+                )));
+            }
+            let mut data = Vec::new();
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|error| AudioError::Unavailable(error.to_string()))?
+            {
+                if data.len().saturating_add(chunk.len()) > self.max_bytes {
+                    return Err(AudioError::Invalid("dictionary audio is too large".into()));
+                }
+                data.extend_from_slice(&chunk);
+            }
+            if data.is_empty() {
+                return Err(AudioError::Invalid(
+                    "dictionary returned empty audio".into(),
+                ));
+            }
+            Ok(AudioClip {
+                data,
+                mime: if mime == "application/octet-stream" {
+                    "audio/mpeg".into()
+                } else {
+                    mime
+                },
+                source: "dictionary".into(),
+            })
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct GoogleTts {
+    client: reqwest::Client,
+    endpoint: reqwest::Url,
+}
+
+impl GoogleTts {
+    pub fn new() -> Result<Self, AudioError> {
+        Ok(Self {
+            client: network_client()?,
+            endpoint: reqwest::Url::parse("https://translate.google.com/translate_tts")
+                .map_err(|error| AudioError::Invalid(error.to_string()))?,
+        })
+    }
+}
+
+impl TtsPort for GoogleTts {
+    fn synthesize<'a>(&'a self, text: &'a str, voice: &'a Voice) -> AudioFuture<'a> {
+        Box::pin(async move {
+            let text = text.trim();
+            if text.is_empty() || text.chars().count() > 200 {
+                return Err(AudioError::Invalid(
+                    "remote TTS text must contain 1-200 characters".into(),
+                ));
+            }
+            let response = self
+                .client
+                .get(self.endpoint.clone())
+                .query(&[
+                    ("ie", "UTF-8"),
+                    ("client", "tw-ob"),
+                    ("tl", voice.id.as_str()),
+                    ("q", text),
+                ])
+                .send()
+                .await
+                .map_err(|error| AudioError::Unavailable(error.to_string()))?;
+            if response.status().is_redirection() {
+                return Err(AudioError::Invalid("remote TTS redirect rejected".into()));
+            }
+            let mut response = response
+                .error_for_status()
+                .map_err(|error| AudioError::Unavailable(error.to_string()))?;
+            if !response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.to_ascii_lowercase().starts_with("audio/"))
+            {
+                return Err(AudioError::Invalid(
+                    "remote TTS returned non-audio content".into(),
+                ));
+            }
+            if response
+                .content_length()
+                .is_some_and(|size| size > MAX_AUDIO_BYTES as u64)
+            {
+                return Err(AudioError::Invalid("remote TTS audio is too large".into()));
+            }
+            let mut data = Vec::new();
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|error| AudioError::Unavailable(error.to_string()))?
+            {
+                if data.len().saturating_add(chunk.len()) > MAX_AUDIO_BYTES {
+                    return Err(AudioError::Invalid("remote TTS audio is too large".into()));
+                }
+                data.extend_from_slice(&chunk);
+            }
+            if data.is_empty() {
+                return Err(AudioError::Invalid(
+                    "remote TTS returned invalid audio".into(),
+                ));
+            }
+            Ok(AudioClip {
+                data,
+                mime: "audio/mpeg".into(),
+                source: "Google TTS".into(),
+            })
+        })
+    }
+}
+
+fn network_client() -> Result<reqwest::Client, AudioError> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("LinguistAnkiBridge/0.1")
+        .build()
+        .map_err(|error| AudioError::Unavailable(error.to_string()))
 }
 
 #[derive(Clone, Debug)]
@@ -345,6 +544,25 @@ mod tests {
         ];
         assert_eq!(select_voice(&voices, "ja-JP").unwrap().id, "ja");
         assert_eq!(select_voice(&voices, "en-GB").unwrap().id, "en");
+    }
+    #[test]
+    fn dictionary_fetcher_rejects_untrusted_audio_urls() {
+        let fetcher = HttpAudioFetcher::dictionary_defaults().unwrap();
+        assert!(
+            fetcher
+                .trusted_url("https://dictionary.cambridge.org/media.mp3")
+                .is_ok()
+        );
+        assert!(
+            fetcher
+                .trusted_url("http://dictionary.cambridge.org/media.mp3")
+                .is_err()
+        );
+        assert!(
+            fetcher
+                .trusted_url("https://dictionary.cambridge.org.evil.test/media.mp3")
+                .is_err()
+        );
     }
     #[test]
     fn preserves_many_pronunciations_and_names_them() {

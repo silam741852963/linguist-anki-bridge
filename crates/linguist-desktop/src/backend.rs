@@ -1893,6 +1893,8 @@ struct LiveEnrichmentServices {
     ollama: linguist_ollama::OllamaClient,
     model: String,
     tts: linguist_audio::EspeakTts,
+    dictionary_audio: linguist_audio::HttpAudioFetcher,
+    remote_tts: linguist_audio::GoogleTts,
     kanji: linguist_dictionary::kanji::KanjiApiClient,
     image: linguist_media::WikimediaCommons,
 }
@@ -1923,6 +1925,38 @@ fn dictionary_pipeline_error(
         retryable: error.retry_class() == linguist_dictionary::RetryClass::Retryable,
         message: error.to_string(),
     }
+}
+
+fn deck_locale(deck_key: &str) -> &'static str {
+    if deck_key.starts_with("japanese") {
+        "ja-JP"
+    } else if deck_key.starts_with("taiwanese") {
+        "zh-TW"
+    } else if deck_key.starts_with("german") {
+        "de-DE"
+    } else {
+        "en-US"
+    }
+}
+
+fn tts_voices() -> Vec<linguist_audio::Voice> {
+    [
+        ("ja", "ja-JP", true),
+        ("en", "en-US", true),
+        ("zh", "zh-TW", true),
+        ("de", "de-DE", true),
+        ("ja", "ja-JP", false),
+        ("en", "en-US", false),
+        ("zh-TW", "zh-TW", false),
+        ("de", "de-DE", false),
+    ]
+    .into_iter()
+    .map(|(id, locale, local)| linguist_audio::Voice {
+        id: id.into(),
+        locale: locale.into(),
+        local,
+    })
+    .collect()
 }
 
 impl linguist_media::ImageClassifierPort for OllamaImageClassifier<'_> {
@@ -1975,11 +2009,18 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
                         .search(expression)
                         .await
                         .map_err(dictionary_pipeline_error)?;
+                    let pronunciation = linguist_core::DictionaryPronunciation {
+                        text: entry.headword.clone(),
+                        locale: "en-US".into(),
+                        audio_url: entry.audio_url.clone(),
+                        source: "Cambridge".into(),
+                    };
                     linguist_core::DictionaryData {
                         found: true,
                         word: entry.headword,
                         reading: String::new(),
                         definition: entry.definitions.join("; "),
+                        pronunciations: vec![pronunciation],
                     }
                 }
                 "moedict" => {
@@ -1988,11 +2029,27 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
                         .search(expression)
                         .await
                         .map_err(dictionary_pipeline_error)?;
+                    let pronunciations = entry
+                        .readings
+                        .iter()
+                        .enumerate()
+                        .map(|(index, reading)| linguist_core::DictionaryPronunciation {
+                            text: reading.clone(),
+                            locale: "zh-TW".into(),
+                            audio_url: entry
+                                .audio_urls
+                                .get(index)
+                                .or_else(|| entry.audio_urls.first())
+                                .cloned(),
+                            source: "MoeDict".into(),
+                        })
+                        .collect();
                     linguist_core::DictionaryData {
                         found: true,
                         word: entry.title,
                         reading: entry.readings.join(" / "),
                         definition: entry.definitions.join("; "),
+                        pronunciations,
                     }
                 }
                 "dict_cc" => {
@@ -2010,6 +2067,12 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
                             .map(|entry| format!("{} — {}", entry.source, entry.target))
                             .collect::<Vec<_>>()
                             .join("; "),
+                        pronunciations: vec![linguist_core::DictionaryPronunciation {
+                            text: expression.into(),
+                            locale: "de-DE".into(),
+                            audio_url: None,
+                            source: "dict.cc".into(),
+                        }],
                     }
                 }
                 _ => {
@@ -2034,6 +2097,17 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
                             .cloned()
                             .collect::<Vec<_>>()
                             .join("; "),
+                        pronunciations: entry
+                            .forms
+                            .iter()
+                            .filter(|form| !form.reading.trim().is_empty())
+                            .map(|form| linguist_core::DictionaryPronunciation {
+                                text: form.reading.clone(),
+                                locale: "ja-JP".into(),
+                                audio_url: None,
+                                source: "Jisho".into(),
+                            })
+                            .collect(),
                     }
                 }
             };
@@ -2191,38 +2265,71 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
     fn audio<'a>(
         &'a self,
         expression: &'a str,
-        reading: &'a str,
+        deck_key: &'a str,
+        dictionary: &'a linguist_core::DictionaryData,
     ) -> linguist_pipeline::PipelineFuture<'a> {
         Box::pin(async move {
             use base64::Engine;
-            use linguist_audio::TtsPort;
-            let text = if reading.trim().is_empty() {
-                expression
+            let locale = deck_locale(deck_key);
+            let pronunciations = if dictionary.pronunciations.is_empty() {
+                vec![linguist_audio::Pronunciation {
+                    text: if dictionary.reading.trim().is_empty() {
+                        expression.into()
+                    } else {
+                        dictionary.reading.clone()
+                    },
+                    locale: locale.into(),
+                    audio_url: None,
+                    source: "TTS fallback".into(),
+                }]
             } else {
-                reading
+                dictionary
+                    .pronunciations
+                    .iter()
+                    .map(|row| linguist_audio::Pronunciation {
+                        text: row.text.clone(),
+                        locale: if row.locale.is_empty() {
+                            locale.into()
+                        } else {
+                            row.locale.clone()
+                        },
+                        audio_url: row.audio_url.clone(),
+                        source: row.source.clone(),
+                    })
+                    .collect()
             };
-            let voice = linguist_audio::Voice {
-                id: "ja".into(),
-                locale: "ja-JP".into(),
-                local: true,
-            };
-            let clip = self.tts.synthesize(text, &voice).await.map_err(|error| {
-                linguist_pipeline::PipelineError::Provider {
+            let voices = tts_voices();
+            let result = linguist_audio::discover_audio(
+                &self.dictionary_audio,
+                &self.tts,
+                &self.remote_tts,
+                pronunciations,
+                &voices,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await;
+            if result.clips.is_empty() {
+                return Err(linguist_pipeline::PipelineError::Provider {
                     service: "audio",
-                    message: error.to_string(),
-                    retryable: false,
-                }
-            })?;
-            Ok(linguist_pipeline::ProviderOutput::Audio {
-                filename: linguist_audio::media_filename_for_mime(
-                    expression,
-                    &voice.locale,
-                    0,
-                    &clip.mime,
-                ),
-                b64: base64::engine::general_purpose::STANDARD.encode(clip.data),
-                reading: text.to_owned(),
-            })
+                    message: if result.issues.is_empty() {
+                        "No audio provider returned a clip".into()
+                    } else {
+                        result.issues.join("; ")
+                    },
+                    retryable: true,
+                });
+            }
+            Ok(linguist_pipeline::ProviderOutput::Audio(
+                result
+                    .clips
+                    .into_iter()
+                    .map(|clip| linguist_pipeline::ProviderAudio {
+                        filename: clip.filename,
+                        b64: base64::engine::general_purpose::STANDARD.encode(clip.clip.data),
+                        reading: clip.pronunciation.text,
+                    })
+                    .collect(),
+            ))
         })
     }
 }
@@ -2261,6 +2368,9 @@ impl LiveGenerationAdapter {
                 ollama: ollama.clone(),
                 model: model.clone(),
                 tts: linguist_audio::EspeakTts::default(),
+                dictionary_audio: linguist_audio::HttpAudioFetcher::dictionary_defaults()
+                    .map_err(|error| error.to_string())?,
+                remote_tts: linguist_audio::GoogleTts::new().map_err(|error| error.to_string())?,
                 kanji: linguist_dictionary::kanji::KanjiApiClient::new()?,
                 image: linguist_media::WikimediaCommons::new()?,
             },

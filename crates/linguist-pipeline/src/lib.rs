@@ -29,7 +29,12 @@ pub trait EnrichmentServices: Send + Sync {
     ) -> PipelineFuture<'a>;
     fn kanji<'a>(&'a self, expression: &'a str) -> PipelineFuture<'a>;
     fn image<'a>(&'a self, expression: &'a str) -> PipelineFuture<'a>;
-    fn audio<'a>(&'a self, expression: &'a str, reading: &'a str) -> PipelineFuture<'a>;
+    fn audio<'a>(
+        &'a self,
+        expression: &'a str,
+        deck_key: &'a str,
+        dictionary: &'a DictionaryData,
+    ) -> PipelineFuture<'a>;
 }
 pub trait ProgressSink: Send + Sync {
     fn event(&self, event: PipelineEvent);
@@ -59,11 +64,13 @@ pub enum ProviderOutput {
         b64: String,
         classification: String,
     },
-    Audio {
-        filename: String,
-        b64: String,
-        reading: String,
-    },
+    Audio(Vec<ProviderAudio>),
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProviderAudio {
+    pub filename: String,
+    pub b64: String,
+    pub reading: String,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PipelineError {
@@ -230,7 +237,10 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             "{deck_key}\0{expression}\0{context}\0{}\0{}",
             dictionary.reading, dictionary.definition
         );
-        let audio_key = format!("{expression}\0{}", dictionary.reading);
+        let audio_key = format!(
+            "{deck_key}\0{expression}\0{}\0{:?}",
+            dictionary.reading, dictionary.pronunciations
+        );
         let (generation_result, kanji_result, image_result, audio_result) = tokio::join!(
             self.call(expression, &generation_key, "generation", || self
                 .services
@@ -241,9 +251,11 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             self.call(expression, expression, "image", || self
                 .services
                 .image(expression)),
-            self.call(expression, &audio_key, "audio", || self
-                .services
-                .audio(expression, &dictionary.reading)),
+            self.call(expression, &audio_key, "audio", || self.services.audio(
+                expression,
+                deck_key,
+                &dictionary
+            )),
         );
         let mut issues = Vec::new();
         let generation = match generation_result {
@@ -296,15 +308,14 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             _ => (String::new(), None, "uncertain".into()),
         };
         let audio_assets = match audio {
-            Some(ProviderOutput::Audio {
-                filename,
-                b64,
-                reading,
-            }) => vec![linguist_core::AudioAsset {
-                filename,
-                b64: Some(b64),
-                reading,
-            }],
+            Some(ProviderOutput::Audio(assets)) => assets
+                .into_iter()
+                .map(|asset| linguist_core::AudioAsset {
+                    filename: asset.filename,
+                    b64: Some(asset.b64),
+                    reading: asset.reading,
+                })
+                .collect(),
             _ => Vec::new(),
         };
         Ok(build_card_document(CardBuildInput {
@@ -484,6 +495,7 @@ mod tests {
                 word: "食べる".into(),
                 reading: "たべる".into(),
                 definition: "to eat".into(),
+                ..Default::default()
             }))
         }
         fn generation<'a>(
@@ -512,12 +524,24 @@ mod tests {
                 classification: "visual_recall".into(),
             })
         }
-        fn audio<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
-            Self::output(ProviderOutput::Audio {
-                filename: "a.mp3".into(),
-                b64: "YQ==".into(),
-                reading: "たべる".into(),
-            })
+        fn audio<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            Self::output(ProviderOutput::Audio(vec![
+                ProviderAudio {
+                    filename: "a.mp3".into(),
+                    b64: "YQ==".into(),
+                    reading: "たべる".into(),
+                },
+                ProviderAudio {
+                    filename: "b.mp3".into(),
+                    b64: "Yg==".into(),
+                    reading: "食べる".into(),
+                },
+            ]))
         }
     }
     #[tokio::test]
@@ -541,6 +565,13 @@ mod tests {
             .await
             .unwrap();
         assert!(one.ready());
+        assert_eq!(one.media.len(), 3);
+        assert!(
+            one.values
+                .audio
+                .as_deref()
+                .is_some_and(|audio| audio.contains("a.mp3") && audio.contains("b.mp3"))
+        );
         assert_eq!(one, two);
         assert_eq!(pipeline.services.calls.load(Ordering::Relaxed), 1);
     }
@@ -581,6 +612,7 @@ mod tests {
                     word: "word".into(),
                     reading: "reading".into(),
                     definition: "definition".into(),
+                    ..Default::default()
                 }))
             })
         }
@@ -603,12 +635,17 @@ mod tests {
                 classification: "dictionary".into(),
             })
         }
-        fn audio<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
-            self.wait(ProviderOutput::Audio {
+        fn audio<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            self.wait(ProviderOutput::Audio(vec![ProviderAudio {
                 filename: "audio.mp3".into(),
                 b64: "YQ==".into(),
                 reading: "reading".into(),
-            })
+            }]))
         }
     }
 

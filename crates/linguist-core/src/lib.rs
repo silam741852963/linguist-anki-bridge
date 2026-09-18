@@ -11,9 +11,9 @@ mod managed_template;
 mod persistence;
 
 pub use card::{
-    AudioAsset, CardBuildInput, CardDocument, CardMode, DictionaryData, ExamplePair, FieldMapping,
-    LlmResponse, LogicalFields, MappingError, MediaAsset, ProcessedCardData, Provenance,
-    RenamedImage, SourceKind, build_card_document,
+    AudioAsset, CardBuildInput, CardDocument, CardMode, DictionaryData, DictionaryPronunciation,
+    ExamplePair, FieldMapping, LlmResponse, LogicalFields, MappingError, MediaAsset,
+    ProcessedCardData, Provenance, RenamedImage, SourceKind, build_card_document,
 };
 pub use expression::normalize_expression;
 pub use jobs::{BatchItemState, BatchJobState, ClaimStage};

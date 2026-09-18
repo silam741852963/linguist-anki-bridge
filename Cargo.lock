@@ -1042,6 +1042,7 @@ dependencies = [
 name = "linguist-audio"
 version = "0.1.0"
 dependencies = [
+ "reqwest",
  "tokio",
 ]
 

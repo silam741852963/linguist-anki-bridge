@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+reqwest.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
