@@ -27,8 +27,8 @@ pub trait EnrichmentServices: Send + Sync {
         context: &'a str,
         dictionary: &'a DictionaryData,
     ) -> PipelineFuture<'a>;
-    fn kanji<'a>(&'a self, expression: &'a str) -> PipelineFuture<'a>;
-    fn image<'a>(&'a self, expression: &'a str) -> PipelineFuture<'a>;
+    fn kanji<'a>(&'a self, expression: &'a str, deck_key: &'a str) -> PipelineFuture<'a>;
+    fn image<'a>(&'a self, expression: &'a str, deck_key: &'a str) -> PipelineFuture<'a>;
     fn audio<'a>(
         &'a self,
         expression: &'a str,
@@ -94,14 +94,29 @@ impl std::fmt::Display for PipelineError {
     }
 }
 impl std::error::Error for PipelineError {}
+#[derive(Default)]
+struct CancellationState {
+    cancelled: AtomicBool,
+    notify: tokio::sync::Notify,
+}
 #[derive(Clone, Default)]
-pub struct Cancellation(Arc<AtomicBool>);
+pub struct Cancellation(Arc<CancellationState>);
 impl Cancellation {
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::Release)
+        self.0.cancelled.store(true, Ordering::Release);
+        self.0.notify.notify_waiters();
     }
     fn cancelled(&self) -> bool {
-        self.0.load(Ordering::Acquire)
+        self.0.cancelled.load(Ordering::Acquire)
+    }
+    async fn wait(&self) {
+        loop {
+            let notified = self.0.notify.notified();
+            if self.cancelled() {
+                return;
+            }
+            notified.await;
+        }
     }
 }
 #[derive(Clone, Debug)]
@@ -224,8 +239,9 @@ impl<S: EnrichmentServices> NativePipeline<S> {
         expression: &str,
         context: &str,
     ) -> Result<CardDocument, PipelineError> {
+        let dictionary_key = format!("{deck_key}\0{expression}");
         let dictionary = match self
-            .call(expression, expression, "dictionary", || {
+            .call(expression, &dictionary_key, "dictionary", || {
                 self.services.dictionary(expression, deck_key)
             })
             .await?
@@ -247,10 +263,10 @@ impl<S: EnrichmentServices> NativePipeline<S> {
                 .generation(expression, deck_key, context, &dictionary)),
             self.call(expression, expression, "kanji", || self
                 .services
-                .kanji(expression)),
+                .kanji(expression, deck_key)),
             self.call(expression, expression, "image", || self
                 .services
-                .image(expression)),
+                .image(expression, deck_key)),
             self.call(expression, &audio_key, "audio", || self.services.audio(
                 expression,
                 deck_key,
@@ -263,17 +279,16 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             Ok(_) => return Err(PipelineError::Unexpected("generation")),
             Err(PipelineError::Cancelled) => return Err(PipelineError::Cancelled),
             Err(error) => {
-                self.issue(expression, "generation", &error);
                 issues.push(error.to_string());
                 LlmResponse::default()
             }
         };
         let kanji = match kanji_result {
             Ok(ProviderOutput::Kanji(value)) => value,
+            Ok(ProviderOutput::Unavailable) => String::new(),
             Ok(_) => return Err(PipelineError::Unexpected("kanji")),
             Err(PipelineError::Cancelled) => return Err(PipelineError::Cancelled),
             Err(error) => {
-                self.issue(expression, "kanji", &error);
                 issues.push(error.to_string());
                 String::new()
             }
@@ -282,7 +297,6 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             Ok(value) => Some(value),
             Err(PipelineError::Cancelled) => return Err(PipelineError::Cancelled),
             Err(error) => {
-                self.issue(expression, "image", &error);
                 issues.push(error.to_string());
                 None
             }
@@ -291,7 +305,6 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             Ok(value) => Some(value),
             Err(PipelineError::Cancelled) => return Err(PipelineError::Cancelled),
             Err(error) => {
-                self.issue(expression, "audio", &error);
                 issues.push(error.to_string());
                 None
             }
@@ -374,7 +387,13 @@ impl<S: EnrichmentServices> NativePipeline<S> {
                     }
                 };
                 match wait {
-                    Some(wait) => tokio::time::sleep(wait).await,
+                    Some(wait) => tokio::select! {
+                        _ = self.cancellation.wait() => {
+                            self.event(expression, service, PipelineState::Cancelled);
+                            return Err(PipelineError::Cancelled);
+                        }
+                        _ = tokio::time::sleep(wait) => {}
+                    },
                     None => break,
                 }
             }
@@ -383,7 +402,13 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             self.event(expression, service, PipelineState::Cancelled);
             return Err(PipelineError::Cancelled);
         }
-        let value = fetch().await;
+        let value = tokio::select! {
+            _ = self.cancellation.wait() => {
+                self.event(expression, service, PipelineState::Cancelled);
+                return Err(PipelineError::Cancelled);
+            }
+            value = fetch() => value,
+        };
         match value {
             Ok(value) => {
                 self.cache.lock().unwrap().insert(key, value.clone());
@@ -404,17 +429,6 @@ impl<S: EnrichmentServices> NativePipeline<S> {
                 state,
             })
         }
-    }
-    fn issue(&self, expression: &str, service: &str, error: &PipelineError) {
-        self.event(
-            expression,
-            service,
-            if matches!(error, PipelineError::Cancelled) {
-                PipelineState::Cancelled
-            } else {
-                PipelineState::Failed
-            },
-        )
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -478,7 +492,7 @@ fn port_error(error: PipelineError) -> PortError {
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
-    use tokio::sync::Barrier;
+    use tokio::sync::{Barrier, Notify};
     struct Fake {
         calls: AtomicUsize,
     }
@@ -514,10 +528,10 @@ mod tests {
                 ..Default::default()
             }))
         }
-        fn kanji<'a>(&'a self, _: &'a str) -> PipelineFuture<'a> {
+        fn kanji<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
             Self::output(ProviderOutput::Kanji("食: eat".into()))
         }
-        fn image<'a>(&'a self, _: &'a str) -> PipelineFuture<'a> {
+        fn image<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
             Self::output(ProviderOutput::Image {
                 filename: "wiki.jpg".into(),
                 b64: "aW1n".into(),
@@ -593,6 +607,189 @@ mod tests {
         assert_eq!(pipeline.services.calls.load(Ordering::Relaxed), 0);
     }
 
+    struct Pending {
+        started: Arc<Notify>,
+    }
+    impl EnrichmentServices for Pending {
+        fn dictionary<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Box::pin(async move {
+                self.started.notify_one();
+                std::future::pending().await
+            })
+        }
+        fn generation<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            unreachable!()
+        }
+        fn kanji<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            unreachable!()
+        }
+        fn image<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            unreachable!()
+        }
+        fn audio<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            unreachable!()
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_interrupts_in_flight_provider() {
+        let started = Arc::new(Notify::new());
+        let pipeline = NativePipeline::new(
+            Pending {
+                started: started.clone(),
+            },
+            PipelineConfig {
+                rate_limits: BTreeMap::new(),
+                ..PipelineConfig::default()
+            },
+        );
+        let cancellation = pipeline.cancellation();
+        let task = tokio::spawn(async move {
+            pipeline
+                .enrich(CardMode::Inject, "japanese_vocab", "食べる", "")
+                .await
+        });
+        started.notified().await;
+        cancellation.cancel();
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(PipelineError::Cancelled)
+        ));
+    }
+
+    #[derive(Default)]
+    struct Events(Mutex<Vec<PipelineEvent>>);
+    impl ProgressSink for Events {
+        fn event(&self, event: PipelineEvent) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    #[tokio::test]
+    async fn progress_distinguishes_fresh_and_cached_outputs() {
+        let events = Arc::new(Events::default());
+        let pipeline = NativePipeline::new(
+            Fake {
+                calls: AtomicUsize::new(0),
+            },
+            PipelineConfig {
+                rate_limits: BTreeMap::new(),
+                ..PipelineConfig::default()
+            },
+        )
+        .with_progress(events.clone());
+        for _ in 0..2 {
+            pipeline
+                .enrich(CardMode::Inject, "japanese_vocab", "食べる", "")
+                .await
+                .unwrap();
+        }
+        let events = events.0.lock().unwrap();
+        assert!(
+            events
+                .iter()
+                .any(|event| event.state == PipelineState::Started)
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event.state == PipelineState::Finished)
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event.state == PipelineState::Cached)
+        );
+    }
+
+    struct Bounded {
+        active: AtomicUsize,
+        maximum: AtomicUsize,
+    }
+    impl EnrichmentServices for Bounded {
+        fn dictionary<'a>(&'a self, expression: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Box::pin(async move {
+                let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+                self.maximum.fetch_max(active, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(15)).await;
+                self.active.fetch_sub(1, Ordering::SeqCst);
+                Ok(ProviderOutput::Dictionary(DictionaryData {
+                    found: true,
+                    word: expression.into(),
+                    ..Default::default()
+                }))
+            })
+        }
+        fn generation<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Generation(LlmResponse::default()))
+        }
+        fn kanji<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+        fn image<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+        fn audio<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+    }
+
+    #[tokio::test]
+    async fn enrich_many_honors_request_bound() {
+        let pipeline = NativePipeline::new(
+            Bounded {
+                active: AtomicUsize::new(0),
+                maximum: AtomicUsize::new(0),
+            },
+            PipelineConfig {
+                rate_limits: BTreeMap::new(),
+                max_in_flight: 2,
+                cache_revision: "bounded".into(),
+            },
+        );
+        let requests = (0..8)
+            .map(|index| EnrichmentRequest {
+                mode: CardMode::Inject,
+                deck_key: "english_vocab".into(),
+                expression: format!("word-{index}"),
+                context: String::new(),
+            })
+            .collect();
+        assert!(
+            pipeline
+                .enrich_many(requests)
+                .await
+                .into_iter()
+                .all(|item| item.is_ok())
+        );
+        assert_eq!(pipeline.services.maximum.load(Ordering::SeqCst), 2);
+    }
+
     struct Concurrent {
         barrier: Arc<Barrier>,
     }
@@ -625,10 +822,10 @@ mod tests {
         ) -> PipelineFuture<'a> {
             self.wait(ProviderOutput::Generation(LlmResponse::default()))
         }
-        fn kanji<'a>(&'a self, _: &'a str) -> PipelineFuture<'a> {
+        fn kanji<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
             self.wait(ProviderOutput::Kanji(String::new()))
         }
-        fn image<'a>(&'a self, _: &'a str) -> PipelineFuture<'a> {
+        fn image<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
             self.wait(ProviderOutput::Image {
                 filename: "image.jpg".into(),
                 b64: "aQ==".into(),

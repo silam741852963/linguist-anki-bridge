@@ -2183,8 +2183,15 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
         })
     }
 
-    fn kanji<'a>(&'a self, expression: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
+    fn kanji<'a>(
+        &'a self,
+        expression: &'a str,
+        deck_key: &'a str,
+    ) -> linguist_pipeline::PipelineFuture<'a> {
         Box::pin(async move {
+            if !deck_key.starts_with("japanese") {
+                return Ok(linguist_pipeline::ProviderOutput::Unavailable);
+            }
             let result = linguist_dictionary::kanji::lookup_word(
                 &self.kanji,
                 expression,
@@ -2220,8 +2227,15 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
         })
     }
 
-    fn image<'a>(&'a self, expression: &'a str) -> linguist_pipeline::PipelineFuture<'a> {
+    fn image<'a>(
+        &'a self,
+        expression: &'a str,
+        deck_key: &'a str,
+    ) -> linguist_pipeline::PipelineFuture<'a> {
         Box::pin(async move {
+            if deck_key.ends_with("grammar") {
+                return Ok(linguist_pipeline::ProviderOutput::Unavailable);
+            }
             use base64::Engine;
             use std::sync::{Arc, atomic::AtomicBool};
             let result = linguist_media::discover_image(
@@ -2269,6 +2283,9 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
         dictionary: &'a linguist_core::DictionaryData,
     ) -> linguist_pipeline::PipelineFuture<'a> {
         Box::pin(async move {
+            if deck_key.ends_with("grammar") {
+                return Ok(linguist_pipeline::ProviderOutput::Unavailable);
+            }
             use base64::Engine;
             let locale = deck_locale(deck_key);
             let pronunciations = if dictionary.pronunciations.is_empty() {
