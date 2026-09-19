@@ -29,6 +29,7 @@ pub struct ReviewDraft {
     pub note_id: i64,
     pub mode: CardMode,
     pub deck_name: String,
+    pub language_key: Option<String>,
     pub target_model: String,
     pub expression: String,
     pub meaning: String,
@@ -85,6 +86,7 @@ impl ReviewDraft {
                 .map(|deck| deck.0.clone())
                 .unwrap_or_default(),
             target_model: note.model_name.0.clone(),
+            language_key: None,
             expression,
             meaning,
             kanji,
@@ -107,6 +109,7 @@ impl ReviewDraft {
             note_id,
             mode: CardMode::Modernize,
             deck_name: String::new(),
+            language_key: None,
             target_model: String::new(),
             expression: String::new(),
             meaning: String::new(),
@@ -364,7 +367,9 @@ impl DraftStore {
             .entry(note.note_id)
             .or_insert_with(|| ReviewDraft::from_note(note));
         if !entry.dirty() && entry.undo.is_empty() && entry.pending.is_empty() {
+            let language_key = entry.language_key.clone();
             *entry = ReviewDraft::from_note(note);
+            entry.language_key = language_key;
         }
         self.active_note_id = Some(note.note_id);
     }
@@ -512,5 +517,25 @@ mod tests {
         assert_eq!(draft.audio, ["cat.mp3"]);
         draft.edit(DraftField::Expression, "犬");
         assert!(draft.accepted_document().is_none());
+    }
+
+    #[test]
+    fn hydration_keeps_import_language_key() {
+        let note = NoteInfo {
+            note_id: 42,
+            model_name: linguist_application::ModelName("Model".into()),
+            deck_names: vec![],
+            fields: BTreeMap::from([("Expression".into(), "猫".into())]),
+            tags: Vec::new(),
+        };
+        let mut draft = ReviewDraft::from_note(&note);
+        draft.language_key = Some("japanese_vocab".into());
+        let mut store = DraftStore::default();
+        store.insert(draft);
+        store.hydrate(&note, &mut FakePersistence::default());
+        assert_eq!(
+            store.active().unwrap().language_key.as_deref(),
+            Some("japanese_vocab")
+        );
     }
 }

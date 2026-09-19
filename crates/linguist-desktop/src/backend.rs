@@ -1143,13 +1143,14 @@ impl qobject::AppBackend {
                             }
                             _ => "Linguist Vocabulary".into(),
                         });
-                    let draft = crate::draft::ReviewDraft::injection(
+                    let mut draft = crate::draft::ReviewDraft::injection(
                         synthetic_id,
                         row.expression,
                         row.context,
                         row.deck_key,
                         model,
                     );
+                    draft.language_key = Some(row.language_key.clone());
                     self.as_mut().rust_mut().controller.enqueue_draft(
                         draft,
                         format!("{} · {} · injection", row.language_key, row.type_tag),
@@ -1158,10 +1159,12 @@ impl qobject::AppBackend {
                 }
                 DuplicateDecision::Modernize { note } => {
                     let detail = format!("{} · {} · modernization", row.language_key, row.type_tag);
+                    let mut draft = crate::draft::ReviewDraft::from_note(&note);
+                    draft.language_key = Some(row.language_key);
                     self.as_mut()
                         .rust_mut()
                         .controller
-                        .enqueue_draft(crate::draft::ReviewDraft::from_note(&note), detail);
+                        .enqueue_draft(draft, detail);
                 }
                 DuplicateDecision::Ambiguous { .. } | DuplicateDecision::Skip => blocked += 1,
             }
@@ -1884,6 +1887,35 @@ struct LiveGenerationAdapter {
     ollama: linguist_ollama::OllamaClient,
     model: String,
     ocr: linguist_ocr::Tesseract,
+    decks: BTreeMap<String, linguist_config::DeckConfig>,
+}
+
+fn generation_deck_key<'a>(
+    draft: &'a crate::draft::ReviewDraft,
+    decks: &'a BTreeMap<String, linguist_config::DeckConfig>,
+) -> Result<&'a str, String> {
+    if let Some(key) = draft.language_key.as_deref() {
+        return Ok(key);
+    }
+    let matches = decks
+        .iter()
+        .filter(|(key, deck)| {
+            key.as_str() == draft.deck_name
+                || deck.deck_name.as_deref() == Some(draft.deck_name.as_str())
+        })
+        .map(|(key, _)| key.as_str())
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [key] => Ok(key),
+        [] => Err(format!(
+            "No language mapping for Anki deck '{}'; configure it before generation",
+            draft.deck_name
+        )),
+        _ => Err(format!(
+            "Multiple language mappings for Anki deck '{}'; choose one before generation",
+            draft.deck_name
+        )),
+    }
 }
 
 struct LiveEnrichmentServices {
@@ -2403,19 +2435,16 @@ impl LiveGenerationAdapter {
             ollama,
             model,
             ocr: linguist_ocr::Tesseract::new("tesseract"),
+            decks: config.decks,
         })
     }
 
     fn document(&self, draft: &crate::draft::ReviewDraft) -> Result<CardDocument, String> {
+        let deck_key = generation_deck_key(draft, &self.decks)?;
         self.runtime.block_on(async {
             let mut document = self
                 .pipeline
-                .enrich(
-                    draft.mode,
-                    &draft.deck_name,
-                    &draft.expression,
-                    &draft.meaning,
-                )
+                .enrich(draft.mode, deck_key, &draft.expression, &draft.meaning)
                 .await
                 .map_err(|error| error.to_string())?;
             if draft.mode == CardMode::Inject || draft.images.is_empty() {
@@ -2920,6 +2949,33 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
 #[cfg(test)]
 mod backend_tests {
     use super::*;
+
+    #[test]
+    fn generation_uses_language_key_not_anki_deck_name() {
+        let decks = BTreeMap::from([(
+            "japanese_vocab".into(),
+            linguist_config::DeckConfig {
+                deck_name: Some("Japanese Words".into()),
+                ..Default::default()
+            },
+        )]);
+        let draft =
+            crate::draft::ReviewDraft::injection(-1, "猫", "", "Japanese Words", "Vocabulary");
+        assert_eq!(
+            generation_deck_key(&draft, &decks).unwrap(),
+            "japanese_vocab"
+        );
+
+        let mut explicit = draft.clone();
+        explicit.language_key = Some("german_grammar".into());
+        assert_eq!(
+            generation_deck_key(&explicit, &decks).unwrap(),
+            "german_grammar"
+        );
+
+        let unknown = crate::draft::ReviewDraft::injection(-2, "cat", "", "Unknown", "Model");
+        assert!(generation_deck_key(&unknown, &decks).is_err());
+    }
 
     #[test]
     fn local_csv_urls_decode_without_accepting_remote_schemes() {
