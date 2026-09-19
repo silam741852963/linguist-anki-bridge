@@ -21,7 +21,7 @@ mod ingestion;
 mod selector;
 pub use ingestion::{
     CsvColumnMapping, CsvIngestRequest, CsvPreview, DuplicateDecision, IngestionPreview, InputRow,
-    ManualIngestRequest, RowIssue, prepare_csv_input, prepare_manual_input,
+    ManualIngestRequest, RowIssue, canonical_language_key, prepare_csv_input, prepare_manual_input,
     resolve_ingestion_preview,
 };
 pub use selector::{

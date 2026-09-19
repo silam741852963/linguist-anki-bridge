@@ -62,6 +62,30 @@ pub enum DuplicateDecision {
     Skip,
 }
 
+/// Normalize the language aliases accepted by the Python importer.
+pub fn canonical_language_key(value: &str) -> Option<String> {
+    let key = value.trim().to_ascii_lowercase().replace(' ', "_");
+    let key = match key.as_str() {
+        "japanese" | "ja" => "japanese_vocab",
+        "english" | "en" => "english_vocab",
+        "taiwanese" | "zh_tw" | "zh-tw" => "taiwanese_vocab",
+        "german" | "de" => "german_vocab",
+        _ => key.as_str(),
+    };
+    matches!(
+        key,
+        "japanese_vocab"
+            | "japanese_grammar"
+            | "english_vocab"
+            | "english_grammar"
+            | "taiwanese_vocab"
+            | "taiwanese_grammar"
+            | "german_vocab"
+            | "german_grammar"
+    )
+    .then(|| key.to_owned())
+}
+
 pub fn prepare_manual_input(request: &ManualIngestRequest) -> IngestionPreview {
     let mut rows = Vec::new();
     let mut issues = Vec::new();
@@ -295,5 +319,18 @@ mod tests {
         assert_eq!(preview.rows[0].expression, "食,べる");
         assert_eq!(preview.rows[0].context, "a, b");
         assert_eq!(preview.issues.len(), 1);
+        assert_eq!(
+            canonical_language_key(" Japanese ").as_deref(),
+            Some("japanese_vocab")
+        );
+        assert_eq!(
+            canonical_language_key("de").as_deref(),
+            Some("german_vocab")
+        );
+        assert_eq!(
+            canonical_language_key("japanese_grammar").as_deref(),
+            Some("japanese_grammar")
+        );
+        assert!(canonical_language_key("unknown").is_none());
     }
 }

@@ -1039,12 +1039,22 @@ impl qobject::AppBackend {
         language_key: &QString,
         type_tag: &QString,
     ) {
-        let preview = prepare_manual_input(&ManualIngestRequest {
+        let prepared = prepare_manual_input(&ManualIngestRequest {
             raw: raw.to_string(),
             deck_key: deck_key.to_string(),
             language_key: language_key.to_string(),
             type_tag: type_tag.to_string(),
         });
+        let preview = match runtime_config()
+            .map(|config| route_ingestion_preview(prepared, &config, &language_key.to_string()))
+        {
+            Ok(preview) => preview,
+            Err(error) => {
+                self.as_mut().rust_mut().controller.report_error(error);
+                sync_controller_state(self);
+                return;
+            }
+        };
         let mut issues = preview
             .issues
             .iter()
@@ -1215,10 +1225,20 @@ impl qobject::AppBackend {
             header(csv.mapping.type_tag),
             header(csv.mapping.context)
         );
-        let preview = IngestionPreview {
+        let prepared = IngestionPreview {
             rows: csv.rows,
             issues: csv.issues,
             duplicates: csv.duplicates,
+        };
+        let preview = match runtime_config()
+            .map(|config| route_ingestion_preview(prepared, &config, &language_key.to_string()))
+        {
+            Ok(preview) => preview,
+            Err(error) => {
+                self.as_mut().rust_mut().controller.report_error(error);
+                sync_controller_state(self);
+                return;
+            }
         };
         let (rows, issues, pending) = build_ingestion_display(&preview);
         let row_count = queue_len(rows.len());
@@ -1383,6 +1403,41 @@ fn ingestion_decision_label(decision: &DuplicateDecision) -> String {
         }
         DuplicateDecision::Skip => "Skip".into(),
     }
+}
+
+fn route_ingestion_preview(
+    mut preview: IngestionPreview,
+    config: &linguist_config::NativeConfig,
+    default_language: &str,
+) -> IngestionPreview {
+    let default_key = linguist_application::canonical_language_key(default_language);
+    preview.rows.retain_mut(|row| {
+        let Some(key) = linguist_application::canonical_language_key(&row.language_key) else {
+            preview.issues.push(linguist_application::RowIssue {
+                line: row.ordinal,
+                message: format!("Unknown language key: {}", row.language_key),
+            });
+            return false;
+        };
+        if Some(key.as_str()) != default_key.as_deref() {
+            let Some(deck_name) = config
+                .decks
+                .get(&key)
+                .and_then(|deck| deck.deck_name.as_deref())
+                .filter(|name| !name.trim().is_empty())
+            else {
+                preview.issues.push(linguist_application::RowIssue {
+                    line: row.ordinal,
+                    message: format!("No target deck mapped for {key}"),
+                });
+                return false;
+            };
+            row.deck_key = deck_name.to_owned();
+        }
+        row.language_key = key;
+        true
+    });
+    preview
 }
 
 fn build_ingestion_display(
@@ -2975,6 +3030,44 @@ mod backend_tests {
 
         let unknown = crate::draft::ReviewDraft::injection(-2, "cat", "", "Unknown", "Model");
         assert!(generation_deck_key(&unknown, &decks).is_err());
+    }
+
+    #[test]
+    fn csv_language_override_routes_duplicate_check_to_mapped_deck() {
+        let config = linguist_config::NativeConfig {
+            decks: BTreeMap::from([(
+                "german_vocab".into(),
+                linguist_config::DeckConfig {
+                    deck_name: Some("Deutsch".into()),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        let preview =
+            linguist_application::prepare_csv_input(&linguist_application::CsvIngestRequest {
+                content: "Word,Language\ncat,japanese\nHaus,de\nchien,french\n".into(),
+                deck_key: "Japanese Words".into(),
+                language_key: "japanese_vocab".into(),
+                type_tag: "vocab".into(),
+                mapping: None,
+            })
+            .unwrap();
+        let routed = route_ingestion_preview(
+            IngestionPreview {
+                rows: preview.rows,
+                issues: preview.issues,
+                duplicates: preview.duplicates,
+            },
+            &config,
+            "japanese_vocab",
+        );
+        assert_eq!(routed.rows.len(), 2);
+        assert_eq!(routed.rows[0].deck_key, "Japanese Words");
+        assert_eq!(routed.rows[0].language_key, "japanese_vocab");
+        assert_eq!(routed.rows[1].deck_key, "Deutsch");
+        assert_eq!(routed.rows[1].language_key, "german_vocab");
+        assert_eq!(routed.issues.len(), 1);
     }
 
     #[test]
