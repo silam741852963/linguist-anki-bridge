@@ -5,6 +5,7 @@ use crate::{
     draft::{DraftField, DraftPersistence, DraftStore, GeneratedChange, ReviewDraft},
 };
 use linguist_application::NoteInfo;
+use linguist_core::CardDocument;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServiceState {
@@ -274,11 +275,11 @@ impl ApplicationController {
             return;
         };
         match port.generate(&draft) {
-            Ok(changes) => self
+            Ok(generated) => self
                 .drafts
                 .active_mut()
                 .expect("active draft unchanged")
-                .regenerate(changes),
+                .regenerate_document(generated.document, generated.changes),
             Err(error) => self.report_error(error),
         }
     }
@@ -329,7 +330,12 @@ impl ApplicationController {
 }
 
 pub trait DraftGenerationPort {
-    fn generate(&self, draft: &ReviewDraft) -> Result<Vec<GeneratedChange>, String>;
+    fn generate(&self, draft: &ReviewDraft) -> Result<GeneratedDraft, String>;
+}
+
+pub struct GeneratedDraft {
+    pub document: CardDocument,
+    pub changes: Vec<GeneratedChange>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -433,12 +439,24 @@ mod tests {
 
     struct FakeGeneration;
     impl DraftGenerationPort for FakeGeneration {
-        fn generate(&self, _draft: &ReviewDraft) -> Result<Vec<GeneratedChange>, String> {
-            Ok(vec![GeneratedChange {
-                field: DraftField::Meaning,
-                value: "generated".into(),
-                provenance: "fake".into(),
-            }])
+        fn generate(&self, _draft: &ReviewDraft) -> Result<GeneratedDraft, String> {
+            Ok(GeneratedDraft {
+                document: linguist_core::CardDocument {
+                    schema_version: linguist_core::CONTRACT_VERSION,
+                    expression: "読む".into(),
+                    values: linguist_core::LogicalFields::default(),
+                    media: Vec::new(),
+                    obsolete_media: Vec::new(),
+                    issues: Vec::new(),
+                    tags: Vec::new(),
+                    provenance: Default::default(),
+                },
+                changes: vec![GeneratedChange {
+                    field: DraftField::Meaning,
+                    value: "generated".into(),
+                    provenance: "fake".into(),
+                }],
+            })
         }
     }
 

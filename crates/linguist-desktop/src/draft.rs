@@ -1,5 +1,5 @@
 use linguist_application::NoteInfo;
-use linguist_core::CardMode;
+use linguist_core::{CardDocument, CardMode};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -40,6 +40,8 @@ pub struct ReviewDraft {
     locked: BTreeSet<DraftField>,
     user_edited: BTreeSet<DraftField>,
     pending: Vec<GeneratedChange>,
+    pending_document: Option<CardDocument>,
+    accepted_document: Option<CardDocument>,
     undo: Vec<Edit>,
     redo: Vec<Edit>,
     dirty: bool,
@@ -93,6 +95,8 @@ impl ReviewDraft {
             locked: BTreeSet::new(),
             user_edited: BTreeSet::new(),
             pending: Vec::new(),
+            pending_document: None,
+            accepted_document: None,
             undo: Vec::new(),
             redo: Vec::new(),
             dirty: false,
@@ -114,6 +118,8 @@ impl ReviewDraft {
             locked: BTreeSet::new(),
             user_edited: BTreeSet::new(),
             pending: Vec::new(),
+            pending_document: None,
+            accepted_document: None,
             undo: Vec::new(),
             redo: Vec::new(),
             dirty: false,
@@ -154,6 +160,11 @@ impl ReviewDraft {
             return;
         }
         self.set_value(field, value.clone());
+        if field == DraftField::Expression {
+            self.pending_document = None;
+            self.accepted_document = None;
+            self.pending.clear();
+        }
         self.undo.push(Edit {
             field,
             before,
@@ -193,12 +204,32 @@ impl ReviewDraft {
     }
 
     pub fn regenerate(&mut self, changes: impl IntoIterator<Item = GeneratedChange>) {
+        self.pending_document = None;
         self.pending = changes
             .into_iter()
             .filter(|change| {
                 !self.locked(change.field) && !self.user_edited.contains(&change.field)
             })
             .collect();
+    }
+
+    pub fn regenerate_document(
+        &mut self,
+        document: CardDocument,
+        changes: impl IntoIterator<Item = GeneratedChange>,
+    ) {
+        self.regenerate(changes);
+        self.pending_document = (!self.pending.is_empty()).then_some(document);
+    }
+
+    pub fn accepted_document(&self) -> Option<CardDocument> {
+        let mut document = self.accepted_document.clone()?;
+        if document.expression != self.expression {
+            return None;
+        }
+        document.values.meaning_text = Some(self.meaning.clone());
+        document.values.kanji_construction = Some(self.kanji.clone());
+        Some(document)
     }
 
     pub fn accept(&mut self, index: usize) -> bool {
@@ -209,7 +240,27 @@ impl ReviewDraft {
         if self.locked(change.field) {
             return false;
         }
+        let accepts_document = change.field == DraftField::Meaning;
         self.edit(change.field, change.value);
+        if accepts_document {
+            if let Some(document) = self.pending_document.take() {
+                self.images = media_names(
+                    document.values.meaning_image.as_deref().unwrap_or_default(),
+                    "img",
+                    "src",
+                );
+                self.audio = media_names(
+                    document.values.audio.as_deref().unwrap_or_default(),
+                    "sound",
+                    "",
+                );
+                self.issues = document.issues.clone();
+                self.accepted_document = Some(document);
+            }
+        }
+        if self.pending.is_empty() {
+            self.pending_document = None;
+        }
         true
     }
 
@@ -218,6 +269,9 @@ impl ReviewDraft {
             return false;
         }
         self.pending.remove(index);
+        if self.pending.is_empty() {
+            self.pending_document = None;
+        }
         true
     }
 
@@ -414,5 +468,49 @@ mod tests {
         assert_eq!(draft.images, ["food.jpg"]);
         assert_eq!(draft.audio, ["taberu.mp3"]);
         assert!(!draft.dirty());
+    }
+
+    #[test]
+    fn accepted_generation_keeps_media_and_user_edits() {
+        let mut draft = ReviewDraft::injection(-1, "猫", "context", "Japanese", "Model");
+        let document = CardDocument {
+            schema_version: linguist_core::CONTRACT_VERSION,
+            expression: "猫".into(),
+            values: linguist_core::LogicalFields {
+                meaning_image: Some("<img src=\"cat.jpg\">".into()),
+                meaning_text: Some("generated meaning".into()),
+                kanji_construction: Some("猫: cat".into()),
+                audio: Some("[sound:cat.mp3]".into()),
+            },
+            media: vec![linguist_core::MediaAsset {
+                filename: "cat.jpg".into(),
+                data_base64: "Y2F0".into(),
+            }],
+            obsolete_media: Vec::new(),
+            issues: Vec::new(),
+            tags: Vec::new(),
+            provenance: Default::default(),
+        };
+        draft.regenerate_document(
+            document,
+            [GeneratedChange {
+                field: DraftField::Meaning,
+                value: "generated meaning".into(),
+                provenance: "test".into(),
+            }],
+        );
+        assert!(draft.accepted_document().is_none());
+        assert!(draft.accept(0));
+        draft.edit(DraftField::Meaning, "user correction");
+        let accepted = draft.accepted_document().unwrap();
+        assert_eq!(accepted.media[0].filename, "cat.jpg");
+        assert_eq!(
+            accepted.values.meaning_text.as_deref(),
+            Some("user correction")
+        );
+        assert_eq!(draft.images, ["cat.jpg"]);
+        assert_eq!(draft.audio, ["cat.mp3"]);
+        draft.edit(DraftField::Expression, "犬");
+        assert!(draft.accepted_document().is_none());
     }
 }

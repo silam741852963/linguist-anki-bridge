@@ -265,7 +265,9 @@ use linguist_core::{
 };
 use linguist_snapshots::SnapshotRepository;
 
-use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort, DraftNotePort};
+use crate::controller::{
+    ApplicationController, DesktopPort, DraftGenerationPort, DraftNotePort, GeneratedDraft,
+};
 use crate::review_model::{ReviewQueueData, ReviewRow, ReviewState};
 use crate::theme::{ThemePalette, ThemeWatch, omarchy_palette_path};
 
@@ -2548,20 +2550,30 @@ fn apply_existing_image_result(
 }
 
 impl DraftGenerationPort for LiveGenerationAdapter {
-    fn generate(
-        &self,
-        draft: &crate::draft::ReviewDraft,
-    ) -> Result<Vec<crate::draft::GeneratedChange>, String> {
+    fn generate(&self, draft: &crate::draft::ReviewDraft) -> Result<GeneratedDraft, String> {
         let document = self.document(draft)?;
-        let value = document.values.meaning_text.unwrap_or_default();
+        let value = document.values.meaning_text.clone().unwrap_or_default();
         if value.trim().is_empty() {
             return Err("Ollama returned no usable meaning".into());
         }
-        Ok(vec![crate::draft::GeneratedChange {
+        let mut changes = vec![crate::draft::GeneratedChange {
             field: crate::draft::DraftField::Meaning,
             value,
             provenance: "Native enrichment pipeline · Jisho + Ollama".into(),
-        }])
+        }];
+        if let Some(kanji) = document
+            .values
+            .kanji_construction
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            changes.push(crate::draft::GeneratedChange {
+                field: crate::draft::DraftField::Kanji,
+                value: kanji.clone(),
+                provenance: "Kanji lookup".into(),
+            });
+        }
+        Ok(GeneratedDraft { document, changes })
     }
 }
 
@@ -2738,16 +2750,17 @@ impl LiveCommitAdapter {
         if deck_name.trim().is_empty() || target_model.trim().is_empty() {
             return Err("Deck and target model are required".into());
         }
-        let document = CardDocument {
+        let mut document = draft.accepted_document().unwrap_or_else(|| CardDocument {
             schema_version: CONTRACT_VERSION,
             expression,
             values,
             media: Vec::new(),
             obsolete_media: Vec::new(),
             issues: draft.issues.clone(),
-            tags,
+            tags: Vec::new(),
             provenance: BTreeMap::new(),
-        };
+        });
+        document.tags = tags;
         let template_plan = if target_model == managed_spec.model_name {
             self.runtime
                 .block_on(self.commit.japanese_template_plan())
@@ -2846,6 +2859,19 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
             .source
             .as_ref()
             .is_none_or(|source| source.model_name != request.target_model);
+        let media = request
+            .document
+            .media
+            .iter()
+            .map(|asset| format!("Add {}", asset.filename))
+            .chain(
+                request
+                    .document
+                    .obsolete_media
+                    .iter()
+                    .map(|filename| format!("Remove {filename}")),
+            )
+            .collect();
         let outcome = self
             .runtime
             .block_on(commit_card(&self.commit, request))
@@ -2859,7 +2885,7 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
         Ok(crate::commit_model::CommitPreview {
             before,
             after,
-            media: Vec::new(),
+            media,
             model_changed,
         })
     }
