@@ -13,6 +13,14 @@ ApplicationWindow {
     minimumHeight: 360
     title: qsTr("Linguist Anki Bridge")
     color: backend.theme_background
+    palette.window: appBackground
+    palette.windowText: foreground
+    palette.base: surface
+    palette.text: foreground
+    palette.button: surface
+    palette.buttonText: foreground
+    palette.highlight: accent
+    palette.highlightedText: appBackground
 
     AppBackend { id: backend }
     Component.onCompleted: backend.refreshState()
@@ -73,58 +81,84 @@ ApplicationWindow {
             }
             TextField {
                 id: search
-                Accessible.name: qsTr("Search cards, decks, or commands")
+                Accessible.name: qsTr("Search cards or decks")
                 Accessible.description: qsTr("Press Ctrl K to focus search")
                 focusPolicy: Qt.StrongFocus
                 Layout.fillWidth: true
                 Layout.minimumWidth: 80
                 Layout.preferredWidth: root.width >= 1200 ? 320 : 160
                 Layout.maximumWidth: 320
-                placeholderText: root.width < 700 ? qsTr("Search · Ctrl K") : qsTr("Search cards, decks, or commands   Ctrl K")
+                placeholderText: root.width < 700 ? qsTr("Find card or deck") : qsTr("Find card or deck · Enter")
+                onAccepted: { backend.searchReview(text); if (root.narrowMode) root.showQueue = false }
                 KeyNavigation.tab: refreshButton
             }
             ToolButton {
                 visible: root.narrowMode
-                text: root.showQueue ? qsTr("Card") : qsTr("Queue")
+                text: root.showQueue ? qsTr("Show card editor") : qsTr("Show review queue")
+                icon.source: root.showQueue ? "icons/card.svg" : "icons/list.svg"
+                icon.color: root.foreground
+                display: AbstractButton.IconOnly
                 Accessible.name: root.showQueue ? qsTr("Show card editor") : qsTr("Show review queue")
+                ToolTip.visible: hovered
+                ToolTip.text: Accessible.name
                 onClicked: root.showQueue = !root.showQueue
             }
             Label {
                 text: qsTr("● Anki · %1").arg(backend.anki_status)
                 visible: root.width >= 1250
-                color: backend.anki_status === "Ready" ? "#a6e3a1" : root.muted
+                color: backend.anki_status === "Ready" ? root.accent : root.muted
             }
             Label {
                 text: qsTr("● Ollama · %1").arg(backend.ollama_status)
                 visible: root.width >= 1250
-                color: backend.ollama_status === "Ready" ? "#a6e3a1" : root.muted
+                color: backend.ollama_status === "Ready" ? root.accent : root.muted
             }
             ToolButton {
                 id: refreshButton
-                text: root.width >= 1200 ? qsTr("Refresh state") : root.width >= 700 ? qsTr("Refresh") : qsTr("↻")
+                text: qsTr("Refresh connections and queue")
+                icon.source: "icons/refresh.svg"
+                icon.color: root.foreground
+                display: AbstractButton.IconOnly
                 Accessible.name: text
                 Accessible.description: qsTr("Refresh Anki and Ollama connection status")
+                ToolTip.visible: hovered
+                ToolTip.text: text
                 onClicked: backend.refreshState()
             }
             ToolButton {
                 id: batchButton
-                text: root.width >= 1200 ? qsTr("Batch jobs") : root.width >= 700 ? qsTr("Batch") : qsTr("Jobs")
+                text: qsTr("Batch jobs")
+                icon.source: "icons/list.svg"
+                icon.color: root.foreground
+                display: AbstractButton.IconOnly
                 Accessible.name: text
                 Accessible.description: qsTr("Open batch management. Shortcut Ctrl Shift B")
+                ToolTip.visible: hovered
+                ToolTip.text: text + qsTr(" · Ctrl Shift B")
                 onClicked: { backend.refreshBatches(); batchDialog.open() }
             }
             ToolButton {
                 id: importButton
-                text: root.width >= 1200 ? qsTr("Import words") : root.width >= 700 ? qsTr("Import") : qsTr("Add")
+                text: qsTr("Import words")
+                icon.source: "icons/add.svg"
+                icon.color: root.foreground
+                display: AbstractButton.IconOnly
                 Accessible.name: text
                 Accessible.description: qsTr("Preview pasted words. Shortcut Ctrl Shift I")
+                ToolTip.visible: hovered
+                ToolTip.text: text + qsTr(" · Ctrl Shift I")
                 onClicked: manualDialog.open()
             }
             ToolButton {
                 id: settingsButton
-                text: root.width < 700 ? qsTr("⚙") : qsTr("Settings")
+                text: qsTr("Settings")
+                icon.source: "icons/settings.svg"
+                icon.color: root.foreground
+                display: AbstractButton.IconOnly
                 Accessible.name: text
                 Accessible.description: qsTr("Open native settings. Shortcut Ctrl comma")
+                ToolTip.visible: hovered
+                ToolTip.text: text + qsTr(" · Ctrl ,")
                 onClicked: settingsDialog.open()
                 KeyNavigation.tab: search
             }
@@ -137,20 +171,6 @@ ApplicationWindow {
         Accessible.name: root.title
         Accessible.description: qsTr("Language-card review workspace")
 
-        NavigationRail {
-            visible: !root.narrowMode
-            onReviewRequested: reviewWorkspace.forceActiveFocus()
-            onAddRequested: manualDialog.open()
-            onBatchRequested: { backend.refreshBatches(); batchDialog.open() }
-            onHistoryRequested: reviewWorkspace.openHistory()
-            onSettingsRequested: settingsDialog.open()
-            Layout.preferredWidth: 220
-            Layout.fillHeight: true
-            backgroundColor: root.surface
-            foregroundColor: root.foreground
-            mutedColor: root.muted
-            accentColor: root.accent
-        }
         ReviewQueue {
             visible: !root.narrowMode || root.showQueue
             Layout.preferredWidth: root.narrowMode ? 0 : 360
@@ -161,6 +181,7 @@ ApplicationWindow {
             foregroundColor: root.foreground
             mutedColor: root.muted
             accentColor: root.accent
+            onCardSelected: if (root.narrowMode) root.showQueue = false
         }
         ReviewWorkspace {
             id: reviewWorkspace
@@ -190,7 +211,7 @@ ApplicationWindow {
                 color: backend.error_message.length > 0 ? root.accent : root.muted
             }
             Item { Layout.fillWidth: true }
-            Label { text: qsTr("Tab navigate  ·  Ctrl Enter apply"); color: root.muted }
+            Label { text: qsTr("Ctrl Enter preview"); color: root.muted }
         }
     }
 

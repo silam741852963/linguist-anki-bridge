@@ -41,9 +41,9 @@ impl ThemePalette {
     }
 }
 pub fn omarchy_palette_path() -> Option<PathBuf> {
-    std::env::var_os("XDG_CONFIG_HOME")
+    std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
         .map(|root| root.join("omarchy/current/theme/colors.toml"))
 }
 pub struct ThemeWatch {

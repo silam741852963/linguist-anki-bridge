@@ -5,7 +5,6 @@ import QtMultimedia
 
 Rectangle {
     id: workspace
-    function openHistory() { tabs.currentIndex = 3 }
     required property var backend
     required property color backgroundColor
     required property color surfaceColor
@@ -72,10 +71,10 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: childrenRect.height
                     spacing: 6
-                    Button { text: qsTr("Undo"); Accessible.name: text; onClicked: backend.undoDraft() }
-                    Button { text: qsTr("Redo"); Accessible.name: text; onClicked: backend.redoDraft() }
-                    Button { text: qsTr("Regenerate"); Accessible.name: text; onClicked: backend.regenerateDraft() }
-                    Button { text: qsTr("Preview changes"); Accessible.name: text; onClicked: backend.previewCommit() }
+                    ToolButton { text: qsTr("Undo"); icon.source: "icons/undo.svg"; display: AbstractButton.IconOnly; Accessible.name: text; ToolTip.visible: hovered; ToolTip.text: text; enabled: backend.draft_can_undo; onClicked: backend.undoDraft() }
+                    ToolButton { text: qsTr("Redo"); icon.source: "icons/redo.svg"; display: AbstractButton.IconOnly; Accessible.name: text; ToolTip.visible: hovered; ToolTip.text: text; enabled: backend.draft_can_redo; onClicked: backend.redoDraft() }
+                    ToolButton { text: qsTr("Regenerate"); icon.source: "icons/refresh.svg"; display: AbstractButton.IconOnly; Accessible.name: text; ToolTip.visible: hovered; ToolTip.text: text; enabled: backend.draft_available; onClicked: backend.regenerateDraft() }
+                    ToolButton { text: qsTr("Preview changes"); icon.source: "icons/preview.svg"; display: AbstractButton.IconOnly; Accessible.name: text; ToolTip.visible: hovered; ToolTip.text: text; enabled: backend.draft_available; onClicked: backend.previewCommit() }
                     Button {
                         text: qsTr("Apply to Anki")
                         Accessible.name: text
@@ -85,17 +84,6 @@ Rectangle {
                         onClicked: backend.applyCommit()
                     }
                 }
-            }
-
-            TabBar {
-                id: tabs
-                Layout.fillWidth: true
-                Layout.leftMargin: 22
-                Layout.rightMargin: 22
-                TabButton { text: qsTr("Fields") }
-                TabButton { text: qsTr("Card preview") }
-                TabButton { text: qsTr("Sources") }
-                TabButton { text: qsTr("History") }
             }
 
             Rectangle {
@@ -219,38 +207,41 @@ Rectangle {
                 }
             }
 
-            RowLayout {
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 22
                 Layout.rightMargin: 22
-                spacing: 14
+                spacing: 10
 
-                ComboBox {
-                    id: previewTemplate
-                    Accessible.name: qsTr("Card preview template")
-                    model: [qsTr("Comprehension"), qsTr("Spelling"), qsTr("Production")]
-                    currentIndex: workspace.previewTemplateIndex
-                    onActivated: workspace.previewTemplateIndex = currentIndex
-                }
-                Button {
-                    text: qsTr("Play audio")
-                    Accessible.name: text
-                    enabled: backend.previewAudioUrl(0).length > 0
-                    onClicked: {
-                        previewAudio.source = backend.previewAudioUrl(0)
-                        previewAudio.play()
+                RowLayout {
+                    Layout.fillWidth: true
+                    ComboBox {
+                        id: previewTemplate
+                        Accessible.name: qsTr("Card preview template")
+                        model: [qsTr("Comprehension"), qsTr("Spelling"), qsTr("Production")]
+                        currentIndex: workspace.previewTemplateIndex
+                        onActivated: workspace.previewTemplateIndex = currentIndex
                     }
-                }
-                Button {
-                    text: qsTr("Zoom preview")
-                    Accessible.name: text
-                    onClicked: {
-                        workspace.zoomHtml = backend.cardPreview(workspace.previewTemplateIndex, true)
-                        zoomDialog.open()
+                    ToolButton {
+                        text: qsTr("Play audio")
+                        icon.source: "icons/play.svg"
+                        display: AbstractButton.IconOnly
+                        Accessible.name: text
+                        ToolTip.visible: hovered
+                        ToolTip.text: text
+                        enabled: backend.previewAudioUrl(0).length > 0
+                        onClicked: {
+                            previewAudio.source = backend.previewAudioUrl(0)
+                            previewAudio.play()
+                        }
                     }
+                    Item { Layout.fillWidth: true }
                 }
-                Item { Layout.fillWidth: true }
-
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: workspace.width < 720 ? 1 : 2
+                    columnSpacing: 12
+                    rowSpacing: 12
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 260
@@ -308,6 +299,7 @@ Rectangle {
                             }
                         }
                     }
+                }
                 }
             }
 

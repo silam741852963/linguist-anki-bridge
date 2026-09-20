@@ -149,6 +149,8 @@ impl ReviewDraft {
     pub fn dirty(&self) -> bool {
         self.dirty
     }
+    pub fn can_undo(&self) -> bool { !self.undo.is_empty() }
+    pub fn can_redo(&self) -> bool { !self.redo.is_empty() }
     pub fn pending(&self) -> &[GeneratedChange] {
         &self.pending
     }

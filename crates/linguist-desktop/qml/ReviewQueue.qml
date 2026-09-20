@@ -3,6 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 Rectangle {
+    id: queue
+    signal cardSelected()
     required property var backend
     required property color backgroundColor
     required property color foregroundColor
@@ -96,6 +98,8 @@ Rectangle {
                     if (currentIndex >= 0)
                         backend.selectReviewIndex(currentIndex)
                 }
+                Keys.onReturnPressed: queue.cardSelected()
+                Keys.onEnterPressed: queue.cardSelected()
                 delegate: Rectangle {
                     required property int index
                     readonly property string rowState: backend.reviewState(index)
@@ -112,7 +116,13 @@ Rectangle {
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: list.currentIndex = index
+                        onClicked: {
+                            if (list.currentIndex === index)
+                                backend.selectReviewIndex(index)
+                            else
+                                list.currentIndex = index
+                            queue.cardSelected()
+                        }
                     }
                     Column {
                         anchors.fill: parent
@@ -122,7 +132,7 @@ Rectangle {
                         Label { text: backend.reviewDetail(index); color: mutedColor }
                         Label {
                             text: rowState
-                            color: rowState === "Ready" ? "#a6e3a1" : accentColor
+                            color: rowState === "Ready" ? accentColor : mutedColor
                             font.pointSize: 8
                         }
                     }

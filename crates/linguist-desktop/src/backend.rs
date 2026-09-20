@@ -33,6 +33,9 @@ pub mod qobject {
         #[qproperty(QString, draft_issues)]
         #[qproperty(QString, draft_provenance)]
         #[qproperty(bool, draft_dirty)]
+        #[qproperty(bool, draft_available)]
+        #[qproperty(bool, draft_can_undo)]
+        #[qproperty(bool, draft_can_redo)]
         #[qproperty(i32, draft_pending_count)]
         #[qproperty(bool, draft_meaning_locked)]
         #[qproperty(bool, commit_dry_run)]
@@ -42,6 +45,8 @@ pub mod qobject {
         #[qproperty(bool, commit_model_changed)]
         #[qproperty(i32, commit_snapshot_count)]
         #[qproperty(i32, batch_job_count)]
+        #[qproperty(i32, batch_selected_index)]
+        #[qproperty(QString, batch_status)]
         #[qproperty(i32, batch_item_count)]
         #[qproperty(i32, batch_item_total)]
         #[qproperty(QString, batch_confirmation)]
@@ -73,6 +78,9 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "selectItem"]
         fn select_item(self: Pin<&mut Self>, selection: &QString);
+        #[qinvokable]
+        #[cxx_name = "searchReview"]
+        fn search_review(self: Pin<&mut Self>, query: &QString);
         #[qinvokable]
         #[cxx_name = "reportError"]
         fn report_error(self: Pin<&mut Self>, message: &QString);
@@ -408,6 +416,9 @@ pub struct AppBackendRust {
     draft_issues: QString,
     draft_provenance: QString,
     draft_dirty: bool,
+    draft_available: bool,
+    draft_can_undo: bool,
+    draft_can_redo: bool,
     draft_pending_count: i32,
     draft_meaning_locked: bool,
     commit_dry_run: bool,
@@ -417,6 +428,8 @@ pub struct AppBackendRust {
     commit_model_changed: bool,
     commit_snapshot_count: i32,
     batch_job_count: i32,
+    batch_selected_index: i32,
+    batch_status: QString,
     batch_item_count: i32,
     batch_item_total: i32,
     batch_confirmation: QString,
@@ -483,6 +496,9 @@ impl AppBackendRust {
             draft_issues: QString::default(),
             draft_provenance: QString::default(),
             draft_dirty: false,
+            draft_available: false,
+            draft_can_undo: false,
+            draft_can_redo: false,
             draft_pending_count: 0,
             draft_meaning_locked: false,
             commit_dry_run: true,
@@ -492,6 +508,8 @@ impl AppBackendRust {
             commit_model_changed: false,
             commit_snapshot_count: 0,
             batch_job_count: 0,
+            batch_selected_index: -1,
+            batch_status: QString::default(),
             batch_item_count: 0,
             batch_item_total: 0,
             batch_confirmation: QString::default(),
@@ -611,13 +629,13 @@ impl qobject::AppBackend {
     }
 
     pub fn reload_theme(mut self: Pin<&mut Self>) {
-        let palette = self
+        let Some(palette) = self
             .as_mut()
             .rust_mut()
             .theme_watch
             .as_mut()
             .and_then(ThemeWatch::poll)
-            .unwrap_or_else(ThemePalette::load);
+        else { return; };
         self.as_mut()
             .set_theme_background(palette.background.into());
         self.as_mut().set_theme_surface(palette.surface.into());
@@ -628,7 +646,14 @@ impl qobject::AppBackend {
     }
 
     pub fn refresh_state(mut self: Pin<&mut Self>) {
-        match LiveDesktopPort::from_environment() {
+        let selected_deck = {
+            let binding = self.as_ref();
+            let queue = binding.rust().controller.queue();
+            queue.selected_deck_index()
+                .and_then(|index| queue.decks().get(index))
+                .cloned()
+        };
+        match LiveDesktopPort::from_environment().map(|port| port.for_deck(selected_deck)) {
             Ok(port) => self.as_mut().rust_mut().controller.refresh(&port),
             Err(error) => self.as_mut().rust_mut().controller.report_error(error),
         }
@@ -646,6 +671,28 @@ impl qobject::AppBackend {
             .controller
             .select(selection.to_string());
         sync_controller_state(self);
+    }
+
+    pub fn search_review(self: Pin<&mut Self>, query: &QString) {
+        let query = query.to_string().trim().to_lowercase();
+        if query.is_empty() { return; }
+        let (row, deck) = {
+            let binding = self.as_ref();
+            let queue = binding.rust().controller.queue();
+            let row = queue.rows().iter().position(|row| {
+                row.expression.to_lowercase().contains(&query)
+                    || row.detail.to_lowercase().contains(&query)
+            });
+            let deck = queue.decks().iter().position(|deck| deck.to_lowercase().contains(&query));
+            (row, deck)
+        };
+        if let Some(index) = row {
+            self.select_review_index(index as i32);
+        } else if let Some(index) = deck {
+            self.select_deck_index(index as i32);
+        } else {
+            self.report_error(&format!("No card or deck matches '{query}'").into());
+        }
     }
 
     pub fn report_error(mut self: Pin<&mut Self>, message: &QString) {
@@ -669,7 +716,13 @@ impl qobject::AppBackend {
 
     pub fn select_deck_index(mut self: Pin<&mut Self>, index: i32) {
         if let Ok(index) = usize::try_from(index) {
+            let selected_deck = self.as_ref().rust().controller.queue().decks().get(index).cloned();
+            if selected_deck.is_none() { return; }
             self.as_mut().rust_mut().controller.select_deck_index(index);
+            match LiveDesktopPort::from_environment().map(|port| port.for_deck(selected_deck)) {
+                Ok(port) => self.as_mut().rust_mut().controller.refresh(&port),
+                Err(error) => self.as_mut().rust_mut().controller.report_error(error),
+            }
             sync_controller_state(self);
         }
     }
@@ -1575,11 +1628,14 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
             queue_index(queue.selected_index()),
         )
     };
-    let (batch_job_count, batch_item_count, batch_item_total, batch_confirmation) = {
+    let (batch_job_count, batch_selected_index, batch_status, batch_item_count, batch_item_total, batch_confirmation) = {
         let binding = qobject.as_ref();
         let batch = binding.rust().controller.batch();
+        let selected = batch.selected_job_id.as_ref().and_then(|id| batch.jobs.iter().enumerate().find(|(_, job)| &job.job.id == id));
         (
             queue_len(batch.jobs.len()),
+            selected.map(|(index, _)| queue_len(index)).unwrap_or(-1),
+            selected.map(|(_, job)| job.job.status.clone()).unwrap_or_default(),
             queue_len(batch.page.as_ref().map_or(0, |page| page.items.len())),
             batch
                 .page
@@ -1646,6 +1702,12 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
             })
             .unwrap_or_default()
     };
+    let (draft_available, draft_can_undo, draft_can_redo) = {
+        let binding = qobject.as_ref();
+        binding.rust().controller.active_draft()
+            .map(|draft| (true, draft.can_undo(), draft.can_redo()))
+            .unwrap_or_default()
+    };
     qobject.as_mut().set_anki_status(state.anki.label().into());
     qobject
         .as_mut()
@@ -1676,6 +1738,9 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
         .as_mut()
         .set_draft_provenance(draft_provenance.into());
     qobject.as_mut().set_draft_dirty(draft_dirty);
+    qobject.as_mut().set_draft_available(draft_available);
+    qobject.as_mut().set_draft_can_undo(draft_can_undo);
+    qobject.as_mut().set_draft_can_redo(draft_can_redo);
     qobject
         .as_mut()
         .set_draft_pending_count(draft_pending_count);
@@ -1695,6 +1760,8 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
         .as_mut()
         .set_commit_snapshot_count(commit_snapshot_count);
     qobject.as_mut().set_batch_job_count(batch_job_count);
+    qobject.as_mut().set_batch_selected_index(batch_selected_index);
+    qobject.as_mut().set_batch_status(batch_status.into());
     qobject.as_mut().set_batch_item_count(batch_item_count);
     qobject.as_mut().set_batch_item_total(batch_item_total);
     qobject
@@ -1780,8 +1847,13 @@ struct LiveDesktopPort {
     runtime: tokio::runtime::Runtime,
     anki: linguist_anki::AnkiConnectTransport,
     ollama: linguist_ollama::OllamaClient,
+    preferred_deck: Option<String>,
 }
 impl LiveDesktopPort {
+    fn for_deck(mut self, deck: Option<String>) -> Self {
+        self.preferred_deck = deck;
+        self
+    }
     fn from_environment() -> Result<Self, String> {
         let config = runtime_config()?;
         let anki_url = configured_value(
@@ -1800,6 +1872,7 @@ impl LiveDesktopPort {
                 .map_err(|error| error.to_string())?,
             ollama: linguist_ollama::OllamaClient::new(&ollama_url)
                 .map_err(|error| error.to_string())?,
+            preferred_deck: None,
         })
     }
     fn decks(&self) -> Result<Vec<String>, String> {
@@ -1883,14 +1956,12 @@ impl DesktopPort for LiveDesktopPort {
             .map_err(|error| error.to_string())
     }
     fn active_deck(&self) -> Result<String, String> {
-        self.decks()?
-            .into_iter()
-            .next()
+        choose_deck(&self.decks()?, self.preferred_deck.as_deref())
             .ok_or_else(|| "No Anki decks are available".into())
     }
     fn review_queue(&self) -> Result<ReviewQueueData, String> {
         let decks = self.decks()?;
-        let Some(deck) = decks.first() else {
+        let Some(deck) = choose_deck(&decks, self.preferred_deck.as_deref()) else {
             return Ok(ReviewQueueData {
                 decks,
                 rows: Vec::new(),
@@ -1909,6 +1980,12 @@ impl DesktopPort for LiveDesktopPort {
         let rows = notes.into_iter().map(review_row).collect();
         Ok(ReviewQueueData { decks, rows })
     }
+}
+fn choose_deck(decks: &[String], preferred: Option<&str>) -> Option<String> {
+    preferred
+        .and_then(|name| decks.iter().find(|deck| deck.as_str() == name))
+        .or_else(|| decks.first())
+        .cloned()
 }
 impl DraftNotePort for LiveDesktopPort {
     fn note(&self, note_id: i64) -> Result<linguist_application::NoteInfo, String> {
@@ -3228,5 +3305,13 @@ mod backend_tests {
         assert_eq!(dictionary_provider("", "taiwanese_vocab"), "moedict");
         assert_eq!(dictionary_provider("", "german_vocab"), "dict_cc");
         assert_eq!(dictionary_provider("", "japanese_vocab"), "jisho");
+    }
+
+    #[test]
+    fn selected_deck_survives_refresh_and_missing_deck_falls_back() {
+        let decks = vec!["Default".into(), "Japanese".into()];
+        assert_eq!(choose_deck(&decks, Some("Japanese")).as_deref(), Some("Japanese"));
+        assert_eq!(choose_deck(&decks, Some("Deleted")).as_deref(), Some("Default"));
+        assert_eq!(choose_deck(&[], Some("Deleted")), None);
     }
 }

@@ -17,7 +17,7 @@ Item {
             Label { text: qsTr("BATCH JOBS"); color: mutedColor; font.letterSpacing: 1.2 }
             Item { Layout.fillWidth: true }
             Button { text: qsTr("New job"); Accessible.name: text; onClicked: createJob.open() }
-            Button { text: qsTr("Refresh"); Accessible.name: text; onClicked: backend.refreshBatches() }
+            ToolButton { text: qsTr("Refresh jobs"); icon.source: "icons/refresh.svg"; display: AbstractButton.IconOnly; Accessible.name: text; ToolTip.visible: hovered; ToolTip.text: text; onClicked: backend.refreshBatches() }
         }
         ListView {
             id: jobs
@@ -26,6 +26,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 160
             model: backend.batch_job_count
+            currentIndex: backend.batch_selected_index
             clip: true
             delegate: ItemDelegate {
                 required property int index
@@ -38,13 +39,21 @@ Item {
         }
         RowLayout {
             Layout.fillWidth: true
-            Button { text: qsTr("Pause"); Accessible.name: text; onClicked: backend.pauseBatch() }
-            Button { text: qsTr("Resume"); Accessible.name: text; onClicked: backend.resumeBatch() }
-            Button { text: qsTr("Retry"); Accessible.name: text; onClicked: backend.retryBatch() }
+            ToolButton {
+                text: backend.batch_status === "running" ? qsTr("Pause") : qsTr("Resume")
+                icon.source: backend.batch_status === "running" ? "icons/pause.svg" : "icons/play.svg"
+                display: AbstractButton.IconOnly
+                Accessible.name: text
+                ToolTip.visible: hovered
+                ToolTip.text: text
+                enabled: backend.batch_selected_index >= 0 && ["running", "paused", "queued"].indexOf(backend.batch_status) >= 0
+                onClicked: backend.batch_status === "running" ? backend.pauseBatch() : backend.resumeBatch()
+            }
+            ToolButton { text: qsTr("Retry failed job"); icon.source: "icons/refresh.svg"; display: AbstractButton.IconOnly; Accessible.name: text; ToolTip.visible: hovered; ToolTip.text: text; enabled: backend.batch_selected_index >= 0 && backend.batch_status === "failed"; onClicked: backend.retryBatch() }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Cancel"); Accessible.name: text; onClicked: backend.requestBatchAction(0) }
-            Button { text: qsTr("Rollback"); Accessible.name: text; onClicked: backend.requestBatchAction(1) }
-            Button { text: qsTr("Delete"); Accessible.name: text; onClicked: backend.requestBatchAction(2) }
+            Button { text: qsTr("Cancel"); Accessible.name: text; enabled: backend.batch_selected_index >= 0; onClicked: backend.requestBatchAction(0) }
+            Button { text: qsTr("Rollback"); Accessible.name: text; enabled: backend.batch_selected_index >= 0; onClicked: backend.requestBatchAction(1) }
+            Button { text: qsTr("Delete"); Accessible.name: text; enabled: backend.batch_selected_index >= 0; onClicked: backend.requestBatchAction(2) }
         }
         Label { text: qsTr("%1 / %2 items loaded").arg(backend.batch_item_count).arg(backend.batch_item_total); color: mutedColor }
         ListView {

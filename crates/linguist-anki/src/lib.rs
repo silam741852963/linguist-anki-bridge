@@ -5,7 +5,7 @@
 //! have tests, so the desktop cannot mutate Anki by accident.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -384,7 +384,21 @@ impl AnkiConnectTransport {
     /// Convert Anki's rich note-info response into the read-only application model.
     pub async fn notes_info(&self, note_ids: &[i64]) -> Result<Vec<NoteInfo>, AnkiConnectError> {
         let raw: Vec<RawNoteInfo> = self.send("notesInfo", json!({"notes": note_ids})).await?;
-        Ok(raw.into_iter().map(RawNoteInfo::into_note).collect())
+        let card_ids = raw
+            .iter()
+            .flat_map(|note| note.cards.iter().filter_map(|card| match card {
+                RawCardRef::Id(id) => Some(*id),
+                RawCardRef::Info { .. } => None,
+            }))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut card_decks = HashMap::new();
+        for chunk in card_ids.chunks(500) {
+            let cards: Vec<RawCardDetails> = self.send("cardsInfo", json!({"cards": chunk})).await?;
+            card_decks.extend(cards.into_iter().map(|card| (card.card_id, card.deck_name)));
+        }
+        Ok(raw.into_iter().map(|note| note.into_note(&card_decks)).collect())
     }
 
     /// Retrieve a media payload. A missing Anki media file is represented as `None`.
@@ -1131,7 +1145,7 @@ struct RawNoteInfo {
     #[serde(default)]
     fields: std::collections::BTreeMap<String, RawField>,
     #[serde(default)]
-    cards: Vec<RawCardInfo>,
+    cards: Vec<RawCardRef>,
 }
 
 #[derive(Deserialize)]
@@ -1142,13 +1156,22 @@ enum RawField {
 }
 
 #[derive(Deserialize)]
-struct RawCardInfo {
+#[serde(untagged)]
+enum RawCardRef {
+    Id(i64),
+    Info { #[serde(rename = "deckName")] deck_name: Option<String> },
+}
+
+#[derive(Deserialize)]
+struct RawCardDetails {
+    #[serde(rename = "cardId")]
+    card_id: i64,
     #[serde(rename = "deckName")]
-    deck_name: Option<String>,
+    deck_name: String,
 }
 
 impl RawNoteInfo {
-    fn into_note(self) -> NoteInfo {
+    fn into_note(self, card_decks: &HashMap<i64, String>) -> NoteInfo {
         let fields = self
             .fields
             .into_iter()
@@ -1162,7 +1185,10 @@ impl RawNoteInfo {
         let deck_names = self
             .cards
             .into_iter()
-            .filter_map(|card| card.deck_name)
+            .filter_map(|card| match card {
+                RawCardRef::Id(id) => card_decks.get(&id).cloned(),
+                RawCardRef::Info { deck_name } => deck_name,
+            })
             .map(DeckName)
             .collect::<BTreeSet<_>>()
             .into_iter()
@@ -1460,6 +1486,21 @@ mod tests {
         assert_eq!(note.fields["Meaning"], "actor<br>performer");
         assert_eq!(note.tags, ["source", "needs review"]);
         assert_eq!(note.deck_names, [DeckName("Japanese::Media".into())]);
+    }
+
+    #[tokio::test]
+    async fn resolves_numeric_note_cards_through_cards_info() {
+        let (url, requests) = mock_sequence(vec![
+            r#"{"result":[{"noteId":42,"modelName":"Basic","tags":[],"fields":{"Word":{"value":"hello","order":0}},"cards":[101,102]}],"error":null}"#,
+            r#"{"result":[{"cardId":101,"deckName":"English"},{"cardId":102,"deckName":"English::Review"}],"error":null}"#,
+        ]).await;
+        let notes = AnkiConnectTransport::new(&url).unwrap().notes_info(&[42]).await.unwrap();
+        assert_eq!(notes[0].fields["Word"], "hello");
+        assert_eq!(notes[0].deck_names, [DeckName("English".into()), DeckName("English::Review".into())]);
+        let requests = requests.await.unwrap();
+        assert!(requests[0].contains(r#""action":"notesInfo""#));
+        assert!(requests[1].contains(r#""action":"cardsInfo""#));
+        assert!(requests[1].contains(r#""cards":[101,102]"#));
     }
 
     #[tokio::test]
