@@ -25,7 +25,7 @@ Item {
             Accessible.role: Accessible.List
             Layout.fillWidth: true
             Layout.preferredHeight: 160
-            model: backend.batchJobCount
+            model: backend.batch_job_count
             clip: true
             delegate: ItemDelegate {
                 required property int index
@@ -46,14 +46,14 @@ Item {
             Button { text: qsTr("Rollback"); Accessible.name: text; onClicked: backend.requestBatchAction(1) }
             Button { text: qsTr("Delete"); Accessible.name: text; onClicked: backend.requestBatchAction(2) }
         }
-        Label { text: qsTr("%1 / %2 items loaded").arg(backend.batchItemCount).arg(backend.batchItemTotal); color: mutedColor }
+        Label { text: qsTr("%1 / %2 items loaded").arg(backend.batch_item_count).arg(backend.batch_item_total); color: mutedColor }
         ListView {
             id: items
             Accessible.name: qsTr("Items in selected batch job")
             Accessible.role: Accessible.List
             Layout.fillWidth: true
             Layout.fillHeight: true
-            model: backend.batchItemCount
+            model: backend.batch_item_count
             clip: true
             delegate: Label {
                 required property int index
@@ -70,12 +70,12 @@ Item {
     Dialog {
         id: confirm
         modal: true
-        visible: backend.batchConfirmation.length > 0
+        visible: backend.batch_confirmation.length > 0
         title: qsTr("Confirm batch action")
         standardButtons: Dialog.Ok | Dialog.Cancel
         onAccepted: backend.confirmBatchAction()
         onRejected: backend.cancelBatchAction()
-        Label { text: backend.batchConfirmation; color: foregroundColor }
+        Label { text: backend.batch_confirmation; color: foregroundColor }
     }
 
     Dialog {
@@ -141,20 +141,20 @@ Item {
                     text: qsTr("Create selector batch")
                     Accessible.name: text
                     highlighted: true
-                    enabled: backend.selectorPreviewCount > 0
+                    enabled: backend.selector_preview_count > 0
                     onClicked: { backend.createBatchFromSelector(batchDryRun.checked); backend.refreshBatches(); createJob.close() }
                 }
                 Label {
-                    text: backend.selectorLimited
-                        ? qsTr("%1 total · first %2 shown").arg(backend.selectorTotal).arg(backend.selectorPreviewCount)
-                        : qsTr("%1 matches").arg(backend.selectorTotal)
+                    text: backend.selector_limited
+                        ? qsTr("%1 total · first %2 shown").arg(backend.selector_total).arg(backend.selector_preview_count)
+                        : qsTr("%1 matches").arg(backend.selector_total)
                     color: mutedColor
                 }
             }
             ListView {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 120
-                model: backend.selectorPreviewCount
+                model: backend.selector_preview_count
                 clip: true
                 delegate: Label {
                     required property int index

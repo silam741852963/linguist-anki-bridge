@@ -20,16 +20,16 @@ Rectangle {
             Label { text: qsTr("Review queue"); color: foregroundColor; font.pointSize: 13; font.weight: Font.DemiBold }
             Item { Layout.fillWidth: true }
             Label {
-                text: qsTr("%1 cards").arg(backend.reviewRowCount)
+                text: qsTr("%1 cards").arg(backend.review_row_count)
                 color: mutedColor
             }
         }
         ComboBox {
             id: deckPicker
             Layout.fillWidth: true
-            model: backend.deckCount
-            currentIndex: backend.selectedDeckIndex
-            enabled: backend.deckCount > 0
+            model: backend.deck_count
+            currentIndex: backend.selected_deck_index
+            enabled: backend.deck_count > 0
             delegate: ItemDelegate {
                 required property int index
                 width: deckPicker.width
@@ -56,7 +56,7 @@ Rectangle {
         StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: backend.reviewRowCount > 0 ? 1 : 0
+            currentIndex: backend.review_row_count > 0 ? 1 : 0
 
             Item {
                 ColumnLayout {
@@ -65,7 +65,7 @@ Rectangle {
                     spacing: 8
                     Label {
                         Layout.alignment: Qt.AlignHCenter
-                        text: backend.queueState
+                        text: backend.queue_state
                         color: foregroundColor
                         font.pointSize: 12
                         font.weight: Font.DemiBold
@@ -74,7 +74,7 @@ Rectangle {
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.Wrap
-                        text: backend.queueMessage
+                        text: backend.queue_message
                         color: mutedColor
                     }
                 }
@@ -84,8 +84,8 @@ Rectangle {
                 id: list
                 clip: true
                 spacing: 6
-                model: backend.reviewRowCount
-                currentIndex: backend.selectedReviewIndex
+                model: backend.review_row_count
+                currentIndex: backend.selected_review_index
                 focus: true
                 Accessible.name: qsTr("Review queue")
                 Accessible.description: qsTr("Use arrow keys to select a card")

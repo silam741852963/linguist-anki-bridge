@@ -3,6 +3,11 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 Rectangle {
+    signal reviewRequested()
+    signal addRequested()
+    signal batchRequested()
+    signal historyRequested()
+    signal settingsRequested()
     required property color backgroundColor
     required property color foregroundColor
     required property color mutedColor
@@ -19,11 +24,18 @@ Rectangle {
             model: [qsTr("Review"), qsTr("Add cards"), qsTr("Batch jobs"), qsTr("History")]
             delegate: Button {
                 required property string modelData
+                required property int index
                 Layout.fillWidth: true
                 text: modelData
                 Accessible.name: modelData
                 flat: true
                 highlighted: index === 0
+                onClicked: {
+                    if (index === 0) reviewRequested()
+                    else if (index === 1) addRequested()
+                    else if (index === 2) batchRequested()
+                    else historyRequested()
+                }
             }
         }
         Label {
@@ -33,17 +45,13 @@ Rectangle {
             font.pointSize: 8
             font.letterSpacing: 1.3
         }
-        Repeater {
-            model: [qsTr("Japanese Vocabulary  18"), qsTr("Japanese Grammar  4"), qsTr("English Vocabulary  2")]
-            delegate: Button {
-                required property string modelData
-                Layout.fillWidth: true
-                text: modelData
-                Accessible.name: modelData
-                flat: true
-            }
+        Label {
+            Layout.fillWidth: true
+            text: qsTr("Choose a deck in the review queue")
+            color: mutedColor
+            wrapMode: Text.Wrap
         }
         Item { Layout.fillHeight: true }
-        Button { Layout.fillWidth: true; text: qsTr("Settings"); flat: true }
+        Button { Layout.fillWidth: true; text: qsTr("Settings"); flat: true; onClicked: settingsRequested() }
     }
 }

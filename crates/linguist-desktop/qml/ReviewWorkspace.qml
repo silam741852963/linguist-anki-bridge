@@ -5,6 +5,7 @@ import QtMultimedia
 
 Rectangle {
     id: workspace
+    function openHistory() { tabs.currentIndex = 3 }
     required property var backend
     required property color backgroundColor
     required property color surfaceColor
@@ -47,33 +48,42 @@ Rectangle {
             width: workspace.width
             spacing: 14
 
-            RowLayout {
+            ColumnLayout {
                 Layout.fillWidth: true
-                Layout.margins: 22
-                TextField {
-                    id: expressionEditor
-                    Accessible.name: qsTr("Expression")
-                    Accessible.description: qsTr("Edit the card expression")
-                    inputMethodHints: Qt.ImhNoPredictiveText
-                    Layout.preferredWidth: 260
-                    text: backend.draftExpression
-                    placeholderText: qsTr("Select a card")
-                    font.pointSize: 22
-                    onTextChanged: if (activeFocus && text !== backend.draftExpression) backend.editDraftExpression(text)
+                Layout.leftMargin: 22
+                Layout.rightMargin: 22
+                spacing: 6
+                RowLayout {
+                    Layout.fillWidth: true
+                    TextField {
+                        id: expressionEditor
+                        Accessible.name: qsTr("Expression")
+                        Accessible.description: qsTr("Edit the card expression")
+                        inputMethodHints: Qt.ImhNoPredictiveText
+                        Layout.fillWidth: true
+                        text: backend.draft_expression
+                        placeholderText: qsTr("Select a card")
+                        font.pointSize: 22
+                        onTextChanged: if (activeFocus && text !== backend.draft_expression) backend.editDraftExpression(text)
+                    }
+                    Label { text: backend.draft_dirty ? qsTr("Unsaved draft") : qsTr("Saved draft"); color: mutedColor; font.pointSize: 12 }
                 }
-                Label { text: backend.draftDirty ? qsTr("Unsaved draft") : qsTr("Saved draft"); color: mutedColor; font.pointSize: 12 }
-                Item { Layout.fillWidth: true }
-                Button { text: qsTr("Undo"); Accessible.name: text; onClicked: backend.undoDraft() }
-                Button { text: qsTr("Redo"); Accessible.name: text; onClicked: backend.redoDraft() }
-                Button { text: qsTr("Regenerate"); Accessible.name: text; onClicked: backend.regenerateDraft() }
-                Button { text: qsTr("Preview changes"); Accessible.name: text; onClicked: backend.previewCommit() }
-                Button {
-                    text: qsTr("Apply to Anki")
-                    Accessible.name: text
-                    Accessible.description: qsTr("Apply the previewed changes to Anki")
-                    highlighted: true
-                    enabled: backend.commitPreviewReady
-                    onClicked: backend.applyCommit()
+                Flow {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: childrenRect.height
+                    spacing: 6
+                    Button { text: qsTr("Undo"); Accessible.name: text; onClicked: backend.undoDraft() }
+                    Button { text: qsTr("Redo"); Accessible.name: text; onClicked: backend.redoDraft() }
+                    Button { text: qsTr("Regenerate"); Accessible.name: text; onClicked: backend.regenerateDraft() }
+                    Button { text: qsTr("Preview changes"); Accessible.name: text; onClicked: backend.previewCommit() }
+                    Button {
+                        text: qsTr("Apply to Anki")
+                        Accessible.name: text
+                        Accessible.description: qsTr("Apply the previewed changes to Anki")
+                        highlighted: true
+                        enabled: backend.commit_preview_ready
+                        onClicked: backend.applyCommit()
+                    }
                 }
             }
 
@@ -106,15 +116,15 @@ Rectangle {
                     RowLayout {
                         Label { text: qsTr("MEANING"); color: mutedColor; font.pointSize: 8; font.letterSpacing: 1.2 }
                         Item { Layout.fillWidth: true }
-                        CheckBox { text: qsTr("Lock"); Accessible.name: qsTr("Lock meaning field"); checked: backend.draftMeaningLocked; onToggled: backend.toggleDraftMeaningLock(checked) }
+                        CheckBox { text: qsTr("Lock"); Accessible.name: qsTr("Lock meaning field"); checked: backend.draft_meaning_locked; onToggled: backend.toggleDraftMeaningLock(checked) }
                     }
                     TextArea {
                         id: meaningEditor
                         Accessible.name: qsTr("Meaning")
                         Accessible.description: qsTr("Editable card meaning")
                         Layout.fillWidth: true
-                        text: backend.draftMeaning
-                        onTextChanged: if (activeFocus && text !== backend.draftMeaning) backend.editDraftMeaning(text)
+                        text: backend.draft_meaning
+                        onTextChanged: if (activeFocus && text !== backend.draft_meaning) backend.editDraftMeaning(text)
                         color: foregroundColor
                         wrapMode: TextEdit.Wrap
                         inputMethodHints: Qt.ImhNoPredictiveText
@@ -125,9 +135,9 @@ Rectangle {
                             radius: 4
                         }
                     }
-                    Label { text: backend.draftProvenance; color: mutedColor; font.pointSize: 8 }
+                    Label { text: backend.draft_provenance; color: mutedColor; font.pointSize: 8 }
                     Repeater {
-                        model: backend.draftPendingCount
+                        model: backend.draft_pending_count
                         delegate: RowLayout {
                             required property int index
                             Layout.fillWidth: true
@@ -141,8 +151,8 @@ Rectangle {
                         id: kanjiEditor
                         Accessible.name: qsTr("Kanji construction")
                         Layout.fillWidth: true
-                        text: backend.draftKanji
-                        onTextChanged: if (activeFocus && text !== backend.draftKanji) backend.editDraftKanji(text)
+                        text: backend.draft_kanji
+                        onTextChanged: if (activeFocus && text !== backend.draft_kanji) backend.editDraftKanji(text)
                         color: foregroundColor
                         wrapMode: TextEdit.Wrap
                         inputMethodHints: Qt.ImhNoPredictiveText
@@ -170,15 +180,15 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.margins: 15
                     Label {
-                        text: backend.commitPreviewReady
+                        text: backend.commit_preview_ready
                             ? qsTr("PLANNED CHANGES · dry run")
                             : qsTr("PREVIEW REQUIRED BEFORE APPLY")
-                        color: backend.commitPreviewReady ? accentColor : mutedColor
+                        color: backend.commit_preview_ready ? accentColor : mutedColor
                         font.pointSize: 8
                         font.letterSpacing: 1.2
                     }
                     Repeater {
-                        model: backend.commitFieldCount
+                        model: backend.commit_field_count
                         delegate: Label {
                             required property int index
                             text: backend.commitField(index)
@@ -187,18 +197,18 @@ Rectangle {
                         }
                     }
                     Label {
-                        visible: backend.commitPreviewReady && backend.commitFieldCount === 0
+                        visible: backend.commit_preview_ready && backend.commit_field_count === 0
                         text: qsTr("No field changes")
                         color: mutedColor
                     }
                     Label {
-                        visible: backend.commitPreviewReady
-                        text: qsTr("Media: %1 · Model: %2").arg(backend.commitMediaCount)
-                            .arg(backend.commitModelChanged ? qsTr("change") : qsTr("unchanged"))
+                        visible: backend.commit_preview_ready
+                        text: qsTr("Media: %1 · Model: %2").arg(backend.commit_media_count)
+                            .arg(backend.commit_model_changed ? qsTr("change") : qsTr("unchanged"))
                         color: mutedColor
                     }
                     Repeater {
-                        model: backend.commitSnapshotCount
+                        model: backend.commit_snapshot_count
                         delegate: RowLayout {
                             required property int index
                             Layout.fillWidth: true
@@ -304,7 +314,7 @@ Rectangle {
             Label {
                 Layout.leftMargin: 22
                 Layout.bottomMargin: 22
-                text: backend.draftIssues.length > 0 ? backend.draftIssues : qsTr("No blocking issues")
+                text: backend.draft_issues.length > 0 ? backend.draft_issues : qsTr("No blocking issues")
                 color: mutedColor
             }
         }

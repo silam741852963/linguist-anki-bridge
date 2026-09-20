@@ -15,7 +15,17 @@ fn main() {
     let mut application = QGuiApplication::new();
     let mut engine = QQmlApplicationEngine::new();
 
-    if let Some(engine) = engine.as_mut() {
+    if let Some(mut engine) = engine.as_mut() {
+        {
+            let base: std::pin::Pin<&mut QQmlEngine> = engine.as_mut().upcast_pin();
+            base.set_output_warnings_to_standard_error(true);
+        }
+        engine
+            .as_mut()
+            .on_object_creation_failed(|_, url| {
+                eprintln!("Failed to create native GUI from {url:?}");
+            })
+            .release();
         engine.load(&QUrl::from(
             "qrc:/qt/qml/io/github/lam/linguist_anki_bridge/qml/Main.qml",
         ));
