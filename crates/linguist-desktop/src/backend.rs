@@ -1987,6 +1987,9 @@ struct LiveEnrichmentServices {
     dictionary_audio: linguist_audio::HttpAudioFetcher,
     remote_tts: linguist_audio::GoogleTts,
     kanji: linguist_dictionary::kanji::KanjiApiClient,
+    jisho_kanji: linguist_dictionary::kanji::JishoKanjiClient,
+    hvdic_kanji: linguist_dictionary::kanji::HvdicKanjiClient,
+    kanji_source_lang: String,
     image: linguist_media::WikimediaCommons,
 }
 
@@ -2320,8 +2323,14 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
             if !deck_key.starts_with("japanese") {
                 return Ok(linguist_pipeline::ProviderOutput::Unavailable);
             }
-            let result = linguist_dictionary::kanji::lookup_word(
-                &self.kanji,
+            let providers: Vec<&dyn linguist_dictionary::kanji::KanjiLookupPort> =
+                if self.kanji_source_lang.eq_ignore_ascii_case("vietnamese") {
+                    vec![&self.hvdic_kanji, &self.jisho_kanji, &self.kanji]
+                } else {
+                    vec![&self.jisho_kanji, &self.kanji, &self.hvdic_kanji]
+                };
+            let result = linguist_dictionary::kanji::lookup_word_with_sources(
+                &providers,
                 expression,
                 "",
                 Some("https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji"),
@@ -2334,23 +2343,7 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
                     retryable: true,
                 });
             }
-            let summary = result
-                .summaries
-                .into_iter()
-                .map(|summary| {
-                    format!(
-                        "{} · {} · readings: {} · strokes: {}",
-                        summary.character,
-                        summary.meanings.join(", "),
-                        summary.readings.join(", "),
-                        summary
-                            .strokes
-                            .map(|value| value.to_string())
-                            .unwrap_or_else(|| "unknown".into())
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("<br/>");
+            let summary = linguist_dictionary::kanji::render_kanji_summaries(&result.summaries);
             Ok(linguist_pipeline::ProviderOutput::Kanji(summary))
         })
     }
@@ -2535,6 +2528,9 @@ impl LiveGenerationAdapter {
                     .map_err(|error| error.to_string())?,
                 remote_tts: linguist_audio::GoogleTts::new().map_err(|error| error.to_string())?,
                 kanji: linguist_dictionary::kanji::KanjiApiClient::new()?,
+                jisho_kanji: linguist_dictionary::kanji::JishoKanjiClient::new()?,
+                hvdic_kanji: linguist_dictionary::kanji::HvdicKanjiClient::new()?,
+                kanji_source_lang: config.kanji_source_lang.clone(),
                 image: linguist_media::WikimediaCommons::new()?,
             },
             linguist_pipeline::PipelineConfig::default(),

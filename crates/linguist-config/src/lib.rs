@@ -18,6 +18,8 @@ pub struct NativeConfig {
     pub dictionary_url_template: String,
     #[serde(default)]
     pub dictionary_schema: Option<serde_json::Value>,
+    #[serde(default)]
+    pub kanji_source_lang: String,
     pub dry_run: bool,
     pub decks: BTreeMap<String, DeckConfig>,
 }
@@ -81,6 +83,7 @@ pub fn import_legacy_yaml(contents: &str) -> Result<ImportReport, ConfigError> {
             .pointer("/dictionary/schema")
             .filter(|schema| !schema.is_null() && **schema != serde_json::json!({}))
             .cloned(),
+        kanji_source_lang: value(&values, "kanji.source_lang"),
         dry_run: matches!(value(&values, "dry_run").as_str(), "true" | "True" | "TRUE"),
         ..Default::default()
     };
@@ -210,6 +213,12 @@ mod tests {
         let loaded: NativeConfig = serde_json::from_str(old).unwrap();
         assert!(loaded.dictionary_schema.is_none());
         assert!(loaded.dictionary_url_template.is_empty());
+        assert!(loaded.kanji_source_lang.is_empty());
+    }
+    #[test]
+    fn imports_kanji_language_choice() {
+        let report = import_legacy_yaml("kanji:\n  source_lang: vietnamese\n").unwrap();
+        assert_eq!(report.config.kanji_source_lang, "vietnamese");
     }
     #[test]
     fn rejects_malformed_and_never_overwrites_native() {
