@@ -1978,6 +1978,8 @@ struct LiveEnrichmentServices {
     cambridge: linguist_dictionary::cambridge::CambridgeClient,
     moedict: linguist_dictionary::moedict::MoedictClient,
     dictcc: linguist_dictionary::dictcc::DictCcClient,
+    custom_dictionary: Option<linguist_dictionary::custom::CustomDictionary>,
+    custom_extraction: linguist_dictionary::custom::HttpCssExtraction,
     dictionary_preset: String,
     ollama: linguist_ollama::OllamaClient,
     model: String,
@@ -1999,6 +2001,7 @@ fn dictionary_provider<'a>(preset: &'a str, deck_key: &'a str) -> &'a str {
         "cambridge" | "english" => "cambridge",
         "moedict" | "taiwanese" => "moedict",
         "dict_cc" | "dict.cc" | "german" => "dict_cc",
+        "custom" => "custom",
         _ if deck_key.starts_with("english") => "cambridge",
         _ if deck_key.starts_with("taiwanese") => "moedict",
         _ if deck_key.starts_with("german") => "dict_cc",
@@ -2092,6 +2095,42 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
             }
             let provider = dictionary_provider(&self.dictionary_preset, deck_key);
             let data = match provider {
+                "custom" => {
+                    let custom = self.custom_dictionary.as_ref().ok_or_else(|| {
+                        linguist_pipeline::PipelineError::Provider {
+                            service: "dictionary",
+                            retryable: false,
+                            message: "Custom dictionary needs URL template and CSS schema in native settings".into(),
+                        }
+                    })?;
+                    let entry = custom
+                        .search(expression, &self.custom_extraction)
+                        .await
+                        .map_err(dictionary_pipeline_error)?;
+                    match entry {
+                        Some(entry) => linguist_core::DictionaryData {
+                            found: true,
+                            word: entry.word.clone(),
+                            reading: entry.reading.clone(),
+                            definition: entry.definition,
+                            pronunciations: entry
+                                .audio_url
+                                .map(|audio_url| linguist_core::DictionaryPronunciation {
+                                    text: if entry.reading.is_empty() {
+                                        entry.word
+                                    } else {
+                                        entry.reading
+                                    },
+                                    locale: deck_locale(deck_key).into(),
+                                    audio_url: Some(audio_url),
+                                    source: "Custom dictionary".into(),
+                                })
+                                .into_iter()
+                                .collect(),
+                        },
+                        None => linguist_core::DictionaryData::default(),
+                    }
+                }
                 "cambridge" => {
                     let entry = self
                         .cambridge
@@ -2460,6 +2499,21 @@ impl LiveGenerationAdapter {
         );
         let ollama =
             linguist_ollama::OllamaClient::new(&ollama_url).map_err(|error| error.to_string())?;
+        let custom_dictionary = if config.dictionary_preset.eq_ignore_ascii_case("custom") {
+            let schema = config
+                .dictionary_schema
+                .clone()
+                .ok_or("Custom dictionary needs CSS schema in native settings")?;
+            Some(
+                linguist_dictionary::custom::CustomDictionary::new(
+                    &config.dictionary_url_template,
+                    schema,
+                )
+                .map_err(|error| format!("Custom dictionary settings: {error}"))?,
+            )
+        } else {
+            None
+        };
         let pipeline = linguist_pipeline::NativePipeline::new(
             LiveEnrichmentServices {
                 jisho: linguist_dictionary::JishoClient::new()
@@ -2469,6 +2523,9 @@ impl LiveGenerationAdapter {
                 moedict: linguist_dictionary::moedict::MoedictClient::new()
                     .map_err(|error| error.to_string())?,
                 dictcc: linguist_dictionary::dictcc::DictCcClient::new("https://deen.dict.cc/")
+                    .map_err(|error| error.to_string())?,
+                custom_dictionary,
+                custom_extraction: linguist_dictionary::custom::HttpCssExtraction::new()
                     .map_err(|error| error.to_string())?,
                 dictionary_preset: config.dictionary_preset.clone(),
                 ollama: ollama.clone(),
@@ -3155,6 +3212,7 @@ mod backend_tests {
 
     #[test]
     fn dictionary_provider_uses_preset_then_deck_family() {
+        assert_eq!(dictionary_provider("custom", "japanese_vocab"), "custom");
         assert_eq!(
             dictionary_provider("cambridge", "japanese_vocab"),
             "cambridge"

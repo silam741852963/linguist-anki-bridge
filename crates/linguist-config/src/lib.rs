@@ -14,6 +14,10 @@ pub struct NativeConfig {
     pub ollama_url: String,
     pub ollama_model: Option<String>,
     pub dictionary_preset: String,
+    #[serde(default)]
+    pub dictionary_url_template: String,
+    #[serde(default)]
+    pub dictionary_schema: Option<serde_json::Value>,
     pub dry_run: bool,
     pub decks: BTreeMap<String, DeckConfig>,
 }
@@ -57,13 +61,26 @@ pub fn load_native(path: &Path) -> Result<NativeConfig, ConfigError> {
 }
 impl std::error::Error for ConfigError {}
 pub fn import_legacy_yaml(contents: &str) -> Result<ImportReport, ConfigError> {
-    let values = flat_yaml(contents)?;
+    let document: serde_json::Value =
+        serde_yaml_ng::from_str(contents).map_err(|error| ConfigError::Parse(error.to_string()))?;
+    if !document.is_object() {
+        return Err(ConfigError::Parse(
+            "legacy config must be a YAML mapping".into(),
+        ));
+    }
+    let mut values = BTreeMap::new();
+    flatten_values(&document, "", &mut values);
     let mut config = NativeConfig {
         version: NATIVE_CONFIG_VERSION,
         anki_url: value(&values, "anki.url"),
         ollama_url: value(&values, "llm.ollama_url"),
         ollama_model: optional(&values, "llm.model"),
         dictionary_preset: value(&values, "dictionary.preset"),
+        dictionary_url_template: value(&values, "dictionary.url_template"),
+        dictionary_schema: document
+            .pointer("/dictionary/schema")
+            .filter(|schema| !schema.is_null() && **schema != serde_json::json!({}))
+            .cloned(),
         dry_run: matches!(value(&values, "dry_run").as_str(), "true" | "True" | "TRUE"),
         ..Default::default()
     };
@@ -130,41 +147,27 @@ pub fn native_config_path(config_root: &Path) -> PathBuf {
         .join("linguist-anki-bridge")
         .join("native-config-v1.json")
 }
-fn flat_yaml(contents: &str) -> Result<BTreeMap<String, String>, ConfigError> {
-    let mut result = BTreeMap::new();
-    let mut stack: Vec<(usize, String)> = Vec::new();
-    for (number, line) in contents.lines().enumerate() {
-        if line.trim().is_empty() || line.trim_start().starts_with('#') {
-            continue;
+fn flatten_values(value: &serde_json::Value, path: &str, result: &mut BTreeMap<String, String>) {
+    match value {
+        serde_json::Value::Object(mapping) => {
+            for (key, value) in mapping {
+                let child = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                flatten_values(value, &child, result);
+            }
         }
-        let indent = line.len() - line.trim_start().len();
-        let trimmed = line.trim();
-        let Some((key, raw)) = trimmed.split_once(':') else {
-            return Err(ConfigError::Parse(format!(
-                "line {} is not a YAML mapping",
-                number + 1
-            )));
-        };
-        while stack.last().is_some_and(|(depth, _)| *depth >= indent) {
-            stack.pop();
+        serde_json::Value::String(value) => {
+            result.insert(path.into(), value.clone());
         }
-        let key = key.trim();
-        if key.is_empty() {
-            return Err(ConfigError::Parse(format!(
-                "line {} has an empty key",
-                number + 1
-            )));
+        serde_json::Value::Null => {}
+        value if value.is_boolean() || value.is_number() => {
+            result.insert(path.into(), value.to_string());
         }
-        let value = raw.trim().trim_matches('"').trim_matches('\'').to_owned();
-        let mut path = stack.iter().map(|(_, key)| key.clone()).collect::<Vec<_>>();
-        path.push(key.into());
-        if value.is_empty() {
-            stack.push((indent, key.into()))
-        } else {
-            result.insert(path.join("."), value);
-        }
+        _ => {}
     }
-    Ok(result)
 }
 fn value(values: &BTreeMap<String, String>, key: &str) -> String {
     values.get(key).cloned().unwrap_or_default()
@@ -189,6 +192,24 @@ mod tests {
             "Word"
         );
         assert_eq!(source.lines().count(), 14);
+    }
+    #[test]
+    fn imports_custom_dictionary_schema_and_preserves_old_native_files() {
+        let source = "dictionary:\n  preset: custom\n  url_template: 'https://example.test/search/{word}'\n  schema:\n    baseSelector: .entry\n    fields:\n      - name: definition\n        selector: .sense\n        multiple: true\n      - name: audio_url\n        selector: audio\n        type: attribute\n        attribute: src\n";
+        let report = import_legacy_yaml(source).unwrap();
+        assert_eq!(report.config.dictionary_preset, "custom");
+        assert_eq!(
+            report.config.dictionary_url_template,
+            "https://example.test/search/{word}"
+        );
+        let schema = report.config.dictionary_schema.unwrap();
+        assert_eq!(schema["baseSelector"], ".entry");
+        assert_eq!(schema["fields"][0]["multiple"], true);
+        assert_eq!(schema["fields"][1]["attribute"], "src");
+        let old = r#"{"version":1,"anki_url":"","ollama_url":"","ollama_model":null,"dictionary_preset":"jisho","dry_run":false,"decks":{}}"#;
+        let loaded: NativeConfig = serde_json::from_str(old).unwrap();
+        assert!(loaded.dictionary_schema.is_none());
+        assert!(loaded.dictionary_url_template.is_empty());
     }
     #[test]
     fn rejects_malformed_and_never_overwrites_native() {
