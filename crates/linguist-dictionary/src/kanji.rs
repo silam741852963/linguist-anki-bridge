@@ -1,5 +1,6 @@
 //! Provider-neutral Kanji summaries and an offline KANJIDIC2 fallback parser.
 
+use base64::Engine;
 use scraper::{Html, Selector};
 use serde::Deserialize;
 use std::{collections::HashSet, future::Future, pin::Pin, time::Duration};
@@ -9,6 +10,74 @@ pub type KanjiFuture<'a> =
 
 pub trait KanjiLookupPort: Send + Sync {
     fn lookup<'a>(&'a self, character: char) -> KanjiFuture<'a>;
+}
+
+#[derive(Clone, Debug)]
+pub struct KanjiMediaFetcher {
+    client: reqwest::Client,
+    base: reqwest::Url,
+}
+
+impl KanjiMediaFetcher {
+    pub fn new() -> Result<Self, String> {
+        Self::with_config(
+            "https://raw.githubusercontent.com/mistval/kanji_images/master/gifs/",
+            Duration::from_secs(10),
+        )
+    }
+
+    pub fn with_config(base: &str, timeout: Duration) -> Result<Self, String> {
+        let base = reqwest::Url::parse(base).map_err(|error| error.to_string())?;
+        if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
+            return Err("Kanji media URL must be http(s) with a host".into());
+        }
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .user_agent("LinguistAnkiBridge/0.1")
+            .build()
+            .map_err(|error| error.to_string())?;
+        Ok(Self { client, base })
+    }
+
+    pub async fn gif_data_uri(&self, character: char) -> Result<String, String> {
+        const MAX_GIF_BYTES: usize = 1024 * 1024;
+        let url = self
+            .base
+            .join(&format!("{:x}.gif", u32::from(character)))
+            .map_err(|error| error.to_string())?;
+        let mut response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "Kanji stroke-order media HTTP {}",
+                response.status().as_u16()
+            ));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_GIF_BYTES as u64)
+        {
+            return Err("Kanji stroke-order GIF exceeds 1 MiB".into());
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
+            if bytes.len() + chunk.len() > MAX_GIF_BYTES {
+                return Err("Kanji stroke-order GIF exceeds 1 MiB".into());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if !bytes.starts_with(b"GIF87a") && !bytes.starts_with(b"GIF89a") {
+            return Err("Kanji stroke-order asset is not a GIF".into());
+        }
+        Ok(format!(
+            "data:image/gif;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -554,6 +623,7 @@ fn tag_values(xml: &str, tag: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     struct MissingProvider;
     impl KanjiLookupPort for MissingProvider {
@@ -690,5 +760,32 @@ mod tests {
         assert_eq!(summary.readings, ["học"]);
         assert_eq!(summary.meanings, ["học tập"]);
         assert!(parse_hvdic_kanji('学', "<div class='hvres'>other</div>", None).is_none());
+    }
+
+    #[tokio::test]
+    async fn embeds_validated_stroke_order_gif() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let count = stream.read(&mut request).await.unwrap();
+            assert!(String::from_utf8_lossy(&request[..count]).starts_with("GET /gifs/5b66.gif "));
+            let body = b"GIF89aimage";
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(header.as_bytes()).await.unwrap();
+            stream.write_all(body).await.unwrap();
+        });
+        let fetcher = KanjiMediaFetcher::with_config(
+            &format!("http://{address}/gifs/"),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let uri = fetcher.gif_data_uri('学').await.unwrap();
+        assert!(uri.starts_with("data:image/gif;base64,R0lGODlh"));
+        server.await.unwrap();
     }
 }

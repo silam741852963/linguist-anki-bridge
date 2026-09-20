@@ -1989,6 +1989,7 @@ struct LiveEnrichmentServices {
     kanji: linguist_dictionary::kanji::KanjiApiClient,
     jisho_kanji: linguist_dictionary::kanji::JishoKanjiClient,
     hvdic_kanji: linguist_dictionary::kanji::HvdicKanjiClient,
+    kanji_media: linguist_dictionary::kanji::KanjiMediaFetcher,
     kanji_source_lang: String,
     image: linguist_media::WikimediaCommons,
 }
@@ -2329,13 +2330,22 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
                 } else {
                     vec![&self.jisho_kanji, &self.kanji, &self.hvdic_kanji]
                 };
-            let result = linguist_dictionary::kanji::lookup_word_with_sources(
+            let mut result = linguist_dictionary::kanji::lookup_word_with_sources(
                 &providers,
                 expression,
                 "",
                 Some("https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji"),
             )
             .await;
+            for summary in &mut result.summaries {
+                match self.kanji_media.gif_data_uri(summary.character).await {
+                    Ok(uri) => summary.stroke_order_url = Some(uri),
+                    Err(error) => result.warnings.push(format!(
+                        "Stroke-order GIF for {}: {error}; using remote image",
+                        summary.character
+                    )),
+                }
+            }
             if result.summaries.is_empty() && !result.warnings.is_empty() {
                 return Err(linguist_pipeline::PipelineError::Provider {
                     service: "kanji",
@@ -2530,6 +2540,7 @@ impl LiveGenerationAdapter {
                 kanji: linguist_dictionary::kanji::KanjiApiClient::new()?,
                 jisho_kanji: linguist_dictionary::kanji::JishoKanjiClient::new()?,
                 hvdic_kanji: linguist_dictionary::kanji::HvdicKanjiClient::new()?,
+                kanji_media: linguist_dictionary::kanji::KanjiMediaFetcher::new()?,
                 kanji_source_lang: config.kanji_source_lang.clone(),
                 image: linguist_media::WikimediaCommons::new()?,
             },
