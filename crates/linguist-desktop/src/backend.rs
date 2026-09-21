@@ -720,9 +720,8 @@ impl qobject::AppBackend {
             if metadata.len() > 1024 * 1024 {
                 return Err("Legacy config exceeds 1 MiB limit".into());
             }
-            let contents = std::fs::read_to_string(source).map_err(|error| error.to_string())?;
-            let report = linguist_config::import_legacy_yaml(&contents)
-                .map_err(|error| error.to_string())?;
+            let report =
+                linguist_config::import_legacy_file(&source).map_err(|error| error.to_string())?;
             let path = native_config_path()?;
             linguist_config::save_native_new(&path, &report.config)
                 .map_err(|error| error.to_string())?;
@@ -3036,7 +3035,8 @@ impl LiveGenerationAdapter {
             if draft.mode == CardMode::Inject || draft.images.is_empty() {
                 return Ok(document);
             }
-            self.apply_existing_image_policy(draft, &mut document).await;
+            self.apply_existing_image_policy(draft, &mut document, deck_key)
+                .await;
             Ok(document)
         })
     }
@@ -3045,6 +3045,7 @@ impl LiveGenerationAdapter {
         &self,
         draft: &crate::draft::ReviewDraft,
         document: &mut CardDocument,
+        deck_key: &str,
     ) {
         use base64::Engine;
         let mut retained = Vec::new();
@@ -3077,9 +3078,11 @@ impl LiveGenerationAdapter {
                     continue;
                 }
             };
-            let evidence =
-                self.ocr
-                    .recognize_bytes(&bytes, "jpn+eng", Arc::new(AtomicBool::new(false)));
+            let evidence = self.ocr.recognize_bytes(
+                &bytes,
+                self.ocr_languages(deck_key),
+                Arc::new(AtomicBool::new(false)),
+            );
             let score = match evidence {
                 Ok(evidence) => linguist_ocr::dictionary_evidence_score(&evidence.text),
                 Err(error) => {
@@ -3130,6 +3133,26 @@ impl LiveGenerationAdapter {
         document.obsolete_media.sort();
         document.obsolete_media.dedup();
     }
+
+    fn ocr_languages<'a>(&'a self, deck_key: &str) -> &'a str {
+        deck_ocr_languages(&self.decks, deck_key)
+    }
+}
+
+fn deck_ocr_languages<'a>(
+    decks: &'a BTreeMap<String, linguist_config::DeckConfig>,
+    deck_key: &str,
+) -> &'a str {
+    decks
+        .get(deck_key)
+        .map(|deck| deck.ocr_languages.trim())
+        .filter(|languages| !languages.is_empty())
+        .unwrap_or_else(|| match deck_key.split('_').next().unwrap_or_default() {
+            "japanese" => "jpn+eng+vie",
+            "taiwanese" => "chi_tra+eng+vie",
+            "german" => "deu+eng",
+            _ => "eng",
+        })
 }
 
 fn is_image_filename(filename: &str) -> bool {
@@ -3629,6 +3652,24 @@ mod backend_tests {
         assert_eq!(input.processed_data.source_note, "parent-child example");
         assert_eq!(input.processed_data.type_tag, "causative form");
         assert!(draft.meaning.is_empty());
+    }
+
+    #[test]
+    fn imported_ocr_languages_override_safe_family_defaults() {
+        let decks = BTreeMap::from([(
+            "japanese_vocab".into(),
+            linguist_config::DeckConfig {
+                ocr_languages: "jpn+eng".into(),
+                ..Default::default()
+            },
+        )]);
+        assert_eq!(deck_ocr_languages(&decks, "japanese_vocab"), "jpn+eng");
+        assert_eq!(
+            deck_ocr_languages(&decks, "taiwanese_vocab"),
+            "chi_tra+eng+vie"
+        );
+        assert_eq!(deck_ocr_languages(&decks, "german_vocab"), "deu+eng");
+        assert_eq!(deck_ocr_languages(&decks, "english_vocab"), "eng");
     }
 
     #[test]

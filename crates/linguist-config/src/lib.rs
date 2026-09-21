@@ -5,9 +5,10 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
 pub const NATIVE_CONFIG_VERSION: u16 = 1;
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NativeConfig {
     pub version: u16,
     pub anki_url: String,
@@ -23,10 +24,28 @@ pub struct NativeConfig {
     pub dry_run: bool,
     pub decks: BTreeMap<String, DeckConfig>,
 }
+impl Default for NativeConfig {
+    fn default() -> Self {
+        Self {
+            version: NATIVE_CONFIG_VERSION,
+            anki_url: "http://127.0.0.1:8765".into(),
+            ollama_url: "http://127.0.0.1:11434".into(),
+            ollama_model: None,
+            dictionary_preset: "jisho".into(),
+            dictionary_url_template: String::new(),
+            dictionary_schema: None,
+            kanji_source_lang: "english".into(),
+            dry_run: true,
+            decks: BTreeMap::new(),
+        }
+    }
+}
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DeckConfig {
     pub deck_name: Option<String>,
     pub model_name: Option<String>,
+    #[serde(default)]
+    pub ocr_languages: String,
     pub fields: BTreeMap<String, String>,
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -84,7 +103,10 @@ pub fn import_legacy_yaml(contents: &str) -> Result<ImportReport, ConfigError> {
             .filter(|schema| !schema.is_null() && **schema != serde_json::json!({}))
             .cloned(),
         kanji_source_lang: value(&values, "kanji.source_lang"),
-        dry_run: matches!(value(&values, "dry_run").as_str(), "true" | "True" | "TRUE"),
+        dry_run: values
+            .get("dry_run")
+            .map(|value| matches!(value.as_str(), "true" | "True" | "TRUE"))
+            .unwrap_or(true),
         ..Default::default()
     };
     let mut warnings = Vec::new();
@@ -95,6 +117,7 @@ pub fn import_legacy_yaml(contents: &str) -> Result<ImportReport, ConfigError> {
             match parts[2] {
                 "deck_name" => deck.deck_name = nonempty(value),
                 "note_type" => deck.model_name = nonempty(value),
+                "ocr_langs" => deck.ocr_languages = value.clone(),
                 "fields" if parts.len() == 4 => {
                     deck.fields.insert(parts[3].into(), value.clone());
                 }
@@ -110,19 +133,46 @@ pub fn import_legacy_yaml(contents: &str) -> Result<ImportReport, ConfigError> {
     }
     Ok(ImportReport { config, warnings })
 }
+/// Read a legacy YAML file without acquiring write access to it.
+pub fn import_legacy_file(path: &Path) -> Result<ImportReport, ConfigError> {
+    let contents =
+        fs::read_to_string(path).map_err(|error| ConfigError::Read(error.to_string()))?;
+    import_legacy_yaml(&contents)
+}
 /// Write only a native file. The legacy YAML input is never opened for write.
 pub fn save_native_new(path: &Path, config: &NativeConfig) -> Result<(), ConfigError> {
-    if path.exists() {
-        return Err(ConfigError::NativeExists(path.into()));
+    if config.version != NATIVE_CONFIG_VERSION {
+        return Err(ConfigError::UnsupportedVersion(config.version));
     }
     let bytes = serde_json::to_vec_pretty(config).map_err(|e| ConfigError::Parse(e.to_string()))?;
     let parent = path
         .parent()
         .ok_or_else(|| ConfigError::Read("native config has no parent".into()))?;
     fs::create_dir_all(parent).map_err(|e| ConfigError::Read(e.to_string()))?;
-    let temporary = path.with_extension("json.tmp");
-    fs::write(&temporary, bytes).map_err(|e| ConfigError::Read(e.to_string()))?;
-    fs::rename(temporary, path).map_err(|e| ConfigError::Read(e.to_string()))
+    let temporary = temporary_path(path);
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| ConfigError::Read(error.to_string()))?;
+        use std::io::Write;
+        file.write_all(&bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|error| ConfigError::Read(error.to_string()))?;
+        match fs::hard_link(&temporary, path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(ConfigError::NativeExists(path.into()));
+            }
+            Err(error) => return Err(ConfigError::Read(error.to_string())),
+        }
+        fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| ConfigError::Read(error.to_string()))
+    })();
+    let _ = fs::remove_file(temporary);
+    result
 }
 /// Atomically replace only the native config. Legacy input is never opened here.
 pub fn save_native_replace(path: &Path, config: &NativeConfig) -> Result<(), ConfigError> {
@@ -134,7 +184,7 @@ pub fn save_native_replace(path: &Path, config: &NativeConfig) -> Result<(), Con
         .parent()
         .ok_or_else(|| ConfigError::Read("native config has no parent".into()))?;
     fs::create_dir_all(parent).map_err(|e| ConfigError::Read(e.to_string()))?;
-    let temporary = path.with_extension(format!("json.tmp-{}", std::process::id()));
+    let temporary = temporary_path(path);
     let mut file = fs::File::create(&temporary).map_err(|e| ConfigError::Read(e.to_string()))?;
     use std::io::Write;
     file.write_all(&bytes)
@@ -149,6 +199,13 @@ pub fn native_config_path(config_root: &Path) -> PathBuf {
     config_root
         .join("linguist-anki-bridge")
         .join("native-config-v1.json")
+}
+fn temporary_path(path: &Path) -> PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    path.with_extension(format!("json.tmp-{}-{nonce}", std::process::id()))
 }
 fn flatten_values(value: &serde_json::Value, path: &str, result: &mut BTreeMap<String, String>) {
     match value {
@@ -187,14 +244,51 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     #[test]
     fn imports_known_legacy_settings_without_mutating_yaml() {
-        let source = "anki:\n  url: http://localhost:8765\nllm:\n  ollama_url: http://localhost:11434\n  model: llama\ndictionary:\n  preset: jisho\ndry_run: true\ndecks:\n  japanese_vocab:\n    deck_name: Japanese\n    note_type: Picture Words\n    fields:\n      expression: Word\n";
+        let source = "anki:\n  url: http://localhost:8765\nllm:\n  ollama_url: http://localhost:11434\n  model: llama\ndictionary:\n  preset: jisho\ndry_run: true\ndecks:\n  japanese_vocab:\n    deck_name: Japanese\n    note_type: Picture Words\n    ocr_langs: jpn+eng+vie\n    fields:\n      expression: Word\n";
         let report = import_legacy_yaml(source).unwrap();
         assert_eq!(report.config.version, 1);
         assert_eq!(
             report.config.decks["japanese_vocab"].fields["expression"],
             "Word"
         );
-        assert_eq!(source.lines().count(), 14);
+        assert_eq!(
+            report.config.decks["japanese_vocab"].ocr_languages,
+            "jpn+eng+vie"
+        );
+        assert_eq!(source.lines().count(), 15);
+    }
+    #[test]
+    fn file_import_keeps_legacy_bytes_and_never_replaces_native() {
+        let root = std::env::temp_dir().join(format!(
+            "config-import-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let legacy = root.join("config.yaml");
+        let native = root.join("native-config-v1.json");
+        let source = b"anki:\n  url: http://localhost:8765\ndry_run: true\n";
+        fs::write(&legacy, source).unwrap();
+        let report = import_legacy_file(&legacy).unwrap();
+        save_native_new(&native, &report.config).unwrap();
+        let first_native = fs::read(&native).unwrap();
+        let mut changed = report.config;
+        changed.anki_url = "http://other.test".into();
+        assert!(matches!(
+            save_native_new(&native, &changed),
+            Err(ConfigError::NativeExists(path)) if path == native
+        ));
+        assert_eq!(fs::read(&legacy).unwrap(), source);
+        assert_eq!(fs::read(&native).unwrap(), first_native);
+        assert_eq!(
+            fs::read_dir(&root).unwrap().count(),
+            2,
+            "temporary files must be cleaned"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn imports_custom_dictionary_schema_and_preserves_old_native_files() {

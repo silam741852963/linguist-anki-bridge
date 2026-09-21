@@ -2,7 +2,6 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    time::SystemTime,
 };
 
 pub struct ThemePalette {
@@ -41,28 +40,46 @@ impl ThemePalette {
     }
 }
 pub fn omarchy_palette_path() -> Option<PathBuf> {
-    std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+    omarchy_palette_path_from(
+        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
+fn omarchy_palette_path_from(
+    config_home: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    config_home
+        .or_else(|| home.map(|home| home.join(".config")))
         .map(|root| root.join("omarchy/current/theme/colors.toml"))
 }
 pub struct ThemeWatch {
     path: PathBuf,
-    stamp: Option<SystemTime>,
+    initialized: bool,
+    contents: Option<Vec<u8>>,
 }
 impl ThemeWatch {
     pub fn new(path: PathBuf) -> Self {
-        Self { path, stamp: None }
+        Self {
+            path,
+            initialized: false,
+            contents: None,
+        }
     }
     pub fn poll(&mut self) -> Option<ThemePalette> {
-        let stamp = fs::metadata(&self.path)
-            .and_then(|metadata| metadata.modified())
-            .ok();
-        if stamp == self.stamp {
+        let contents = fs::read(&self.path).ok();
+        if self.initialized && contents == self.contents {
             return None;
         }
-        self.stamp = stamp;
-        Some(ThemePalette::load_from(&self.path))
+        self.initialized = true;
+        self.contents = contents.clone();
+        Some(
+            contents
+                .and_then(|contents| String::from_utf8(contents).ok())
+                .map_or_else(ThemePalette::default, |contents| {
+                    ThemePalette::from_contents(&contents)
+                }),
+        )
     }
 }
 
@@ -97,6 +114,7 @@ fn valid_hex_color(value: &str) -> bool {
 fn parse_top_level_strings(contents: &str) -> BTreeMap<String, String> {
     contents
         .lines()
+        .take_while(|line| !line.trim().starts_with('['))
         .filter_map(|line| {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') || line.starts_with('[') {
@@ -121,7 +139,7 @@ mod tests {
         );
         assert_eq!(values["accent"], "#89b4fa");
         assert_eq!(values["mode"], "dark");
-        assert_eq!(values["number"], "1");
+        assert!(!values.contains_key("number"));
     }
 
     #[test]
@@ -139,5 +157,36 @@ mod tests {
             ThemePalette::load_from(Path::new("/not/a/theme")).foreground,
             "#e8e8e8"
         );
+    }
+
+    #[test]
+    fn resolves_documented_omarchy_config_path() {
+        assert_eq!(
+            omarchy_palette_path_from(Some("/config".into()), Some("/home/user".into())).unwrap(),
+            PathBuf::from("/config/omarchy/current/theme/colors.toml")
+        );
+        assert_eq!(
+            omarchy_palette_path_from(None, Some("/home/user".into())).unwrap(),
+            PathBuf::from("/home/user/.config/omarchy/current/theme/colors.toml")
+        );
+    }
+
+    #[test]
+    fn watcher_detects_content_change_and_removal() {
+        let directory =
+            std::env::temp_dir().join(format!("linguist-theme-watch-{}", std::process::id()));
+        let path = directory.join("colors.toml");
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(&path, "accent = \"#112233\"\n").unwrap();
+        let mut watch = ThemeWatch::new(path.clone());
+        assert_eq!(watch.poll().unwrap().accent, "#112233");
+        assert!(watch.poll().is_none());
+        fs::write(&path, "accent = \"#abcdef\"\n").unwrap();
+        assert_eq!(watch.poll().unwrap().accent, "#abcdef");
+        fs::remove_file(&path).unwrap();
+        assert_eq!(watch.poll().unwrap().accent, ThemePalette::default().accent);
+        assert!(watch.poll().is_none());
+        fs::remove_dir_all(directory).unwrap();
     }
 }
