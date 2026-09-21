@@ -233,6 +233,40 @@ impl EspeakTts {
             binary: binary.into(),
         }
     }
+
+    /// Missing local engine is normal: remote TTS remains available.
+    pub fn available_voices(&self) -> Vec<Voice> {
+        let Ok(output) = Command::new(&self.binary).arg("--voices").output() else {
+            return Vec::new();
+        };
+        if !output.status.success() {
+            return Vec::new();
+        }
+        parse_espeak_voices(&String::from_utf8_lossy(&output.stdout))
+    }
+}
+
+fn parse_espeak_voices(output: &str) -> Vec<Voice> {
+    output
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let mut columns = line.split_whitespace();
+            let _priority = columns.next()?;
+            let language = columns.next()?;
+            if !language
+                .chars()
+                .all(|ch| ch.is_ascii_alphabetic() || ch == '-' || ch == '_')
+            {
+                return None;
+            }
+            Some(Voice {
+                id: language.into(),
+                locale: language.replace('_', "-"),
+                local: true,
+            })
+        })
+        .collect()
 }
 
 impl TtsPort for EspeakTts {
@@ -328,7 +362,10 @@ where
     R: TtsPort + ?Sized,
 {
     let mut result = AudioDiscovery::default();
-    for pronunciation in usable_pronunciations(pronunciations) {
+    for (ordinal, pronunciation) in usable_pronunciations(pronunciations)
+        .into_iter()
+        .enumerate()
+    {
         if cancelled.load(Ordering::Relaxed) {
             result.cancelled = true;
             break;
@@ -361,7 +398,7 @@ where
             .await
         };
         let Some(clip) = clip else { continue };
-        if clip.data.is_empty() || !clip.mime.starts_with("audio/") {
+        if clip.data.is_empty() || audio_extension(&clip.mime).is_none() {
             result
                 .issues
                 .push(format!("Invalid audio returned for {}", pronunciation.text));
@@ -370,7 +407,7 @@ where
         let filename = media_filename_for_mime(
             &pronunciation.text,
             &pronunciation.locale,
-            result.clips.len(),
+            ordinal,
             &clip.mime,
         );
         result.clips.push(PreparedPronunciation {
@@ -424,7 +461,6 @@ pub fn select_voice<'a>(voices: &'a [Voice], locale: &str) -> Option<&'a Voice> 
                     .eq_ignore_ascii_case(language)
             })
         })
-        .or_else(|| voices.iter().find(|voice| voice.local))
 }
 pub fn select_remote_voice<'a>(voices: &'a [Voice], locale: &str) -> Option<&'a Voice> {
     select_by_locale(voices.iter().filter(|voice| !voice.local), locale)
@@ -447,7 +483,6 @@ fn select_by_locale<'a>(
                     .eq_ignore_ascii_case(language)
             })
         })
-        .or_else(|| voices.into_iter().next())
 }
 pub fn media_filename(expression: &str, locale: &str, ordinal: usize) -> String {
     media_filename_for_mime(expression, locale, ordinal, "audio/mpeg")
@@ -458,11 +493,7 @@ pub fn media_filename_for_mime(
     ordinal: usize,
     mime: &str,
 ) -> String {
-    let extension = match mime {
-        "audio/wav" | "audio/x-wav" => "wav",
-        "audio/ogg" => "ogg",
-        _ => "mp3",
-    };
+    let extension = audio_extension(mime).unwrap_or("bin");
     format!(
         "audio-{}-{}-{:08x}-{:02}.{extension}",
         stem(expression),
@@ -470,6 +501,18 @@ pub fn media_filename_for_mime(
         stable_hash(expression.as_bytes().iter().copied()),
         ordinal + 1
     )
+}
+fn audio_extension(mime: &str) -> Option<&'static str> {
+    match mime.to_ascii_lowercase().as_str() {
+        "audio/mpeg" | "audio/mp3" => Some("mp3"),
+        "audio/wav" | "audio/x-wav" => Some("wav"),
+        "audio/ogg" => Some("ogg"),
+        "audio/mp4" | "audio/x-m4a" => Some("m4a"),
+        "audio/aac" => Some("aac"),
+        "audio/flac" | "audio/x-flac" => Some("flac"),
+        "audio/webm" => Some("webm"),
+        _ => None,
+    }
 }
 pub fn cache_key(provider_revision: &str, text: &str, voice: &Voice) -> String {
     let hash = stable_hash(
@@ -484,13 +527,7 @@ pub fn cache_key(provider_revision: &str, text: &str, voice: &Voice) -> String {
 }
 pub fn usable_pronunciations(rows: impl IntoIterator<Item = Pronunciation>) -> Vec<Pronunciation> {
     rows.into_iter()
-        .filter(|row| {
-            !row.text.trim().is_empty()
-                && (row
-                    .audio_url
-                    .as_ref()
-                    .is_none_or(|url| url.starts_with("https://")))
-        })
+        .filter(|row| !row.text.trim().is_empty())
         .collect()
 }
 fn stem(value: &str) -> String {
@@ -544,6 +581,23 @@ mod tests {
         ];
         assert_eq!(select_voice(&voices, "ja-JP").unwrap().id, "ja");
         assert_eq!(select_voice(&voices, "en-GB").unwrap().id, "en");
+        assert!(select_voice(&voices, "de-DE").is_none());
+        assert!(select_remote_voice(&voices, "de-DE").is_none());
+    }
+
+    #[test]
+    fn discovers_only_installed_espeak_languages() {
+        let voices = parse_espeak_voices(
+            "Pty Language Age/Gender VoiceName File Other Languages\n 5 en-gb --/M English en\n 5 ja --/M Japanese ja\n",
+        );
+        assert_eq!(voices.len(), 2);
+        assert_eq!(select_voice(&voices, "en-GB").unwrap().id, "en-gb");
+        assert_eq!(select_voice(&voices, "ja-JP").unwrap().id, "ja");
+        assert!(
+            EspeakTts::new("linguist-missing-espeak-binary")
+                .available_voices()
+                .is_empty()
+        );
     }
     #[test]
     fn dictionary_fetcher_rejects_untrusted_audio_urls() {
@@ -584,6 +638,20 @@ mod tests {
         let filename = media_filename("食べる", "ja-JP", 1);
         assert!(filename.starts_with("audio-term-ja-jp-"));
         assert!(filename.ends_with("-02.mp3"));
+        assert!(media_filename_for_mime("word", "en-US", 0, "audio/ogg").ends_with(".ogg"));
+        assert!(media_filename_for_mime("word", "en-US", 0, "audio/mp4").ends_with(".m4a"));
+        assert_eq!(audio_extension("audio/html"), None);
+        assert_eq!(
+            usable_pronunciations([Pronunciation {
+                text: "word".into(),
+                locale: "en-US".into(),
+                audio_url: Some("http://untrusted.test/audio.mp3".into()),
+                source: "dictionary".into(),
+            }])
+            .len(),
+            1,
+            "bad dictionary URL must still allow TTS fallback"
+        );
     }
 
     struct MissingDictionary;
@@ -591,6 +659,60 @@ mod tests {
         fn fetch<'a>(&'a self, _: &'a str) -> AudioFuture<'a> {
             Box::pin(async { Err(AudioError::Unavailable("offline".into())) })
         }
+    }
+    struct DictionarySuccess;
+    impl DictionaryAudioPort for DictionarySuccess {
+        fn fetch<'a>(&'a self, url: &'a str) -> AudioFuture<'a> {
+            Box::pin(async move {
+                Ok(AudioClip {
+                    data: vec![1, 2, 3],
+                    mime: if url.ends_with(".ogg") {
+                        "audio/ogg"
+                    } else {
+                        "audio/mpeg"
+                    }
+                    .into(),
+                    source: "dictionary".into(),
+                })
+            })
+        }
+    }
+    struct UnexpectedTts;
+    impl TtsPort for UnexpectedTts {
+        fn synthesize<'a>(&'a self, _: &'a str, _: &'a Voice) -> AudioFuture<'a> {
+            Box::pin(async { panic!("dictionary clips should avoid TTS") })
+        }
+    }
+
+    #[tokio::test]
+    async fn keeps_all_dictionary_pronunciation_rows() {
+        let rows = [
+            Pronunciation {
+                text: "read".into(),
+                locale: "en-US".into(),
+                audio_url: Some("https://dictionary.cambridge.org/read.mp3".into()),
+                source: "Cambridge".into(),
+            },
+            Pronunciation {
+                text: "read".into(),
+                locale: "en-GB".into(),
+                audio_url: Some("https://dictionary.cambridge.org/read.ogg".into()),
+                source: "Cambridge".into(),
+            },
+        ];
+        let result = discover_audio(
+            &DictionarySuccess,
+            &UnexpectedTts,
+            &UnexpectedTts,
+            rows,
+            &[],
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await;
+        assert!(result.issues.is_empty());
+        assert_eq!(result.clips.len(), 2);
+        assert!(result.clips[0].filename.ends_with("-01.mp3"));
+        assert!(result.clips[1].filename.ends_with("-02.ogg"));
     }
     struct LocalFailure;
     impl TtsPort for LocalFailure {
@@ -609,6 +731,47 @@ mod tests {
                 })
             })
         }
+    }
+
+    struct RemoteSelective;
+    impl TtsPort for RemoteSelective {
+        fn synthesize<'a>(&'a self, text: &'a str, _: &'a Voice) -> AudioFuture<'a> {
+            Box::pin(async move {
+                if text == "missing" {
+                    return Err(AudioError::Unavailable("no audio".into()));
+                }
+                Ok(AudioClip {
+                    data: vec![1, 2, 3],
+                    mime: "audio/mpeg".into(),
+                    source: "remote".into(),
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn filenames_keep_source_row_ordinals_after_failure() {
+        let rows = ["missing", "works"].map(|text| Pronunciation {
+            text: text.into(),
+            locale: "en-US".into(),
+            audio_url: None,
+            source: "test".into(),
+        });
+        let result = discover_audio(
+            &MissingDictionary,
+            &LocalFailure,
+            &RemoteSelective,
+            rows,
+            &[Voice {
+                id: "en".into(),
+                locale: "en-US".into(),
+                local: false,
+            }],
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await;
+        assert_eq!(result.clips.len(), 1);
+        assert!(result.clips[0].filename.ends_with("-02.mp3"));
     }
 
     #[tokio::test]

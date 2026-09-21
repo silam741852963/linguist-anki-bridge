@@ -2104,6 +2104,7 @@ struct LiveEnrichmentServices {
     ollama: linguist_ollama::OllamaClient,
     model: String,
     tts: linguist_audio::EspeakTts,
+    voices: Vec<linguist_audio::Voice>,
     dictionary_audio: linguist_audio::HttpAudioFetcher,
     remote_tts: linguist_audio::GoogleTts,
     kanji: linguist_dictionary::kanji::KanjiApiClient,
@@ -2156,24 +2157,22 @@ fn deck_locale(deck_key: &str) -> &'static str {
     }
 }
 
-fn tts_voices() -> Vec<linguist_audio::Voice> {
-    [
-        ("ja", "ja-JP", true),
-        ("en", "en-US", true),
-        ("zh", "zh-TW", true),
-        ("de", "de-DE", true),
-        ("ja", "ja-JP", false),
-        ("en", "en-US", false),
-        ("zh-TW", "zh-TW", false),
-        ("de", "de-DE", false),
-    ]
-    .into_iter()
-    .map(|(id, locale, local)| linguist_audio::Voice {
-        id: id.into(),
-        locale: locale.into(),
-        local,
-    })
-    .collect()
+fn tts_voices(mut local: Vec<linguist_audio::Voice>) -> Vec<linguist_audio::Voice> {
+    local.extend(
+        [
+            ("ja", "ja-JP"),
+            ("en", "en-US"),
+            ("zh-TW", "zh-TW"),
+            ("de", "de-DE"),
+        ]
+        .into_iter()
+        .map(|(id, locale)| linguist_audio::Voice {
+            id: id.into(),
+            locale: locale.into(),
+            local: false,
+        }),
+    );
+    local
 }
 
 impl linguist_media::ImageClassifierPort for OllamaImageClassifier<'_> {
@@ -2567,13 +2566,12 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
                     })
                     .collect()
             };
-            let voices = tts_voices();
             let result = linguist_audio::discover_audio(
                 &self.dictionary_audio,
                 &self.tts,
                 &self.remote_tts,
                 pronunciations,
-                &voices,
+                &self.voices,
                 Arc::new(AtomicBool::new(false)),
             )
             .await;
@@ -2638,6 +2636,8 @@ impl LiveGenerationAdapter {
         } else {
             None
         };
+        let tts = linguist_audio::EspeakTts::default();
+        let voices = tts_voices(tts.available_voices());
         let pipeline = linguist_pipeline::NativePipeline::new(
             LiveEnrichmentServices {
                 jisho: linguist_dictionary::JishoClient::new()
@@ -2654,7 +2654,8 @@ impl LiveGenerationAdapter {
                 dictionary_preset: config.dictionary_preset.clone(),
                 ollama: ollama.clone(),
                 model: model.clone(),
-                tts: linguist_audio::EspeakTts::default(),
+                tts,
+                voices,
                 dictionary_audio: linguist_audio::HttpAudioFetcher::dictionary_defaults()
                     .map_err(|error| error.to_string())?,
                 remote_tts: linguist_audio::GoogleTts::new().map_err(|error| error.to_string())?,
@@ -3194,6 +3195,19 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
 #[cfg(test)]
 mod backend_tests {
     use super::*;
+
+    #[test]
+    fn missing_local_synthesizer_keeps_only_remote_voice_choices() {
+        let voices = tts_voices(Vec::new());
+        assert!(voices.iter().all(|voice| !voice.local));
+        assert_eq!(
+            linguist_audio::select_remote_voice(&voices, "zh-TW")
+                .unwrap()
+                .id,
+            "zh-TW"
+        );
+        assert!(linguist_audio::select_voice(&voices, "zh-TW").is_none());
+    }
 
     #[test]
     fn review_queue_shows_plain_expression_from_html_note() {
