@@ -15,8 +15,11 @@ use std::{
 };
 
 const COMMONS_API: &str = "https://commons.wikimedia.org/w/api.php";
+const JAPANESE_WIKIPEDIA_API: &str = "https://ja.wikipedia.org/w/api.php";
+const ENGLISH_WIKIPEDIA_API: &str = "https://en.wikipedia.org/w/api.php";
 const COMMONS_MEDIA_HOST: &str = "upload.wikimedia.org";
 const DEFAULT_MAX_BYTES: usize = 8 * 1024 * 1024;
+const MAX_IMAGE_PIXELS: u64 = 24_000_000;
 
 pub type SearchFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<ImageCandidate>, String>> + Send + 'a>>;
@@ -37,6 +40,158 @@ pub trait ImageClassifierPort: Send + Sync {
         candidate: &'a ImageCandidate,
         normalized_jpeg: &'a [u8],
     ) -> ClassifyFuture<'a>;
+}
+
+/// Search Japanese and English article images before Commons media files.
+#[derive(Clone)]
+pub struct WikipediaAndCommons {
+    client: reqwest::Client,
+    japanese_endpoint: reqwest::Url,
+    english_endpoint: reqwest::Url,
+    commons: WikimediaCommons,
+}
+
+impl WikipediaAndCommons {
+    pub fn new() -> Result<Self, String> {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(12))
+            .user_agent("linguist-anki-bridge/0.1 image-discovery")
+            .build()
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            client,
+            japanese_endpoint: reqwest::Url::parse(JAPANESE_WIKIPEDIA_API)
+                .map_err(|error| error.to_string())?,
+            english_endpoint: reqwest::Url::parse(ENGLISH_WIKIPEDIA_API)
+                .map_err(|error| error.to_string())?,
+            commons: WikimediaCommons::new()?,
+        })
+    }
+
+    async fn search_articles(
+        &self,
+        endpoint: &reqwest::Url,
+        query: &str,
+        provider: &str,
+    ) -> Result<Vec<ImageCandidate>, String> {
+        let response = self
+            .client
+            .get(endpoint.clone())
+            .query(&[
+                ("action", "query"),
+                ("format", "json"),
+                ("formatversion", "2"),
+                ("generator", "search"),
+                ("gsrsearch", query),
+                ("gsrlimit", "6"),
+                ("prop", "pageimages"),
+                ("piprop", "thumbnail|original"),
+                ("pithumbsize", "640"),
+            ])
+            .send()
+            .await
+            .map_err(|error| error.to_string())?
+            .error_for_status()
+            .map_err(|error| error.to_string())?;
+        let payload: WikipediaResponse =
+            response.json().await.map_err(|error| error.to_string())?;
+        Ok(parse_wikipedia(payload, provider))
+    }
+}
+
+impl ImageSearchPort for WikipediaAndCommons {
+    fn search<'a>(&'a self, query: &'a str) -> SearchFuture<'a> {
+        Box::pin(async move {
+            if query.trim().is_empty() {
+                return Ok(Vec::new());
+            }
+            let (japanese, english, commons) = tokio::join!(
+                self.search_articles(&self.japanese_endpoint, query, "wikipedia-ja"),
+                self.search_articles(&self.english_endpoint, query, "wikipedia-en"),
+                self.commons.search_commons(query),
+            );
+            combine_search_results([japanese, english, commons])
+        })
+    }
+}
+
+fn combine_search_results(
+    results: [Result<Vec<ImageCandidate>, String>; 3],
+) -> Result<Vec<ImageCandidate>, String> {
+    let mut candidates = Vec::new();
+    let mut errors = Vec::new();
+    for result in results {
+        match result {
+            Ok(found) => candidates.extend(found),
+            Err(error) => errors.push(error),
+        }
+    }
+    if candidates.is_empty() && errors.len() == 3 {
+        Err(errors.join("; "))
+    } else {
+        Ok(candidates)
+    }
+}
+
+#[derive(Default, Deserialize)]
+struct WikipediaResponse {
+    #[serde(default)]
+    query: WikipediaQuery,
+}
+#[derive(Default, Deserialize)]
+struct WikipediaQuery {
+    #[serde(default)]
+    pages: Vec<WikipediaPage>,
+}
+#[derive(Deserialize)]
+struct WikipediaPage {
+    #[serde(default)]
+    index: Option<u32>,
+    #[serde(default)]
+    thumbnail: Option<WikipediaImage>,
+    #[serde(default)]
+    original: Option<WikipediaImage>,
+}
+#[derive(Deserialize)]
+struct WikipediaImage {
+    source: String,
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+}
+
+fn parse_wikipedia(payload: WikipediaResponse, provider: &str) -> Vec<ImageCandidate> {
+    let mut pages = payload.query.pages;
+    pages.sort_by_key(|page| page.index.unwrap_or(u32::MAX));
+    pages
+        .into_iter()
+        .filter_map(|page| {
+            let image = page.thumbnail.or(page.original)?;
+            let url = reqwest::Url::parse(&image.source).ok()?;
+            if url.scheme() != "https" || url.host_str() != Some(COMMONS_MEDIA_HOST) {
+                return None;
+            }
+            let mime = mime_from_path(url.path())?;
+            Some(ImageCandidate {
+                url: image.source,
+                provider: provider.into(),
+                mime: mime.into(),
+                width: image.width,
+                height: image.height,
+            })
+        })
+        .collect()
+}
+
+fn mime_from_path(path: &str) -> Option<&'static str> {
+    match path.rsplit('.').next()?.to_ascii_lowercase().as_str() {
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "png" => Some("image/png"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        _ => None,
+    }
 }
 
 /// Wikimedia Commons bitmap search and bounded media fetcher.
@@ -73,7 +228,7 @@ impl WikimediaCommons {
             endpoint,
             media_host: media_host.into(),
             max_bytes: DEFAULT_MAX_BYTES,
-            search_limit: 6,
+            search_limit: 10,
         })
     }
 
@@ -102,7 +257,7 @@ impl WikimediaCommons {
                 ("gsrlimit", self.search_limit.to_string()),
                 ("prop", "imageinfo".to_owned()),
                 ("iiprop", "url|mime|size".to_owned()),
-                ("iiurlwidth", "1200".to_owned()),
+                ("iiurlwidth", "640".to_owned()),
             ])
             .send()
             .await
@@ -183,6 +338,8 @@ struct CommonsQuery {
 #[derive(Deserialize)]
 struct CommonsPage {
     #[serde(default)]
+    index: Option<u32>,
+    #[serde(default)]
     imageinfo: Vec<CommonsImageInfo>,
 }
 #[derive(Deserialize)]
@@ -202,9 +359,9 @@ struct CommonsImageInfo {
 }
 
 fn parse_commons(payload: CommonsResponse) -> Vec<ImageCandidate> {
-    payload
-        .query
-        .pages
+    let mut pages = payload.query.pages;
+    pages.sort_by_key(|page| page.index.unwrap_or(u32::MAX));
+    pages
         .into_iter()
         .filter_map(|page| page.imageinfo.into_iter().next())
         .map(|info| ImageCandidate {
@@ -398,12 +555,26 @@ pub fn normalize_jpeg(bytes: &[u8], mime: &str) -> Result<(Vec<u8>, ImageQuality
     if !supported_mime(mime) {
         return Err(ImageError::UnsupportedMime);
     }
+    let dimensions = image::io::Reader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| ImageError::Decode(e.to_string()))?
+        .into_dimensions()
+        .map_err(|e| ImageError::Decode(e.to_string()))?;
+    if u64::from(dimensions.0) * u64::from(dimensions.1) > MAX_IMAGE_PIXELS {
+        return Err(ImageError::Decode(
+            "image dimensions exceed 24 megapixels".into(),
+        ));
+    }
     let image = image::load_from_memory(bytes).map_err(|e| ImageError::Decode(e.to_string()))?;
-    let quality = image_quality(&image);
+    let sample = image.thumbnail(256, 256).to_rgba8();
+    let mut sample_background =
+        RgbaImage::from_pixel(sample.width(), sample.height(), Rgba([255, 255, 255, 255]));
+    overlay(&mut sample_background, &sample, 0, 0);
+    let quality = image_quality(&DynamicImage::ImageRgba8(sample_background));
     if quality.mean_light < 28.0 || quality.dark_ratio > 0.82 || quality.contrast < 4.0 {
         return Err(ImageError::LowQuality);
     }
-    let image = image.thumbnail(256, 256).to_rgba8();
+    let image = image.to_rgba8();
     let (width, height) = image.dimensions();
     let mut background = RgbaImage::from_pixel(width, height, Rgba([255, 255, 255, 255]));
     overlay(&mut background, &image, 0, 0);
@@ -468,11 +639,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn wikipedia_candidates_keep_search_order_and_only_trusted_bitmaps() {
+        let payload: WikipediaResponse = serde_json::from_str(
+            r#"{"query":{"pages":[
+                {"index":2,"thumbnail":{"source":"https://upload.wikimedia.org/b.jpg","width":640,"height":480}},
+                {"index":1,"thumbnail":{"source":"https://upload.wikimedia.org/a.png","width":320,"height":200}},
+                {"index":3,"original":{"source":"https://evil.test/c.jpg"}},
+                {"index":4,"original":{"source":"https://upload.wikimedia.org/d.svg"}}
+            ]}}"#,
+        )
+        .unwrap();
+        let found = parse_wikipedia(payload, "wikipedia-ja");
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].url, "https://upload.wikimedia.org/a.png");
+        assert_eq!(found[0].mime, "image/png");
+        assert_eq!(found[1].url, "https://upload.wikimedia.org/b.jpg");
+    }
+
+    #[test]
+    fn image_search_uses_healthy_fallback_when_other_sources_fail() {
+        let fallback = ImageCandidate {
+            url: "https://upload.wikimedia.org/fallback.jpg".into(),
+            provider: "wikimedia-commons".into(),
+            mime: "image/jpeg".into(),
+            width: Some(640),
+            height: Some(480),
+        };
+        assert_eq!(
+            combine_search_results([
+                Err("ja unavailable".into()),
+                Ok(Vec::new()),
+                Ok(vec![fallback.clone()]),
+            ])
+            .unwrap(),
+            vec![fallback]
+        );
+        assert!(
+            combine_search_results([
+                Err("ja unavailable".into()),
+                Err("en unavailable".into()),
+                Err("commons unavailable".into()),
+            ])
+            .unwrap_err()
+            .contains("commons unavailable")
+        );
+    }
+
+    #[test]
     fn parses_commons_imageinfo_and_prefers_thumbnail() {
         let payload: CommonsResponse = serde_json::from_str(
             r#"{
               "query": {"pages": [
-                {"imageinfo": [{
+                {"index": 2, "imageinfo": [{
                   "url": "https://upload.wikimedia.org/original.png",
                   "thumburl": "https://upload.wikimedia.org/thumb.jpg",
                   "mime": "image/png",
@@ -481,20 +699,30 @@ mod tests {
                   "thumbwidth": 1200,
                   "thumbheight": 800
                 }]},
-                {"imageinfo": []}
+                {"index": 1, "imageinfo": [{"url": "https://upload.wikimedia.org/first.jpg", "mime": "image/jpeg"}]},
+                {"index": 3, "imageinfo": []}
               ]}
             }"#,
         )
         .unwrap();
         assert_eq!(
             parse_commons(payload),
-            vec![ImageCandidate {
-                url: "https://upload.wikimedia.org/thumb.jpg".into(),
-                provider: "wikimedia-commons".into(),
-                mime: "image/png".into(),
-                width: Some(1200),
-                height: Some(800),
-            }]
+            vec![
+                ImageCandidate {
+                    url: "https://upload.wikimedia.org/first.jpg".into(),
+                    provider: "wikimedia-commons".into(),
+                    mime: "image/jpeg".into(),
+                    width: None,
+                    height: None,
+                },
+                ImageCandidate {
+                    url: "https://upload.wikimedia.org/thumb.jpg".into(),
+                    provider: "wikimedia-commons".into(),
+                    mime: "image/png".into(),
+                    width: Some(1200),
+                    height: Some(800),
+                },
+            ]
         );
     }
 
@@ -531,17 +759,35 @@ mod tests {
     }
     #[test]
     fn normalizes_supported_image_to_jpeg() {
-        let mut image = RgbaImage::from_pixel(20, 20, Rgba([255, 255, 255, 255]));
+        let mut image = RgbaImage::from_pixel(320, 200, Rgba([255, 255, 255, 255]));
+        for y in 0..20 {
+            for x in 0..20 {
+                image.put_pixel(x, y, Rgba([0, 0, 0, 255]));
+            }
+        }
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&image, 320, 200, image::ColorType::Rgba8)
+            .unwrap();
+        let (jpeg, _) = normalize_jpeg(&png, "image/png").unwrap();
+        assert!(jpeg.starts_with(&[0xff, 0xd8]));
+        let decoded = image::load_from_memory(&jpeg).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (320, 200));
+        let filename = indexed_filename("wiki", "食べる!");
+        assert!(filename.starts_with("wiki-media-"));
+        assert!(filename.ends_with(".jpg"));
+    }
+    #[test]
+    fn evaluates_transparency_against_white_background() {
+        let mut image = RgbaImage::from_pixel(20, 20, Rgba([0, 0, 0, 0]));
         image.put_pixel(0, 0, Rgba([0, 0, 0, 255]));
         let mut png = Vec::new();
         image::codecs::png::PngEncoder::new(&mut png)
             .write_image(&image, 20, 20, image::ColorType::Rgba8)
             .unwrap();
-        let (jpeg, _) = normalize_jpeg(&png, "image/png").unwrap();
+        let (jpeg, quality) = normalize_jpeg(&png, "image/png").unwrap();
+        assert!(quality.mean_light > 250.0);
         assert!(jpeg.starts_with(&[0xff, 0xd8]));
-        let filename = indexed_filename("wiki", "食べる!");
-        assert!(filename.starts_with("wiki-media-"));
-        assert!(filename.ends_with(".jpg"));
     }
     #[test]
     fn rejects_unusable_and_keeps_visual_recall() {

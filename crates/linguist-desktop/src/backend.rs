@@ -635,7 +635,9 @@ impl qobject::AppBackend {
             .theme_watch
             .as_mut()
             .and_then(ThemeWatch::poll)
-        else { return; };
+        else {
+            return;
+        };
         self.as_mut()
             .set_theme_background(palette.background.into());
         self.as_mut().set_theme_surface(palette.surface.into());
@@ -649,7 +651,8 @@ impl qobject::AppBackend {
         let selected_deck = {
             let binding = self.as_ref();
             let queue = binding.rust().controller.queue();
-            queue.selected_deck_index()
+            queue
+                .selected_deck_index()
                 .and_then(|index| queue.decks().get(index))
                 .cloned()
         };
@@ -675,7 +678,9 @@ impl qobject::AppBackend {
 
     pub fn search_review(self: Pin<&mut Self>, query: &QString) {
         let query = query.to_string().trim().to_lowercase();
-        if query.is_empty() { return; }
+        if query.is_empty() {
+            return;
+        }
         let (row, deck) = {
             let binding = self.as_ref();
             let queue = binding.rust().controller.queue();
@@ -683,7 +688,10 @@ impl qobject::AppBackend {
                 row.expression.to_lowercase().contains(&query)
                     || row.detail.to_lowercase().contains(&query)
             });
-            let deck = queue.decks().iter().position(|deck| deck.to_lowercase().contains(&query));
+            let deck = queue
+                .decks()
+                .iter()
+                .position(|deck| deck.to_lowercase().contains(&query));
             (row, deck)
         };
         if let Some(index) = row {
@@ -716,8 +724,17 @@ impl qobject::AppBackend {
 
     pub fn select_deck_index(mut self: Pin<&mut Self>, index: i32) {
         if let Ok(index) = usize::try_from(index) {
-            let selected_deck = self.as_ref().rust().controller.queue().decks().get(index).cloned();
-            if selected_deck.is_none() { return; }
+            let selected_deck = self
+                .as_ref()
+                .rust()
+                .controller
+                .queue()
+                .decks()
+                .get(index)
+                .cloned();
+            if selected_deck.is_none() {
+                return;
+            }
             self.as_mut().rust_mut().controller.select_deck_index(index);
             match LiveDesktopPort::from_environment().map(|port| port.for_deck(selected_deck)) {
                 Ok(port) => self.as_mut().rust_mut().controller.refresh(&port),
@@ -1628,14 +1645,29 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
             queue_index(queue.selected_index()),
         )
     };
-    let (batch_job_count, batch_selected_index, batch_status, batch_item_count, batch_item_total, batch_confirmation) = {
+    let (
+        batch_job_count,
+        batch_selected_index,
+        batch_status,
+        batch_item_count,
+        batch_item_total,
+        batch_confirmation,
+    ) = {
         let binding = qobject.as_ref();
         let batch = binding.rust().controller.batch();
-        let selected = batch.selected_job_id.as_ref().and_then(|id| batch.jobs.iter().enumerate().find(|(_, job)| &job.job.id == id));
+        let selected = batch.selected_job_id.as_ref().and_then(|id| {
+            batch
+                .jobs
+                .iter()
+                .enumerate()
+                .find(|(_, job)| &job.job.id == id)
+        });
         (
             queue_len(batch.jobs.len()),
             selected.map(|(index, _)| queue_len(index)).unwrap_or(-1),
-            selected.map(|(_, job)| job.job.status.clone()).unwrap_or_default(),
+            selected
+                .map(|(_, job)| job.job.status.clone())
+                .unwrap_or_default(),
             queue_len(batch.page.as_ref().map_or(0, |page| page.items.len())),
             batch
                 .page
@@ -1704,7 +1736,10 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
     };
     let (draft_available, draft_can_undo, draft_can_redo) = {
         let binding = qobject.as_ref();
-        binding.rust().controller.active_draft()
+        binding
+            .rust()
+            .controller
+            .active_draft()
             .map(|draft| (true, draft.can_undo(), draft.can_redo()))
             .unwrap_or_default()
     };
@@ -1760,7 +1795,9 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
         .as_mut()
         .set_commit_snapshot_count(commit_snapshot_count);
     qobject.as_mut().set_batch_job_count(batch_job_count);
-    qobject.as_mut().set_batch_selected_index(batch_selected_index);
+    qobject
+        .as_mut()
+        .set_batch_selected_index(batch_selected_index);
     qobject.as_mut().set_batch_status(batch_status.into());
     qobject.as_mut().set_batch_item_count(batch_item_count);
     qobject.as_mut().set_batch_item_total(batch_item_total);
@@ -1998,12 +2035,18 @@ impl DraftNotePort for LiveDesktopPort {
     }
 }
 fn review_row(note: linguist_application::NoteInfo) -> ReviewRow {
-    let expression = ["Expression", "Word", "Front", "Vocabulary"]
+    let raw_expression = ["Expression", "Word", "Front", "Vocabulary"]
         .into_iter()
         .find_map(|name| note.fields.get(name))
         .cloned()
         .or_else(|| note.fields.values().next().cloned())
         .unwrap_or_else(|| format!("Note {}", note.note_id));
+    let expression = linguist_core::normalize_expression(&raw_expression);
+    let expression = if expression.is_empty() {
+        format!("Note {}", note.note_id)
+    } else {
+        expression
+    };
     ReviewRow {
         note_id: note.note_id,
         expression,
@@ -2068,7 +2111,8 @@ struct LiveEnrichmentServices {
     hvdic_kanji: linguist_dictionary::kanji::HvdicKanjiClient,
     kanji_media: linguist_dictionary::kanji::KanjiMediaFetcher,
     kanji_source_lang: String,
-    image: linguist_media::WikimediaCommons,
+    image_search: linguist_media::WikipediaAndCommons,
+    image_fetch: linguist_media::WikimediaCommons,
 }
 
 struct OllamaImageClassifier<'a> {
@@ -2447,8 +2491,8 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
             use base64::Engine;
             use std::sync::{Arc, atomic::AtomicBool};
             let result = linguist_media::discover_image(
-                &self.image,
-                &self.image,
+                &self.image_search,
+                &self.image_fetch,
                 &OllamaImageClassifier {
                     client: &self.ollama,
                     model: &self.model,
@@ -2456,7 +2500,7 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
                 expression,
                 None,
                 Arc::new(AtomicBool::new(false)),
-                4,
+                22,
             )
             .await;
             let Some(selected) = result.selected else {
@@ -2619,7 +2663,8 @@ impl LiveGenerationAdapter {
                 hvdic_kanji: linguist_dictionary::kanji::HvdicKanjiClient::new()?,
                 kanji_media: linguist_dictionary::kanji::KanjiMediaFetcher::new()?,
                 kanji_source_lang: config.kanji_source_lang.clone(),
-                image: linguist_media::WikimediaCommons::new()?,
+                image_search: linguist_media::WikipediaAndCommons::new()?,
+                image_fetch: linguist_media::WikimediaCommons::new()?,
             },
             linguist_pipeline::PipelineConfig::default(),
         );
@@ -2637,10 +2682,14 @@ impl LiveGenerationAdapter {
 
     fn document(&self, draft: &crate::draft::ReviewDraft) -> Result<CardDocument, String> {
         let deck_key = generation_deck_key(draft, &self.decks)?;
+        let expression = linguist_core::normalize_expression(&draft.expression);
+        if expression.is_empty() {
+            return Err("Expression contains no searchable text".into());
+        }
         self.runtime.block_on(async {
             let mut document = self
                 .pipeline
-                .enrich(draft.mode, deck_key, &draft.expression, &draft.meaning)
+                .enrich(draft.mode, deck_key, &expression, &draft.meaning)
                 .await
                 .map_err(|error| error.to_string())?;
             if draft.mode == CardMode::Inject || draft.images.is_empty() {
@@ -3147,6 +3196,22 @@ mod backend_tests {
     use super::*;
 
     #[test]
+    fn review_queue_shows_plain_expression_from_html_note() {
+        let row = review_row(linguist_application::NoteInfo {
+            note_id: 42,
+            model_name: linguist_application::ModelName("Basic".into()),
+            deck_names: Vec::new(),
+            fields: BTreeMap::from([(
+                "Word".into(),
+                "<span style=\"color: red;\">猫&nbsp;好き</span>".into(),
+            )]),
+            tags: Vec::new(),
+        });
+        assert_eq!(row.expression, "猫 好き");
+        assert_eq!(row.note_id, 42);
+    }
+
+    #[test]
     fn generation_uses_language_key_not_anki_deck_name() {
         let decks = BTreeMap::from([(
             "japanese_vocab".into(),
@@ -3310,8 +3375,14 @@ mod backend_tests {
     #[test]
     fn selected_deck_survives_refresh_and_missing_deck_falls_back() {
         let decks = vec!["Default".into(), "Japanese".into()];
-        assert_eq!(choose_deck(&decks, Some("Japanese")).as_deref(), Some("Japanese"));
-        assert_eq!(choose_deck(&decks, Some("Deleted")).as_deref(), Some("Default"));
+        assert_eq!(
+            choose_deck(&decks, Some("Japanese")).as_deref(),
+            Some("Japanese")
+        );
+        assert_eq!(
+            choose_deck(&decks, Some("Deleted")).as_deref(),
+            Some("Default")
+        );
         assert_eq!(choose_deck(&[], Some("Deleted")), None);
     }
 }
