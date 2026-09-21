@@ -51,6 +51,7 @@ pub mod qobject {
         #[qproperty(i32, batch_item_total)]
         #[qproperty(QString, batch_confirmation)]
         #[qproperty(i32, manual_preview_count)]
+        #[qproperty(i32, manual_enqueue_count)]
         #[qproperty(i32, manual_issue_count)]
         #[qproperty(QString, csv_headers)]
         #[qproperty(QString, csv_mapping)]
@@ -205,6 +206,12 @@ pub mod qobject {
         #[cxx_name = "manualPreviewIssue"]
         fn manual_preview_issue(self: &AppBackend, index: i32) -> QString;
         #[qinvokable]
+        #[cxx_name = "manualPreviewOptions"]
+        fn manual_preview_options(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "selectManualDecision"]
+        fn select_manual_decision(self: Pin<&mut Self>, index: i32, choice: i32);
+        #[qinvokable]
         #[cxx_name = "enqueueManualInput"]
         fn enqueue_manual_input(self: Pin<&mut Self>);
         #[qinvokable]
@@ -279,11 +286,13 @@ use cxx_qt_lib::QString;
 
 use linguist_application::{
     BatchSelector, CommitRequest, CommitSource, CsvIngestRequest, DuplicateDecision,
-    IngestionPreview, ManualIngestRequest, commit_card, prepare_csv_input, prepare_manual_input,
-    resolve_ingestion_preview, restore_snapshot, selector_preview,
+    IngestionPreview, ManualIngestRequest, commit_card, duplicate_decision_options,
+    prepare_csv_input, prepare_manual_input, resolve_ingestion_preview, restore_snapshot,
+    selector_preview,
 };
 use linguist_core::{
-    CONTRACT_VERSION, CardDocument, CardMode, FieldMapping, LogicalFields, Provenance, SourceKind,
+    CONTRACT_VERSION, CardBuildInput, CardDocument, CardMode, FieldMapping, LogicalFields,
+    ProcessedCardData, Provenance, SourceKind,
 };
 use linguist_snapshots::SnapshotRepository;
 
@@ -448,10 +457,12 @@ pub struct AppBackendRust {
     batch_item_total: i32,
     batch_confirmation: QString,
     manual_preview_count: i32,
+    manual_enqueue_count: i32,
     manual_issue_count: i32,
     manual_preview_rows: Vec<String>,
     manual_preview_issues: Vec<String>,
     manual_pending: Vec<(linguist_application::InputRow, DuplicateDecision)>,
+    manual_options: Vec<Vec<DuplicateDecision>>,
     csv_headers: QString,
     csv_mapping: QString,
     selector_total: QString,
@@ -529,10 +540,12 @@ impl AppBackendRust {
             batch_item_total: 0,
             batch_confirmation: QString::default(),
             manual_preview_count: 0,
+            manual_enqueue_count: 0,
             manual_issue_count: 0,
             manual_preview_rows: Vec::new(),
             manual_preview_issues: Vec::new(),
             manual_pending: Vec::new(),
+            manual_options: Vec::new(),
             csv_headers: QString::default(),
             csv_mapping: QString::default(),
             selector_total: QString::from("0"),
@@ -1177,6 +1190,7 @@ impl qobject::AppBackend {
         language_key: &QString,
         type_tag: &QString,
     ) {
+        clear_ingestion_preview(self.as_mut());
         let prepared = prepare_manual_input(&ManualIngestRequest {
             raw: raw.to_string(),
             deck_key: deck_key.to_string(),
@@ -1193,54 +1207,16 @@ impl qobject::AppBackend {
                 return;
             }
         };
-        let mut issues = preview
-            .issues
-            .iter()
-            .map(|issue| format!("Line {} · {}", issue.line, issue.message))
-            .collect::<Vec<_>>();
-        issues.extend(
-            preview
-                .duplicates
-                .iter()
-                .map(|line| format!("Line {line} · duplicate in pasted input")),
-        );
-        let decisions = match LiveDesktopPort::from_environment()
-            .and_then(|port| port.ingestion_candidates(&preview))
-        {
-            Ok(notes) => resolve_ingestion_preview(&preview, notes),
-            Err(error) => {
-                issues.push(format!("Duplicate check unavailable · {error}"));
-                vec![DuplicateDecision::Skip; preview.rows.len()]
-            }
-        };
-        let rows = preview
-            .rows
-            .iter()
-            .zip(&decisions)
-            .map(|(row, decision)| {
-                let context = if row.context.is_empty() {
-                    String::new()
-                } else {
-                    format!(" · {}", row.context)
-                };
-                format!(
-                    "{} · {}{} · {} · {} · {}",
-                    row.ordinal,
-                    row.expression,
-                    context,
-                    row.language_key,
-                    row.type_tag,
-                    ingestion_decision_label(decision)
-                )
-            })
-            .collect::<Vec<_>>();
-        let pending = preview.rows.into_iter().zip(decisions).collect();
-        let row_count = queue_len(rows.len());
-        let issue_count = queue_len(issues.len());
-        self.as_mut().rust_mut().manual_preview_rows = rows;
-        self.as_mut().rust_mut().manual_preview_issues = issues;
-        self.as_mut().rust_mut().manual_pending = pending;
+        let display = build_ingestion_display(&preview);
+        let row_count = queue_len(display.rows.len());
+        let issue_count = queue_len(display.issues.len());
+        let enqueue_count = pending_enqueue_count(&display.pending);
+        self.as_mut().rust_mut().manual_preview_rows = display.rows;
+        self.as_mut().rust_mut().manual_preview_issues = display.issues;
+        self.as_mut().rust_mut().manual_pending = display.pending;
+        self.as_mut().rust_mut().manual_options = display.options;
         self.as_mut().set_manual_preview_count(row_count);
+        self.as_mut().set_manual_enqueue_count(enqueue_count);
         self.as_mut().set_manual_issue_count(issue_count);
     }
 
@@ -1260,6 +1236,43 @@ impl qobject::AppBackend {
             .cloned()
             .unwrap_or_default()
             .into()
+    }
+
+    pub fn manual_preview_options(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().manual_options.get(index))
+            .map(|options| {
+                options
+                    .iter()
+                    .map(ingestion_decision_label)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn select_manual_decision(mut self: Pin<&mut Self>, index: i32, choice: i32) {
+        let selected = usize::try_from(index)
+            .ok()
+            .zip(usize::try_from(choice).ok())
+            .and_then(|(index, choice)| {
+                self.as_ref()
+                    .rust()
+                    .manual_options
+                    .get(index)
+                    .and_then(|options| options.get(choice))
+                    .cloned()
+                    .map(|decision| (index, decision))
+            });
+        if let Some((index, decision)) = selected {
+            if let Some((_, pending)) = self.as_mut().rust_mut().manual_pending.get_mut(index) {
+                *pending = decision;
+            }
+            let enqueue_count = pending_enqueue_count(&self.as_ref().rust().manual_pending);
+            self.as_mut().set_manual_enqueue_count(enqueue_count);
+        }
     }
 
     pub fn enqueue_manual_input(mut self: Pin<&mut Self>) {
@@ -1299,6 +1312,7 @@ impl qobject::AppBackend {
                         model,
                     );
                     draft.language_key = Some(row.language_key.clone());
+                    draft.type_tag = row.type_tag.clone();
                     self.as_mut().rust_mut().controller.enqueue_draft(
                         draft,
                         format!("{} · {} · injection", row.language_key, row.type_tag),
@@ -1309,6 +1323,10 @@ impl qobject::AppBackend {
                     let detail = format!("{} · {} · modernization", row.language_key, row.type_tag);
                     let mut draft = crate::draft::ReviewDraft::from_note(&note);
                     draft.language_key = Some(row.language_key);
+                    draft.type_tag = row.type_tag;
+                    if !row.context.is_empty() {
+                        draft.source_context = row.context;
+                    }
                     self.as_mut()
                         .rust_mut()
                         .controller
@@ -1319,7 +1337,9 @@ impl qobject::AppBackend {
         }
         self.as_mut().rust_mut().manual_preview_rows.clear();
         self.as_mut().rust_mut().manual_preview_issues.clear();
+        self.as_mut().rust_mut().manual_options.clear();
         self.as_mut().set_manual_preview_count(0);
+        self.as_mut().set_manual_enqueue_count(0);
         self.as_mut().set_manual_issue_count(0);
         if blocked > 0 {
             self.as_mut().rust_mut().controller.report_error(format!(
@@ -1336,6 +1356,7 @@ impl qobject::AppBackend {
         language_key: &QString,
         type_tag: &QString,
     ) {
+        clear_ingestion_preview(self.as_mut());
         let csv = match prepare_csv_input(&CsvIngestRequest {
             content: content.to_string(),
             deck_key: deck_key.to_string(),
@@ -1378,13 +1399,16 @@ impl qobject::AppBackend {
                 return;
             }
         };
-        let (rows, issues, pending) = build_ingestion_display(&preview);
-        let row_count = queue_len(rows.len());
-        let issue_count = queue_len(issues.len());
-        self.as_mut().rust_mut().manual_preview_rows = rows;
-        self.as_mut().rust_mut().manual_preview_issues = issues;
-        self.as_mut().rust_mut().manual_pending = pending;
+        let display = build_ingestion_display(&preview);
+        let row_count = queue_len(display.rows.len());
+        let issue_count = queue_len(display.issues.len());
+        let enqueue_count = pending_enqueue_count(&display.pending);
+        self.as_mut().rust_mut().manual_preview_rows = display.rows;
+        self.as_mut().rust_mut().manual_preview_issues = display.issues;
+        self.as_mut().rust_mut().manual_pending = display.pending;
+        self.as_mut().rust_mut().manual_options = display.options;
         self.as_mut().set_manual_preview_count(row_count);
+        self.as_mut().set_manual_enqueue_count(enqueue_count);
         self.as_mut().set_manual_issue_count(issue_count);
         self.as_mut()
             .set_csv_headers(csv.headers.join(" · ").into());
@@ -1399,6 +1423,7 @@ impl qobject::AppBackend {
         language_key: &QString,
         type_tag: &QString,
     ) {
+        clear_ingestion_preview(self.as_mut());
         let path = match local_file_path(&file_url.to_string()) {
             Ok(path) => path,
             Err(error) => {
@@ -1543,6 +1568,30 @@ fn ingestion_decision_label(decision: &DuplicateDecision) -> String {
     }
 }
 
+fn pending_enqueue_count(pending: &[(linguist_application::InputRow, DuplicateDecision)]) -> i32 {
+    queue_len(
+        pending
+            .iter()
+            .filter(|(_, decision)| {
+                matches!(
+                    decision,
+                    DuplicateDecision::Inject | DuplicateDecision::Modernize { .. }
+                )
+            })
+            .count(),
+    )
+}
+
+fn clear_ingestion_preview(mut backend: Pin<&mut qobject::AppBackend>) {
+    backend.as_mut().rust_mut().manual_preview_rows.clear();
+    backend.as_mut().rust_mut().manual_preview_issues.clear();
+    backend.as_mut().rust_mut().manual_pending.clear();
+    backend.as_mut().rust_mut().manual_options.clear();
+    backend.as_mut().set_manual_preview_count(0);
+    backend.as_mut().set_manual_enqueue_count(0);
+    backend.as_mut().set_manual_issue_count(0);
+}
+
 fn route_ingestion_preview(
     mut preview: IngestionPreview,
     config: &linguist_config::NativeConfig,
@@ -1552,7 +1601,7 @@ fn route_ingestion_preview(
     preview.rows.retain_mut(|row| {
         let Some(key) = linguist_application::canonical_language_key(&row.language_key) else {
             preview.issues.push(linguist_application::RowIssue {
-                line: row.ordinal,
+                line: row.source_line,
                 message: format!("Unknown language key: {}", row.language_key),
             });
             return false;
@@ -1565,7 +1614,7 @@ fn route_ingestion_preview(
                 .filter(|name| !name.trim().is_empty())
             else {
                 preview.issues.push(linguist_application::RowIssue {
-                    line: row.ordinal,
+                    line: row.source_line,
                     message: format!("No target deck mapped for {key}"),
                 });
                 return false;
@@ -1578,13 +1627,14 @@ fn route_ingestion_preview(
     preview
 }
 
-fn build_ingestion_display(
-    preview: &IngestionPreview,
-) -> (
-    Vec<String>,
-    Vec<String>,
-    Vec<(linguist_application::InputRow, DuplicateDecision)>,
-) {
+struct IngestionDisplay {
+    rows: Vec<String>,
+    issues: Vec<String>,
+    pending: Vec<(linguist_application::InputRow, DuplicateDecision)>,
+    options: Vec<Vec<DuplicateDecision>>,
+}
+
+fn build_ingestion_display(preview: &IngestionPreview) -> IngestionDisplay {
     let mut issues = preview
         .issues
         .iter()
@@ -1605,23 +1655,41 @@ fn build_ingestion_display(
             vec![DuplicateDecision::Skip; preview.rows.len()]
         }
     };
+    let options = preview
+        .rows
+        .iter()
+        .zip(decisions)
+        .map(|(row, decision)| {
+            duplicate_decision_options(&decision, preview.duplicates.contains(&row.source_line))
+        })
+        .collect::<Vec<_>>();
     let rows = preview
         .rows
         .iter()
-        .zip(&decisions)
-        .map(|(row, decision)| {
+        .map(|row| {
+            let context = if row.context.is_empty() {
+                String::new()
+            } else {
+                format!(" · {}", row.context)
+            };
             format!(
-                "{} · {} · {} · {} · {}",
-                row.ordinal,
-                row.expression,
-                row.language_key,
-                row.type_tag,
-                ingestion_decision_label(decision)
+                "{} · {}{} · {} · {}",
+                row.ordinal, row.expression, context, row.language_key, row.type_tag
             )
         })
         .collect();
-    let pending = preview.rows.iter().cloned().zip(decisions).collect();
-    (rows, issues, pending)
+    let pending = preview
+        .rows
+        .iter()
+        .cloned()
+        .zip(options.iter().map(|choices| choices[0].clone()))
+        .collect();
+    IngestionDisplay {
+        rows,
+        issues,
+        pending,
+        options,
+    }
 }
 
 fn local_file_path(value: &str) -> Result<PathBuf, String> {
@@ -2184,6 +2252,24 @@ fn generation_deck_key<'a>(
             "Multiple language mappings for Anki deck '{}'; choose one before generation",
             draft.deck_name
         )),
+    }
+}
+
+fn generation_input(
+    draft: &crate::draft::ReviewDraft,
+    deck_key: &str,
+    expression: &str,
+) -> CardBuildInput {
+    CardBuildInput {
+        mode: draft.mode,
+        language_key: deck_key.into(),
+        processed_data: ProcessedCardData {
+            word: expression.into(),
+            source_note: draft.source_context.clone(),
+            type_tag: draft.type_tag.clone(),
+            ..Default::default()
+        },
+        ..Default::default()
     }
 }
 
@@ -2784,7 +2870,7 @@ impl LiveGenerationAdapter {
         self.runtime.block_on(async {
             let mut document = self
                 .pipeline
-                .enrich(draft.mode, deck_key, &expression, &draft.meaning)
+                .enrich_with_input(generation_input(draft, deck_key, &expression))
                 .await
                 .map_err(|error| error.to_string())?;
             if draft.mode == CardMode::Inject || draft.images.is_empty() {
@@ -3366,6 +3452,23 @@ mod backend_tests {
 
         let unknown = crate::draft::ReviewDraft::injection(-2, "cat", "", "Unknown", "Model");
         assert!(generation_deck_key(&unknown, &decks).is_err());
+    }
+
+    #[test]
+    fn imported_type_and_context_reach_card_generation() {
+        let mut draft = crate::draft::ReviewDraft::injection(
+            -1,
+            "食べる",
+            "parent-child example",
+            "Japanese Words",
+            "Vocabulary",
+        );
+        draft.type_tag = "causative form".into();
+        let input = generation_input(&draft, "japanese_vocab", "食べる");
+        assert_eq!(input.language_key, "japanese_vocab");
+        assert_eq!(input.processed_data.source_note, "parent-child example");
+        assert_eq!(input.processed_data.type_tag, "causative form");
+        assert!(draft.meaning.is_empty());
     }
 
     #[test]

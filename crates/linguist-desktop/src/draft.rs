@@ -30,6 +30,8 @@ pub struct ReviewDraft {
     pub mode: CardMode,
     pub deck_name: String,
     pub language_key: Option<String>,
+    pub type_tag: String,
+    pub source_context: String,
     pub target_model: String,
     pub expression: String,
     pub meaning: String,
@@ -87,6 +89,8 @@ impl ReviewDraft {
                 .unwrap_or_default(),
             target_model: note.model_name.0.clone(),
             language_key: None,
+            type_tag: String::new(),
+            source_context: meaning.clone(),
             expression,
             meaning,
             kanji,
@@ -110,6 +114,8 @@ impl ReviewDraft {
             mode: CardMode::Modernize,
             deck_name: String::new(),
             language_key: None,
+            type_tag: String::new(),
+            source_context: String::new(),
             target_model: String::new(),
             expression: String::new(),
             meaning: String::new(),
@@ -139,7 +145,7 @@ impl ReviewDraft {
         let mut draft = Self::empty(note_id);
         draft.mode = CardMode::Inject;
         draft.expression = expression.into();
-        draft.meaning = context.into();
+        draft.source_context = context.into();
         draft.deck_name = deck_name.into();
         draft.target_model = target_model.into();
         draft.provenance = vec!["Manual import".into()];
@@ -374,8 +380,14 @@ impl DraftStore {
             .or_insert_with(|| ReviewDraft::from_note(note));
         if !entry.dirty() && entry.undo.is_empty() && entry.pending.is_empty() {
             let language_key = entry.language_key.clone();
+            let type_tag = entry.type_tag.clone();
+            let source_context = entry.source_context.clone();
             *entry = ReviewDraft::from_note(note);
             entry.language_key = language_key;
+            entry.type_tag = type_tag;
+            if !source_context.is_empty() {
+                entry.source_context = source_context;
+            }
         }
         self.active_note_id = Some(note.note_id);
     }
@@ -526,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn hydration_keeps_import_language_key() {
+    fn hydration_keeps_import_language_type_and_context() {
         let note = NoteInfo {
             note_id: 42,
             model_name: linguist_application::ModelName("Model".into()),
@@ -536,12 +548,19 @@ mod tests {
         };
         let mut draft = ReviewDraft::from_note(&note);
         draft.language_key = Some("japanese_vocab".into());
+        draft.type_tag = "causative".into();
+        draft.source_context = "parent-child example".into();
         let mut store = DraftStore::default();
         store.insert(draft);
         store.hydrate(&note, &mut FakePersistence::default());
         assert_eq!(
             store.active().unwrap().language_key.as_deref(),
             Some("japanese_vocab")
+        );
+        assert_eq!(store.active().unwrap().type_tag, "causative");
+        assert_eq!(
+            store.active().unwrap().source_context,
+            "parent-child example"
         );
     }
 }

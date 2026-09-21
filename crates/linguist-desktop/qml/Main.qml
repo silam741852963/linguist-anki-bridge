@@ -313,11 +313,11 @@ ApplicationWindow {
                     Accessible.name: text
                     Accessible.description: qsTr("Add resolved imports to the review queue without writing Anki")
                     highlighted: true
-                    enabled: backend.manual_preview_count > 0
+                    enabled: backend.manual_enqueue_count > 0
                     onClicked: { backend.enqueueManualInput(); manualDialog.close() }
                 }
             }
-            Label { text: qsTr("%1 rows · %2 issues").arg(backend.manual_preview_count).arg(backend.manual_issue_count); color: root.muted }
+            Label { text: qsTr("%1 rows · %2 to enqueue · %3 issues").arg(backend.manual_preview_count).arg(backend.manual_enqueue_count).arg(backend.manual_issue_count); color: root.muted }
             ScrollView {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -325,7 +325,24 @@ ApplicationWindow {
                     width: parent.width
                     Repeater {
                         model: backend.manual_preview_count
-                        delegate: Label { required property int index; Layout.fillWidth: true; text: backend.manualPreviewRow(index); color: root.foreground; wrapMode: Text.Wrap }
+                        delegate: RowLayout {
+                            required property int index
+                            Layout.fillWidth: true
+                            Label {
+                                Layout.fillWidth: true
+                                text: backend.manualPreviewRow(index)
+                                color: root.foreground
+                                wrapMode: Text.Wrap
+                            }
+                            ComboBox {
+                                Layout.preferredWidth: 205
+                                model: backend.manualPreviewOptions(index).split("\n")
+                                Accessible.name: qsTr("Decision for row %1").arg(index + 1)
+                                ToolTip.visible: hovered
+                                ToolTip.text: Accessible.name
+                                onActivated: backend.selectManualDecision(index, currentIndex)
+                            }
+                        }
                     }
                     Repeater {
                         model: backend.manual_issue_count

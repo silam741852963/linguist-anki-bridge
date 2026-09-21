@@ -107,8 +107,13 @@ impl ReviewQueueModel {
         self.state = QueueState::Loading;
     }
 
-    pub fn replace(&mut self, data: ReviewQueueData) {
+    pub fn replace(&mut self, mut data: ReviewQueueData) {
         let old_selection = self.selected_note_id;
+        for imported in self.rows.iter().filter(|row| row.note_id < 0) {
+            if !data.rows.iter().any(|row| row.note_id == imported.note_id) {
+                data.rows.push(imported.clone());
+            }
+        }
         self.decks = data.decks;
         self.rows = data.rows;
         self.state = if self.rows.is_empty() {
@@ -127,9 +132,17 @@ impl ReviewQueueModel {
     }
 
     pub fn fail(&mut self, message: impl Into<String>) {
-        self.rows.clear();
-        self.state = QueueState::Error(message.into());
-        self.selected_note_id = None;
+        self.rows.retain(|row| row.note_id < 0);
+        if self.rows.is_empty() {
+            self.state = QueueState::Error(message.into());
+            self.selected_note_id = None;
+        } else {
+            self.state = QueueState::Ready;
+            self.selected_note_id = self
+                .selected_note_id
+                .filter(|note_id| self.rows.iter().any(|row| row.note_id == *note_id))
+                .or_else(|| self.rows.first().map(|row| row.note_id));
+        }
     }
 
     pub fn select_index(&mut self, index: usize) -> Option<&ReviewRow> {
@@ -188,6 +201,34 @@ mod tests {
         });
         assert_eq!(model.selected_index(), Some(0));
         assert_eq!(model.rows()[0].note_id, 2);
+    }
+
+    #[test]
+    fn refresh_and_anki_failure_keep_pending_imports() {
+        let mut model = ReviewQueueModel::default();
+        model.replace(ReviewQueueData {
+            decks: vec!["Japanese".into()],
+            rows: vec![row(42, ReviewState::Ready)],
+        });
+        model.append(row(-1, ReviewState::NeedsReview));
+        model.select_index(1);
+        model.replace(ReviewQueueData {
+            decks: vec!["Japanese".into()],
+            rows: vec![row(43, ReviewState::Ready)],
+        });
+        assert_eq!(
+            model
+                .rows()
+                .iter()
+                .map(|row| row.note_id)
+                .collect::<Vec<_>>(),
+            [43, -1]
+        );
+        assert_eq!(model.selected_index(), Some(1));
+        model.fail("Anki offline");
+        assert_eq!(model.rows()[0].note_id, -1);
+        assert_eq!(model.state(), &QueueState::Ready);
+        assert_eq!(model.selected_index(), Some(0));
     }
 
     #[test]

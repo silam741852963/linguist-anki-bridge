@@ -177,8 +177,10 @@ impl ApplicationController {
     }
 
     pub fn fail_queue(&mut self, message: impl Into<String>) {
-        self.queue.fail(message);
-        self.state.selection.clear();
+        let message = message.into();
+        self.queue.fail(message.clone());
+        self.state.error = message;
+        self.sync_queue_selection();
     }
 
     pub fn select_queue_index(&mut self, index: usize) {

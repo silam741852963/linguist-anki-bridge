@@ -37,6 +37,7 @@ pub struct CsvPreview {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InputRow {
     pub ordinal: usize,
+    pub source_line: usize,
     pub expression: String,
     pub context: String,
     pub deck_key: String,
@@ -110,6 +111,7 @@ pub fn prepare_manual_input(request: &ManualIngestRequest) -> IngestionPreview {
         }
         rows.push(InputRow {
             ordinal: rows.len() + 1,
+            source_line: line_number,
             expression,
             context,
             deck_key: request.deck_key.clone(),
@@ -169,6 +171,7 @@ pub fn prepare_csv_input(request: &CsvIngestRequest) -> Result<CsvPreview, Strin
         let type_tag = get(mapping.type_tag);
         rows.push(InputRow {
             ordinal: rows.len() + 1,
+            source_line: line,
             expression,
             context: get(mapping.context).into(),
             deck_key: request.deck_key.clone(),
@@ -267,6 +270,44 @@ pub fn resolve_ingestion_preview(
         .collect()
 }
 
+/// Choices are explicit: an ambiguous Anki match is never selected by default.
+/// A repeated input row also defaults to Skip, even if Anki has no match.
+pub fn duplicate_decision_options(
+    decision: &DuplicateDecision,
+    repeated_in_input: bool,
+) -> Vec<DuplicateDecision> {
+    let mut choices = match decision {
+        DuplicateDecision::Inject => vec![DuplicateDecision::Inject, DuplicateDecision::Skip],
+        DuplicateDecision::Modernize { note } => vec![
+            DuplicateDecision::Modernize { note: note.clone() },
+            DuplicateDecision::Inject,
+            DuplicateDecision::Skip,
+        ],
+        DuplicateDecision::Ambiguous { matches } => {
+            let mut matches = matches.clone();
+            matches.sort_by_key(|note| note.note_id);
+            matches.dedup_by_key(|note| note.note_id);
+            let mut choices = vec![DuplicateDecision::Skip, DuplicateDecision::Inject];
+            choices.extend(
+                matches
+                    .into_iter()
+                    .map(|note| DuplicateDecision::Modernize { note }),
+            );
+            choices
+        }
+        DuplicateDecision::Skip => vec![DuplicateDecision::Skip],
+    };
+    if repeated_in_input {
+        if let Some(index) = choices
+            .iter()
+            .position(|choice| matches!(choice, DuplicateDecision::Skip))
+        {
+            choices.swap(0, index);
+        }
+    }
+    choices
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,6 +332,7 @@ mod tests {
         });
         assert_eq!(preview.rows.len(), 3);
         assert_eq!(preview.rows[0].context, "meal verb");
+        assert_eq!(preview.rows[0].source_line, 1);
         assert_eq!(preview.duplicates, vec![2]);
     }
     #[test]
@@ -304,6 +346,34 @@ mod tests {
         let decisions = resolve_ingestion_preview(&preview, [note("食べる")]);
         assert!(matches!(decisions[0], DuplicateDecision::Modernize { .. }));
         assert_eq!(decisions[1], DuplicateDecision::Inject);
+    }
+    #[test]
+    fn repeated_and_ambiguous_rows_require_explicit_choice() {
+        let repeated = duplicate_decision_options(&DuplicateDecision::Inject, true);
+        assert_eq!(
+            repeated,
+            [DuplicateDecision::Skip, DuplicateDecision::Inject]
+        );
+
+        let mut first = note("食べる");
+        first.note_id = 42;
+        let mut second = note("食べる");
+        second.note_id = 7;
+        let choices = duplicate_decision_options(
+            &DuplicateDecision::Ambiguous {
+                matches: vec![first.clone(), second.clone(), first],
+            },
+            false,
+        );
+        assert_eq!(choices[0], DuplicateDecision::Skip);
+        assert_eq!(choices[1], DuplicateDecision::Inject);
+        assert!(matches!(&choices[2], DuplicateDecision::Modernize { note } if note.note_id == 7));
+        assert!(matches!(&choices[3], DuplicateDecision::Modernize { note } if note.note_id == 42));
+        assert_eq!(choices.len(), 4);
+        assert_eq!(
+            duplicate_decision_options(&DuplicateDecision::Skip, false),
+            [DuplicateDecision::Skip]
+        );
     }
     #[test]
     fn maps_aliases_and_validates_csv_rows() {
