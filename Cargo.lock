@@ -1122,6 +1122,7 @@ name = "linguist-application"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "linguist-core",
  "serde",
  "serde_json",

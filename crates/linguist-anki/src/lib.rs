@@ -11,11 +11,11 @@ use std::{
 };
 
 use linguist_application::{
-    CardTemplate, CommitPort, CommitSource, DeckName, ExactExpressionRequest, ExpressionResolution,
-    MediaFile, MediaPort, ModelFields, ModelName, ModelStyling, ModelTemplates,
-    NATIVE_POST_WRITE_EXTENSION, NoteInfo, NoteMutation, NoteSummary, PortError, PortFuture,
-    PostWriteState, RestorePort, SelectorMetadataPort, SnapshotCapture, SnapshotHandle,
-    TemplateMutation, resolve_exact_expression,
+    BatchSelector, CardTemplate, CommitPort, CommitSource, DeckName, ExactExpressionRequest,
+    ExpressionResolution, ImageFilter, MediaFile, MediaPort, ModelFields, ModelName, ModelStyling,
+    ModelTemplates, NATIVE_POST_WRITE_EXTENSION, NoteInfo, NoteMutation, NoteSummary, PortError,
+    PortFuture, PostWriteState, RestorePort, SelectorMetadataPort, SelectorPreview,
+    SnapshotCapture, SnapshotHandle, TemplateMutation, resolve_exact_expression,
 };
 use linguist_core::{
     CONTRACT_VERSION, CardMode, ManagedModelSpec, ManagedTemplatePlan, ModelTemplate,
@@ -544,46 +544,103 @@ impl MediaPort for AnkiConnectTransport {
 }
 
 impl SelectorMetadataPort for AnkiConnectTransport {
-    fn count<'a>(&'a self, query: &'a str) -> PortFuture<'a, u64> {
+    fn preview<'a>(
+        &'a self,
+        selector: &'a BatchSelector,
+        preview_limit: usize,
+    ) -> PortFuture<'a, SelectorPreview> {
         Box::pin(async move {
-            self.find_notes(query)
+            let query = selector.query().map_err(|message| PortError {
+                operation: "selector query",
+                message,
+                retryable: false,
+            })?;
+            let ids = self
+                .find_notes(&query)
                 .await
-                .map(|notes| notes.len() as u64)
-                .map_err(|error| media_port_error("selector count", error))
+                .map_err(|error| media_port_error("selector preview", error))?;
+            let selection_limit = if selector.limit == 0 {
+                usize::MAX
+            } else {
+                selector.limit
+            };
+            if selector.image == ImageFilter::Any {
+                let total = ids.len().min(selection_limit);
+                let requested = total.min(preview_limit);
+                let mut notes = Vec::with_capacity(requested);
+                for chunk in ids[..requested].chunks(250) {
+                    notes.extend(
+                        self.notes_info(chunk)
+                            .await
+                            .map_err(|error| media_port_error("selector preview", error))?
+                            .into_iter()
+                            .map(note_summary),
+                    );
+                }
+                return Ok(SelectorPreview {
+                    total: total as u64,
+                    limited: total > notes.len(),
+                    notes,
+                });
+            }
+            let mut total = 0_usize;
+            let mut summaries = Vec::new();
+            for chunk in ids.chunks(250) {
+                let notes = self
+                    .notes_info(chunk)
+                    .await
+                    .map_err(|error| media_port_error("selector preview", error))?;
+                for note in notes {
+                    if selector_matches_image(selector.image, &note) {
+                        total += 1;
+                        if summaries.len() < preview_limit {
+                            summaries.push(note_summary(note));
+                        }
+                        if total >= selection_limit {
+                            break;
+                        }
+                    }
+                }
+                if total >= selection_limit {
+                    break;
+                }
+            }
+            Ok(SelectorPreview {
+                total: total as u64,
+                limited: total > summaries.len(),
+                notes: summaries,
+            })
         })
     }
+}
 
-    fn notes<'a>(&'a self, query: &'a str, limit: usize) -> PortFuture<'a, Vec<NoteSummary>> {
-        Box::pin(async move {
-            let mut ids = self
-                .find_notes(query)
-                .await
-                .map_err(|error| media_port_error("selector notes", error))?;
-            ids.truncate(limit);
-            self.notes_info(&ids)
-                .await
-                .map(|notes| {
-                    notes
-                        .into_iter()
-                        .map(|note| NoteSummary {
-                            note_id: note.note_id,
-                            expression: ["Expression", "Word", "Front", "Vocabulary"]
-                                .into_iter()
-                                .find_map(|field| note.fields.get(field))
-                                .cloned()
-                                .or_else(|| note.fields.values().next().cloned())
-                                .unwrap_or_default(),
-                            deck_key: note
-                                .deck_names
-                                .first()
-                                .map(|deck| deck.0.clone())
-                                .unwrap_or_default(),
-                            model_name: note.model_name.0,
-                        })
-                        .collect()
-                })
-                .map_err(|error| media_port_error("selector notes", error))
-        })
+fn selector_matches_image(filter: ImageFilter, note: &NoteInfo) -> bool {
+    let has_image = note
+        .fields
+        .values()
+        .any(|value| value.to_ascii_lowercase().contains("<img"));
+    match filter {
+        ImageFilter::Any => true,
+        ImageFilter::HasImage => has_image,
+        ImageFilter::NoImage => !has_image,
+    }
+}
+
+fn note_summary(note: NoteInfo) -> NoteSummary {
+    NoteSummary {
+        note_id: note.note_id,
+        expression: ["Expression", "Word", "Front", "Vocabulary"]
+            .into_iter()
+            .find_map(|field| note.fields.get(field))
+            .cloned()
+            .or_else(|| note.fields.values().next().cloned())
+            .unwrap_or_default(),
+        deck_key: note
+            .deck_names
+            .first()
+            .map(|deck| deck.0.clone())
+            .unwrap_or_default(),
+        model_name: note.model_name.0,
     }
 }
 
@@ -1649,6 +1706,71 @@ mod tests {
         assert!(requests[0].contains(r#""action":"findNotes"#));
         assert!(requests[0].contains(r#"deck:\"Japanese::Vocabulary\" \"俳優\""#));
         assert!(requests[1].contains(r#""action":"notesInfo"#));
+    }
+
+    #[tokio::test]
+    async fn selector_applies_local_image_filter_and_limit() {
+        let (url, requests) = mock_sequence(vec![
+            r#"{"result":[1,2],"error":null}"#,
+            r#"{"result":[{"noteId":1,"modelName":"Legacy","fields":{"Word":{"value":"cat"},"Picture":{"value":"<img src=\"cat.jpg\">"}},"tags":[],"cards":[]},{"noteId":2,"modelName":"Legacy","fields":{"Word":{"value":"dog"}},"tags":[],"cards":[]}],"error":null}"#,
+        ])
+        .await;
+        let preview = AnkiConnectTransport::new(&url)
+            .unwrap()
+            .preview(
+                &BatchSelector {
+                    image: ImageFilter::HasImage,
+                    limit: 1,
+                    ..Default::default()
+                },
+                200,
+            )
+            .await
+            .unwrap();
+        assert_eq!(preview.total, 1);
+        assert_eq!(preview.notes[0].expression, "cat");
+        let requests = requests.await.unwrap();
+        assert!(requests[0].contains(r#""action":"findNotes""#));
+        assert!(!requests[0].contains("picture"));
+        assert!(requests[1].contains(r#""action":"notesInfo""#));
+    }
+
+    #[tokio::test]
+    async fn selector_bounds_each_metadata_request() {
+        let ids = (1_i64..=251).collect::<Vec<_>>();
+        let response = |value: Value| -> &'static str {
+            Box::leak(
+                serde_json::to_string(&json!({"result": value, "error": null}))
+                    .unwrap()
+                    .into_boxed_str(),
+            )
+        };
+        let note = |id: i64| {
+            json!({
+                "noteId": id,
+                "modelName": "Legacy",
+                "fields": {"Word": {"value": format!("word-{id}")}},
+                "tags": [],
+                "cards": []
+            })
+        };
+        let (url, requests) = mock_sequence(vec![
+            response(json!(ids)),
+            response(json!((1_i64..=250).map(note).collect::<Vec<_>>())),
+            response(json!([note(251)])),
+        ])
+        .await;
+        let preview = AnkiConnectTransport::new(&url)
+            .unwrap()
+            .preview(&BatchSelector::default(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(preview.total, 251);
+        assert_eq!(preview.notes.len(), 251);
+        let requests = requests.await.unwrap();
+        assert_eq!(requests.len(), 3);
+        assert!(requests[1].contains(r#""notes":[1,2,3"#));
+        assert!(requests[2].contains(r#""notes":[251]"#));
     }
 
     #[tokio::test]

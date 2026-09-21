@@ -123,10 +123,16 @@ Item {
                 Layout.fillWidth: true
                 TextField { id: selectorModel; Layout.fillWidth: true; placeholderText: qsTr("Model (optional)"); Accessible.name: qsTr("Selector model") }
                 TextField { id: selectorTemplate; Layout.fillWidth: true; placeholderText: qsTr("Template (optional)"); Accessible.name: qsTr("Selector template") }
-                TextField { id: selectorAfter; Layout.fillWidth: true; placeholderText: qsTr("Created after, Anki date syntax"); Accessible.name: qsTr("Created after") }
-                TextField { id: selectorBefore; Layout.fillWidth: true; placeholderText: qsTr("Created before, Anki date syntax"); Accessible.name: qsTr("Created before") }
+                TextField { id: selectorAfter; Layout.fillWidth: true; placeholderText: qsTr("Created from, YYYY-MM-DD"); Accessible.name: qsTr("Created from date") }
+                TextField { id: selectorBefore; Layout.fillWidth: true; placeholderText: qsTr("Created through, YYYY-MM-DD"); Accessible.name: qsTr("Created through date") }
                 TextField { id: selectorTags; Layout.fillWidth: true; placeholderText: qsTr("Tags, comma separated"); Accessible.name: qsTr("Selector tags") }
+                TextField { id: selectorExcludedTags; Layout.fillWidth: true; placeholderText: qsTr("Excluded tags, comma separated"); Accessible.name: qsTr("Excluded selector tags") }
                 TextField { id: selectorQuery; Layout.fillWidth: true; placeholderText: qsTr("Additional Anki query"); Accessible.name: qsTr("Additional selector query") }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { text: qsTr("Maximum notes"); color: mutedColor }
+                    SpinBox { id: selectorLimit; Layout.fillWidth: true; from: 0; to: 1000000; value: 0; editable: true; Accessible.name: qsTr("Maximum matching notes, zero means unlimited") }
+                }
                 ComboBox { id: selectorImage; Layout.fillWidth: true; model: [qsTr("Any image"), qsTr("Has image"), qsTr("No image")]; Accessible.name: qsTr("Image filter") }
                 ComboBox { id: selectorCompletion; Layout.fillWidth: true; model: [qsTr("Any completion"), qsTr("Incomplete"), qsTr("Complete")]; Accessible.name: qsTr("Completion filter") }
             }
@@ -142,15 +148,17 @@ Item {
                         template: selectorTemplate.text.trim().length > 0 ? selectorTemplate.text.trim() : null,
                         query: selectorQuery.text,
                         tags: selectorTags.text.split(",").map(tag => tag.trim()).filter(tag => tag.length > 0),
+                        excluded_tags: selectorExcludedTags.text.split(",").map(tag => tag.trim()).filter(tag => tag.length > 0),
                         image: ["any", "has_image", "no_image"][selectorImage.currentIndex],
-                        completion: ["any", "incomplete", "complete"][selectorCompletion.currentIndex]
+                        completion: ["any", "incomplete", "complete"][selectorCompletion.currentIndex],
+                        limit: selectorLimit.value
                     }))
                 }
                 Button {
                     text: qsTr("Create selector batch")
                     Accessible.name: text
                     highlighted: true
-                    enabled: backend.selector_preview_count > 0
+                    enabled: backend.selector_preview_count > 0 && deckName.text.trim().length > 0
                     onClicked: { backend.createBatchFromSelector(batchDryRun.checked); backend.refreshBatches(); createJob.close() }
                 }
                 Label {

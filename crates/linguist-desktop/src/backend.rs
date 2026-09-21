@@ -303,7 +303,7 @@ use cxx_qt_lib::QString;
 
 use linguist_application::{
     BatchSelector, CommitRequest, CommitSource, CsvColumnMapping, CsvIngestRequest,
-    DuplicateDecision, IngestionPreview, ManualIngestRequest, commit_card,
+    DuplicateDecision, IngestionPreview, ManualIngestRequest, SelectorMetadataPort, commit_card,
     duplicate_decision_options, prepare_csv_input, prepare_manual_input, resolve_ingestion_preview,
     restore_snapshot, selector_preview,
 };
@@ -1561,13 +1561,23 @@ impl qobject::AppBackend {
                 return;
             }
         };
-        let deck_name = selector.deck.clone().unwrap_or_default();
-        let settings = BTreeMap::from([(
-            "selector".into(),
-            serde_json::to_value(&selector).expect("batch selector is serializable"),
-        )]);
+        let (deck_key, deck_name) = match selector_job_identity(&selector, &runtime_config()) {
+            Ok(identity) => identity,
+            Err(error) => {
+                self.as_mut().rust_mut().controller.report_error(error);
+                sync_controller_state(self);
+                return;
+            }
+        };
+        let settings = BTreeMap::from([
+            (
+                "selector".into(),
+                serde_json::to_value(&selector).expect("batch selector is serializable"),
+            ),
+            ("selection".into(), python_selection(&selector, &deck_key)),
+        ]);
         let job = linguist_jobs::NewJob {
-            deck_key: deck_name.clone(),
+            deck_key,
             deck_name,
             dry_run,
             settings,
@@ -1576,6 +1586,53 @@ impl qobject::AppBackend {
         self.as_mut().rust_mut().selector_pending = None;
         self.batch_command(|controller, port| controller.create_batch(port, job));
     }
+}
+
+fn selector_job_identity(
+    selector: &BatchSelector,
+    config: &Result<linguist_config::NativeConfig, String>,
+) -> Result<(String, String), String> {
+    let deck = selector
+        .deck
+        .as_deref()
+        .map(str::trim)
+        .filter(|deck| !deck.is_empty())
+        .ok_or_else(|| "A mapped deck is required for a selector batch".to_owned())?;
+    let config = config.as_ref().map_err(Clone::clone)?;
+    let matches = config
+        .decks
+        .iter()
+        .filter(|(key, value)| key.as_str() == deck || value.deck_name.as_deref() == Some(deck))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [(key, value)] => Ok((
+            (*key).clone(),
+            value.deck_name.clone().unwrap_or_else(|| deck.into()),
+        )),
+        [] => Err(format!(
+            "Deck '{deck}' has no purpose mapping; configure it before creating a batch"
+        )),
+        _ => Err(format!("Deck '{deck}' has multiple purpose mappings")),
+    }
+}
+
+fn python_selection(selector: &BatchSelector, deck_key: &str) -> serde_json::Value {
+    serde_json::json!({
+        "deck_key": deck_key,
+        "date_from": selector.created_after.as_deref().unwrap_or_default(),
+        "date_to": selector.created_before.as_deref().unwrap_or_default(),
+        "model_name": selector.model.as_deref().unwrap_or_default(),
+        "card_template": selector.template.as_deref().unwrap_or_default(),
+        "query": selector.query,
+        "required_tags": selector.tags,
+        "excluded_tags": selector.excluded_tags,
+        "media_scope": match selector.image {
+            linguist_application::ImageFilter::Any => "all",
+            linguist_application::ImageFilter::HasImage => "with",
+            linguist_application::ImageFilter::NoImage => "without",
+        },
+        "limit": selector.limit,
+    })
 }
 
 fn ingestion_decision_label(decision: &DuplicateDecision) -> String {
@@ -2230,29 +2287,18 @@ impl LiveDesktopPort {
         &self,
         selector: &BatchSelector,
     ) -> Result<Vec<linguist_jobs::BatchItemSeed>, String> {
-        let ids = self
+        let preview = self
             .runtime
-            .block_on(self.anki.find_notes(&selector.query()))
+            .block_on(self.anki.preview(selector, usize::MAX))
             .map_err(|error| error.to_string())?;
-        let mut items = Vec::with_capacity(ids.len());
-        for chunk in ids.chunks(500) {
-            let notes = self
-                .runtime
-                .block_on(self.anki.notes_info(chunk))
-                .map_err(|error| error.to_string())?;
-            items.extend(notes.into_iter().map(|note| {
-                linguist_jobs::BatchItemSeed {
-                    note_id: note.note_id,
-                    word: ["Expression", "Word", "Front", "Vocabulary"]
-                        .into_iter()
-                        .find_map(|field| note.fields.get(field))
-                        .cloned()
-                        .or_else(|| note.fields.values().next().cloned())
-                        .unwrap_or_default(),
-                }
-            }));
-        }
-        Ok(items)
+        Ok(preview
+            .notes
+            .into_iter()
+            .map(|note| linguist_jobs::BatchItemSeed {
+                note_id: note.note_id,
+                word: note.expression,
+            })
+            .collect())
     }
 }
 impl DesktopPort for LiveDesktopPort {
@@ -3621,6 +3667,40 @@ mod backend_tests {
         assert_eq!(routed.rows[1].deck_key, "Deutsch");
         assert_eq!(routed.rows[1].language_key, "german_vocab");
         assert_eq!(routed.issues.len(), 1);
+    }
+
+    #[test]
+    fn selector_uses_purpose_key_and_python_compatible_settings() {
+        let config = Ok(linguist_config::NativeConfig {
+            decks: BTreeMap::from([(
+                "japanese_vocab".into(),
+                linguist_config::DeckConfig {
+                    deck_name: Some("Japanese Words".into()),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        });
+        let selector = BatchSelector {
+            deck: Some("Japanese Words".into()),
+            created_after: Some("2026-09-01".into()),
+            created_before: Some("2026-09-21".into()),
+            tags: vec!["jlpt_n3".into()],
+            excluded_tags: vec!["blocked".into()],
+            image: linguist_application::ImageFilter::HasImage,
+            limit: 50,
+            ..Default::default()
+        };
+        assert_eq!(
+            selector_job_identity(&selector, &config).unwrap(),
+            ("japanese_vocab".into(), "Japanese Words".into())
+        );
+        let legacy = python_selection(&selector, "japanese_vocab");
+        assert_eq!(legacy["deck_key"], "japanese_vocab");
+        assert_eq!(legacy["required_tags"][0], "jlpt_n3");
+        assert_eq!(legacy["excluded_tags"][0], "blocked");
+        assert_eq!(legacy["media_scope"], "with");
+        assert_eq!(legacy["limit"], 50);
     }
 
     #[test]
