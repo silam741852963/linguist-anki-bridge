@@ -257,6 +257,7 @@ ApplicationWindow {
         width: Math.min(root.width * 0.76, 900)
         height: Math.min(root.height * 0.8, 700)
         standardButtons: Dialog.Close
+        onOpened: Qt.callLater(function() { importDeck.forceActiveFocus() })
         contentItem: ColumnLayout {
             spacing: 10
             RowLayout {
@@ -272,7 +273,7 @@ ApplicationWindow {
                 Layout.preferredHeight: 180
                 placeholderText: qsTr("食べる<Tab>meal verb\n新語<Tab>optional context")
                 wrapMode: TextEdit.Wrap
-                inputMethodHints: Qt.ImhNoPredictiveText
+                inputMethodHints: Qt.ImhNone
             }
             Label { text: qsTr("CSV input"); color: root.muted }
             TextArea {
@@ -282,7 +283,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 100
                 placeholderText: qsTr("Word,Language,Type,Context")
-                inputMethodHints: Qt.ImhNoPredictiveText
+                inputMethodHints: Qt.ImhNone
                 DropArea {
                     anchors.fill: parent
                     onDropped: function(drop) {
@@ -308,7 +309,7 @@ ApplicationWindow {
             GridLayout {
                 visible: backend.csv_column_count > 0
                 Layout.fillWidth: true
-                columns: 4
+                columns: manualDialog.width < 700 ? 2 : 4
                 Label { text: qsTr("Expression"); color: root.muted }
                 ComboBox {
                     id: csvExpression

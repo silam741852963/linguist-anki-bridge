@@ -15,6 +15,11 @@ Rectangle {
     property string zoomHtml: ""
     color: backgroundColor
 
+    Shortcut { sequence: StandardKey.Undo; enabled: backend.draft_can_undo; onActivated: backend.undoDraft() }
+    Shortcut { sequence: StandardKey.Redo; enabled: backend.draft_can_redo; onActivated: backend.redoDraft() }
+    Shortcut { sequence: "Ctrl+G"; enabled: backend.draft_available; onActivated: backend.regenerateDraft() }
+    Shortcut { sequence: "Ctrl+Shift+Return"; enabled: backend.commit_preview_ready; onActivated: backend.applyCommit() }
+
     MediaPlayer {
         id: previewAudio
         audioOutput: AudioOutput { volume: 1.0 }
@@ -58,7 +63,7 @@ Rectangle {
                         id: expressionEditor
                         Accessible.name: qsTr("Expression")
                         Accessible.description: qsTr("Edit the card expression")
-                        inputMethodHints: Qt.ImhNoPredictiveText
+                        inputMethodHints: Qt.ImhNone
                         Layout.fillWidth: true
                         text: backend.draft_expression
                         placeholderText: qsTr("Select a card")
@@ -115,7 +120,7 @@ Rectangle {
                         onTextChanged: if (activeFocus && text !== backend.draft_meaning) backend.editDraftMeaning(text)
                         color: foregroundColor
                         wrapMode: TextEdit.Wrap
-                        inputMethodHints: Qt.ImhNoPredictiveText
+                        inputMethodHints: Qt.ImhNone
                         background: Rectangle {
                             color: "transparent"
                             border.width: meaningEditor.activeFocus ? 2 : 0
@@ -143,7 +148,7 @@ Rectangle {
                         onTextChanged: if (activeFocus && text !== backend.draft_kanji) backend.editDraftKanji(text)
                         color: foregroundColor
                         wrapMode: TextEdit.Wrap
-                        inputMethodHints: Qt.ImhNoPredictiveText
+                        inputMethodHints: Qt.ImhNone
                         background: Rectangle {
                             color: "transparent"
                             border.width: kanjiEditor.activeFocus ? 2 : 0
@@ -243,11 +248,25 @@ Rectangle {
                     columnSpacing: 12
                     rowSpacing: 12
                 Rectangle {
+                    id: previewFront
+                    function openZoom() {
+                        workspace.zoomHtml = backend.cardPreview(workspace.previewTemplateIndex, false)
+                        zoomDialog.open()
+                    }
                     Layout.fillWidth: true
                     Layout.preferredHeight: 260
+                    activeFocusOnTab: true
+                    Accessible.name: qsTr("Open %1 front preview").arg(previewTemplate.currentText)
+                    Accessible.description: qsTr("Press Enter or Space to enlarge this card face")
+                    Accessible.role: Accessible.Button
+                    Accessible.onPressAction: openZoom()
+                    Keys.onReturnPressed: openZoom()
+                    Keys.onEnterPressed: openZoom()
+                    Keys.onSpacePressed: openZoom()
                     radius: 10
                     color: surfaceColor
-                    border.color: Qt.alpha(mutedColor, 0.35)
+                    border.width: activeFocus ? 2 : 1
+                    border.color: activeFocus ? accentColor : Qt.alpha(mutedColor, 0.35)
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 15
@@ -263,20 +282,31 @@ Rectangle {
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    workspace.zoomHtml = backend.cardPreview(workspace.previewTemplateIndex, false)
-                                    zoomDialog.open()
-                                }
+                                onClicked: previewFront.openZoom()
                             }
                         }
                     }
                 }
                 Rectangle {
+                    id: previewBack
+                    function openZoom() {
+                        workspace.zoomHtml = backend.cardPreview(workspace.previewTemplateIndex, true)
+                        zoomDialog.open()
+                    }
                     Layout.fillWidth: true
                     Layout.preferredHeight: 260
+                    activeFocusOnTab: true
+                    Accessible.name: qsTr("Open %1 back preview").arg(previewTemplate.currentText)
+                    Accessible.description: qsTr("Press Enter or Space to enlarge this card face")
+                    Accessible.role: Accessible.Button
+                    Accessible.onPressAction: openZoom()
+                    Keys.onReturnPressed: openZoom()
+                    Keys.onEnterPressed: openZoom()
+                    Keys.onSpacePressed: openZoom()
                     radius: 10
                     color: surfaceColor
-                    border.color: Qt.alpha(mutedColor, 0.35)
+                    border.width: activeFocus ? 2 : 1
+                    border.color: activeFocus ? accentColor : Qt.alpha(mutedColor, 0.35)
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 15
@@ -292,10 +322,7 @@ Rectangle {
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    workspace.zoomHtml = backend.cardPreview(workspace.previewTemplateIndex, true)
-                                    zoomDialog.open()
-                                }
+                                onClicked: previewBack.openZoom()
                             }
                         }
                     }

@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod accessibility_contract;
 mod backend;
 #[allow(dead_code)] // N21 backend/QML binding follows this bounded model.
 mod batch_model;

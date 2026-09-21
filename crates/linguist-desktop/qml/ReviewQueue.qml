@@ -52,6 +52,7 @@ Rectangle {
         }
         ComboBox {
             id: deckPicker
+            Accessible.name: qsTr("Active Anki deck")
             Layout.fillWidth: true
             model: backend.deck_count
             currentIndex: backend.selected_deck_index
@@ -113,6 +114,7 @@ Rectangle {
                 model: backend.review_row_count
                 currentIndex: backend.selected_review_index
                 focus: true
+                activeFocusOnTab: true
                 Accessible.name: qsTr("Review queue")
                 Accessible.description: qsTr("Use arrow keys to select a card")
                 Accessible.role: Accessible.List
@@ -131,6 +133,7 @@ Rectangle {
                     height: 78
                     radius: 8
                     color: ListView.isCurrentItem ? Qt.alpha(accentColor, 0.22) : "transparent"
+                    border.width: ListView.isCurrentItem && ListView.view.activeFocus ? 2 : 1
                     border.color: ListView.isCurrentItem ? accentColor : Qt.alpha(mutedColor, 0.35)
                     focus: ListView.isCurrentItem
                     Accessible.name: qsTr("Review item %1: %2").arg(index + 1).arg(backend.reviewExpression(index))

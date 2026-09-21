@@ -9,6 +9,9 @@ Item {
     required property color mutedColor
     required property color accentColor
 
+    Shortcut { sequence: "Ctrl+N"; enabled: workspace.visible; onActivated: createJob.open() }
+    Shortcut { sequence: "Ctrl+R"; enabled: workspace.visible; onActivated: backend.refreshBatches() }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 10
@@ -28,6 +31,7 @@ Item {
             model: backend.batch_job_count
             currentIndex: backend.batch_selected_index
             clip: true
+            activeFocusOnTab: true
             delegate: ItemDelegate {
                 required property int index
                 width: jobs.width
@@ -82,6 +86,7 @@ Item {
         visible: backend.batch_confirmation.length > 0
         title: qsTr("Confirm batch action")
         standardButtons: Dialog.Ok | Dialog.Cancel
+        onOpened: Qt.callLater(function() { standardButton(Dialog.Cancel).forceActiveFocus() })
         onAccepted: backend.confirmBatchAction()
         onRejected: backend.cancelBatchAction()
         Label { text: backend.batch_confirmation; color: foregroundColor }
@@ -92,8 +97,9 @@ Item {
         modal: true
         title: qsTr("Create batch job")
         standardButtons: Dialog.Cancel
+        onOpened: Qt.callLater(function() { deckName.forceActiveFocus() })
         ColumnLayout {
-            width: 620
+            width: Math.max(280, Math.min(workspace.width - 32, 620))
             TextField { id: deckName; Layout.fillWidth: true; placeholderText: qsTr("Deck name"); Accessible.name: qsTr("Batch deck name") }
             TextArea {
                 id: rows
@@ -103,7 +109,7 @@ Item {
                 Layout.preferredHeight: 180
                 placeholderText: qsTr("Note ID<Tab>Expression\n42<Tab>食べる")
                 wrapMode: TextEdit.NoWrap
-                inputMethodHints: Qt.ImhNoPredictiveText
+                inputMethodHints: Qt.ImhNone
             }
             CheckBox {
                 id: batchDryRun
@@ -169,14 +175,20 @@ Item {
                 }
             }
             ListView {
+                id: selectorResults
+                Accessible.name: qsTr("Batch selector preview")
+                Accessible.description: qsTr("At most the first 200 matching notes are displayed")
+                Accessible.role: Accessible.List
                 Layout.fillWidth: true
                 Layout.preferredHeight: 120
                 model: backend.selector_preview_count
                 clip: true
                 delegate: Label {
                     required property int index
-                    width: ListView.view.width
+                    width: selectorResults.width
                     text: backend.selectorPreviewRow(index)
+                    Accessible.name: text
+                    Accessible.role: Accessible.ListItem
                     color: foregroundColor
                     elide: Text.ElideRight
                 }
