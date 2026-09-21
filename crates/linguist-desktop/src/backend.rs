@@ -245,6 +245,20 @@ pub mod qobject {
             dry_run: bool,
         );
         #[qinvokable]
+        #[cxx_name = "mappedDeckName"]
+        fn mapped_deck_name(self: &AppBackend, purpose: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "mappedModelName"]
+        fn mapped_model_name(self: &AppBackend, purpose: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "saveDeckMapping"]
+        fn save_deck_mapping(
+            self: Pin<&mut Self>,
+            purpose: &QString,
+            deck_name: &QString,
+            model_name: &QString,
+        );
+        #[qinvokable]
         #[cxx_name = "importLegacyConfig"]
         fn import_legacy_config(self: Pin<&mut Self>, file_url: &QString);
     }
@@ -598,6 +612,49 @@ impl qobject::AppBackend {
             linguist_config::save_native_replace(&path, &config).map_err(|error| error.to_string())
         }) {
             Ok(()) => apply_settings(self.as_mut(), config, "Settings saved"),
+            Err(error) => self.set_settings_message(error.into()),
+        }
+    }
+
+    pub fn mapped_deck_name(&self, purpose: &QString) -> QString {
+        runtime_config()
+            .ok()
+            .and_then(|config| config.decks.get(&purpose.to_string()).cloned())
+            .and_then(|deck| deck.deck_name)
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn mapped_model_name(&self, purpose: &QString) -> QString {
+        runtime_config()
+            .ok()
+            .and_then(|config| config.decks.get(&purpose.to_string()).cloned())
+            .and_then(|deck| deck.model_name)
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn save_deck_mapping(
+        mut self: Pin<&mut Self>,
+        purpose: &QString,
+        deck_name: &QString,
+        model_name: &QString,
+    ) {
+        let result = (|| {
+            let mut config = runtime_config()?;
+            set_deck_mapping(
+                &mut config,
+                &purpose.to_string(),
+                &deck_name.to_string(),
+                &model_name.to_string(),
+            )?;
+            let path = native_config_path()?;
+            linguist_config::save_native_replace(&path, &config)
+                .map_err(|error| error.to_string())?;
+            Ok::<_, String>(config)
+        })();
+        match result {
+            Ok(config) => apply_settings(self.as_mut(), config, "Deck purpose mapping saved"),
             Err(error) => self.set_settings_message(error.into()),
         }
     }
@@ -1846,6 +1903,31 @@ fn runtime_config() -> Result<linguist_config::NativeConfig, String> {
 fn nonempty_setting(value: &str) -> Option<String> {
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_owned())
+}
+
+fn set_deck_mapping(
+    config: &mut linguist_config::NativeConfig,
+    purpose: &str,
+    deck_name: &str,
+    model_name: &str,
+) -> Result<(), String> {
+    let canonical = linguist_application::canonical_language_key(purpose)
+        .ok_or_else(|| format!("Unknown deck purpose: {purpose}"))?;
+    let deck = nonempty_setting(deck_name);
+    if let Some(name) = deck.as_deref() {
+        if config
+            .decks
+            .iter()
+            .any(|(key, mapped)| key != &canonical && mapped.deck_name.as_deref() == Some(name))
+        {
+            return Err(format!("Anki deck '{name}' already has another purpose"));
+        }
+    }
+    config.version = linguist_config::NATIVE_CONFIG_VERSION;
+    let mapping = config.decks.entry(canonical).or_default();
+    mapping.deck_name = deck.clone();
+    mapping.model_name = deck.and_then(|_| nonempty_setting(model_name));
+    Ok(())
 }
 
 fn apply_settings(
@@ -3195,6 +3277,28 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
 #[cfg(test)]
 mod backend_tests {
     use super::*;
+
+    #[test]
+    fn deck_purpose_mapping_validates_and_preserves_field_configuration() {
+        let mut config = linguist_config::NativeConfig::default();
+        config.decks.insert(
+            "japanese_vocab".into(),
+            linguist_config::DeckConfig {
+                fields: BTreeMap::from([("expression".into(), "Word".into())]),
+                ..Default::default()
+            },
+        );
+        set_deck_mapping(&mut config, "Japanese", "森の言葉", "2. Picture Words").unwrap();
+        let mapped = &config.decks["japanese_vocab"];
+        assert_eq!(mapped.deck_name.as_deref(), Some("森の言葉"));
+        assert_eq!(mapped.model_name.as_deref(), Some("2. Picture Words"));
+        assert_eq!(mapped.fields["expression"], "Word");
+        assert!(set_deck_mapping(&mut config, "english_vocab", "森の言葉", "").is_err());
+        assert!(set_deck_mapping(&mut config, "unknown", "Other", "").is_err());
+        set_deck_mapping(&mut config, "japanese_vocab", "", "ignored").unwrap();
+        assert!(config.decks["japanese_vocab"].deck_name.is_none());
+        assert!(config.decks["japanese_vocab"].model_name.is_none());
+    }
 
     #[test]
     fn missing_local_synthesizer_keeps_only_remote_voice_choices() {

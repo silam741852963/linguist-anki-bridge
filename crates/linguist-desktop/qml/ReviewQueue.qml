@@ -10,6 +10,11 @@ Rectangle {
     required property color foregroundColor
     required property color mutedColor
     required property color accentColor
+    property bool searchOpen: false
+    function focusSearch() {
+        searchOpen = true
+        Qt.callLater(function() { cardSearch.forceActiveFocus(); cardSearch.selectAll() })
+    }
     color: backgroundColor
 
     ColumnLayout {
@@ -25,6 +30,25 @@ Rectangle {
                 text: qsTr("%1 cards").arg(backend.review_row_count)
                 color: mutedColor
             }
+            ToolButton {
+                text: qsTr("Find card or deck")
+                icon.source: "icons/search.svg"
+                icon.color: foregroundColor
+                display: AbstractButton.IconOnly
+                Accessible.name: text
+                ToolTip.visible: hovered
+                ToolTip.text: text + qsTr(" · Ctrl K")
+                onClicked: queue.searchOpen ? queue.searchOpen = false : queue.focusSearch()
+            }
+        }
+        TextField {
+            id: cardSearch
+            visible: queue.searchOpen
+            Layout.fillWidth: true
+            Accessible.name: qsTr("Find card or deck")
+            placeholderText: qsTr("Find card or deck · Enter")
+            onAccepted: { backend.searchReview(text); queue.cardSelected() }
+            Keys.onEscapePressed: queue.searchOpen = false
         }
         ComboBox {
             id: deckPicker

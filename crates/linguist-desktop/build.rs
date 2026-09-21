@@ -1,7 +1,7 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
 fn main() {
-    CxxQtBuilder::new_qml_module(
+    let builder = CxxQtBuilder::new_qml_module(
         QmlModule::new("io.github.lam.linguist_anki_bridge")
             .qml_file("qml/Main.qml")
             .qml_file("qml/ReviewQueue.qml")
@@ -13,15 +13,26 @@ fn main() {
     .qrc_resources([
         "qml/icons/add.svg",
         "qml/icons/card.svg",
+        "qml/icons/brain-circuit.svg",
+        "qml/icons/database.svg",
         "qml/icons/list.svg",
         "qml/icons/pause.svg",
         "qml/icons/play.svg",
         "qml/icons/preview.svg",
         "qml/icons/redo.svg",
         "qml/icons/refresh.svg",
+        "qml/icons/search.svg",
         "qml/icons/settings.svg",
+        "qml/icons/triangle-alert.svg",
         "qml/icons/undo.svg",
-    ])
+    ]);
+    // GCC emits this warning from Qt's own qchar.h while compiling CXX-Qt
+    // generated code. Suppress only that vendor-header diagnostic.
+    unsafe {
+        builder.cc_builder(|cc| {
+            cc.flag_if_supported("-Wno-sfinae-incomplete");
+        })
+    }
     .files(["src/backend.rs"])
     .build();
 }
