@@ -55,6 +55,11 @@ pub mod qobject {
         #[qproperty(i32, manual_issue_count)]
         #[qproperty(QString, csv_headers)]
         #[qproperty(QString, csv_mapping)]
+        #[qproperty(i32, csv_column_count)]
+        #[qproperty(i32, csv_expression_column)]
+        #[qproperty(i32, csv_language_column)]
+        #[qproperty(i32, csv_type_column)]
+        #[qproperty(i32, csv_context_column)]
         #[qproperty(QString, selector_total)]
         #[qproperty(i32, selector_preview_count)]
         #[qproperty(bool, selector_limited)]
@@ -233,6 +238,18 @@ pub mod qobject {
             type_tag: &QString,
         );
         #[qinvokable]
+        #[cxx_name = "csvColumnName"]
+        fn csv_column_name(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "remapCsvInput"]
+        fn remap_csv_input(
+            self: Pin<&mut Self>,
+            expression: i32,
+            language: i32,
+            type_tag: i32,
+            context: i32,
+        );
+        #[qinvokable]
         #[cxx_name = "previewBatchSelector"]
         fn preview_batch_selector(self: Pin<&mut Self>, selector_json: &QString);
         #[qinvokable]
@@ -285,10 +302,10 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 
 use linguist_application::{
-    BatchSelector, CommitRequest, CommitSource, CsvIngestRequest, DuplicateDecision,
-    IngestionPreview, ManualIngestRequest, commit_card, duplicate_decision_options,
-    prepare_csv_input, prepare_manual_input, resolve_ingestion_preview, restore_snapshot,
-    selector_preview,
+    BatchSelector, CommitRequest, CommitSource, CsvColumnMapping, CsvIngestRequest,
+    DuplicateDecision, IngestionPreview, ManualIngestRequest, commit_card,
+    duplicate_decision_options, prepare_csv_input, prepare_manual_input, resolve_ingestion_preview,
+    restore_snapshot, selector_preview,
 };
 use linguist_core::{
     CONTRACT_VERSION, CardBuildInput, CardDocument, CardMode, FieldMapping, LogicalFields,
@@ -465,6 +482,13 @@ pub struct AppBackendRust {
     manual_options: Vec<Vec<DuplicateDecision>>,
     csv_headers: QString,
     csv_mapping: QString,
+    csv_column_count: i32,
+    csv_expression_column: i32,
+    csv_language_column: i32,
+    csv_type_column: i32,
+    csv_context_column: i32,
+    csv_header_names: Vec<String>,
+    csv_source: Option<CsvImportSource>,
     selector_total: QString,
     selector_preview_count: i32,
     selector_limited: bool,
@@ -482,6 +506,14 @@ pub struct AppBackendRust {
     batch_worker_error: Arc<Mutex<Option<String>>>,
     generation_adapter: Option<LiveGenerationAdapter>,
     controller: ApplicationController,
+}
+
+#[derive(Clone)]
+struct CsvImportSource {
+    content: String,
+    deck_key: String,
+    language_key: String,
+    type_tag: String,
 }
 
 impl Default for AppBackendRust {
@@ -548,6 +580,13 @@ impl AppBackendRust {
             manual_options: Vec::new(),
             csv_headers: QString::default(),
             csv_mapping: QString::default(),
+            csv_column_count: 0,
+            csv_expression_column: 0,
+            csv_language_column: -1,
+            csv_type_column: -1,
+            csv_context_column: -1,
+            csv_header_names: Vec::new(),
+            csv_source: None,
             selector_total: QString::from("0"),
             selector_preview_count: 0,
             selector_limited: false,
@@ -1191,6 +1230,7 @@ impl qobject::AppBackend {
         type_tag: &QString,
     ) {
         clear_ingestion_preview(self.as_mut());
+        clear_csv_preview(self.as_mut());
         let prepared = prepare_manual_input(&ManualIngestRequest {
             raw: raw.to_string(),
             deck_key: deck_key.to_string(),
@@ -1356,64 +1396,44 @@ impl qobject::AppBackend {
         language_key: &QString,
         type_tag: &QString,
     ) {
-        clear_ingestion_preview(self.as_mut());
-        let csv = match prepare_csv_input(&CsvIngestRequest {
+        clear_csv_preview(self.as_mut());
+        self.as_mut().rust_mut().csv_source = Some(CsvImportSource {
             content: content.to_string(),
             deck_key: deck_key.to_string(),
             language_key: language_key.to_string(),
             type_tag: type_tag.to_string(),
-            mapping: None,
-        }) {
-            Ok(csv) => csv,
-            Err(error) => {
-                self.as_mut().rust_mut().controller.report_error(error);
-                sync_controller_state(self);
-                return;
-            }
+        });
+        show_csv_preview(self, None);
+    }
+
+    pub fn csv_column_name(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().csv_header_names.get(index))
+            .cloned()
+            .unwrap_or_else(|| "—".into())
+            .into()
+    }
+
+    pub fn remap_csv_input(
+        self: Pin<&mut Self>,
+        expression: i32,
+        language: i32,
+        type_tag: i32,
+        context: i32,
+    ) {
+        let Ok(expression) = usize::try_from(expression) else {
+            return;
         };
-        let header = |column: Option<usize>| {
-            column
-                .and_then(|column| csv.headers.get(column))
-                .cloned()
-                .unwrap_or_else(|| "—".into())
-        };
-        let mapping = format!(
-            "Expression: {} · Language: {} · Type: {} · Context: {}",
-            header(Some(csv.mapping.expression)),
-            header(csv.mapping.language),
-            header(csv.mapping.type_tag),
-            header(csv.mapping.context)
+        show_csv_preview(
+            self,
+            Some(CsvColumnMapping {
+                expression,
+                language: usize::try_from(language).ok(),
+                type_tag: usize::try_from(type_tag).ok(),
+                context: usize::try_from(context).ok(),
+            }),
         );
-        let prepared = IngestionPreview {
-            rows: csv.rows,
-            issues: csv.issues,
-            duplicates: csv.duplicates,
-        };
-        let preview = match runtime_config()
-            .map(|config| route_ingestion_preview(prepared, &config, &language_key.to_string()))
-        {
-            Ok(preview) => preview,
-            Err(error) => {
-                self.as_mut().rust_mut().controller.report_error(error);
-                sync_controller_state(self);
-                return;
-            }
-        };
-        let display = build_ingestion_display(&preview);
-        let row_count = queue_len(display.rows.len());
-        let issue_count = queue_len(display.issues.len());
-        let enqueue_count = pending_enqueue_count(&display.pending);
-        self.as_mut().rust_mut().manual_preview_rows = display.rows;
-        self.as_mut().rust_mut().manual_preview_issues = display.issues;
-        self.as_mut().rust_mut().manual_pending = display.pending;
-        self.as_mut().rust_mut().manual_options = display.options;
-        self.as_mut().set_manual_preview_count(row_count);
-        self.as_mut().set_manual_enqueue_count(enqueue_count);
-        self.as_mut().set_manual_issue_count(issue_count);
-        self.as_mut()
-            .set_csv_headers(csv.headers.join(" · ").into());
-        self.as_mut().set_csv_mapping(mapping.into());
-        sync_controller_state(self);
     }
 
     pub fn preview_csv_file(
@@ -1424,6 +1444,7 @@ impl qobject::AppBackend {
         type_tag: &QString,
     ) {
         clear_ingestion_preview(self.as_mut());
+        clear_csv_preview(self.as_mut());
         let path = match local_file_path(&file_url.to_string()) {
             Ok(path) => path,
             Err(error) => {
@@ -1590,6 +1611,99 @@ fn clear_ingestion_preview(mut backend: Pin<&mut qobject::AppBackend>) {
     backend.as_mut().set_manual_preview_count(0);
     backend.as_mut().set_manual_enqueue_count(0);
     backend.as_mut().set_manual_issue_count(0);
+}
+
+fn clear_csv_preview(mut backend: Pin<&mut qobject::AppBackend>) {
+    backend.as_mut().rust_mut().csv_source = None;
+    backend.as_mut().rust_mut().csv_header_names.clear();
+    backend.as_mut().set_csv_headers(QString::default());
+    backend.as_mut().set_csv_mapping(QString::default());
+    backend.as_mut().set_csv_column_count(0);
+    backend.as_mut().set_csv_expression_column(0);
+    backend.as_mut().set_csv_language_column(-1);
+    backend.as_mut().set_csv_type_column(-1);
+    backend.as_mut().set_csv_context_column(-1);
+}
+
+fn show_csv_preview(mut backend: Pin<&mut qobject::AppBackend>, mapping: Option<CsvColumnMapping>) {
+    clear_ingestion_preview(backend.as_mut());
+    let Some(source) = backend.as_ref().rust().csv_source.clone() else {
+        return;
+    };
+    let csv = match prepare_csv_input(&CsvIngestRequest {
+        content: source.content,
+        deck_key: source.deck_key,
+        language_key: source.language_key.clone(),
+        type_tag: source.type_tag,
+        mapping,
+    }) {
+        Ok(csv) => csv,
+        Err(error) => {
+            backend.as_mut().rust_mut().controller.report_error(error);
+            sync_controller_state(backend);
+            return;
+        }
+    };
+    let header = |column: Option<usize>| {
+        column
+            .and_then(|column| csv.headers.get(column))
+            .cloned()
+            .unwrap_or_else(|| "—".into())
+    };
+    let mapping_label = format!(
+        "Expression: {} · Language: {} · Type: {} · Context: {}",
+        header(Some(csv.mapping.expression)),
+        header(csv.mapping.language),
+        header(csv.mapping.type_tag),
+        header(csv.mapping.context)
+    );
+    let prepared = IngestionPreview {
+        rows: csv.rows,
+        issues: csv.issues,
+        duplicates: csv.duplicates,
+    };
+    let preview = match runtime_config()
+        .map(|config| route_ingestion_preview(prepared, &config, &source.language_key))
+    {
+        Ok(preview) => preview,
+        Err(error) => {
+            backend.as_mut().rust_mut().controller.report_error(error);
+            sync_controller_state(backend);
+            return;
+        }
+    };
+    let display = build_ingestion_display(&preview);
+    let row_count = queue_len(display.rows.len());
+    let issue_count = queue_len(display.issues.len());
+    let enqueue_count = pending_enqueue_count(&display.pending);
+    backend.as_mut().rust_mut().manual_preview_rows = display.rows;
+    backend.as_mut().rust_mut().manual_preview_issues = display.issues;
+    backend.as_mut().rust_mut().manual_pending = display.pending;
+    backend.as_mut().rust_mut().manual_options = display.options;
+    backend.as_mut().set_manual_preview_count(row_count);
+    backend.as_mut().set_manual_enqueue_count(enqueue_count);
+    backend.as_mut().set_manual_issue_count(issue_count);
+    backend.as_mut().rust_mut().csv_header_names = csv.headers.clone();
+    backend
+        .as_mut()
+        .set_csv_column_count(queue_len(csv.headers.len()));
+    backend
+        .as_mut()
+        .set_csv_expression_column(csv.mapping.expression as i32);
+    backend
+        .as_mut()
+        .set_csv_language_column(csv.mapping.language.map_or(-1, |index| index as i32));
+    backend
+        .as_mut()
+        .set_csv_type_column(csv.mapping.type_tag.map_or(-1, |index| index as i32));
+    backend
+        .as_mut()
+        .set_csv_context_column(csv.mapping.context.map_or(-1, |index| index as i32));
+    backend
+        .as_mut()
+        .set_csv_headers(csv.headers.join(" · ").into());
+    backend.as_mut().set_csv_mapping(mapping_label.into());
+    sync_controller_state(backend);
 }
 
 fn route_ingestion_preview(

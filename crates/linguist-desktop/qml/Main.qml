@@ -248,6 +248,10 @@ ApplicationWindow {
 
     Dialog {
         id: manualDialog
+        function remapCsv() {
+            backend.remapCsvInput(csvExpression.currentIndex, csvLanguage.currentIndex - 1,
+                                  csvType.currentIndex - 1, csvContext.currentIndex - 1)
+        }
         modal: true
         title: qsTr("Import words")
         width: Math.min(root.width * 0.76, 900)
@@ -299,7 +303,64 @@ ApplicationWindow {
                     onClicked: backend.previewCsvInput(csvRows.text, importDeck.text, importLanguage.text, importType.text)
                 }
                 Button { text: qsTr("Choose CSV file"); Accessible.name: text; onClicked: csvFileDialog.open() }
-                Label { Layout.fillWidth: true; text: backend.csv_mapping; color: root.muted; elide: Text.ElideRight }
+                Item { Layout.fillWidth: true }
+            }
+            GridLayout {
+                visible: backend.csv_column_count > 0
+                Layout.fillWidth: true
+                columns: 4
+                Label { text: qsTr("Expression"); color: root.muted }
+                ComboBox {
+                    id: csvExpression
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("CSV expression column")
+                    model: {
+                        let names = []
+                        for (let i = 0; i < backend.csv_column_count; i++) names.push(backend.csvColumnName(i))
+                        return names
+                    }
+                    currentIndex: backend.csv_expression_column
+                    onActivated: manualDialog.remapCsv()
+                }
+                Label { text: qsTr("Language"); color: root.muted }
+                ComboBox {
+                    id: csvLanguage
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("CSV language column")
+                    model: {
+                        let names = [qsTr("None")]
+                        for (let i = 0; i < backend.csv_column_count; i++) names.push(backend.csvColumnName(i))
+                        return names
+                    }
+                    currentIndex: backend.csv_language_column + 1
+                    onActivated: manualDialog.remapCsv()
+                }
+                Label { text: qsTr("Type"); color: root.muted }
+                ComboBox {
+                    id: csvType
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("CSV type column")
+                    model: {
+                        let names = [qsTr("None")]
+                        for (let i = 0; i < backend.csv_column_count; i++) names.push(backend.csvColumnName(i))
+                        return names
+                    }
+                    currentIndex: backend.csv_type_column + 1
+                    onActivated: manualDialog.remapCsv()
+                }
+                Label { text: qsTr("Context"); color: root.muted }
+                ComboBox {
+                    id: csvContext
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("CSV context column")
+                    model: {
+                        let names = [qsTr("None")]
+                        for (let i = 0; i < backend.csv_column_count; i++) names.push(backend.csvColumnName(i))
+                        return names
+                    }
+                    currentIndex: backend.csv_context_column + 1
+                    onActivated: manualDialog.remapCsv()
+                }
             }
             RowLayout {
                 Button {

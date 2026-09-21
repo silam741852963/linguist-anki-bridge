@@ -130,7 +130,13 @@ pub fn prepare_csv_input(request: &CsvIngestRequest) -> Result<CsvPreview, Strin
     let Some(headers) = records.first() else {
         return Err("CSV has no header row".into());
     };
-    let headers = headers.clone();
+    let mut headers = headers.fields.clone();
+    if let Some(first) = headers.first_mut() {
+        *first = first.trim_start_matches('\u{feff}').to_owned();
+    }
+    if headers.iter().all(|header| header.trim().is_empty()) {
+        return Err("CSV has no usable headers".into());
+    }
     let mapping = request
         .mapping
         .clone()
@@ -138,21 +144,45 @@ pub fn prepare_csv_input(request: &CsvIngestRequest) -> Result<CsvPreview, Strin
     if mapping.expression >= headers.len() {
         return Err("Expression column is out of range".into());
     }
+    for (name, column) in [
+        ("Language", mapping.language),
+        ("Type", mapping.type_tag),
+        ("Context", mapping.context),
+    ] {
+        if column.is_some_and(|column| column >= headers.len()) {
+            return Err(format!("{name} column is out of range"));
+        }
+    }
     let mut rows = Vec::new();
     let mut issues = Vec::new();
     let mut duplicates = Vec::new();
     let mut seen = BTreeSet::new();
-    for (index, record) in records.into_iter().skip(1).enumerate() {
-        let line = index + 2;
+    for record in records.into_iter().skip(1) {
+        let line = record.line;
+        if record.fields.len() == 1 && record.fields[0].trim().is_empty() {
+            continue;
+        }
+        if record.fields.len() != headers.len() {
+            issues.push(RowIssue {
+                line,
+                message: format!(
+                    "Expected {} columns, found {}",
+                    headers.len(),
+                    record.fields.len()
+                ),
+            });
+            continue;
+        }
         let get = |column: Option<usize>| {
             column
-                .and_then(|column| record.get(column))
+                .and_then(|column| record.fields.get(column))
                 .map(String::as_str)
                 .unwrap_or_default()
                 .trim()
         };
         let expression = normalize_expression(
             record
+                .fields
                 .get(mapping.expression)
                 .map(String::as_str)
                 .unwrap_or_default(),
@@ -198,46 +228,94 @@ pub fn prepare_csv_input(request: &CsvIngestRequest) -> Result<CsvPreview, Strin
 fn infer_mapping(headers: &[String]) -> CsvColumnMapping {
     let find = |aliases: &[&str]| {
         headers.iter().position(|header| {
-            aliases
-                .iter()
-                .any(|alias| header.trim().eq_ignore_ascii_case(alias))
+            let normalized = header
+                .chars()
+                .filter(|character| character.is_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .collect::<String>();
+            aliases.iter().any(|alias| normalized == *alias)
         })
     };
     CsvColumnMapping {
         expression: find(&["word", "expression", "vocabulary", "front", "term"]).unwrap_or(0),
         language: find(&["language", "lang", "deck"]),
-        type_tag: find(&["type", "word_type", "part_of_speech"]),
-        context: find(&["note", "notes", "context", "meaning"]),
+        type_tag: find(&["type", "wordtype", "partofspeech", "pos"]),
+        context: find(&["note", "notes", "context", "meaning", "definition"]),
     }
 }
-fn parse_csv(content: &str) -> Result<Vec<Vec<String>>, String> {
+struct CsvRecord {
+    fields: Vec<String>,
+    line: usize,
+}
+#[derive(Clone, Copy)]
+enum CsvFieldState {
+    Start,
+    Unquoted,
+    Quoted,
+    AfterQuote,
+}
+fn parse_csv(content: &str) -> Result<Vec<CsvRecord>, String> {
     let mut rows = Vec::new();
     let mut row = Vec::new();
     let mut field = String::new();
-    let mut quoted = false;
+    let mut state = CsvFieldState::Start;
+    let mut line = 1;
+    let mut row_start = 1;
     let mut chars = content.chars().peekable();
     while let Some(ch) = chars.next() {
-        match ch {
-            '"' if quoted && chars.peek() == Some(&'"') => {
+        if ch == '\r' && chars.peek() == Some(&'\n') {
+            continue;
+        }
+        match (state, ch) {
+            (CsvFieldState::Quoted, '"') if chars.peek() == Some(&'"') => {
                 field.push('"');
                 chars.next();
             }
-            '"' => quoted = !quoted,
-            ',' if !quoted => row.push(std::mem::take(&mut field)),
-            '\n' if !quoted => {
-                row.push(std::mem::take(&mut field));
-                rows.push(std::mem::take(&mut row));
+            (CsvFieldState::Quoted, '"') => state = CsvFieldState::AfterQuote,
+            (CsvFieldState::Quoted, '\n') => {
+                field.push('\n');
+                line += 1;
             }
-            '\r' if !quoted => {}
-            _ => field.push(ch),
+            (CsvFieldState::Quoted, character) => field.push(character),
+            (CsvFieldState::Start, '"') => state = CsvFieldState::Quoted,
+            (CsvFieldState::Unquoted | CsvFieldState::AfterQuote, '"') => {
+                return Err(format!("Unexpected quote on CSV line {line}"));
+            }
+            (_, ',') => {
+                row.push(std::mem::take(&mut field));
+                state = CsvFieldState::Start;
+            }
+            (_, '\n') => {
+                row.push(std::mem::take(&mut field));
+                rows.push(CsvRecord {
+                    fields: std::mem::take(&mut row),
+                    line: row_start,
+                });
+                line += 1;
+                row_start = line;
+                state = CsvFieldState::Start;
+            }
+            (CsvFieldState::AfterQuote, character) => {
+                return Err(format!(
+                    "Unexpected character '{character}' after quote on CSV line {line}"
+                ));
+            }
+            (CsvFieldState::Start, character) => {
+                field.push(character);
+                state = CsvFieldState::Unquoted;
+            }
+            (CsvFieldState::Unquoted, character) => field.push(character),
         }
     }
-    if quoted {
+    if matches!(state, CsvFieldState::Quoted) {
         return Err("CSV has an unclosed quoted field".into());
     }
     if !field.is_empty() || !row.is_empty() {
         row.push(field);
-        rows.push(row)
+        rows.push(CsvRecord {
+            fields: row,
+            line: row_start,
+        })
     }
     Ok(rows)
 }
@@ -402,5 +480,69 @@ mod tests {
             Some("japanese_grammar")
         );
         assert!(canonical_language_key("unknown").is_none());
+    }
+
+    #[test]
+    fn csv_mapping_handles_bom_aliases_multiline_and_bad_rows() {
+        let base = CsvIngestRequest {
+            content: "\u{feff}Term,Part of Speech,Notes\r\n\"猫\",noun,\"line one\r\nline two\"\r\n犬,verb\r\n"
+                .into(),
+            deck_key: "Japanese".into(),
+            language_key: "japanese_vocab".into(),
+            type_tag: String::new(),
+            mapping: None,
+        };
+        let preview = prepare_csv_input(&base).unwrap();
+        assert_eq!(preview.headers[0], "Term");
+        assert_eq!(preview.mapping.type_tag, Some(1));
+        assert_eq!(preview.mapping.context, Some(2));
+        assert_eq!(preview.rows[0].context, "line one\nline two");
+        assert_eq!(preview.rows[0].source_line, 2);
+        assert_eq!(preview.issues[0].line, 4);
+        assert!(preview.issues[0].message.contains("Expected 3 columns"));
+
+        let malformed = CsvIngestRequest {
+            content: format!("{}鳥,\"noun\"oops,note\n", base.content),
+            ..base
+        };
+        assert!(
+            prepare_csv_input(&malformed)
+                .unwrap_err()
+                .contains("after quote")
+        );
+    }
+
+    #[test]
+    fn csv_explicit_mapping_rejects_out_of_range_columns() {
+        let request = CsvIngestRequest {
+            content: "Term,Notes\n猫,context\n".into(),
+            deck_key: "Japanese".into(),
+            language_key: "japanese_vocab".into(),
+            type_tag: String::new(),
+            mapping: Some(CsvColumnMapping {
+                expression: 0,
+                language: None,
+                type_tag: None,
+                context: Some(2),
+            }),
+        };
+        assert_eq!(
+            prepare_csv_input(&request).unwrap_err(),
+            "Context column is out of range"
+        );
+
+        let remapped = prepare_csv_input(&CsvIngestRequest {
+            content: "Ignore,Term,Notes\nunused,猫,cat example\n".into(),
+            mapping: Some(CsvColumnMapping {
+                expression: 1,
+                language: None,
+                type_tag: None,
+                context: Some(2),
+            }),
+            ..request
+        })
+        .unwrap();
+        assert_eq!(remapped.rows[0].expression, "猫");
+        assert_eq!(remapped.rows[0].context, "cat example");
     }
 }
