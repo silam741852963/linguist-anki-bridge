@@ -144,6 +144,7 @@ pub struct NativePipeline<S> {
     services: Arc<S>,
     config: PipelineConfig,
     cache: Arc<Mutex<BTreeMap<String, ProviderOutput>>>,
+    in_flight: Arc<Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     last_call: Arc<Mutex<BTreeMap<String, Instant>>>,
     cancellation: Cancellation,
     progress: Option<Arc<dyn ProgressSink>>,
@@ -154,6 +155,7 @@ impl<S> Clone for NativePipeline<S> {
             services: self.services.clone(),
             config: self.config.clone(),
             cache: self.cache.clone(),
+            in_flight: self.in_flight.clone(),
             last_call: self.last_call.clone(),
             cancellation: self.cancellation.clone(),
             progress: self.progress.clone(),
@@ -166,6 +168,7 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             services: Arc::new(services),
             config,
             cache: Arc::new(Mutex::new(BTreeMap::new())),
+            in_flight: Arc::new(Mutex::new(BTreeMap::new())),
             last_call: Arc::new(Mutex::new(BTreeMap::new())),
             cancellation: Cancellation::default(),
             progress: None,
@@ -239,15 +242,47 @@ impl<S: EnrichmentServices> NativePipeline<S> {
         expression: &str,
         context: &str,
     ) -> Result<CardDocument, PipelineError> {
+        self.enrich_with_input(CardBuildInput {
+            mode,
+            language_key: deck_key.into(),
+            processed_data: ProcessedCardData {
+                word: expression.into(),
+                source_note: context.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+    }
+
+    /// Enrich a source record without discarding its original media, tags,
+    /// provenance, or artifacts already processed before a retry.
+    pub async fn enrich_with_input(
+        &self,
+        mut input: CardBuildInput,
+    ) -> Result<CardDocument, PipelineError> {
+        let deck_key = input.language_key.clone();
+        let expression = input.processed_data.word.clone();
+        let context = input.processed_data.source_note.clone();
+        let deck_key = deck_key.as_str();
+        let expression = expression.as_str();
+        let context = context.as_str();
         let dictionary_key = format!("{deck_key}\0{expression}");
+        let mut issues = Vec::new();
         let dictionary = match self
             .call(expression, &dictionary_key, "dictionary", || {
                 self.services.dictionary(expression, deck_key)
             })
-            .await?
+            .await
         {
-            ProviderOutput::Dictionary(value) => value,
-            _ => return Err(PipelineError::Unexpected("dictionary")),
+            Ok(ProviderOutput::Dictionary(value)) => value,
+            Ok(ProviderOutput::Unavailable) => input.processed_data.scraped.clone(),
+            Ok(_) => return Err(PipelineError::Unexpected("dictionary")),
+            Err(PipelineError::Cancelled) => return Err(PipelineError::Cancelled),
+            Err(error) => {
+                issues.push(error.to_string());
+                input.processed_data.scraped.clone()
+            }
         };
         let generation_key = format!(
             "{deck_key}\0{expression}\0{context}\0{}\0{}",
@@ -257,14 +292,15 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             "{deck_key}\0{expression}\0{}\0{:?}",
             dictionary.reading, dictionary.pronunciations
         );
+        let deck_expression_key = format!("{deck_key}\0{expression}");
         let (generation_result, kanji_result, image_result, audio_result) = tokio::join!(
             self.call(expression, &generation_key, "generation", || self
                 .services
                 .generation(expression, deck_key, context, &dictionary)),
-            self.call(expression, expression, "kanji", || self
+            self.call(expression, &deck_expression_key, "kanji", || self
                 .services
                 .kanji(expression, deck_key)),
-            self.call(expression, expression, "image", || self
+            self.call(expression, &deck_expression_key, "image", || self
                 .services
                 .image(expression, deck_key)),
             self.call(expression, &audio_key, "audio", || self.services.audio(
@@ -273,24 +309,24 @@ impl<S: EnrichmentServices> NativePipeline<S> {
                 &dictionary
             )),
         );
-        let mut issues = Vec::new();
         let generation = match generation_result {
             Ok(ProviderOutput::Generation(value)) => value,
+            Ok(ProviderOutput::Unavailable) => input.processed_data.llm_response.clone(),
             Ok(_) => return Err(PipelineError::Unexpected("generation")),
             Err(PipelineError::Cancelled) => return Err(PipelineError::Cancelled),
             Err(error) => {
                 issues.push(error.to_string());
-                LlmResponse::default()
+                input.processed_data.llm_response.clone()
             }
         };
         let kanji = match kanji_result {
             Ok(ProviderOutput::Kanji(value)) => value,
-            Ok(ProviderOutput::Unavailable) => String::new(),
+            Ok(ProviderOutput::Unavailable) => input.processed_data.kanji_construction.clone(),
             Ok(_) => return Err(PipelineError::Unexpected("kanji")),
             Err(PipelineError::Cancelled) => return Err(PipelineError::Cancelled),
             Err(error) => {
                 issues.push(error.to_string());
-                String::new()
+                input.processed_data.kanji_construction.clone()
             }
         };
         let image = match image_result {
@@ -309,46 +345,36 @@ impl<S: EnrichmentServices> NativePipeline<S> {
                 None
             }
         };
-        if !dictionary.found {
-            issues.push("Dictionary entry not found".into())
-        };
-        let (new_image_filename, new_image_b64, classification) = match image {
-            Some(ProviderOutput::Image {
-                filename,
-                b64,
-                classification,
-            }) => (filename, Some(b64), classification),
-            _ => (String::new(), None, "uncertain".into()),
-        };
-        let audio_assets = match audio {
-            Some(ProviderOutput::Audio(assets)) => assets
-                .into_iter()
-                .map(|asset| linguist_core::AudioAsset {
-                    filename: asset.filename,
-                    b64: Some(asset.b64),
-                    reading: asset.reading,
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        Ok(build_card_document(CardBuildInput {
-            mode,
-            language_key: deck_key.into(),
-            processed_data: ProcessedCardData {
-                word: expression.into(),
-                scraped: dictionary,
-                llm_response: generation,
-                kanji_construction: kanji,
-                new_image_filename,
-                new_image_b64,
-                classification,
-                audio_assets,
-                source_note: context.into(),
-                issues,
-                ..Default::default()
-            },
-            ..Default::default()
-        }))
+        let data = &mut input.processed_data;
+        data.scraped = dictionary;
+        data.llm_response = generation;
+        if !kanji.is_empty() {
+            data.kanji_construction = kanji;
+        }
+        if let Some(ProviderOutput::Image {
+            filename,
+            b64,
+            classification,
+        }) = image
+        {
+            data.new_image_filename = filename;
+            data.new_image_b64 = Some(b64);
+            data.classification = classification;
+        }
+        if let Some(ProviderOutput::Audio(assets)) = audio {
+            if !assets.is_empty() {
+                data.audio_assets = assets
+                    .into_iter()
+                    .map(|asset| linguist_core::AudioAsset {
+                        filename: asset.filename,
+                        b64: Some(asset.b64),
+                        reading: asset.reading,
+                    })
+                    .collect();
+            }
+        }
+        data.issues.extend(issues);
+        Ok(build_card_document(input))
     }
     async fn call<F, O>(
         &self,
@@ -366,6 +392,24 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             return Err(PipelineError::Cancelled);
         }
         let key = format!("{}:{service}:{input_key}", self.config.cache_revision);
+        if let Some(value) = self.cache.lock().unwrap().get(&key).cloned() {
+            self.event(expression, service, PipelineState::Cached);
+            return Ok(value);
+        }
+        let flight = self
+            .in_flight
+            .lock()
+            .unwrap()
+            .entry(key.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone();
+        let _flight_guard = tokio::select! {
+            _ = self.cancellation.wait() => {
+                self.event(expression, service, PipelineState::Cancelled);
+                return Err(PipelineError::Cancelled);
+            }
+            guard = flight.lock() => guard,
+        };
         if let Some(value) = self.cache.lock().unwrap().get(&key).cloned() {
             self.event(expression, service, PipelineState::Cached);
             return Ok(value);
@@ -411,7 +455,9 @@ impl<S: EnrichmentServices> NativePipeline<S> {
         };
         match value {
             Ok(value) => {
-                self.cache.lock().unwrap().insert(key, value.clone());
+                if value != ProviderOutput::Unavailable {
+                    self.cache.lock().unwrap().insert(key, value.clone());
+                }
                 self.event(expression, service, PipelineState::Finished);
                 Ok(value)
             }
@@ -589,6 +635,226 @@ mod tests {
         assert_eq!(one, two);
         assert_eq!(pipeline.services.calls.load(Ordering::Relaxed), 1);
     }
+
+    struct DictionaryOutage;
+    impl EnrichmentServices for DictionaryOutage {
+        fn dictionary<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Box::pin(async {
+                Err(PipelineError::Provider {
+                    service: "dictionary",
+                    message: "offline".into(),
+                    retryable: true,
+                })
+            })
+        }
+        fn generation<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Generation(LlmResponse {
+                nuances: "Generated without dictionary".into(),
+                ..Default::default()
+            }))
+        }
+        fn kanji<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+        fn image<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+        fn audio<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+    }
+
+    #[tokio::test]
+    async fn dictionary_outage_keeps_partial_generated_draft() {
+        let pipeline = NativePipeline::new(
+            DictionaryOutage,
+            PipelineConfig {
+                rate_limits: BTreeMap::new(),
+                ..PipelineConfig::default()
+            },
+        );
+        let document = pipeline
+            .enrich(CardMode::Inject, "english_vocab", "word", "")
+            .await
+            .unwrap();
+        assert!(
+            document
+                .issues
+                .iter()
+                .any(|issue| issue.contains("dictionary: offline"))
+        );
+        assert!(
+            document
+                .values
+                .meaning_text
+                .unwrap_or_default()
+                .contains("Generated without dictionary")
+        );
+    }
+
+    struct UnavailableServices;
+    impl EnrichmentServices for UnavailableServices {
+        fn dictionary<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+        fn generation<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+        fn kanji<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+        fn image<'a>(&'a self, _: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+        fn audio<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+    }
+
+    #[tokio::test]
+    async fn processed_golden_inputs_keep_python_parity() {
+        let pipeline = NativePipeline::new(
+            UnavailableServices,
+            PipelineConfig {
+                rate_limits: BTreeMap::new(),
+                ..PipelineConfig::default()
+            },
+        );
+        let fixtures = [
+            (
+                "modernization",
+                include_str!("../../../contracts/fixture-sources/modernization.json"),
+                include_str!("../../../contracts/fixtures/modernization-card.v1.json"),
+            ),
+            (
+                "injection",
+                include_str!("../../../contracts/fixture-sources/injection.json"),
+                include_str!("../../../contracts/fixtures/injection-card.v1.json"),
+            ),
+            (
+                "shared fields",
+                include_str!("../../../contracts/fixture-sources/shared-fields.json"),
+                include_str!("../../../contracts/fixtures/shared-fields-card.v1.json"),
+            ),
+            (
+                "media replacement",
+                include_str!("../../../contracts/fixture-sources/media-replacement.json"),
+                include_str!("../../../contracts/fixtures/media-replacement-card.v1.json"),
+            ),
+            (
+                "validation issues",
+                include_str!("../../../contracts/fixture-sources/validation-issues.json"),
+                include_str!("../../../contracts/fixtures/validation-issues-card.v1.json"),
+            ),
+            (
+                "grammar",
+                include_str!("../../../contracts/fixture-sources/grammar.json"),
+                include_str!("../../../contracts/fixtures/grammar-card.v1.json"),
+            ),
+            (
+                "dictionary preserve",
+                include_str!("../../../contracts/fixture-sources/dictionary-preserve.json"),
+                include_str!("../../../contracts/fixtures/dictionary-preserve-card.v1.json"),
+            ),
+        ];
+        for (name, source, expected) in fixtures {
+            let input: CardBuildInput = serde_json::from_str(source).unwrap();
+            let expected: CardDocument = serde_json::from_str(expected).unwrap();
+            let actual = pipeline.enrich_with_input(input).await.unwrap();
+            assert_eq!(actual, expected, "{name}");
+        }
+    }
+
+    struct DeckSensitive {
+        kanji_calls: AtomicUsize,
+        image_calls: AtomicUsize,
+    }
+    impl EnrichmentServices for DeckSensitive {
+        fn dictionary<'a>(&'a self, expression: &'a str, _: &'a str) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Dictionary(DictionaryData {
+                found: true,
+                word: expression.into(),
+                ..Default::default()
+            }))
+        }
+        fn generation<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Generation(LlmResponse::default()))
+        }
+        fn kanji<'a>(&'a self, _: &'a str, deck_key: &'a str) -> PipelineFuture<'a> {
+            self.kanji_calls.fetch_add(1, Ordering::Relaxed);
+            Fake::output(ProviderOutput::Kanji(deck_key.into()))
+        }
+        fn image<'a>(&'a self, _: &'a str, deck_key: &'a str) -> PipelineFuture<'a> {
+            self.image_calls.fetch_add(1, Ordering::Relaxed);
+            if deck_key.ends_with("grammar") {
+                Fake::output(ProviderOutput::Unavailable)
+            } else {
+                Fake::output(ProviderOutput::Image {
+                    filename: "vocabulary.jpg".into(),
+                    b64: "aW1n".into(),
+                    classification: "visual_recall".into(),
+                })
+            }
+        }
+        fn audio<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            _: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            Fake::output(ProviderOutput::Unavailable)
+        }
+    }
+
+    #[tokio::test]
+    async fn cache_separates_deck_purposes_and_retries_unavailable_services() {
+        let pipeline = NativePipeline::new(
+            DeckSensitive {
+                kanji_calls: AtomicUsize::new(0),
+                image_calls: AtomicUsize::new(0),
+            },
+            PipelineConfig {
+                rate_limits: BTreeMap::new(),
+                ..PipelineConfig::default()
+            },
+        );
+        for deck in ["japanese_vocab", "japanese_grammar", "japanese_grammar"] {
+            pipeline
+                .enrich(CardMode::Inject, deck, "同じ", "")
+                .await
+                .unwrap();
+        }
+        assert_eq!(pipeline.services.kanji_calls.load(Ordering::Relaxed), 2);
+        assert_eq!(pipeline.services.image_calls.load(Ordering::Relaxed), 3);
+    }
     #[tokio::test]
     async fn cancellation_stops_before_provider() {
         let pipeline = NativePipeline::new(
@@ -719,10 +985,14 @@ mod tests {
     struct Bounded {
         active: AtomicUsize,
         maximum: AtomicUsize,
+        calls: AtomicUsize,
+        starts: Mutex<Vec<Instant>>,
     }
     impl EnrichmentServices for Bounded {
         fn dictionary<'a>(&'a self, expression: &'a str, _: &'a str) -> PipelineFuture<'a> {
             Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                self.starts.lock().unwrap().push(Instant::now());
                 let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
                 self.maximum.fetch_max(active, Ordering::SeqCst);
                 tokio::time::sleep(Duration::from_millis(15)).await;
@@ -765,6 +1035,8 @@ mod tests {
             Bounded {
                 active: AtomicUsize::new(0),
                 maximum: AtomicUsize::new(0),
+                calls: AtomicUsize::new(0),
+                starts: Mutex::new(Vec::new()),
             },
             PipelineConfig {
                 rate_limits: BTreeMap::new(),
@@ -788,6 +1060,66 @@ mod tests {
                 .all(|item| item.is_ok())
         );
         assert_eq!(pipeline.services.maximum.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn concurrent_duplicate_requests_share_processed_artifacts() {
+        let pipeline = NativePipeline::new(
+            Bounded {
+                active: AtomicUsize::new(0),
+                maximum: AtomicUsize::new(0),
+                calls: AtomicUsize::new(0),
+                starts: Mutex::new(Vec::new()),
+            },
+            PipelineConfig {
+                rate_limits: BTreeMap::new(),
+                max_in_flight: 2,
+                cache_revision: "single-flight".into(),
+            },
+        );
+        let request = EnrichmentRequest {
+            mode: CardMode::Inject,
+            deck_key: "english_vocab".into(),
+            expression: "word".into(),
+            context: String::new(),
+        };
+        let results = pipeline.enrich_many(vec![request.clone(), request]).await;
+        assert!(results.iter().all(Result::is_ok));
+        assert_eq!(results[0], results[1]);
+        assert_eq!(pipeline.services.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_spaces_calls_to_same_service() {
+        let pipeline = NativePipeline::new(
+            Bounded {
+                active: AtomicUsize::new(0),
+                maximum: AtomicUsize::new(0),
+                calls: AtomicUsize::new(0),
+                starts: Mutex::new(Vec::new()),
+            },
+            PipelineConfig {
+                rate_limits: BTreeMap::from([("dictionary".into(), Duration::from_millis(40))]),
+                max_in_flight: 2,
+                cache_revision: "rate-limit".into(),
+            },
+        );
+        let requests = ["first", "second"].map(|expression| EnrichmentRequest {
+            mode: CardMode::Inject,
+            deck_key: "english_vocab".into(),
+            expression: expression.into(),
+            context: String::new(),
+        });
+        assert!(
+            pipeline
+                .enrich_many(requests.into())
+                .await
+                .iter()
+                .all(Result::is_ok)
+        );
+        let starts = pipeline.services.starts.lock().unwrap();
+        assert_eq!(starts.len(), 2);
+        assert!(starts[1].duration_since(starts[0]) >= Duration::from_millis(35));
     }
 
     struct Concurrent {

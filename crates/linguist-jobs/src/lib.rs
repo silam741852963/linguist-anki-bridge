@@ -1736,4 +1736,65 @@ mod tests {
         assert_eq!(completed.snapshot_id.as_deref(), Some("snapshot-11"));
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
+
+    #[test]
+    fn commit_retry_reuses_artifact_without_processing_again() {
+        struct FailingCommit {
+            events: Vec<&'static str>,
+        }
+        impl BatchWorkerPort for FailingCommit {
+            fn process(
+                &mut self,
+                _: &BatchJobContract,
+                _: &BatchItemContract,
+            ) -> Result<Value, String> {
+                self.events.push("process");
+                Ok(json!({"draft": "processed once"}))
+            }
+            fn commit(
+                &mut self,
+                _: &BatchJobContract,
+                item: &BatchItemContract,
+                artifact: &Value,
+            ) -> Result<BatchCommitResult, String> {
+                assert_eq!(artifact, &json!({"draft": "processed once"}));
+                self.events.push("commit");
+                if self
+                    .events
+                    .iter()
+                    .filter(|event| **event == "commit")
+                    .count()
+                    == 1
+                {
+                    return Err("Anki temporarily unavailable".into());
+                }
+                Ok(BatchCommitResult {
+                    snapshot_id: "retry-snapshot".into(),
+                    result_note_id: item.note_id,
+                })
+            }
+        }
+
+        let path = temporary_path("commit-retry-artifact");
+        let repository = JobRepository::open(&path).unwrap();
+        let id = repository.create_job(job(&[11])).unwrap();
+        repository
+            .set_job_state(&id, BatchJobState::Running, "")
+            .unwrap();
+        let mut worker = FailingCommit { events: Vec::new() };
+        assert!(matches!(
+            repository.run_next(&id, &mut worker, 3, 0).unwrap(),
+            WorkerStep::Processed(_)
+        ));
+        assert!(matches!(
+            repository.run_next(&id, &mut worker, 3, 0).unwrap(),
+            WorkerStep::Retrying(_)
+        ));
+        assert!(matches!(
+            repository.run_next(&id, &mut worker, 3, 0).unwrap(),
+            WorkerStep::Committed(_)
+        ));
+        assert_eq!(worker.events, ["process", "commit", "commit"]);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
 }

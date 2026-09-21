@@ -1234,6 +1234,7 @@ version = "0.1.0"
 dependencies = [
  "linguist-application",
  "linguist-core",
+ "serde_json",
  "tokio",
 ]
 

@@ -9,3 +9,6 @@ rust-version.workspace = true
 linguist-application.workspace = true
 linguist-core.workspace = true
 tokio.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

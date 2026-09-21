@@ -469,6 +469,7 @@ pub struct AppBackendRust {
     batch_port: LocalBatchPort,
     batch_worker_active: Arc<AtomicBool>,
     batch_worker_error: Arc<Mutex<Option<String>>>,
+    generation_adapter: Option<LiveGenerationAdapter>,
     controller: ApplicationController,
 }
 
@@ -549,6 +550,7 @@ impl AppBackendRust {
             batch_port,
             batch_worker_active: Arc::new(AtomicBool::new(false)),
             batch_worker_error: Arc::new(Mutex::new(None)),
+            generation_adapter: None,
             controller,
         }
     }
@@ -874,14 +876,23 @@ impl qobject::AppBackend {
     }
 
     pub fn regenerate_draft(mut self: Pin<&mut Self>) {
-        match LiveGenerationAdapter::from_environment() {
-            Ok(adapter) => self
-                .as_mut()
-                .rust_mut()
-                .controller
-                .regenerate_draft(&adapter),
-            Err(error) => self.as_mut().rust_mut().controller.report_error(error),
+        let mut state = self.as_mut().rust_mut();
+        if state.generation_adapter.is_none() {
+            match LiveGenerationAdapter::from_environment() {
+                Ok(adapter) => state.generation_adapter = Some(adapter),
+                Err(error) => {
+                    state.controller.report_error(error);
+                    sync_controller_state(self);
+                    return;
+                }
+            }
         }
+        let adapter = state
+            .generation_adapter
+            .take()
+            .expect("generation adapter initialized");
+        state.controller.regenerate_draft(&adapter);
+        state.generation_adapter = Some(adapter);
         sync_controller_state(self);
     }
 
@@ -1948,7 +1959,8 @@ fn apply_settings(
         .as_mut()
         .set_settings_dictionary_preset(config.dictionary_preset.into());
     backend.as_mut().set_settings_dry_run(config.dry_run);
-    backend.set_settings_message(message.into());
+    backend.as_mut().set_settings_message(message.into());
+    backend.as_mut().rust_mut().generation_adapter = None;
 }
 
 fn configured_value(variable: &str, configured: &str, fallback: &str) -> String {

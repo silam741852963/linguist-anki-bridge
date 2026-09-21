@@ -470,7 +470,10 @@ fn format_dictionary_html(
     examples: &[ExamplePair],
 ) -> String {
     if !scraped.found {
-        return "<div>Not found in standard dictionary.</div>".into();
+        return format!(
+            "<div>Not found in standard dictionary.</div>{}",
+            format_llm_annotations(nuances, examples)
+        );
     }
     let word = if scraped.word.is_empty() {
         expression
