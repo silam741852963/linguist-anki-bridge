@@ -386,19 +386,25 @@ impl AnkiConnectTransport {
         let raw: Vec<RawNoteInfo> = self.send("notesInfo", json!({"notes": note_ids})).await?;
         let card_ids = raw
             .iter()
-            .flat_map(|note| note.cards.iter().filter_map(|card| match card {
-                RawCardRef::Id(id) => Some(*id),
-                RawCardRef::Info { .. } => None,
-            }))
+            .flat_map(|note| {
+                note.cards.iter().filter_map(|card| match card {
+                    RawCardRef::Id(id) => Some(*id),
+                    RawCardRef::Info { .. } => None,
+                })
+            })
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
         let mut card_decks = HashMap::new();
         for chunk in card_ids.chunks(500) {
-            let cards: Vec<RawCardDetails> = self.send("cardsInfo", json!({"cards": chunk})).await?;
+            let cards: Vec<RawCardDetails> =
+                self.send("cardsInfo", json!({"cards": chunk})).await?;
             card_decks.extend(cards.into_iter().map(|card| (card.card_id, card.deck_name)));
         }
-        Ok(raw.into_iter().map(|note| note.into_note(&card_decks)).collect())
+        Ok(raw
+            .into_iter()
+            .map(|note| note.into_note(&card_decks))
+            .collect())
     }
 
     /// Retrieve a media payload. A missing Anki media file is represented as `None`.
@@ -1159,7 +1165,10 @@ enum RawField {
 #[serde(untagged)]
 enum RawCardRef {
     Id(i64),
-    Info { #[serde(rename = "deckName")] deck_name: Option<String> },
+    Info {
+        #[serde(rename = "deckName")]
+        deck_name: Option<String>,
+    },
 }
 
 #[derive(Deserialize)]
@@ -1494,9 +1503,19 @@ mod tests {
             r#"{"result":[{"noteId":42,"modelName":"Basic","tags":[],"fields":{"Word":{"value":"hello","order":0}},"cards":[101,102]}],"error":null}"#,
             r#"{"result":[{"cardId":101,"deckName":"English"},{"cardId":102,"deckName":"English::Review"}],"error":null}"#,
         ]).await;
-        let notes = AnkiConnectTransport::new(&url).unwrap().notes_info(&[42]).await.unwrap();
+        let notes = AnkiConnectTransport::new(&url)
+            .unwrap()
+            .notes_info(&[42])
+            .await
+            .unwrap();
         assert_eq!(notes[0].fields["Word"], "hello");
-        assert_eq!(notes[0].deck_names, [DeckName("English".into()), DeckName("English::Review".into())]);
+        assert_eq!(
+            notes[0].deck_names,
+            [
+                DeckName("English".into()),
+                DeckName("English::Review".into())
+            ]
+        );
         let requests = requests.await.unwrap();
         assert!(requests[0].contains(r#""action":"notesInfo""#));
         assert!(requests[1].contains(r#""action":"cardsInfo""#));
