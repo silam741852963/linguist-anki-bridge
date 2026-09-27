@@ -61,6 +61,50 @@ fn preparation_worker_freezes_settings_and_bounds_retries() {
             "SOURCE_READ_CONNECTION_FAILED"
         );
     }
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let mut interrupted = store.preparation_job(id.parse().unwrap()).unwrap();
+    interrupted.job.id = uuid::Uuid::new_v4();
+    interrupted.job.item_ids = vec![uuid::Uuid::new_v4(), uuid::Uuid::new_v4()];
+    interrupted.job.plan_refs = vec!["anki-note:123".into(), "anki-note:124".into()];
+    interrupted.selection.matched_note_ids = vec!["123".into(), "124".into()];
+    interrupted.selection.selected_note_ids = interrupted.selection.matched_note_ids.clone();
+    interrupted.selection.selector = linguist_core::records::SelectionInput::NoteIds(
+        interrupted.selection.matched_note_ids.clone(),
+    );
+    store.create_preparation_job(&interrupted).unwrap();
+    store
+        .append_preparation_event(
+            interrupted.job.id,
+            interrupted.job.item_ids[1],
+            1,
+            linguist_store::preparation::PreparationStage::Started,
+            None,
+        )
+        .unwrap();
+    let run = cli()
+        .args([
+            "--set",
+            &state,
+            "jobs",
+            "run",
+            &interrupted.job.id.to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(run.status.code(), Some(7), "{run:?}");
+    assert!(run.stdout.is_empty());
+    assert_eq!(
+        store
+            .preparation_events(interrupted.job.id, 0, 10)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        store.preparation_items(interrupted.job.id, 0, 1).unwrap()[0].state,
+        "pending"
+    );
+    drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]

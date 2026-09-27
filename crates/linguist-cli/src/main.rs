@@ -1245,7 +1245,9 @@ fn select_values(
 
 fn error_exit(message: &str) -> u8 {
     let code = message.split(':').next().unwrap_or(message);
-    if code == "DOCUMENT_NOT_READY" {
+    if code == "PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY" {
+        7
+    } else if code == "DOCUMENT_NOT_READY" {
         4
     } else if code.contains("CONFLICT") || code == "STORAGE_RELOCATION_BLOCKED" {
         5

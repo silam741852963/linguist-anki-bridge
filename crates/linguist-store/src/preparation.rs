@@ -461,8 +461,41 @@ impl Store {
         stage: PreparationStage,
         expected_head: Option<&str>,
     ) -> Result<PreparationReceipt> {
+        self.append_preparation_event_inner(job_id, item_id, attempt, stage, expected_head, None)
+    }
+    /// Worker progress requires matching live fencing inside the checkpoint transaction.
+    pub fn append_preparation_event_with_lease(
+        &mut self,
+        job_id: Uuid,
+        item_id: Uuid,
+        attempt: u16,
+        stage: PreparationStage,
+        expected_head: Option<&str>,
+        worker: &crate::lease::LeaseToken,
+    ) -> Result<PreparationReceipt> {
+        self.append_preparation_event_inner(
+            job_id,
+            item_id,
+            attempt,
+            stage,
+            expected_head,
+            Some(worker),
+        )
+    }
+    fn append_preparation_event_inner(
+        &mut self,
+        job_id: Uuid,
+        item_id: Uuid,
+        attempt: u16,
+        stage: PreparationStage,
+        expected_head: Option<&str>,
+        worker: Option<&crate::lease::LeaseToken>,
+    ) -> Result<PreparationReceipt> {
         if !self.writable {
             return Err("STORE_READ_ONLY".into());
+        }
+        if let Some(worker) = worker {
+            self.validate_job_worker_lease(worker, job_id)?;
         }
         let definition = self.preparation_job(job_id)?;
         let position = definition
@@ -561,6 +594,9 @@ impl Store {
             .connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(sql)?;
+        if let Some(worker) = worker {
+            crate::lease::validate_job_worker_token(&tx, worker, job_id)?;
+        }
         let head: Option<(u32,String)> = tx.query_row("SELECT sequence,digest FROM preparation_events WHERE job_id=?1 ORDER BY sequence DESC LIMIT 1", [job_id.to_string()], |r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(sql)?;
         if head.as_ref().map(|h| h.1.as_str()) != expected_head {
             return Err("PREPARATION_HEAD_CONFLICT".into());

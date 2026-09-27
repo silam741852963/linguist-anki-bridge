@@ -157,6 +157,13 @@ Next: continue job controls, parallel preparation, interrupted-item recovery and
 
 ## Verification
 
+Preparation workers now use a checkpoint boundary that validates their job fencing
+token inside the same immediate transaction as the global-head CAS and event/asset
+reference insert. Wrong-job, expired and released/replaced tokens cannot append
+started or result checkpoints. Tests retain the prior started checkpoint across
+these rejected writes and accept only the current renewed token. This closes the
+gap between an application-side lease check and committing worker progress.
+
 Complete preparation jobs now publish their captured documents as one immutable
 source draft, with the job UUID identifying revision one. Publication retains the
 full frozen selection/settings and original input order, verifies archived bytes,

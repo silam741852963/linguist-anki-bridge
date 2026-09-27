@@ -318,6 +318,88 @@ fn batch_archive_limit_retains_completed_checkpoints_without_publishing_a_plan()
 }
 
 #[test]
+fn worker_checkpoints_reject_wrong_expired_and_released_fencing_tokens() {
+    use linguist_store::lease::Resource;
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    let id = definition.job.id;
+    let item = definition.job.item_ids[0];
+    store.create_preparation_job(&definition).unwrap();
+    let wrong = store
+        .acquire_lease(&Resource::JobWorker(uuid::Uuid::new_v4()), 60)
+        .unwrap();
+    assert_eq!(
+        store
+            .append_preparation_event_with_lease(
+                id,
+                item,
+                1,
+                PreparationStage::Started,
+                None,
+                &wrong
+            )
+            .unwrap_err(),
+        "LEASE_RESOURCE_CONFLICT"
+    );
+    store.release_lease(&wrong).unwrap();
+    let first = store.acquire_lease(&Resource::JobWorker(id), 60).unwrap();
+    let started = store
+        .append_preparation_event_with_lease(id, item, 1, PreparationStage::Started, None, &first)
+        .unwrap();
+    store.release_lease(&first).unwrap();
+    let second = store.acquire_lease(&Resource::JobWorker(id), 60).unwrap();
+    let failure = PreparationStage::Failed {
+        code: "SOURCE_READ_TIMEOUT".into(),
+        retry_eligible: true,
+    };
+    assert_eq!(
+        store
+            .append_preparation_event_with_lease(
+                id,
+                item,
+                1,
+                failure.clone(),
+                Some(&started.digest),
+                &first
+            )
+            .unwrap_err(),
+        "LEASE_STALE_OR_EXPIRED"
+    );
+    let db = rusqlite::Connection::open(f.0.join("state.sqlite3")).unwrap();
+    db.execute(
+        "UPDATE leases SET expires_ms=0 WHERE resource=?1",
+        [format!("job:{id}")],
+    )
+    .unwrap();
+    drop(db);
+    assert_eq!(
+        store
+            .append_preparation_event_with_lease(
+                id,
+                item,
+                1,
+                failure.clone(),
+                Some(&started.digest),
+                &second
+            )
+            .unwrap_err(),
+        "LEASE_STALE_OR_EXPIRED"
+    );
+    assert_eq!(store.preparation_events(id, 0, 10).unwrap().len(), 1);
+    assert_eq!(
+        store.preparation_items(id, 0, 1).unwrap()[0].state,
+        "started"
+    );
+    store.renew_lease(&second, 60).unwrap();
+    store
+        .append_preparation_event_with_lease(id, item, 1, failure, Some(&started.digest), &second)
+        .unwrap();
+    assert_eq!(store.preparation_events(id, 0, 10).unwrap().len(), 2);
+    store.release_lease(&second).unwrap();
+}
+
+#[test]
 fn definitions_events_and_original_assets_survive_reopen_with_cas_conflicts() {
     let f = Fixture::new();
     let mut store = f.open();

@@ -73,12 +73,13 @@ pub fn run(
             store.renew_lease(&lease, seconds)?;
             store.validate_lease(&lease)?;
             let attempt = item.attempt + 1;
-            let started = store.append_preparation_event(
+            let started = store.append_preparation_event_with_lease(
                 job,
                 item.item_id,
                 attempt,
                 PreparationStage::Started,
                 head.as_deref(),
+                &lease,
             )?;
             head = Some(started.digest);
             let id = &definition.selection.selected_note_ids[index];
@@ -153,12 +154,13 @@ pub fn run(
                 }
             };
             store.validate_lease(&lease)?;
-            let receipt = store.append_preparation_event(
+            let receipt = store.append_preparation_event_with_lease(
                 job,
                 item.item_id,
                 attempt,
                 stage,
                 head.as_deref(),
+                &lease,
             )?;
             head = Some(receipt.digest);
             if stop {

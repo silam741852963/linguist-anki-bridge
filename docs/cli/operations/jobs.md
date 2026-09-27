@@ -54,10 +54,13 @@ Read the immutable definition from existing state; reject a different frozen sto
 root, unsupported requested enrichment or invalid lease settings before acquiring a
 lease. Use frozen settings for the Anki client, capture limits and failure policy.
 Claim the job lease; scan checkpoint states and refuse any interrupted `started`
-item with `PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY`. Do not infer death from expiry.
+item with `PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY` (exit 7), before dispatching
+any other pending item. Do not infer death from expiry.
 Skip captured items and nonretryable/exhausted failures. Each eligible item gets a
-CAS `started` event before dispatch. Renew the lease during reads at the frozen
-heartbeat interval. After capture, revalidate ownership, stage the document, publish
+CAS `started` event before dispatch. Both started and result checkpoints recheck the matching job
+lease inside the same immediate SQLite transaction as their head comparison;
+wrong-resource, expired or released tokens cannot append progress. Renew during reads
+at the frozen heartbeat interval. After capture, revalidate ownership, stage the document, publish
 original assets and append a CAS `captured` event. Recognized transport failures
 receive stable retry codes; other failures require review and halt the run.
 `jobs.on_item_error=stop` also stops after transport failure. A later invocation may
