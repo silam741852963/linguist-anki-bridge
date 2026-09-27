@@ -1,4 +1,5 @@
 //! Decode source audio into bounded packet buffers without rewriting source bytes.
+mod mp3;
 mod ogg;
 use serde::Serialize;
 use std::io::Cursor;
@@ -129,6 +130,12 @@ pub fn inspect_audio(
     } else {
         None
     };
+    let mp3_extent_verified = if container == "mp3" {
+        mp3::validate_extent(bytes)?;
+        true
+    } else {
+        false
+    };
     if format.tracks().len() != 1 {
         return Err(AudioTrackUnsupported);
     }
@@ -154,7 +161,8 @@ pub fn inspect_audio(
         decoded_packets: 0,
         stream_end_observed: false,
         container_extent_verified: expected_frames.is_some()
-            || (container == "ogg" && ogg_extent_verified),
+            || (container == "ogg" && ogg_extent_verified)
+            || mp3_extent_verified,
         decoder_verification: None,
         decoder: "symphonia/0.6.1",
     };

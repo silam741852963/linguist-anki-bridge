@@ -36,7 +36,7 @@ fn decoded_audio_formats_report_scope_and_enforce_audio_policy() {
         (
             include_bytes!("fixtures/audio/tone.mp3").as_slice(),
             "audio/mpeg",
-            false,
+            true,
         ),
         (
             include_bytes!("fixtures/audio/tone.ogg").as_slice(),
@@ -67,6 +67,29 @@ fn decoded_audio_formats_report_scope_and_enforce_audio_policy() {
         inspect_source_media(&pcm, &config).unwrap_err().code,
         "AUDIO_FORMAT_DISALLOWED"
     );
+}
+
+#[test]
+fn mpeg_versions_and_variable_bitrate_decode_with_verified_frame_extents() {
+    for (bytes, rate, channels) in [
+        (
+            include_bytes!("fixtures/audio/tone-vbr.mp3").as_slice(),
+            44100,
+            2,
+        ),
+        (
+            include_bytes!("fixtures/audio/tone-low-rate.mp3").as_slice(),
+            8000,
+            1,
+        ),
+    ] {
+        let inspection = inspect_audio(bytes, &settings()).unwrap();
+        assert_eq!(inspection.sample_rate, rate);
+        assert_eq!(inspection.channels, channels);
+        assert!(inspection.container_extent_verified);
+        assert!(inspection.decoded_frames > 0);
+        assert!(inspect_audio(&bytes[..bytes.len() - 1], &settings()).is_err());
+    }
 }
 
 #[test]
