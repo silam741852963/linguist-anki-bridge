@@ -447,3 +447,101 @@ fn english_dictionary_preparation_resolves_sense_without_inventing_pronunciation
     );
     assert_eq!(store.revision(result.plan_id, 1).unwrap(), base);
 }
+
+#[test]
+fn japanese_sense_review_requires_a_reading_for_the_selected_written_form() {
+    use linguist_core::{LearningContent, records::ReviewChoice, review::*};
+    struct MultipleReadings;
+    impl DictionaryPort for MultipleReadings {
+        fn lookup(
+            &self,
+            query: &str,
+            target: &linguist_core::Language,
+        ) -> std::result::Result<linguist_dictionary::DictionaryPage, String> {
+            linguist_dictionary::parse_jisho(query, target,
+                r#"{"meta":{"status":200},"data":[{"slug":"life","japanese":[{"word":"生","reading":"せい"},{"word":"生","reading":"なま"},{"word":"生活","reading":"せいかつ"}],"senses":[{"english_definitions":["life"]}]}]}"#.as_bytes(), 4096, 10)
+                .map_err(|error| error.to_string())
+        }
+    }
+    let mut f = Fixture::new();
+    f.settings
+        .values
+        .insert("dictionary.provider".into(), serde_json::json!("jisho"));
+    let input = r#"{"schema_version":2,"kind":"vocabulary","target_language":"ja","explanation_language":"en","body":{"expression":"生"}}"#;
+    let prepared = prepare_with_dictionary(
+        input.as_bytes(),
+        Kind::Vocabulary,
+        &f.settings,
+        &f.environment,
+        Some(&MultipleReadings),
+    )
+    .unwrap();
+    let mut store = linguist_store::Store::open(&f.state()).unwrap();
+    let base = store.revision(prepared.plan_id, 1).unwrap();
+    let doc = &base.documents[0];
+    let LearningContent::Vocabulary(vocab) = &doc.content else {
+        panic!()
+    };
+    let key = vocab.dictionary[0].senses[0].key.clone();
+    let mut request = ResolutionRequest {
+        schema_version: 2,
+        base_revision: 1,
+        base_digest: prepared.digest,
+        document_id: doc.id,
+        issue_id: format!("DICTIONARY_SENSE_REVIEW:{}", doc.id),
+        input_digest: doc.semantic_digest().unwrap(),
+        actor: "reviewer".into(),
+        choice: ReviewChoice::Sense(key.clone()),
+    };
+    assert!(
+        resolve(&base, &request, "now".into())
+            .unwrap_err()
+            .to_string()
+            .contains("multiple dictionary readings")
+    );
+    for reading in ["せいかつ", "invented", ""] {
+        request.choice = ReviewChoice::SenseWithReading {
+            key: key.clone(),
+            reading: reading.into(),
+        };
+        assert!(
+            resolve(&base, &request, "now".into())
+                .unwrap_err()
+                .to_string()
+                .contains("READING_CONFLICT")
+        );
+    }
+    request.choice = ReviewChoice::SenseWithReading {
+        key,
+        reading: "なま".into(),
+    };
+    let encoded = serde_json::to_vec(&request).unwrap();
+    let decoded: ResolutionRequest = linguist_core::canonical::parse(&encoded).unwrap();
+    let result = resolve(&base, &decoded, "now".into()).unwrap();
+    let LearningContent::Vocabulary(vocab) = &result.revision.documents[0].content else {
+        panic!()
+    };
+    assert_eq!(vocab.expression, "生");
+    assert_eq!(vocab.reading, "なま");
+    assert_eq!(vocab.meaning, "life");
+    assert!(
+        !linguist_core::validate(&result.revision.documents[0])
+            .iter()
+            .any(|i| i.code == "DICTIONARY_SENSE_REVIEW")
+    );
+    store.publish_revision(&result.revision).unwrap();
+    assert_eq!(store.revision(base.id, 1).unwrap(), base);
+    let mut changed = result.revision.documents[0].clone();
+    let LearningContent::Vocabulary(vocab) = &mut changed.content else {
+        panic!()
+    };
+    vocab.reading = "せい".into();
+    // Even another valid reading needs its own explicit decision.
+    let digest = changed.semantic_digest().unwrap();
+    changed.reviews[0].input_digest = digest;
+    assert!(
+        linguist_core::validate(&changed)
+            .iter()
+            .any(|i| i.code == "DICTIONARY_SENSE_REVIEW")
+    );
+}

@@ -51,6 +51,18 @@ Result/failure: New revision; invalid edits saved only as explicitly marked draf
 
 ## OP-29 — `plans resolve PLAN ISSUE`
 
+Implemented dictionary decisions use `{"decision":"sense","value":"SENSE_KEY"}`
+when the written form has one reading or the draft already contains a verified
+reading. To resolve Japanese entries with several readings, use
+`{"decision":"sense_with_reading","value":{"key":"SENSE_KEY","reading":"なま"}}`
+inside the fingerprint-bound resolution request. The selected sense must be unique
+and the reading must belong to the draft's expression in that entry's archived
+written-form pairs. Readings from other forms, invented readings and empty
+selections are rejected. Selecting a different valid reading requires a new
+review. This decision publishes a child and preserves the original source plan;
+it does not authorize collection writes. See the generated
+[resolution schema](../../../contracts/v2/resolution-request.schema.json).
+
 Inputs: Typed decision and current input digest.
 
 Effects: Local new revision.

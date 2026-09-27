@@ -25,6 +25,14 @@ restart, original Anki meaning/provenance/task preservation, sense review, saved
 response bytes and stale/repeated enrichment rejection. No live provider or native
 collection mutation is asserted by these tests.
 
+Japanese dictionary review now supports `sense_with_reading` decisions for
+multiple-reading entries. Review verifies the selected sense, expression and
+exact written-form/reading pair before adopting facts. Existing `sense` decisions
+retain their behavior. Validation binds the selected reading to the stored
+review; even another valid reading needs a new decision. Tests cover ambiguous
+readings, unrelated forms, invented/empty readings, typed JSON round-trip, durable
+child publication and preserved parents. Schemas include the additive decision.
+
 ## Available foundation
 
 - Root Rust workspace: `linguist-core`, `linguist-config`, `linguist-store`, `linguist-anki`, `linguist-application`, `linguist-dictionary` and `linguist-cli`; no Qt/Python runtime dependency.

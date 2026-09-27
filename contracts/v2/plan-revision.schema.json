@@ -818,6 +818,36 @@
           "properties": {
             "decision": {
               "type": "string",
+              "const": "sense_with_reading"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "reading": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "key",
+                "reading"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
               "const": "anchor"
             },
             "value": {

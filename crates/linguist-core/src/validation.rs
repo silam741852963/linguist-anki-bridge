@@ -510,8 +510,13 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                                 .iter()
                                 .all(|s| evidence_ids.iter().any(|id| id.to_string() == *s))
                     }
-                    ReviewChoice::Sense(key) => {
+                    ReviewChoice::Sense(key) | ReviewChoice::SenseWithReading { key, .. } => {
                         issue.code == "DICTIONARY_SENSE_REVIEW"
+                            && match &r.choice {
+                                ReviewChoice::SenseWithReading { reading, .. } =>
+                                    matches!(&doc.content, LearningContent::Vocabulary(vocab) if vocab.reading == *reading),
+                                _ => true,
+                            }
                             && matches!(&doc.content, LearningContent::Vocabulary(vocab) if vocab.sense_key == *key
                                 && vocab.dictionary.iter().any(|entry| entry.forms.iter().chain(&entry.readings).any(|form|form == &vocab.expression) && crate::review::dictionary_readings(entry,&vocab.expression).is_ok_and(|readings|readings.contains(&vocab.reading) || doc.target_language.as_str().split('-').next()==Some("en") && readings.is_empty() && vocab.reading.is_empty()) && entry.senses.iter().any(|sense| sense.key == *key && vocab.meaning == sense.definitions.join("; "))))
                     }

@@ -126,7 +126,9 @@ pub fn resolve(
                 return Err(ContractError("REVIEW_EVIDENCE_MISSING".into()));
             }
         }
-        ReviewChoice::Sense(key) if issue.code == "DICTIONARY_SENSE_REVIEW" => {
+        ReviewChoice::Sense(key) | ReviewChoice::SenseWithReading { key, .. }
+            if issue.code == "DICTIONARY_SENSE_REVIEW" =>
+        {
             let crate::LearningContent::Vocabulary(vocab) = &mut document.content else {
                 return Err(ContractError("REVIEW_KIND_CONFLICT".into()));
             };
@@ -154,6 +156,12 @@ pub fn resolve(
                 return Err(ContractError("DICTIONARY_EXPRESSION_CONFLICT".into()));
             }
             let readings = dictionary_readings(entry, &vocab.expression)?;
+            if let ReviewChoice::SenseWithReading { reading, .. } = &request.choice {
+                if !readings.contains(reading) {
+                    return Err(ContractError("DICTIONARY_READING_CONFLICT".into()));
+                }
+                vocab.reading = reading.clone();
+            }
             if document.target_language.as_str().split('-').next() == Some("en")
                 && readings.is_empty()
             {

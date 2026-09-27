@@ -101,6 +101,10 @@ pub struct MediaAsset {
 )]
 pub enum ReviewChoice {
     Sense(String),
+    SenseWithReading {
+        key: String,
+        reading: String,
+    },
     Anchor(Uuid),
     Segmentation(Vec<Uuid>),
     Duplicate {
