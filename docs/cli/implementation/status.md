@@ -147,15 +147,27 @@ MP3 source inspection now verifies indexed-bitrate MPEG Layer III frame extents 
 
 Typed source-media role review is now connected to `plans resolve`. Decisions bind exact source, asset, original name, inspection evidence, role and explicit attribution/license. The application reads archived bytes and compares a fresh decode with the stored inspection under frozen limits/allowlists/policies before picture/audio publication. Audio requires verified container extent; malformed content can only remain archived. Render references use full-digest filenames with decoded extensions while original names/fields and bytes remain preserved. Semantic changes invalidate earlier reviews; matching decisions resolve capture observations without waiving native or structural issues. Tests cover audio selection/reopen, forged inspection rejection, frozen disabled-audio policy, and archive-only acknowledgement of unsupported bytes without rendering. Generated schemas include the new choice. Pipeline completeness/native writes remain pending.
 
-Durable read-preparation storage has started under WP-04/WP-10. Schema 6 adds immutable prepare-only job definitions, globally ordered item checkpoint events and asset-retention references. Definitions freeze the exact selection receipt, ordered note/item IDs and settings fingerprint. Creation is idempotent only for the identical definition; a conflicting reused UUID fails. Checkpoints enforce compare-and-swap against the prior global digest, item transitions, monotonic bounded retry attempts and asset-first captured-document references. Only classified read timeout/connection/rate-limit/unavailable failures may be marked retryable; active items are never treated as dead or reset automatically. Captured items are terminal at this storage boundary. Reopen verifies definition/event hashes, asset bytes and media sizes. Tests cover concurrent stale heads, missing asset rejection, capture reopen, bounded retry, immutable SQL history and schema-five backup/integrity verification; older migration fixtures are retained. These APIs are not yet connected to preparation commands or workers. Lease/liveness coordination, automatic retry classification, partial-batch plan publication and CLI job controls remain pending.
+Durable read-preparation storage has started under WP-04/WP-10. Schema 6 adds immutable prepare-only job definitions, globally ordered item checkpoint events and asset-retention references. Definitions freeze the exact selection receipt, ordered note/item IDs and settings fingerprint. Creation is idempotent only for the identical definition; a conflicting reused UUID fails. Checkpoints enforce compare-and-swap against the prior global digest, item transitions, monotonic bounded retry attempts and asset-first captured-document references. Only classified read timeout/connection/rate-limit/unavailable failures may be marked retryable; active items are never treated as dead or reset automatically. Captured items are terminal at this storage boundary. Reopen verifies definition/event hashes, asset bytes and media sizes. Tests cover concurrent stale heads, missing asset rejection, capture reopen, bounded retry, immutable SQL history and schema-five backup/integrity verification; older migration fixtures are retained. CLI queue, capture and complete-draft publication use these APIs. Interrupted-item reconciliation, partial-batch publication and CLI job controls remain pending.
 
 Preparation queue commands are now available: `jobs create` accepts repeated explicit note IDs with a required supported purpose, freezes ordered selection/settings and allocates pending items without reading Anki or starting workers. `jobs list`, `jobs show` and `jobs items` inspect existing state, with UUID/index pagination, configured page size and stable checkpoint references. Captured summaries verify retained bytes; pending items remain visible even without events, and liveness/execution stay explicitly unverified/unavailable. Tests cover an unreachable Anki endpoint during creation, absent-state read behavior, rejected IDs/duplicates without state creation, frozen numeric order, page-size consumption, checkpoint counts and captured/pending summary pagination. Query/deck queue creation, filtering and worker orchestration remain pending.
 
 WP-10 and WP-11–WP-16 are pending. There is no CLI generation executor, apply handler, checkpoint or restore executor. No collection writes can be issued by the new CLI. Release gate statuses stay `not_run`.
 
-Next: finish WP-01 contracts and fixture parity, then implement WP-02 configuration and command shell and WP-04 durable state. Add read-only Anki capability work under WP-03; enable mutation adapters only after the specified disposable-collection safety evidence.
+Next: continue job controls, parallel preparation, interrupted-item recovery and enrichment; finish contract/fixture parity and remaining configuration consumers. Enable mutation adapters only after the specified disposable-collection safety evidence.
 
 ## Verification
+
+Complete preparation jobs now publish their captured documents as one immutable
+source draft, with the job UUID identifying revision one. Publication retains the
+full frozen selection/settings and original input order, verifies archived bytes,
+and enforces unique-asset aggregate and canonical plan-body limits. Worker fencing
+is rechecked inside the revision transaction. Reruns reuse only a byte-identical
+initial revision and preserve later review children. Incomplete batches publish
+no plan and retain successful captures. Tests cover retained-capture publication
+after reopen, wrong/released leases, stale heads, idempotence with review children,
+approval-equivalent evidence conflicts, aggregate limits without checkpoint loss,
+and CLI publication/rerun without repeated source reads. This produces a review-required
+source draft; enrichment, partial-batch publication and native writes remain pending.
 
 `jobs run JOB` now performs prepare-only source capture under a strong job lease,
 using the immutable job settings. Started checkpoints precede dispatch; original
@@ -167,7 +179,7 @@ Tests cover frozen settings despite different current defaults, unreachable-Anki
 failure persistence, bounded retries, lease release across runs, and unsupported
 generation preflight without checkpoints. This is a single capture worker, not the
 complete preparation pipeline: parallel dispatch, controls, enrichment, recovery
-reconciliation and batch plan publication remain pending. Native writes remain disabled.
+reconciliation and partial-batch plan publication remain pending. Native writes remain disabled.
 
 Run `cargo test --locked --workspace`, `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, and `python3 docs/cli/validate.py`. Generate schemas with `cargo run --locked -p linguist-core --example schemas`; regeneration must be deterministic. Domain tests live in `crates/linguist-core/tests/domain.rs`. These checks establish local contract behavior; they do not establish native history preservation, useful backups or crash recovery.
 

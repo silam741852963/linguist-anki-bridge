@@ -2,7 +2,7 @@
 use linguist_core::records::*;
 use std::collections::BTreeMap;
 
-/// Run one bounded source-capture worker. Enrichment and plan publication remain separate.
+/// Run one bounded source-capture worker and publish a complete review-required draft.
 pub fn run(
     root: &std::path::Path,
     job: uuid::Uuid,
@@ -165,8 +165,35 @@ pub fn run(
                 break;
             }
         }
+        store.renew_lease(&lease, seconds)?;
+        let plan = store.publish_preparation_plan(job, head.as_deref(), &lease)?;
+        let mut counts = BTreeMap::<String, u32>::new();
+        let mut errors = BTreeMap::<String, u32>::new();
+        for offset in (0..definition.job.item_ids.len()).step_by(1000) {
+            for item in store.preparation_items(job, offset as u32, 1000)? {
+                *counts.entry(item.state).or_default() += 1;
+                if let Some(code) = item.error_code {
+                    *errors.entry(code).or_default() += 1;
+                }
+            }
+        }
+        // Earlier failures remain non-success when this invocation dispatches nothing.
+        let exit_code = if plan.is_some() || errors.contains_key("SOURCE_CAPTURE_REVIEW_REQUIRED") {
+            4
+        } else if errors.keys().any(|code| {
+            !matches!(
+                code.as_str(),
+                "SOURCE_READ_CONNECTION_FAILED" | "SOURCE_READ_UNAVAILABLE"
+            )
+        }) {
+            6
+        } else if !errors.is_empty() {
+            3
+        } else {
+            0
+        };
         Ok(
-            serde_json::json!({"schema_version":2,"job_id":job,"stage":"source_capture","captured_this_run":captured,"failed_this_run":failed,"checkpoint_digest":head,"plan_published":false,"writes_enabled":false}),
+            serde_json::json!({"schema_version":2,"job_id":job,"stage":"source_draft","captured_this_run":captured,"failed_this_run":failed,"item_counts":counts,"error_counts":errors,"exit_code":exit_code,"checkpoint_digest":head,"plan_published":plan.is_some(),"plan":plan,"ready":false,"writes_enabled":false}),
         )
     })();
     let released = store.release_lease(&lease);

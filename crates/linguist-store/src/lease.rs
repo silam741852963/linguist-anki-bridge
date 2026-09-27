@@ -112,7 +112,34 @@ fn expiry(seconds: u64) -> Result<i64> {
         .checked_add((seconds * 1000) as i64)
         .ok_or("LEASE_CLOCK_EXHAUSTED".into())
 }
+pub(crate) fn validate_job_worker_token(
+    connection: &rusqlite::Connection,
+    token: &LeaseToken,
+    job: Uuid,
+) -> Result<()> {
+    if token.resource != Resource::JobWorker(job).key()? {
+        return Err("LEASE_RESOURCE_CONFLICT".into());
+    }
+    validate_token(connection, token)
+}
+fn validate_token(connection: &rusqlite::Connection, token: &LeaseToken) -> Result<()> {
+    if ProcessIdentity::current()? != token.owner {
+        return Err("LEASE_OWNER_CONFLICT".into());
+    }
+    let deadline: Option<i64> = connection.query_row(
+        "SELECT expires_ms FROM leases WHERE resource=?1 AND token=?2 AND generation=?3 AND active=1",
+        params![token.resource, token.token.to_string(), token.generation], |row| row.get(0),
+    ).optional().map_err(sql)?;
+    if deadline.is_some_and(|time| time > clock_ms().unwrap_or(i64::MAX)) {
+        Ok(())
+    } else {
+        Err("LEASE_STALE_OR_EXPIRED".into())
+    }
+}
 impl Store {
+    pub(crate) fn validate_job_worker_lease(&self, token: &LeaseToken, job: Uuid) -> Result<()> {
+        validate_job_worker_token(&self.connection, token, job)
+    }
     /// Nested helpers borrow this token; acquiring the same resource again is contention.
     pub fn acquire_lease(&mut self, resource: &Resource, lease_seconds: u64) -> Result<LeaseToken> {
         if !self.writable {
@@ -156,15 +183,7 @@ impl Store {
         Ok(token)
     }
     pub fn validate_lease(&self, token: &LeaseToken) -> Result<()> {
-        if ProcessIdentity::current()? != token.owner {
-            return Err("LEASE_OWNER_CONFLICT".into());
-        }
-        let deadline:Option<i64>=self.connection.query_row("SELECT expires_ms FROM leases WHERE resource=?1 AND token=?2 AND generation=?3 AND active=1",params![token.resource,token.token.to_string(),token.generation],|r|r.get(0)).optional().map_err(sql)?;
-        if deadline.is_some_and(|time| time > clock_ms().unwrap_or(i64::MAX)) {
-            Ok(())
-        } else {
-            Err("LEASE_STALE_OR_EXPIRED".into())
-        }
+        validate_token(&self.connection, token)
     }
     pub fn renew_lease(&mut self, token: &LeaseToken, seconds: u64) -> Result<()> {
         if !self.writable {

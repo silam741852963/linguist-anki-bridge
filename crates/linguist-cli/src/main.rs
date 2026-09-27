@@ -527,8 +527,10 @@ fn run(cli: Cli) -> Result<u8, String> {
                 return Err("STORE_PATH_MUST_BE_ABSOLUTE".into());
             }
             if let JobCommand::Run { job } = command {
-                emit(&linguist_application::jobs::run(&root, job, &env)?)?;
-                return Ok(0);
+                let result = linguist_application::jobs::run(&root, job, &env)?;
+                let exit = result["exit_code"].as_u64().ok_or("JOB_RESULT_INVALID")? as u8;
+                emit(&result)?;
+                return Ok(exit);
             }
             let store = match std::fs::symlink_metadata(&root) {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,

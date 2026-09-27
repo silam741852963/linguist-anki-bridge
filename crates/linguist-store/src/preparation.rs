@@ -160,6 +160,129 @@ fn validate_definition(definition: &PreparationDefinition) -> Result<()> {
 }
 
 impl Store {
+    /// Publish the complete immutable capture batch once, retaining the frozen selection.
+    /// The job UUID identifies revision one; later review revisions remain untouched.
+    pub fn publish_preparation_plan(
+        &mut self,
+        id: Uuid,
+        expected_head: Option<&str>,
+        lease: &crate::lease::LeaseToken,
+    ) -> Result<Option<crate::RevisionSummary>> {
+        if !self.writable {
+            return Err("STORE_READ_ONLY".into());
+        }
+        self.validate_job_worker_lease(lease, id)?;
+        let definition = self.preparation_job(id)?;
+        let head: Option<String> = self.connection.query_row(
+            "SELECT digest FROM preparation_events WHERE job_id=?1 ORDER BY sequence DESC LIMIT 1",
+            [id.to_string()], |row| row.get(0),
+        ).optional().map_err(sql)?;
+        if head.as_deref() != expected_head {
+            return Err("PREPARATION_HEAD_CONFLICT".into());
+        }
+        let limit = definition.job.settings.values["input.max_file_mb"]
+            .as_u64()
+            .unwrap()
+            * 1024
+            * 1024;
+        let mut document_bytes = 0u64;
+        let mut documents = Vec::with_capacity(definition.job.item_ids.len());
+        for item in &definition.job.item_ids {
+            let row: Option<(u32, String, Vec<u8>)> = self.connection.query_row(
+                "SELECT sequence,digest,body FROM preparation_events WHERE job_id=?1 AND item_id=?2 ORDER BY sequence DESC LIMIT 1",
+                params![id.to_string(), item.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            ).optional().map_err(sql)?;
+            let Some((sequence, digest, body)) = row else {
+                return Ok(None);
+            };
+            let event: PreparationEvent =
+                canonical::parse(&body).map_err(|_| "PREPARATION_EVENT_CORRUPT")?;
+            if event.schema_version != 1
+                || event.job_id != id
+                || event.item_id != *item
+                || event.sequence != sequence
+                || canonical::digest("preparation-event", &event)
+                    .map_err(|_| "PREPARATION_EVENT_CORRUPT")?
+                    != digest
+            {
+                return Err("PREPARATION_EVENT_CORRUPT".into());
+            }
+            match event.stage {
+                PreparationStage::Captured { document } => {
+                    document_bytes = document_bytes
+                        .checked_add(
+                            canonical::bytes(&document)
+                                .map_err(|e| e.to_string())?
+                                .len() as u64,
+                        )
+                        .ok_or("PREPARATION_PLAN_SIZE_LIMIT")?;
+                    if document_bytes > limit {
+                        return Err("PREPARATION_PLAN_SIZE_LIMIT".into());
+                    }
+                    documents.push(*document);
+                }
+                _ => return Ok(None),
+            }
+        }
+        let assets = self.verify_document_assets(&documents)?;
+        let mut total = 0u64;
+        for asset in assets {
+            total = total
+                .checked_add(self.asset(&asset, limit)?.len() as u64)
+                .ok_or("REVAMP_BATCH_ARCHIVE_LIMIT")?;
+            if total > limit {
+                return Err("REVAMP_BATCH_ARCHIVE_LIMIT".into());
+            }
+        }
+        let sources: Vec<_> = documents
+            .iter()
+            .flat_map(|document| &document.sources)
+            .collect();
+        let source_digest =
+            canonical::digest("source-capture", &sources).map_err(|e| e.to_string())?;
+        let plan = linguist_core::records::PlanRevision {
+            schema_version: 2,
+            id,
+            revision: 1,
+            parent_digest: None,
+            settings: definition.job.settings,
+            binding: None,
+            source_digest,
+            selection: Some(definition.selection),
+            documents,
+            rendered: vec![],
+            review_decisions: vec![],
+        };
+        let body = canonical::bytes(&plan).map_err(|e| e.to_string())?;
+        if body.len() as u64 > limit {
+            return Err("PREPARATION_PLAN_SIZE_LIMIT".into());
+        }
+        let exists: bool = self
+            .connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM revisions WHERE id=?1 AND revision=1)",
+                [id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(sql)?;
+        self.validate_job_worker_lease(lease, id)?;
+        let digest = if exists {
+            // Compare complete bytes, including evidence omitted from approval projections.
+            let retained = self.revision(id, 1)?;
+            if canonical::bytes(&retained).map_err(|e| e.to_string())? != body {
+                return Err("PREPARATION_PLAN_CONFLICT".into());
+            }
+            retained.approval_digest().map_err(|e| e.to_string())?
+        } else {
+            self.publish_revision_inner(&plan, Some(lease))?
+        };
+        Ok(Some(crate::RevisionSummary {
+            id,
+            revision: 1,
+            digest,
+        }))
+    }
     pub fn list_preparation_jobs(
         &self,
         after: Option<Uuid>,

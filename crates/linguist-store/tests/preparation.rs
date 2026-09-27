@@ -83,6 +83,240 @@ fn capture(hash: &str) -> LearningDocument {
     doc
 }
 
+fn capture_items(store: &mut Store, definition: &PreparationDefinition) -> String {
+    let hash = store.publish_asset(b"retained originals", 1000).unwrap();
+    let mut head = None;
+    for (item, note) in definition
+        .job
+        .item_ids
+        .iter()
+        .zip(&definition.selection.selected_note_ids)
+    {
+        let started = store
+            .append_preparation_event(
+                definition.job.id,
+                *item,
+                1,
+                PreparationStage::Started,
+                head.as_deref(),
+            )
+            .unwrap();
+        let mut doc = capture(&hash);
+        doc.id = uuid::Uuid::new_v4();
+        doc.sources[0].location = format!("anki_note:{note}");
+        let captured = store
+            .append_preparation_event(
+                definition.job.id,
+                *item,
+                1,
+                PreparationStage::Captured {
+                    document: Box::new(doc),
+                },
+                Some(&started.digest),
+            )
+            .unwrap();
+        head = Some(captured.digest);
+    }
+    head.unwrap()
+}
+
+#[test]
+fn complete_capture_plan_reopens_idempotently_and_preserves_review_children() {
+    use linguist_store::lease::Resource;
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    let id = definition.job.id;
+    store.create_preparation_job(&definition).unwrap();
+    let wrong = store
+        .acquire_lease(&Resource::CollectionWriter(id), 60)
+        .unwrap();
+    assert_eq!(
+        store
+            .publish_preparation_plan(id, None, &wrong)
+            .unwrap_err(),
+        "LEASE_RESOURCE_CONFLICT"
+    );
+    store.release_lease(&wrong).unwrap();
+    let lease = store.acquire_lease(&Resource::JobWorker(id), 60).unwrap();
+    assert!(
+        store
+            .publish_preparation_plan(id, None, &lease)
+            .unwrap()
+            .is_none()
+    );
+    store.release_lease(&lease).unwrap();
+    let head = capture_items(&mut store, &definition);
+    // Publication can resume from retained checkpoints without a read client.
+    drop(store);
+    let mut store = f.open();
+    let lease = store.acquire_lease(&Resource::JobWorker(id), 60).unwrap();
+    assert_eq!(
+        store
+            .publish_preparation_plan(id, None, &lease)
+            .unwrap_err(),
+        "PREPARATION_HEAD_CONFLICT"
+    );
+    let receipt = store
+        .publish_preparation_plan(id, Some(&head), &lease)
+        .unwrap()
+        .unwrap();
+    let mut plan = store.revision(id, 1).unwrap();
+    assert_eq!(plan.selection.as_ref().unwrap(), &definition.selection);
+    assert_eq!(plan.settings, definition.job.settings);
+    assert_eq!(
+        plan.documents
+            .iter()
+            .map(|d| d.sources[0].location.as_str())
+            .collect::<Vec<_>>(),
+        ["anki_note:123", "anki_note:124"]
+    );
+    plan.revision = 2;
+    plan.parent_digest = Some(receipt.digest.clone());
+    plan.documents[0]
+        .issues
+        .push(linguist_core::validation::Issue::new(
+            "REVIEW_NOTE",
+            linguist_core::validation::Severity::Review,
+            None,
+            "retained review",
+        ));
+    store.publish_revision(&plan).unwrap();
+    let repeated = store
+        .publish_preparation_plan(id, Some(&head), &lease)
+        .unwrap()
+        .unwrap();
+    assert_eq!(repeated.digest, receipt.digest);
+    assert_eq!(store.latest_revision(id).unwrap(), 2);
+    assert_eq!(store.revision(id, 2).unwrap(), plan);
+    store.release_lease(&lease).unwrap();
+    assert!(
+        store
+            .publish_preparation_plan(id, Some(&head), &lease)
+            .is_err()
+    );
+}
+
+#[test]
+fn matching_approval_projection_cannot_hide_conflicting_published_capture_evidence() {
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    let id = definition.job.id;
+    store.create_preparation_job(&definition).unwrap();
+    let head = capture_items(&mut store, &definition);
+    let documents: Vec<_> = store
+        .preparation_events(id, 0, 100)
+        .unwrap()
+        .into_iter()
+        .filter_map(|receipt| {
+            if let PreparationStage::Captured { document } = receipt.event.stage {
+                Some(*document)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let sources: Vec<_> = documents.iter().flat_map(|d| &d.sources).collect();
+    let mut plan = PlanRevision {
+        schema_version: 2,
+        id,
+        revision: 1,
+        parent_digest: None,
+        settings: definition.job.settings,
+        binding: None,
+        source_digest: canonical::digest("source-capture", &sources).unwrap(),
+        selection: Some(definition.selection),
+        documents,
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    let digest = plan.approval_digest().unwrap();
+    plan.documents[0]
+        .issues
+        .push(linguist_core::validation::Issue::new(
+            "FORGED_REVIEW",
+            linguist_core::validation::Severity::Review,
+            None,
+            "changed evidence",
+        ));
+    assert_eq!(plan.approval_digest().unwrap(), digest);
+    store.publish_revision(&plan).unwrap();
+    let lease = store
+        .acquire_lease(&linguist_store::lease::Resource::JobWorker(id), 60)
+        .unwrap();
+    assert_eq!(
+        store
+            .publish_preparation_plan(id, Some(&head), &lease)
+            .unwrap_err(),
+        "PREPARATION_PLAN_CONFLICT"
+    );
+    store.release_lease(&lease).unwrap();
+}
+
+#[test]
+fn batch_archive_limit_retains_completed_checkpoints_without_publishing_a_plan() {
+    let f = Fixture::new();
+    let mut store = f.open();
+    let mut definition = definition();
+    definition
+        .job
+        .settings
+        .values
+        .insert("input.max_file_mb".into(), json!(1));
+    definition.job.settings.fingerprint =
+        canonical::digest("resolved-settings", &definition.job.settings.values).unwrap();
+    let id = definition.job.id;
+    store.create_preparation_job(&definition).unwrap();
+    let mut head = None;
+    for (index, (item, note)) in definition
+        .job
+        .item_ids
+        .iter()
+        .zip(&definition.selection.selected_note_ids)
+        .enumerate()
+    {
+        let bytes = vec![index as u8; 600 * 1024];
+        let digest = store.publish_asset(&bytes, 1024 * 1024).unwrap();
+        let started = store
+            .append_preparation_event(id, *item, 1, PreparationStage::Started, head.as_deref())
+            .unwrap();
+        let mut doc = capture(&digest);
+        doc.id = uuid::Uuid::new_v4();
+        doc.sources[0].location = format!("anki_note:{note}");
+        let captured = store
+            .append_preparation_event(
+                id,
+                *item,
+                1,
+                PreparationStage::Captured {
+                    document: Box::new(doc),
+                },
+                Some(&started.digest),
+            )
+            .unwrap();
+        head = Some(captured.digest);
+    }
+    let lease = store
+        .acquire_lease(&linguist_store::lease::Resource::JobWorker(id), 60)
+        .unwrap();
+    assert_eq!(
+        store
+            .publish_preparation_plan(id, head.as_deref(), &lease)
+            .unwrap_err(),
+        "REVAMP_BATCH_ARCHIVE_LIMIT"
+    );
+    assert!(store.list_revisions(10).unwrap().is_empty());
+    assert!(
+        store
+            .preparation_items(id, 0, 10)
+            .unwrap()
+            .iter()
+            .all(|item| item.state == "captured")
+    );
+    store.release_lease(&lease).unwrap();
+}
+
 #[test]
 fn definitions_events_and_original_assets_survive_reopen_with_cas_conflicts() {
     let f = Fixture::new();

@@ -48,7 +48,7 @@ Result/failure: Unknown effects distinguished from ordinary failed items. The sh
 
 ## OP-39 — `jobs run JOB`
 
-Current implementation: prepare-mode source capture only, one read worker at a time
+Current implementation: prepare-mode source capture and complete draft publication, one read worker at a time
 (within `jobs.prepare_workers`' upper bound). No apply flag or collection writes.
 Read the immutable definition from existing state; reject a different frozen storage
 root, unsupported requested enrichment or invalid lease settings before acquiring a
@@ -64,10 +64,25 @@ receive stable retry codes; other failures require review and halt the run.
 retry an eligible failure once, within the frozen attempt ceiling. No retry loop
 runs automatically within one invocation. Release the lease on ordinary completion
 or error; crashes retain their durable checkpoints and strong process identity.
-JSON reports capture/failure counts for this invocation and the checkpoint digest;
-it explicitly reports `plan_published=false` and `writes_enabled=false`.
+After capture, publish a draft only if every frozen item is captured. Construct it
+from retained documents in selection order with the exact frozen settings and
+selection receipt. Verify all original bytes, enforce aggregate unique-asset and
+plan-body limits, and require the current job head and worker lease. The initial
+plan ID equals the job UUID and its revision is one. Publication rechecks the lease
+inside the SQLite transaction. A rerun compares full canonical revision-one bytes
+before reusing its receipt; a different existing plan fails with
+`PREPARATION_PLAN_CONFLICT`, even if its approval projection happens to match.
+Later review revisions remain untouched. Interrupted publication retries from
+retained captures without rereading Anki. A failed/pending item yields no plan;
+successful checkpoints survive for later recovery. Publication limit failures
+also retain captured checkpoints. JSON reports capture/failure counts for this
+invocation, checkpoint digest and optional plan receipt, `ready=false` and
+`writes_enabled=false`. `plan_published` reports whether a complete initial draft exists.
+Aggregate item/error counts include earlier checkpoints, not just this invocation.
+Review-required drafts exit 4; persisted dependency failures exit 3 and other read
+execution failures exit 6. Exhausted failures never turn into exit 0 on a no-dispatch rerun.
 Parallel dispatch, pause/cancel, interrupted-item reconciliation, enrichment and
-complete/partial batch plan publication remain pending.
+partial batch plan publication remain pending.
 
 Inputs: Optional --apply for apply mode; execution limits.
 

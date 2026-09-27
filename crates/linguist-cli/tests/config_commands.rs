@@ -43,10 +43,12 @@ fn preparation_worker_freezes_settings_and_bounds_retries() {
             .args(["--set", &state, "jobs", "run", id])
             .output()
             .unwrap();
-        assert!(run.status.success(), "{:?}", run);
+        assert_eq!(run.status.code(), Some(3), "{:?}", run);
         let run: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
         assert_eq!(run["writes_enabled"], false);
         assert_eq!(run["plan_published"], false);
+        assert_eq!(run["item_counts"]["failed"], 1);
+        assert_eq!(run["error_counts"]["SOURCE_READ_CONNECTION_FAILED"], 1);
         let items = cli()
             .args(["--set", &state, "jobs", "items", id])
             .output()
@@ -1401,9 +1403,11 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             28 * count + if matches!(mode, "ids" | "job") { 0 } else { 3 }
         );
         if let Some(id) = job_id {
-            assert!(out.status.success(), "{out:?}");
+            assert_eq!(out.status.code(), Some(4), "{out:?}");
             let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
             assert_eq!(value["captured_this_run"], 2);
+            assert_eq!(value["plan_published"], true);
+            assert_eq!(value["plan"]["id"], id);
             let store = linguist_store::Store::read_only(&root).unwrap();
             let job = id.parse().unwrap();
             let items = store.preparation_items(job, 0, 10).unwrap();
@@ -1413,7 +1417,15 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                     .all(|item| item.state == "captured" && item.attempt == 1)
             );
             assert_eq!(store.preparation_events(job, 0, 10).unwrap().len(), 4);
-            assert!(store.list_revisions(10).unwrap().is_empty());
+            assert_eq!(store.list_revisions(10).unwrap().len(), 1);
+            let plan = store.revision(job, 1).unwrap();
+            assert_eq!(
+                plan.selection.as_ref().unwrap().selected_note_ids,
+                ["123", "124"]
+            );
+            assert_eq!(plan.documents.len(), 2);
+            assert!(plan.binding.is_none());
+            assert!(plan.rendered.is_empty());
             let repeat = cli()
                 .args([
                     "--set",
@@ -1424,9 +1436,10 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                 ])
                 .output()
                 .unwrap();
-            assert!(repeat.status.success(), "{repeat:?}");
+            assert_eq!(repeat.status.code(), Some(4), "{repeat:?}");
             let repeat: serde_json::Value = serde_json::from_slice(&repeat.stdout).unwrap();
             assert_eq!(repeat["captured_this_run"], 0);
+            assert_eq!(repeat["plan"], value["plan"]);
             drop(store);
             std::fs::remove_dir_all(root).unwrap();
             continue;

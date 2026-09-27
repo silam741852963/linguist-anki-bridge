@@ -312,6 +312,13 @@ impl Store {
         Ok(bytes)
     }
     pub fn publish_revision(&mut self, plan: &PlanRevision) -> Result<String> {
+        self.publish_revision_inner(plan, None)
+    }
+    pub(crate) fn publish_revision_inner(
+        &mut self,
+        plan: &PlanRevision,
+        worker: Option<&lease::LeaseToken>,
+    ) -> Result<String> {
         if !self.writable {
             return Err("STORE_READ_ONLY".into());
         }
@@ -354,6 +361,9 @@ impl Store {
             .connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(sql)?;
+        if let Some(worker) = worker {
+            lease::validate_job_worker_token(&tx, worker, plan.id)?;
+        }
         let previous: Option<(u32, String)> = tx
             .query_row(
                 "SELECT revision,digest FROM revisions WHERE id=?1 ORDER BY revision DESC LIMIT 1",
