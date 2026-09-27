@@ -4,6 +4,28 @@ Read [shared command rules](README.md) before implementing any handler.
 
 ## OP-35 — `jobs create`
 
+Current implementation: prepare mode for existing notes. A supported `--purpose`
+and exactly one of repeated `--note-id`, `--query` or `--deck` are required.
+`--limit N` is supported for query/deck only, from 1 through 100000. Validate
+purpose, settings, path expansion, limit and selector before opening local state.
+Explicit IDs require no Anki traffic. Query/deck selectors call only
+`getActiveProfile`, `findNotes`, `getActiveProfile`; a profile change rejects the
+selection before any job is saved. Deck names use the existing escaped exact-deck
+query builder. Searches keep the read port's normalized unique match set (numeric
+ID order); `selection.order` then selects the frozen order and the optional limit
+takes its prefix. Without `--limit`, excess matches fail with
+`JOB_INPUT_LIMIT_EXCEEDED` (exit 2) and guidance; never truncate implicitly.
+An explicit query/deck limit may override the configured default maximum, within
+the hard 100000-input bound. Preserve the full matched set, selected subset,
+original selector, order, configured maximum and explicit limit in the receipt.
+Allocate IDs and save the validated immutable definition only after selection
+succeeds. Empty searches return `job_id=null`, zero counts and no new state.
+Results separate `matched_count` from selected `input_count`; workers never start
+and no note-content, generation or media reads occur. Queuing can freeze requested
+enrichment that execution will later reject until its adapter is implemented.
+Runs use the retained note IDs; they never rerun the selection query. Add-input,
+simulate/apply modes and approval-backed job creation remain pending.
+
 Inputs: Plan/input refs; explicit mode prepare/simulate/apply.
 
 Effects: Local immutable job, no execution.

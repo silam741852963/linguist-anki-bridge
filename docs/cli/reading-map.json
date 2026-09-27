@@ -590,7 +590,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-35 \u2014 `jobs create`",
       "title": "OP-35 \u2014 `jobs create`",
-      "words": 67,
+      "words": 291,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"

@@ -216,17 +216,90 @@ pub fn create(
     settings: &linguist_config::Effective,
     environment: &BTreeMap<String, String>,
 ) -> Result<serde_json::Value, String> {
-    if note_ids.is_empty() || note_ids.len() > 100000 {
-        return Err("JOB_INPUT_REQUIRED_OR_LIMIT".into());
+    create_selected(
+        purpose,
+        crate::revamp::SourceSelector::NoteIds(note_ids),
+        None,
+        settings,
+        environment,
+    )
+}
+
+/// Freeze a one-time query/deck match set; creation never starts capture workers.
+pub fn create_selected(
+    purpose: &str,
+    selector: crate::revamp::SourceSelector,
+    limit: Option<u64>,
+    settings: &linguist_config::Effective,
+    environment: &BTreeMap<String, String>,
+) -> Result<serde_json::Value, String> {
+    use crate::revamp::SourceSelector;
+    if !matches!(
+        purpose,
+        "japanese_vocab" | "english_vocab" | "japanese_grammar" | "english_grammar"
+    ) {
+        return Err("JOB_PURPOSE_UNSUPPORTED".into());
+    }
+    if limit.is_some_and(|limit| !(1..=100000).contains(&limit)) {
+        return Err("JOB_SELECTION_LIMIT_INVALID".into());
     }
     for key in [
         "selection.max_notes",
         "selection.order",
         "jobs.max_item_attempts",
         "input.max_file_mb",
+        "input.max_record_chars",
     ] {
         linguist_config::Registry::builtin()
             .validate_value(key, settings.values.get(key).ok_or("JOB_SETTING_MISSING")?)?;
+    }
+    let frozen = crate::freeze_settings(settings, environment)?;
+    let (note_ids, selector) = match selector {
+        SourceSelector::NoteIds(ids) => {
+            if limit.is_some() {
+                return Err("JOB_EXPLICIT_IDS_LIMIT_CONFLICT".into());
+            }
+            if ids.is_empty() || ids.len() > 100000 {
+                return Err("JOB_INPUT_REQUIRED_OR_LIMIT".into());
+            }
+            let selector = SelectionInput::NoteIds(ids.clone());
+            (ids, selector)
+        }
+        selector => {
+            let (query, input) = match selector {
+                SourceSelector::Query(query) => (query.clone(), SelectionInput::Query(query)),
+                SourceSelector::Deck(name) => {
+                    let query = linguist_anki::deck_query(&name)?;
+                    (query.clone(), SelectionInput::Deck { name, query })
+                }
+                SourceSelector::NoteIds(_) => unreachable!(),
+            };
+            if query.trim().is_empty() {
+                return Err("JOB_QUERY_EMPTY".into());
+            }
+            if query.chars().count() as u64
+                > settings.values["input.max_record_chars"].as_u64().unwrap()
+            {
+                return Err("JOB_QUERY_LIMIT".into());
+            }
+            let client = linguist_anki::Client::from_settings(settings, environment)?;
+            let ids = client.find_notes(&query)?;
+            client.check_profile()?;
+            if ids.is_empty() {
+                return Ok(
+                    serde_json::json!({"schema_version":2,"job_id":null,"mode":"prepare","input_count":0,"matched_count":0,"state":"empty","worker_started":false,"execution_available":false,"writes_enabled":false}),
+                );
+            }
+            if ids.len() > 100000 {
+                return Err("JOB_INPUT_REQUIRED_OR_LIMIT".into());
+            }
+            (ids, input)
+        }
+    };
+    if limit.is_none()
+        && note_ids.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap()
+    {
+        return Err("JOB_INPUT_LIMIT_EXCEEDED: choose fewer inputs, raise selection.max_notes, or use --limit with a query/deck".into());
     }
     for id in &note_ids {
         linguist_anki::wire_id(&serde_json::json!(id))?;
@@ -235,16 +308,19 @@ pub fn create(
     if settings.values["selection.order"] == "note_id" {
         selected.sort_by_key(|id| id.parse::<u64>().unwrap());
     }
-    let frozen = crate::freeze_settings(settings, environment)?;
+    if let Some(limit) = limit {
+        selected.truncate(limit as usize);
+    }
+    let matched_count = note_ids.len();
     let selection = SelectionReceipt {
         schema_version: 1,
         purpose: purpose.into(),
-        selector: SelectionInput::NoteIds(note_ids.clone()),
+        selector,
         matched_note_ids: note_ids,
         selected_note_ids: selected.clone(),
         order: settings.values["selection.order"].as_str().unwrap().into(),
         max_notes: settings.values["selection.max_notes"].as_u64().unwrap(),
-        command_limit: None,
+        command_limit: limit,
     };
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -275,6 +351,6 @@ pub fn create(
     );
     let digest = linguist_store::Store::open(&root)?.create_preparation_job(&definition)?;
     Ok(
-        serde_json::json!({"schema_version":2,"job_id":definition.job.id,"mode":"prepare","digest":digest,"input_count":selected.len(),"state":"queued","worker_started":false,"execution_available":false,"writes_enabled":false}),
+        serde_json::json!({"schema_version":2,"job_id":definition.job.id,"mode":"prepare","digest":digest,"input_count":selected.len(),"matched_count":matched_count,"state":"queued","worker_started":false,"execution_available":false,"writes_enabled":false}),
     )
 }

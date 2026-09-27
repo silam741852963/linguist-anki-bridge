@@ -6,6 +6,187 @@ fn cli() -> Command {
     c
 }
 #[test]
+fn preparation_query_and_deck_jobs_freeze_matches_without_content_reads() {
+    use std::io::{BufRead, Read, Write};
+    for (kind, mode, limit, max, success, selected_count) in [
+        ("query", "normal", None, 1000, true, 2),
+        ("deck", "normal", Some(1), 1000, true, 1),
+        ("query", "oversized", None, 1, false, 0),
+        ("query", "explicit_override", Some(2), 1, true, 2),
+        ("query", "empty", None, 1000, true, 0),
+        ("query", "profile_drift", None, 1000, false, 0),
+    ] {
+        let root = std::env::temp_dir().join(format!("lab-query-job-{}", uuid::Uuid::new_v4()));
+        let state = format!("storage.state_dir={}", root.display());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("anki.endpoint=http://{}", listener.local_addr().unwrap());
+        let deck = "Legacy \"cards\"";
+        let expected_query = if kind == "deck" {
+            linguist_anki::deck_query(deck).unwrap()
+        } else {
+            "tag:source".into()
+        };
+        let query = expected_query.clone();
+        let server = std::thread::spawn(move || {
+            for (index, expected) in ["getActiveProfile", "findNotes", "getActiveProfile"]
+                .into_iter()
+                .enumerate()
+            {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(
+                                std::time::Instant::now() < deadline,
+                                "missing selection request"
+                            );
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                        Err(e) => panic!("{e}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                    .unwrap();
+                let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+                let mut length = 0;
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if line.to_ascii_lowercase().starts_with("content-length:") {
+                        length = line
+                            .split_once(':')
+                            .unwrap()
+                            .1
+                            .trim()
+                            .parse::<usize>()
+                            .unwrap();
+                    }
+                }
+                let mut body = vec![0; length];
+                reader.read_exact(&mut body).unwrap();
+                let request: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(request["action"], expected);
+                let result = if expected == "findNotes" {
+                    assert_eq!(request["params"]["query"], query);
+                    if mode == "empty" {
+                        serde_json::json!([])
+                    } else {
+                        serde_json::json!([124, 123, 124])
+                    }
+                } else if mode == "profile_drift" && index == 2 {
+                    serde_json::json!("Other")
+                } else {
+                    serde_json::json!("Fixture")
+                };
+                let body = serde_json::json!({"result":result,"error":null}).to_string();
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        let mut command = cli();
+        command.args([
+            "--purpose",
+            "english_vocab",
+            "--set",
+            &state,
+            "--set",
+            &endpoint,
+            "--set",
+            &format!("selection.max_notes={max}"),
+            "jobs",
+            "create",
+        ]);
+        command.args(if kind == "deck" {
+            ["--deck", deck]
+        } else {
+            ["--query", "tag:source"]
+        });
+        if let Some(limit) = limit {
+            command.args(["--limit", &limit.to_string()]);
+        }
+        let out = command.output().unwrap();
+        server.join().unwrap();
+        assert_eq!(out.status.success(), success, "{mode}: {out:?}");
+        if !success {
+            assert_eq!(
+                out.status.code(),
+                Some(if mode == "profile_drift" { 5 } else { 2 }),
+                "{out:?}"
+            );
+            assert!(out.stdout.is_empty());
+            assert!(!root.exists());
+            continue;
+        }
+        let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(result["input_count"], selected_count);
+        assert_eq!(result["worker_started"], false);
+        if selected_count == 0 {
+            assert!(result["job_id"].is_null());
+            assert!(!root.exists());
+            continue;
+        }
+        assert_eq!(result["matched_count"], 2);
+        let id = result["job_id"].as_str().unwrap().parse().unwrap();
+        let store = linguist_store::Store::read_only(&root).unwrap();
+        let definition = store.preparation_job(id).unwrap();
+        assert_eq!(definition.selection.matched_note_ids, ["123", "124"]);
+        assert_eq!(definition.selection.selected_note_ids.len(), selected_count);
+        assert_eq!(definition.selection.command_limit, limit);
+        assert_eq!(definition.selection.max_notes, max);
+        if kind == "deck" {
+            assert_eq!(
+                definition.selection.selector,
+                linguist_core::records::SelectionInput::Deck {
+                    name: deck.into(),
+                    query: expected_query
+                }
+            );
+        } else {
+            assert_eq!(
+                definition.selection.selector,
+                linguist_core::records::SelectionInput::Query(expected_query)
+            );
+        }
+        assert!(store.preparation_events(id, 0, 10).unwrap().is_empty());
+        assert!(store.list_revisions(10).unwrap().is_empty());
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    let root =
+        std::env::temp_dir().join(format!("lab-invalid-job-selector-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.display());
+    for args in [
+        vec![],
+        vec!["--note-id", "123", "--query", "tag:source"],
+        vec!["--query", " "],
+        vec!["--note-id", "123", "--limit", "1"],
+        vec!["--query", "tag:source", "--deck", "Legacy"],
+    ] {
+        let out = cli()
+            .args([
+                "--purpose",
+                "english_vocab",
+                "--set",
+                &state,
+                "--set",
+                "anki.endpoint=http://127.0.0.1:1",
+                "jobs",
+                "create",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+        assert!(out.stdout.is_empty());
+        assert!(!root.exists());
+    }
+}
+#[test]
 fn preparation_concurrency_is_frozen_bounded_and_stop_drains_dispatched_items() {
     use std::io::{BufRead, Read, Write};
     for (workers, policy, dispatched) in [(1, "stop", 1), (2, "stop", 2), (2, "continue", 5)] {
@@ -1486,7 +1667,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             let mut held_first = None;
             let mut first_was_held = false;
             let mut second_card_reads = 0;
-            for _ in 0..28 * count + if matches!(mode, "ids" | "job") { 0 } else { 3 } {
+            for _ in 0..28 * count + if mode == "ids" { 0 } else { 3 } {
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
                 let mut stream = loop {
                     match listener.accept() {
@@ -1525,7 +1706,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                 let action = request["action"].as_str().unwrap();
                 let value = match action {
                     "findNotes" => {
-                        let expected = if mode.starts_with("query") {
+                        let expected = if mode.starts_with("query") || mode == "job" {
                             "tag:source".to_owned()
                         } else {
                             linguist_anki::deck_query("Legacy \"cards\"").unwrap()
@@ -1622,7 +1803,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             } else {
                 [command, "revamp"]
             })
-            .args(if mode.starts_with("query") {
+            .args(if mode.starts_with("query") || mode == "job" {
                 vec!["--query", "tag:source"]
             } else if mode.starts_with("deck") {
                 vec!["--deck", "Legacy \"cards\""]
@@ -1658,11 +1839,19 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
         } else {
             None
         };
+        let actions = server.join().unwrap();
         assert_eq!(
-            server.join().unwrap().len(),
-            28 * count + if matches!(mode, "ids" | "job") { 0 } else { 3 }
+            actions.len(),
+            28 * count + if mode == "ids" { 0 } else { 3 }
         );
         if let Some(id) = job_id {
+            assert_eq!(
+                actions
+                    .iter()
+                    .filter(|action| action.as_str() == "findNotes")
+                    .count(),
+                1
+            );
             assert_eq!(out.status.code(), Some(4), "{out:?}");
             let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
             assert_eq!(value["captured_this_run"], 2);
@@ -1682,6 +1871,10 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             assert_eq!(events[3].event.item_id, items[0].item_id);
             assert_eq!(store.list_revisions(10).unwrap().len(), 1);
             let plan = store.revision(job, 1).unwrap();
+            assert_eq!(
+                plan.selection.as_ref().unwrap().selector,
+                linguist_core::records::SelectionInput::Query("tag:source".into())
+            );
             assert_eq!(
                 plan.selection.as_ref().unwrap().selected_note_ids,
                 ["123", "124"]

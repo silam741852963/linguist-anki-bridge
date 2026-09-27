@@ -149,13 +149,24 @@ Typed source-media role review is now connected to `plans resolve`. Decisions bi
 
 Durable read-preparation storage has started under WP-04/WP-10. Schema 6 adds immutable prepare-only job definitions, globally ordered item checkpoint events and asset-retention references. Definitions freeze the exact selection receipt, ordered note/item IDs and settings fingerprint. Creation is idempotent only for the identical definition; a conflicting reused UUID fails. Checkpoints enforce compare-and-swap against the prior global digest, item transitions, monotonic bounded retry attempts and asset-first captured-document references. Only classified read timeout/connection/rate-limit/unavailable failures may be marked retryable; active items are never treated as dead or reset automatically. Captured items are terminal at this storage boundary. Reopen verifies definition/event hashes, asset bytes and media sizes. Tests cover concurrent stale heads, missing asset rejection, capture reopen, bounded retry, immutable SQL history and schema-five backup/integrity verification; older migration fixtures are retained. CLI queue, capture and complete-draft publication use these APIs. Interrupted-item reconciliation, partial-batch publication and CLI job controls remain pending.
 
-Preparation queue commands are now available: `jobs create` accepts repeated explicit note IDs with a required supported purpose, freezes ordered selection/settings and allocates pending items without reading Anki or starting workers. `jobs list`, `jobs show` and `jobs items` inspect existing state, with UUID/index pagination, configured page size and stable checkpoint references. Captured summaries verify retained bytes; pending items remain visible even without events, and liveness/execution stay explicitly unverified/unavailable. Tests cover an unreachable Anki endpoint during creation, absent-state read behavior, rejected IDs/duplicates without state creation, frozen numeric order, page-size consumption, checkpoint counts and captured/pending summary pagination. Query/deck queue creation, filtering and worker orchestration remain pending.
+Preparation queue commands are available: `jobs create` accepts explicit note IDs or query/deck selectors with a required supported purpose, freezes ordered selection/settings and allocates pending items without starting workers. Explicit IDs make no Anki calls; query/deck creation reads only the match set with profile checks. `jobs list`, `jobs show` and `jobs items` inspect existing state, with UUID/index pagination, configured page size and stable checkpoint references. Captured summaries verify retained bytes; pending items remain visible without events, and liveness stays unverified during inspection. Tests cover unreachable-Anki explicit-ID creation, absent-state reads, rejected IDs/duplicates without state creation, frozen numeric order, page-size consumption, checkpoint counts and captured/pending summary pagination. Status/mode filtering, lifecycle controls and additional job modes remain pending.
 
 WP-10 and WP-11–WP-16 are pending. There is no CLI generation executor, apply handler, checkpoint or restore executor. No collection writes can be issued by the new CLI. Release gate statuses stay `not_run`.
 
 Next: continue job controls, provider pacing, interrupted-item recovery and enrichment; finish contract/fixture parity and remaining configuration consumers. Enable mutation adapters only after the specified disposable-collection safety evidence.
 
 ## Verification
+
+`jobs create` now supports query/deck selections and explicit prefix limits in
+addition to note IDs. It freezes the complete normalized match set and selected
+subset, original selector, exact order and maximum/limit controls. Only profile
+and find-notes reads occur; note content and worker execution remain deferred.
+Empty searches and failed/changed-profile selections create no state. Tests cover
+escaped deck names, empty results, duplicate match normalization, oversized search
+rejection, explicit default-maximum override, profile drift, selector conflicts,
+explicit-ID/limit conflict and immutable queued receipt inspection. Run continues
+from retained IDs rather than reexecuting the original search. Add-input queueing,
+simulate/apply modes and controls remain pending.
 
 Preparation capture now consumes the frozen `jobs.prepare_workers` count. Bounded
 groups dispatch in input order, each after its durable started checkpoint, and

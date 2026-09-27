@@ -96,10 +96,13 @@ enum JobCommand {
     Run {
         job: uuid::Uuid,
     },
-    /// Queue explicit existing note IDs; never reads notes or starts workers.
+    /// Freeze selected existing note IDs; never reads note content or starts workers.
     Create {
-        #[arg(long = "note-id", required = true)]
-        note_ids: Vec<String>,
+        #[command(flatten)]
+        selector: NoteSelector,
+        /// Queue the first N query/deck matches in frozen order.
+        #[arg(long, conflicts_with = "note_ids", requires = "NoteSelector", value_parser = clap::value_parser!(u64).range(1..=100000))]
+        limit: Option<u64>,
     },
     List {
         #[arg(long)]
@@ -509,13 +512,22 @@ fn run(cli: Cli) -> Result<u8, String> {
         }
         Command::Jobs { command } => {
             let env: BTreeMap<String, String> = std::env::vars().collect();
-            if let JobCommand::Create { note_ids } = command {
+            if let JobCommand::Create { selector, limit } = command {
                 let purpose = cli
                     .purpose
                     .as_deref()
                     .ok_or("JOB_PURPOSE_REQUIRED: select --purpose")?;
-                emit(&linguist_application::jobs::create(
-                    purpose, note_ids, &settings, &env,
+                let selector = if !selector.note_ids.is_empty() {
+                    linguist_application::revamp::SourceSelector::NoteIds(selector.note_ids)
+                } else if let Some(query) = selector.query {
+                    linguist_application::revamp::SourceSelector::Query(query)
+                } else {
+                    linguist_application::revamp::SourceSelector::Deck(
+                        selector.deck.ok_or("JOB_SELECTOR_REQUIRED")?,
+                    )
+                };
+                emit(&linguist_application::jobs::create_selected(
+                    purpose, selector, limit, &settings, &env,
                 )?)?;
                 return Ok(0);
             }
