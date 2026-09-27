@@ -107,15 +107,12 @@ fn grammar_defaults_and_combined_rich_examples_and_language_conflicts_stay_revie
         panic!()
     };
     assert!(
-        g.pattern.is_empty()
-            && g.use_key.is_empty()
-            && g.meaning.is_empty()
-            && g.examples.is_empty()
+        g.pattern.is_empty() && g.use_key.is_empty() && g.meaning == "if" && g.examples.is_empty()
     );
     assert_eq!(g.formation, "V + なら");
     for code in [
         "SOURCE_COMBINED_FIELD_REVIEW",
-        "SOURCE_RICH_FIELD_REVIEW",
+        "SOURCE_HTML_TEXT_REVIEW",
         "SOURCE_STRUCTURED_ROLE_REVIEW",
         "SOURCE_LANGUAGE_CONFLICT",
     ] {
@@ -225,4 +222,48 @@ fn invalid_capture_cannot_initialize_draft_state() {
     let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-revamp-home".into())]);
     assert!(publish_capture_draft(&capture, &settings, "english_vocab", &environment).is_err());
     assert!(!root.exists());
+}
+
+#[test]
+fn html_candidates_preserve_text_boundaries_and_entities_without_scripts_or_source_rewrites() {
+    let raw = "<script>invented answer</script><div>first &amp; second<br>line</div><p>next</p><img src='picture.png'>";
+    let (capture, settings) = setup(
+        "english_vocab",
+        &[
+            ("Word", "<b>cat</b>"),
+            ("Meaning", raw),
+            ("Reading", "[sound:cat.mp3]"),
+            ("Pronunciation", "<ruby>猫<rt>ねこ</rt></ruby>"),
+        ],
+        &[
+            ("expression", "Word"),
+            ("meaning", "Meaning"),
+            ("reading", "Reading"),
+            ("pronunciation", "Pronunciation"),
+        ],
+    );
+    let doc = stage_document(&capture, &settings, "english_vocab").unwrap();
+    let LearningContent::Vocabulary(v) = &doc.content else {
+        panic!()
+    };
+    assert_eq!(v.expression, "cat");
+    assert_eq!(v.meaning, "first & second\nline\n\nnext");
+    assert!(v.reading.is_empty() && v.pronunciation.is_empty());
+    assert!(
+        !doc.evidence
+            .iter()
+            .any(|e| e.claim.contains("invented answer"))
+    );
+    assert_eq!(doc.sources[0].fields["Meaning"], raw);
+    assert!(
+        doc.issues
+            .iter()
+            .any(|i| i.code == "SOURCE_HTML_TEXT_REVIEW")
+    );
+    assert!(
+        doc.issues
+            .iter()
+            .any(|i| i.code == "SOURCE_RICH_FIELD_REVIEW")
+    );
+    assert!(!validation::ready(&doc));
 }

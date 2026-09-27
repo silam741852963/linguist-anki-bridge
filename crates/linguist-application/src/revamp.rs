@@ -8,6 +8,29 @@ use linguist_core::{
 };
 use serde_json::json;
 use std::collections::BTreeMap;
+
+fn visible_text(raw: &str) -> String {
+    let cleaned = ammonia::Builder::default()
+        .tags(std::collections::HashSet::from([
+            "br", "p", "div", "li", "tr", "td", "th",
+        ]))
+        .generic_attributes(std::collections::HashSet::new())
+        .tag_attributes(std::collections::HashMap::new())
+        .clean(raw)
+        .to_string();
+    let mut text = cleaned.replace("<br>", "\n");
+    for tag in ["p", "div", "li", "tr"] {
+        text = text
+            .replace(&format!("<{tag}>"), "\n")
+            .replace(&format!("</{tag}>"), "\n");
+    }
+    for tag in ["td", "th"] {
+        text = text
+            .replace(&format!("<{tag}>"), " ")
+            .replace(&format!("</{tag}>"), " ");
+    }
+    html_escape::decode_html_entities(&text).trim().to_owned()
+}
 fn issue(code: &str, field: Option<&str>, source: uuid::Uuid) -> Issue {
     let mut result = Issue::new(
         code,
@@ -152,14 +175,20 @@ pub fn stage_document(
             }
             continue;
         }
-        if field.raw_value.contains('<')
-            || field.raw_value.contains("[sound:")
+        if field.raw_value.contains("[sound:")
             || field.raw_value.contains("{{")
+            || field.raw_value.to_ascii_lowercase().contains("<ruby")
         {
             issues.push(issue("SOURCE_RICH_FIELD_REVIEW", Some(role), source_id));
             continue;
         }
-        values.insert(role.clone(), field.raw_value.trim().to_owned());
+        let derived = visible_text(&field.raw_value);
+        if derived != field.raw_value.trim() {
+            issues.push(issue("SOURCE_HTML_TEXT_REVIEW", Some(role), source_id));
+        }
+        if !derived.is_empty() {
+            values.insert(role.clone(), derived);
+        }
     }
     let text = |role: &str| values.get(role).cloned().unwrap_or_default();
     let content = match mapping.kind {

@@ -22,3 +22,5 @@ percent-encoding.workspace = true
 reqwest.workspace = true
 url.workspace = true
 httpdate.workspace = true
+ammonia.workspace = true
+html-escape.workspace = true
