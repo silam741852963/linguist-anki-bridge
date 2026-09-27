@@ -525,9 +525,10 @@ fn field_scheduler_and_model_changes_invalidate_repeated_capture() {
 }
 
 fn native_manifest() -> Value {
-    json!({"protocol":"lab-native-v1","companion_version":"0.1.0","bridge_id":"c17625b0-7a88-4aab-a8a5-c1d993c72a00",
-        "integration":{"anki_version":"fixture","anki_connect_source_digest":"a".repeat(64)},
-        "collection_session":null,"actions":["labCapabilities"],"mutation_variants":[],"api_key_configured":false})
+    serde_json::from_slice(include_bytes!(
+        "../../../contracts/v2/fixtures/native-capabilities.json"
+    ))
+    .unwrap()
 }
 #[test]
 fn native_declarations_are_profile_pinned_read_evidence_and_never_enable_writes() {
