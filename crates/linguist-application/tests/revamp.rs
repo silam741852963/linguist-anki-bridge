@@ -158,3 +158,71 @@ fn tampered_assets_fields_and_changed_model_constraints_are_rejected() {
         .push(b' ');
     assert!(stage_document(&capture, &settings, "english_vocab").is_err());
 }
+
+#[test]
+fn published_revamp_draft_recovers_full_sources_and_remains_unbound_and_unapproved() {
+    let (capture, mut settings) = setup(
+        "english_vocab",
+        &[
+            ("Word", "cat"),
+            ("Meaning", "a small feline"),
+            ("Sense", "cat-animal"),
+            ("Unused", "  preserved\n"),
+        ],
+        &[
+            ("expression", "Word"),
+            ("meaning", "Meaning"),
+            ("sense_key", "Sense"),
+        ],
+    );
+    let root = std::env::temp_dir().join(format!("lab-revamp-plan-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root.to_str().unwrap()));
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-revamp-home".into())]);
+    let prepared =
+        publish_capture_draft(&capture, &settings, "english_vocab", &environment).unwrap();
+    assert!(!prepared.ready && !prepared.apply_eligible && !prepared.duplicate_check_performed);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    assert!(plan.binding.is_none() && plan.review_decisions.is_empty() && plan.rendered.is_empty());
+    assert_eq!(plan.documents[0].id, prepared.document_id);
+    assert_eq!(
+        plan.documents[0].semantic_digest().unwrap(),
+        prepared.input_digest
+    );
+    assert_eq!(
+        plan.documents[0].sources[0].fields["Unused"],
+        "  preserved\n"
+    );
+    for (digest, bytes) in &capture.captured.assets {
+        assert_eq!(store.asset(digest, 100000).unwrap(), *bytes);
+    }
+    assert_eq!(
+        plan.settings.values["storage.state_dir"],
+        root.to_str().unwrap()
+    );
+    assert!(!validation::ready(&plan.documents[0]));
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn invalid_capture_cannot_initialize_draft_state() {
+    let (mut capture, mut settings) = setup(
+        "english_vocab",
+        &[("Word", "cat")],
+        &[("expression", "Word")],
+    );
+    let root =
+        std::env::temp_dir().join(format!("lab-invalid-revamp-plan-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root.to_str().unwrap()));
+    capture
+        .captured
+        .assets
+        .remove(&capture.captured.source.model_manifest);
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-revamp-home".into())]);
+    assert!(publish_capture_draft(&capture, &settings, "english_vocab", &environment).is_err());
+    assert!(!root.exists());
+}

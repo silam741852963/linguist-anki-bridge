@@ -33,6 +33,14 @@ pub fn stage_document(
     }
     let source = &capture.captured.source;
     let archive = &capture.captured.archive;
+    if !archive.asset_digests.contains(&source.digest)
+        || archive
+            .asset_digests
+            .iter()
+            .any(|digest| !capture.captured.assets.contains_key(digest))
+    {
+        return Err("REVAMP_CAPTURE_ASSET_MISSING".into());
+    }
     if archive.source_id != source.id
         || archive.digest != source.digest
         || archive.original_fields != source.fields
@@ -204,4 +212,56 @@ pub fn stage_document(
     doc.issues = issues;
     doc.issues = validation::validate(&doc);
     Ok(doc)
+}
+
+/// Persist a source-derived draft only; enrichment and native apply eligibility are separate.
+/// Assets precede the immutable revision, so interrupted publication cannot expose dangling links.
+pub fn publish_capture_draft(
+    capture: &RevampCapture,
+    settings: &Effective,
+    purpose: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<crate::Prepared, String> {
+    let frozen = crate::freeze_settings(settings, environment)?;
+    let document = stage_document(capture, settings, purpose)?;
+    let input_digest = document.semantic_digest().map_err(|e| e.to_string())?;
+    let source_digest =
+        canonical::digest("source-capture", &document.sources).map_err(|e| e.to_string())?;
+    let plan = linguist_core::records::PlanRevision {
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: frozen,
+        binding: None,
+        source_digest,
+        documents: vec![document],
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    let root = std::path::Path::new(
+        plan.settings.values["storage.state_dir"]
+            .as_str()
+            .ok_or("REVAMP_STATE_PATH_MISSING")?,
+    );
+    let mut store = linguist_store::Store::open(root)?;
+    for (expected, bytes) in &capture.captured.assets {
+        if store.publish_asset(bytes, 100 * 1024 * 1024)? != *expected {
+            return Err("REVAMP_CAPTURE_ASSET_CONFLICT".into());
+        }
+    }
+    let digest = store.publish_revision(&plan)?;
+    Ok(crate::Prepared {
+        document_id: plan.documents[0].id,
+        input_digest,
+        schema_version: 2,
+        plan_id: plan.id,
+        revision: 1,
+        digest,
+        ready: false,
+        issues: plan.documents[0].issues.clone(),
+        original_input_digest: capture.captured.source.digest.clone(),
+        apply_eligible: false,
+        duplicate_check_performed: false,
+    })
 }
