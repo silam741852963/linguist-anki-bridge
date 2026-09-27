@@ -1,9 +1,11 @@
 //! Typed review decisions resolve known review issues; they never waive structural errors.
+mod media;
 use crate::{
     Issue, Severity,
     canonical::ContractError,
     records::{PlanRevision, ReviewChoice, ReviewDecision},
 };
+pub(crate) use media::source_media_matches;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -61,6 +63,44 @@ pub fn resolve(
         return Err(ContractError("ISSUE_CANNOT_BE_WAIVED".into()));
     }
     match &request.choice {
+        ReviewChoice::SourceMediaRole {
+            source_id,
+            asset_digest,
+            original_filename,
+            role,
+            attribution,
+            license,
+            ..
+        } => {
+            if !source_media_matches(document, issue, &request.choice, false) {
+                return Err(ContractError(
+                    "REVIEW_SOURCE_MEDIA_EVIDENCE_MISMATCH".into(),
+                ));
+            }
+            let prior = document.semantic_digest()?;
+            let asset = document
+                .media
+                .iter_mut()
+                .find(|asset| {
+                    asset.source_id == Some(*source_id)
+                        && asset.digest == *asset_digest
+                        && asset.original_filename.as_ref() == Some(original_filename)
+                })
+                .unwrap();
+            asset.role = *role;
+            asset.filename =
+                media::role_filename(asset_digest, &asset.mime, original_filename, *role)
+                    .ok_or_else(|| ContractError("REVIEW_MEDIA_TYPE_CONFLICT".into()))?;
+            asset.attribution = attribution.clone();
+            asset.license = license.clone();
+            if document.semantic_digest()? != prior {
+                let old_ids: BTreeSet<_> = document.reviews.iter().map(|r| r.id).collect();
+                document.reviews.clear();
+                candidate
+                    .review_decisions
+                    .retain(|r| !old_ids.contains(&r.id));
+            }
+        }
         ReviewChoice::SourceContentVerified {
             source_id,
             evidence_ids,
@@ -186,7 +226,11 @@ pub fn resolve(
                 issue.stage == "capture"
                     && matches!(
                         issue.code.as_str(),
-                        "SOURCE_HTML_TEXT_REVIEW" | "SOURCE_EXAMPLES_REVIEW"
+                        "SOURCE_HTML_TEXT_REVIEW"
+                            | "SOURCE_EXAMPLES_REVIEW"
+                            | "SOURCE_MEDIA_CONTENT_REVIEW"
+                            | "SOURCE_MEDIA_FORMAT_REVIEW"
+                            | "SOURCE_AUDIO_COMPLETENESS_REVIEW"
                     )
             })
             .cloned()

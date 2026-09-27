@@ -549,7 +549,8 @@ fn run(cli: Cli) -> Result<u8, String> {
                         .duration_since(std::time::UNIX_EPOCH)
                         .map_err(|_| "CLOCK_UNAVAILABLE")?
                         .as_secs();
-                    let result = linguist_core::review::resolve(
+                    let result = linguist_application::review::resolve(
+                        &store,
                         &base,
                         &request,
                         format!("unix-seconds:{seconds}"),

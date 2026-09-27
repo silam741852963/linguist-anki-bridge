@@ -49,6 +49,14 @@
     "AnkiId": {
       "type": "string"
     },
+    "MediaRole": {
+      "type": "string",
+      "enum": [
+        "picture",
+        "audio",
+        "archive"
+      ]
+    },
     "ReviewChoice": {
       "oneOf": [
         {
@@ -240,6 +248,60 @@
               "required": [
                 "source_id",
                 "evidence_ids"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "source_media_role"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "asset_digest": {
+                  "type": "string"
+                },
+                "attribution": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "license": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "original_filename": {
+                  "type": "string"
+                },
+                "role": {
+                  "$ref": "#/$defs/MediaRole"
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "asset_digest",
+                "original_filename",
+                "evidence_id",
+                "role",
+                "attribution"
               ]
             }
           },

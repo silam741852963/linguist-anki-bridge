@@ -61,6 +61,16 @@ Effects: Local new revision.
 
 Result/failure: Remaining issues and new digest. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current source-media resolution: OP-29 accepts `choice.decision=source_media_role`. Its `value` must name `source_id`, `asset_digest`, `original_filename`, `evidence_id`, `role` (`picture|audio|archive`), explicit nonempty `attribution`, and nullable `license`. Use the normal resolution envelope with exact base revision/digest, document/input digest, issue ID and actor. Resolve `SOURCE_MEDIA_CONTENT_REVIEW` to select a role; format/completeness review can only select `archive` to omit rendering while retaining bytes.
+
+1. Match the issue/source/name, one source-owned asset, its immutable archive reference and one digest-linked `media_format` evidence record. Reject stale input, mismatches, structural-error waivers and MIME/role conflicts.
+2. Validate frozen media limits/allowlists and image/audio policies. `images.existing_policy=omit_reference` forbids picture selection; `audio.provider=disabled` forbids audio selection. Changed current configuration does not override frozen policy.
+3. Read the asset from the private store, verify size, and for picture/audio decode again under frozen limits. Require the exact successful inspection receipt; audio additionally requires verified container extent. Failure or forged inspection publishes nothing.
+4. Set the role and explicit attribution/license. Rendering references use `lab_<full SHA-256>.<decoded extension>`; retain `original_filename`, source fields, archives and exact bytes. Archive selection restores the original reference name and emits no card media. This plans a reference; it creates no Anki media file.
+5. Invalidate prior reviews if semantic content changed, add the fingerprint-bound decision, retain resolved observations as warnings, revalidate and attempt rendering in a new immutable child revision. Other source/native/enrichment issues remain unresolved; this never authorizes apply.
+
+Malformed files may remain archived after explicit archive decisions for their content and format issues. Missing source bytes and structural errors cannot be waived. Role changes that need a different frozen policy require a new preparation; generic field edits cannot change media roles.
+
 ## OP-30 — `plans regenerate PLAN`
 
 Inputs: Explicit stage/fields and base revision.

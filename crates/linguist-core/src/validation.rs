@@ -79,7 +79,11 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
         if issue.stage == "capture"
             && matches!(
                 issue.code.as_str(),
-                "SOURCE_HTML_TEXT_REVIEW" | "SOURCE_EXAMPLES_REVIEW"
+                "SOURCE_HTML_TEXT_REVIEW"
+                    | "SOURCE_EXAMPLES_REVIEW"
+                    | "SOURCE_MEDIA_CONTENT_REVIEW"
+                    | "SOURCE_MEDIA_FORMAT_REVIEW"
+                    | "SOURCE_AUDIO_COMPLETENESS_REVIEW"
             )
         {
             issue.severity = Severity::Review;
@@ -495,6 +499,7 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                 && Some(&r.input_digest) == input.as_ref()
                 && !r.actor.trim().is_empty()
                 && match &r.choice {
+                    ReviewChoice::SourceMediaRole { .. } => crate::review::source_media_matches(doc, issue, &r.choice, true),
                     ReviewChoice::SourceContentVerified { source_id, evidence_ids } =>
                         crate::review::source_content_verified(doc, issue, *source_id, evidence_ids),
                     ReviewChoice::ContentVerified { evidence_ids } => {

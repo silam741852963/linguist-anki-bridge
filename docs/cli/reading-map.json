@@ -865,7 +865,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-29 \u2014 `plans resolve PLAN ISSUE`",
       "title": "OP-29 \u2014 `plans resolve PLAN ISSUE`",
-      "words": 63,
+      "words": 326,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

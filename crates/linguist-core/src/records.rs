@@ -119,6 +119,15 @@ pub enum ReviewChoice {
         source_id: Uuid,
         evidence_ids: Vec<Uuid>,
     },
+    SourceMediaRole {
+        source_id: Uuid,
+        asset_digest: String,
+        original_filename: String,
+        evidence_id: Uuid,
+        role: MediaRole,
+        attribution: String,
+        license: Option<String>,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

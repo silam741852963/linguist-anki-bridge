@@ -55,6 +55,89 @@ fn setup_id(
     (RevampCapture { captured, mapping }, settings)
 }
 #[test]
+fn archive_disposition_resolves_format_review_without_rendering_invalid_bytes() {
+    use linguist_core::{
+        records::{MediaRole, ReviewChoice},
+        review::ResolutionRequest,
+    };
+    let (mut capture, mut settings) = setup(
+        "english_vocab",
+        &[("Word", "cat"), ("Media", "<img src=\"broken.png\">")],
+        &[("expression", "Word")],
+    );
+    let bytes = vec![1, 2, 3];
+    let digest = linguist_core::canonical::asset_digest(&bytes);
+    linguist_application::source_archive::media::attach_original_media(
+        &mut capture.captured,
+        BTreeMap::from([("broken.png".into(), Some(bytes.clone()))]),
+        10 * 1024 * 1024,
+        10 * 1024 * 1024,
+    )
+    .unwrap();
+    let root = std::env::temp_dir().join(format!("lab-archive-review-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "english_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-archive-review".into())]),
+    )
+    .unwrap();
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let mut plan = store.revision(prepared.plan_id, 1).unwrap();
+    for code in ["SOURCE_MEDIA_CONTENT_REVIEW", "SOURCE_MEDIA_FORMAT_REVIEW"] {
+        let doc = &plan.documents[0];
+        let issue = doc.issues.iter().find(|i| i.code == code).unwrap();
+        let evidence = doc
+            .evidence
+            .iter()
+            .find(|e| e.field == "media_format")
+            .unwrap();
+        let mut request = ResolutionRequest {
+            schema_version: 2,
+            base_revision: plan.revision,
+            base_digest: plan.approval_digest().unwrap(),
+            document_id: doc.id,
+            issue_id: issue.id.clone(),
+            input_digest: doc.semantic_digest().unwrap(),
+            actor: "source owner".into(),
+            choice: ReviewChoice::SourceMediaRole {
+                source_id: doc.sources[0].id,
+                asset_digest: digest.clone(),
+                original_filename: "broken.png".into(),
+                evidence_id: evidence.id,
+                role: MediaRole::Picture,
+                attribution: "Retain original bytes for recovery; omit from cards".into(),
+                license: None,
+            },
+        };
+        assert!(
+            linguist_application::review::resolve(&store, &plan, &request, "now".into()).is_err()
+        );
+        if let ReviewChoice::SourceMediaRole { role, .. } = &mut request.choice {
+            *role = MediaRole::Archive;
+        }
+        let result =
+            linguist_application::review::resolve(&store, &plan, &request, "now".into()).unwrap();
+        assert!(!result.ready);
+        store.publish_revision(&result.revision).unwrap();
+        plan = result.revision;
+    }
+    assert_eq!(plan.documents[0].media[0].role, MediaRole::Archive);
+    assert!(
+        !validation::validate(&plan.documents[0])
+            .iter()
+            .any(|i| i.code == "SOURCE_MEDIA_CONTENT_REVIEW"
+                || i.code == "SOURCE_MEDIA_FORMAT_REVIEW")
+    );
+    assert_eq!(store.asset(&digest, 100000).unwrap(), bytes);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn source_audio_receipt_and_archive_role_survive_restart() {
     let (mut capture, mut settings) = setup(
         "english_vocab",
@@ -100,6 +183,94 @@ fn source_audio_receipt_and_archive_role_survive_restart() {
     assert_eq!(receipt["inspection"]["container_extent_verified"], true);
     assert_eq!(receipt["inspection"]["stream_end_observed"], true);
     assert_eq!(store.asset(&digest, 100000).unwrap(), bytes);
+    let issue = doc
+        .issues
+        .iter()
+        .find(|i| i.code == "SOURCE_MEDIA_CONTENT_REVIEW")
+        .unwrap();
+    let mut request = linguist_core::review::ResolutionRequest {
+        schema_version: 2,
+        base_revision: 1,
+        base_digest: plan.approval_digest().unwrap(),
+        document_id: doc.id,
+        issue_id: issue.id.clone(),
+        input_digest: doc.semantic_digest().unwrap(),
+        actor: "recording owner".into(),
+        choice: linguist_core::records::ReviewChoice::SourceMediaRole {
+            source_id: doc.sources[0].id,
+            asset_digest: digest.clone(),
+            original_filename: "misnamed.png".into(),
+            evidence_id: evidence.id,
+            role: linguist_core::records::MediaRole::Audio,
+            attribution: "Existing recording reviewed for reuse by its owner".into(),
+            license: None,
+        },
+    };
+    let result =
+        linguist_application::review::resolve(&store, &plan, &request, "now".into()).unwrap();
+    assert!(!result.ready); // Native identity/history remains unresolved.
+    assert_eq!(
+        result.revision.documents[0].media[0].role,
+        linguist_core::records::MediaRole::Audio
+    );
+    assert_eq!(
+        result.revision.documents[0].media[0].filename,
+        format!("lab_{digest}.ogg")
+    );
+    assert_eq!(
+        result.revision.documents[0].media[0]
+            .original_filename
+            .as_deref(),
+        Some("misnamed.png")
+    );
+    assert_eq!(
+        plan.documents[0].media[0].role,
+        linguist_core::records::MediaRole::Archive
+    );
+    assert_eq!(result.revision.documents[0].archives, doc.archives);
+    assert!(
+        !validation::validate(&result.revision.documents[0])
+            .iter()
+            .any(|i| i.id == issue.id)
+    );
+    let mut forged = plan.clone();
+    let fake = forged.documents[0]
+        .evidence
+        .iter_mut()
+        .find(|e| e.id == evidence.id)
+        .unwrap();
+    let mut receipt: serde_json::Value = serde_json::from_str(&fake.claim).unwrap();
+    receipt["inspection"]["sample_rate"] = json!(999);
+    fake.claim = receipt.to_string();
+    request.base_digest = forged.approval_digest().unwrap();
+    request.input_digest = forged.documents[0].semantic_digest().unwrap();
+    assert_eq!(
+        linguist_application::review::resolve(&store, &forged, &request, "now".into()).unwrap_err(),
+        "REVIEW_MEDIA_INSPECTION_CONFLICT"
+    );
+    let mut disabled = plan.clone();
+    disabled
+        .settings
+        .values
+        .insert("audio.provider".into(), json!("disabled"));
+    request.base_digest = disabled.approval_digest().unwrap();
+    request.input_digest = doc.semantic_digest().unwrap();
+    assert_eq!(
+        linguist_application::review::resolve(&store, &disabled, &request, "now".into())
+            .unwrap_err(),
+        "REVIEW_MEDIA_FROZEN_POLICY_CONFLICT"
+    );
+    drop(store);
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    store.publish_revision(&result.revision).unwrap();
+    drop(store);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let reopened = store.revision(prepared.plan_id, 2).unwrap();
+    assert_eq!(
+        reopened.documents[0].media[0].role,
+        linguist_core::records::MediaRole::Audio
+    );
+    assert_eq!(store.asset(&digest, 100000).unwrap(), bytes);
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -139,6 +310,70 @@ fn decoded_source_image_has_digest_linked_evidence_but_remains_archive_only() {
     assert_eq!(receipt["asset_digest"], digest);
     assert_eq!(receipt["inspection"]["height"], 3);
     assert_eq!(capture.captured.assets[&digest], bytes);
+    let root = std::env::temp_dir().join(format!("lab-picture-review-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "english_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-picture-review".into())]),
+    )
+    .unwrap();
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let doc = &plan.documents[0];
+    let request = linguist_core::review::ResolutionRequest {
+        schema_version: 2,
+        base_revision: 1,
+        base_digest: plan.approval_digest().unwrap(),
+        document_id: doc.id,
+        issue_id: doc
+            .issues
+            .iter()
+            .find(|i| i.code == "SOURCE_MEDIA_CONTENT_REVIEW")
+            .unwrap()
+            .id
+            .clone(),
+        input_digest: doc.semantic_digest().unwrap(),
+        actor: "image owner".into(),
+        choice: linguist_core::records::ReviewChoice::SourceMediaRole {
+            source_id: doc.sources[0].id,
+            asset_digest: digest.clone(),
+            original_filename: "misnamed.mp3".into(),
+            evidence_id: doc
+                .evidence
+                .iter()
+                .find(|e| e.field == "media_format")
+                .unwrap()
+                .id,
+            role: linguist_core::records::MediaRole::Picture,
+            attribution: "Image reviewed for reuse by its owner".into(),
+            license: None,
+        },
+    };
+    let resolved =
+        linguist_application::review::resolve(&store, &plan, &request, "now".into()).unwrap();
+    assert_eq!(
+        resolved.revision.documents[0].media[0].filename,
+        format!("lab_{digest}.png")
+    );
+    assert!(!resolved.ready);
+    let mut omitted = plan.clone();
+    omitted
+        .settings
+        .values
+        .insert("images.existing_policy".into(), json!("omit_reference"));
+    let mut conflict = request;
+    conflict.base_digest = omitted.approval_digest().unwrap();
+    assert_eq!(
+        linguist_application::review::resolve(&store, &omitted, &conflict, "now".into())
+            .unwrap_err(),
+        "REVIEW_MEDIA_FROZEN_POLICY_CONFLICT"
+    );
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
     assert!(
         document
             .issues
