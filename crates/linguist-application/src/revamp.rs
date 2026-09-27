@@ -244,6 +244,82 @@ pub fn stage_document(
     let mut doc = LearningDocument::from_json(&bytes).map_err(|e| e.to_string())?;
     doc.sources.push(capture.captured.source.clone());
     doc.archives.push(capture.captured.archive.clone());
+    if let Some(media) = manifest.get("media") {
+        let receipts: Vec<crate::source_archive::media::MediaReceipt> =
+            serde_json::from_value(media.clone()).map_err(|_| "REVAMP_MEDIA_MANIFEST_INVALID")?;
+        if manifest["media_content_verified"] != false
+            || manifest["media_bytes_archived"]
+                != json!(receipts.iter().all(|entry| entry.digest.is_some()))
+        {
+            return Err("REVAMP_MEDIA_MANIFEST_INVALID".into());
+        }
+        linguist_config::Registry::builtin().validate_value(
+            "media.max_asset_mb",
+            settings
+                .values
+                .get("media.max_asset_mb")
+                .ok_or("REVAMP_SETTING_MISSING")?,
+        )?;
+        let max_media_bytes = settings.values["media.max_asset_mb"].as_u64().unwrap() * 1024 * 1024;
+        if receipts
+            .iter()
+            .map(|entry| &entry.filename)
+            .collect::<Vec<_>>()
+            != source.media_refs.iter().collect::<Vec<_>>()
+        {
+            return Err("REVAMP_MEDIA_MANIFEST_CONFLICT".into());
+        }
+        for entry in receipts {
+            match (entry.digest, entry.size_bytes) {
+                (None, None) => issues.push(issue(
+                    "SOURCE_MEDIA_MISSING_REVIEW",
+                    Some(&entry.filename),
+                    source_id,
+                )),
+                (Some(digest), Some(size)) => {
+                    if size > max_media_bytes {
+                        return Err("REVAMP_MEDIA_LIMIT".into());
+                    }
+                    let bytes = capture
+                        .captured
+                        .assets
+                        .get(&digest)
+                        .filter(|_| archive.asset_digests.contains(&digest))
+                        .ok_or("REVAMP_CAPTURE_ASSET_MISSING")?;
+                    if bytes.len() as u64 != size {
+                        return Err("REVAMP_MEDIA_MANIFEST_CONFLICT".into());
+                    }
+                    if size == 0 {
+                        issues.push(issue(
+                            "SOURCE_MEDIA_EMPTY_REVIEW",
+                            Some(&entry.filename),
+                            source_id,
+                        ));
+                    } else {
+                        doc.media.push(linguist_core::records::MediaAsset {
+                            digest,
+                            filename: entry.filename.clone(),
+                            original_filename: Some(entry.filename.clone()),
+                            size_bytes: size,
+                            mime: "application/octet-stream".into(),
+                            owner: linguist_core::records::MediaOwner::Source,
+                            role: linguist_core::records::MediaRole::Archive,
+                            source_id: Some(source_id),
+                            attribution: "Original source media; authorship and format unverified."
+                                .into(),
+                            license: None,
+                        });
+                        issues.push(issue(
+                            "SOURCE_MEDIA_CONTENT_REVIEW",
+                            Some(&entry.filename),
+                            source_id,
+                        ));
+                    }
+                }
+                _ => return Err("REVAMP_MEDIA_MANIFEST_INVALID".into()),
+            }
+        }
+    }
     for pair in example_candidates {
         let evidence_id = uuid::Uuid::new_v4();
         doc.evidence.push(Evidence {

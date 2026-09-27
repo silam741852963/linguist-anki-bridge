@@ -5,6 +5,7 @@ use linguist_core::{
 };
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+pub mod media;
 pub struct CapturedSource {
     pub source: SourceRecord,
     pub archive: SourceArchive,
@@ -25,7 +26,11 @@ pub fn capture_for_revamp(
     note_id: &str,
 ) -> Result<RevampCapture, String> {
     let registry = linguist_config::Registry::builtin();
-    for key in ["input.max_file_mb", "input.max_record_chars"] {
+    for key in [
+        "input.max_file_mb",
+        "input.max_record_chars",
+        "media.max_asset_mb",
+    ] {
         registry.validate_value(
             key,
             settings
@@ -73,6 +78,33 @@ pub fn capture_for_revamp(
     captured.source.digest = digest.clone();
     captured.archive.digest = digest;
     captured.archive.asset_digests = captured.assets.keys().cloned().collect();
+    if !captured.source.media_refs.is_empty() {
+        let mut observations = BTreeMap::new();
+        let limit = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
+        let mut total = captured
+            .assets
+            .values()
+            .map(|bytes| bytes.len() as u64)
+            .sum::<u64>();
+        for filename in &captured.source.media_refs {
+            let file = client.retrieve_media_file(filename)?;
+            if let Some(file) = &file {
+                total = total
+                    .checked_add(file.bytes.len() as u64)
+                    .ok_or("SOURCE_MEDIA_LIMIT")?;
+                if total > limit {
+                    return Err("SOURCE_MEDIA_LIMIT".into());
+                }
+            }
+            observations.insert(filename.clone(), file.map(|file| file.bytes));
+        }
+        media::attach_original_media(
+            &mut captured,
+            observations,
+            settings.values["media.max_asset_mb"].as_u64().unwrap() * 1024 * 1024,
+            limit,
+        )?;
+    }
     Ok(RevampCapture { captured, mapping })
 }
 fn id(value: &Value) -> Result<String, String> {

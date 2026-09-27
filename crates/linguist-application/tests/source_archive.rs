@@ -77,6 +77,58 @@ fn conflicting_ids_field_order_models_and_duplicate_cards_fail_before_publicatio
 }
 
 #[test]
+fn media_attachment_is_complete_bounded_and_atomic_on_failure() {
+    use std::collections::BTreeMap;
+    let (n, m, c) = fixture();
+    let mut captured = capture(&n, &m, &c).unwrap();
+    let original_digest = captured.source.digest.clone();
+    let original_assets = captured.assets.clone();
+    assert_eq!(
+        media::attach_original_media(&mut captured, BTreeMap::new(), 100, 10000).unwrap_err(),
+        "SOURCE_MEDIA_SELECTION_CONFLICT"
+    );
+    assert_eq!(
+        media::attach_original_media(
+            &mut captured,
+            BTreeMap::from([("cat.mp3".into(), Some(vec![1, 2, 3, 4, 5]))]),
+            4,
+            10000
+        )
+        .unwrap_err(),
+        "SOURCE_MEDIA_LIMIT"
+    );
+    assert_eq!(captured.source.digest, original_digest);
+    assert_eq!(captured.assets, original_assets);
+    media::attach_original_media(
+        &mut captured,
+        BTreeMap::from([("cat.mp3".into(), Some(vec![1, 2, 3]))]),
+        100,
+        10000,
+    )
+    .unwrap();
+    assert_eq!(captured.source.fields, captured.archive.original_fields);
+    assert_eq!(
+        captured.assets[&canonical::asset_digest(&[1, 2, 3])],
+        [1, 2, 3]
+    );
+    let manifest: Value = canonical::parse(&captured.assets[&captured.source.digest]).unwrap();
+    assert_eq!(manifest["media_bytes_archived"], true);
+    assert_eq!(manifest["media_content_verified"], false);
+    let archived_digest = captured.source.digest.clone();
+    assert_eq!(
+        media::attach_original_media(
+            &mut captured,
+            BTreeMap::from([("cat.mp3".into(), None)]),
+            100,
+            10000
+        )
+        .unwrap_err(),
+        "SOURCE_MEDIA_ALREADY_CAPTURED"
+    );
+    assert_eq!(captured.source.digest, archived_digest);
+}
+
+#[test]
 fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     use linguist_config::*;
     use std::io::{BufRead, Read, Write};
@@ -85,7 +137,7 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let server = std::thread::spawn(move || {
         let mut actions = Vec::new();
-        for _ in 0..28 {
+        for _ in 0..34 {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
             let mut stream = loop {
                 match listener.accept() {
@@ -126,7 +178,7 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
                 "getActiveProfile" => json!("Fixture"),
                 "modelNamesAndIds" => json!({"Legacy":12}),
                 "notesInfo" => {
-                    json!([{"noteId":123,"modelName":"Legacy","fields":{"Expression":{"value":"<b>猫</b>","order":0},"Unused":{"value":"  original\n","order":1}},"cards":[456],"tags":["original"],"extension":"retained"}])
+                    json!([{"noteId":123,"modelName":"Legacy","fields":{"Expression":{"value":"<b>猫</b><img src=\"pic.png\">[sound:cat.mp3]","order":0},"Unused":{"value":"  original\n","order":1}},"cards":[456],"tags":["original"],"extension":"retained"}])
                 }
                 "cardsInfo" => {
                     json!([{"cardId":456,"note":123,"due":10,"reps":5,"extension":"retained"}])
@@ -134,6 +186,11 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
                 "modelFieldNames" => json!(["Expression", "Unused"]),
                 "modelTemplates" => json!({"Card":{"Front":"front","Back":"back"}}),
                 "modelStyling" => json!({"css":"style"}),
+                "retrieveMediaFile" => match request["params"]["filename"].as_str().unwrap() {
+                    "cat.mp3" => json!(false),
+                    "pic.png" => json!("AQID"),
+                    _ => panic!("unexpected filename"),
+                },
                 _ => panic!("unexpected {action}"),
             };
             actions.push(action.to_owned());
@@ -157,10 +214,10 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
         "purposes.japanese_vocab.source_model".into(),
         json!("Legacy"),
     );
-    let settings = resolve(&Registry::builtin(), &ConfigFile::default(), &options).unwrap();
+    let mut settings = resolve(&Registry::builtin(), &ConfigFile::default(), &options).unwrap();
     let client = linguist_anki::Client::from_settings(&settings, &Default::default()).unwrap();
     let draft = capture_for_revamp(&client, &settings, "japanese_vocab", "123").unwrap();
-    assert_eq!(server.join().unwrap().len(), 28);
+    assert_eq!(server.join().unwrap().len(), 34);
     assert_eq!(draft.mapping.unmapped_fields, vec!["Unused"]);
     assert_eq!(draft.mapping.missing_required_roles, vec!["meaning"]);
     let manifest: Value =
@@ -168,13 +225,53 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     assert_eq!(manifest["repeated_reads_matched"], true);
     assert_eq!(manifest["native_history_verified"], false);
     assert_eq!(manifest["mapping_digest"], draft.mapping.mapping_digest);
+    assert_eq!(manifest["media_bytes_archived"], false);
+    assert_eq!(manifest["media_content_verified"], false);
+    assert_eq!(manifest["media"][0]["filename"], "cat.mp3");
+    assert!(manifest["media"][0]["digest"].is_null());
+    let media_digest = canonical::asset_digest(&[1, 2, 3]);
+    assert_eq!(manifest["media"][1]["digest"], media_digest);
+    assert_eq!(draft.captured.assets[&media_digest], [1, 2, 3]);
+    let document =
+        linguist_application::revamp::stage_document(&draft, &settings, "japanese_vocab").unwrap();
+    assert_eq!(document.media.len(), 1);
+    assert_eq!(
+        document.media[0].role,
+        linguist_core::records::MediaRole::Archive
+    );
+    assert_eq!(
+        document.media[0].original_filename.as_deref(),
+        Some("pic.png")
+    );
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|issue| issue.code == "SOURCE_MEDIA_MISSING_REVIEW")
+    );
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|issue| issue.code == "SOURCE_MEDIA_CONTENT_REVIEW")
+    );
     let root = std::env::temp_dir().join(format!("lab-revamp-capture-{}", uuid::Uuid::new_v4()));
-    let mut store = linguist_store::Store::open(&root).unwrap();
-    for (hash, bytes) in &draft.captured.assets {
-        assert_eq!(*hash, store.publish_asset(bytes, 100000).unwrap());
-    }
-    drop(store);
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let environment =
+        std::collections::BTreeMap::from([("HOME".into(), "/tmp/lab-media-capture".into())]);
+    let prepared = linguist_application::revamp::publish_capture_draft(
+        &draft,
+        &settings,
+        "japanese_vocab",
+        &environment,
+    )
+    .unwrap();
     let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    assert_eq!(plan.documents[0].media, document.media);
+    assert_eq!(store.asset(&media_digest, 100000).unwrap(), [1, 2, 3]);
     for hash in &draft.captured.archive.asset_digests {
         assert_eq!(
             store.asset(hash, 100000).unwrap(),
