@@ -523,3 +523,74 @@ fn field_scheduler_and_model_changes_invalidate_repeated_capture() {
         assert_eq!(server.finish().len(), 28);
     }
 }
+
+fn native_manifest() -> Value {
+    json!({"protocol":"lab-native-v1","companion_version":"0.1.0","bridge_id":"c17625b0-7a88-4aab-a8a5-c1d993c72a00",
+        "integration":{"anki_version":"fixture","anki_connect_source_digest":"a".repeat(64)},
+        "collection_session":null,"actions":["labCapabilities"],"mutation_variants":[],"api_key_configured":false})
+}
+#[test]
+fn native_declarations_are_profile_pinned_read_evidence_and_never_enable_writes() {
+    let server = Server::new(vec![
+        response(json!("Fixture")),
+        response(native_manifest()),
+        response(json!("Fixture")),
+    ]);
+    let client = Client::from_settings(&settings(&server.endpoint), &BTreeMap::new()).unwrap();
+    let inspected = client.native_capabilities().unwrap();
+    assert!(
+        !inspected.compatibility_verified
+            && !inspected.collection_identity_verified
+            && !inspected.collection_writes_enabled
+    );
+    assert!(inspected.declaration.mutation_variants.is_empty());
+    let requests = server.finish();
+    assert_eq!(requests[1]["action"], "labCapabilities");
+    assert_eq!(requests[1]["params"], json!({}));
+    let server = Server::new(vec![
+        response(json!("Fixture")),
+        response(native_manifest()),
+        response(json!("Other")),
+    ]);
+    let client = Client::from_settings(&settings(&server.endpoint), &BTreeMap::new()).unwrap();
+    assert_eq!(
+        client.native_capabilities().unwrap_err(),
+        "ANKI_PROFILE_CONFLICT"
+    );
+    server.finish();
+}
+#[test]
+fn malformed_native_declarations_and_unimplemented_effects_are_rejected() {
+    use linguist_anki::native::inspect_native_manifest;
+    for (pointer, value) in [
+        ("/protocol", json!("unknown")),
+        ("/bridge_id", json!("00000000-0000-0000-0000-000000000000")),
+        ("/actions", json!(["labCapabilities", "labCapabilities"])),
+        ("/actions", json!(["labCapabilities", "arbitrarySql"])),
+        ("/mutation_variants", json!(["sync"])),
+        ("/mutation_variants", json!(["create_note"])),
+        ("/integration/anki_connect_source_digest", json!("bad")),
+    ] {
+        let mut manifest = native_manifest();
+        *manifest.pointer_mut(pointer).unwrap() = value;
+        assert!(inspect_native_manifest(manifest).is_err());
+    }
+    let mut manifest = native_manifest();
+    manifest["claims_verified"] = json!(true);
+    assert!(inspect_native_manifest(manifest).is_err());
+    let mut manifest = native_manifest();
+    manifest["actions"] = json!([
+        "labCapabilities",
+        "labBegin",
+        "labInspect",
+        "labMutate",
+        "labOperationStatus",
+        "labRebind",
+        "labEnd"
+    ]);
+    manifest["mutation_variants"] = json!(["create_note"]);
+    manifest["api_key_configured"] = json!(true);
+    manifest["collection_session"] = json!({"lineage_id":"c17625b0-7a88-4aab-a8a5-c1d993c72a01","session_epoch":"c17625b0-7a88-4aab-a8a5-c1d993c72a02","profile_fingerprint":"b".repeat(64),"path_fingerprint":"c".repeat(64)});
+    let inspected = inspect_native_manifest(manifest).unwrap();
+    assert!(!inspected.collection_writes_enabled);
+}

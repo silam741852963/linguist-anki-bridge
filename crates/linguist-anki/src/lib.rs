@@ -11,8 +11,10 @@ use std::{
 pub type Result<T> = std::result::Result<T, String>;
 mod capture;
 pub use capture::ReadCapture;
+pub mod native;
 #[derive(Clone, Copy, Debug)]
 enum Action {
+    NativeCapabilities,
     Version,
     Reflect,
     Profile,
@@ -30,6 +32,7 @@ enum Action {
 impl Action {
     fn name(self) -> &'static str {
         match self {
+            Self::NativeCapabilities => "labCapabilities",
             Self::Version => "version",
             Self::Reflect => "apiReflect",
             Self::Profile => "getActiveProfile",

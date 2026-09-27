@@ -13,3 +13,4 @@ reqwest.workspace = true
 url.workspace = true
 base64.workspace = true
 unicode-normalization.workspace = true
+uuid.workspace = true
