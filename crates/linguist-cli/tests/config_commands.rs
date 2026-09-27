@@ -935,3 +935,156 @@ fn ollama_doctor_conflicting_modes_and_missing_model_fail_before_service_probes(
     assert!(out.stdout.is_empty());
     assert!(String::from_utf8_lossy(&out.stderr).contains("CAPABILITY_UNAVAILABLE"));
 }
+
+#[test]
+fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
+    use std::io::{BufRead, Read, Write};
+    for (command, purpose, mapping) in [
+        (
+            "vocab",
+            "english_vocab",
+            r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
+        ),
+        (
+            "grammar",
+            "japanese_grammar",
+            r#"{"pattern":"Pattern","meaning":"Meaning","formation":"Formation","use_key":"Key"}"#,
+        ),
+    ] {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut actions = Vec::new();
+            for _ in 0..28 {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline);
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                        Err(e) => panic!("{e}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                    .unwrap();
+                let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+                let mut length = 0;
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if line.to_ascii_lowercase().starts_with("content-length:") {
+                        length = line
+                            .split_once(':')
+                            .unwrap()
+                            .1
+                            .trim()
+                            .parse::<usize>()
+                            .unwrap();
+                    }
+                }
+                let mut bytes = vec![0; length];
+                reader.read_exact(&mut bytes).unwrap();
+                let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                let action = request["action"].as_str().unwrap();
+                let value = match action {
+                    "getActiveProfile" => serde_json::json!("Fixture"),
+                    "modelNamesAndIds" => serde_json::json!({"Legacy":12}),
+                    "notesInfo" => {
+                        serde_json::json!([{"noteId":123,"modelName":"Legacy","fields":{"Word":{"value":"cat","order":0},"Meaning":{"value":"source meaning","order":1},"Pattern":{"value":"なら","order":2},"Formation":{"value":"V + なら","order":3},"Key":{"value":"accepted-key","order":4},"Unused":{"value":"  original\n","order":5}},"cards":[456],"tags":["preserved"]}])
+                    }
+                    "modelFieldNames" => serde_json::json!([
+                        "Word",
+                        "Meaning",
+                        "Pattern",
+                        "Formation",
+                        "Key",
+                        "Unused"
+                    ]),
+                    "modelTemplates" => serde_json::json!({"Card":{"Front":"front","Back":"back"}}),
+                    "modelStyling" => serde_json::json!({"css":"style"}),
+                    "cardsInfo" => serde_json::json!([{"cardId":456,"note":123,"reps":5,"due":10}]),
+                    _ => panic!("unexpected action {action}"),
+                };
+                actions.push(action.to_owned());
+                let body = serde_json::json!({"result":value,"error":null}).to_string();
+                write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+            }
+            actions
+        });
+        let root = std::env::temp_dir().join(format!("lab-cli-revamp-{}", uuid::Uuid::new_v4()));
+        let out = cli()
+            .args([
+                "--purpose",
+                purpose,
+                "--set",
+                "llm.enabled=false",
+                "--set",
+                "dictionary.provider=authored",
+                "--set",
+                "images.search_when_missing=false",
+            ])
+            .arg("--set")
+            .arg(format!("anki.endpoint={endpoint}"))
+            .arg("--set")
+            .arg(format!("storage.state_dir={}", root.display()))
+            .arg("--set")
+            .arg(format!("purposes.{purpose}.fields={mapping}"))
+            .args([command, "revamp", "--note-id", "123"])
+            .output()
+            .unwrap();
+        assert_eq!(server.join().unwrap().len(), 28);
+        assert_eq!(out.status.code(), Some(4), "{out:?}");
+        assert!(out.stderr.is_empty());
+        let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(result["preparation_stage"], "source_draft");
+        assert_eq!(result["result"]["apply_eligible"], false);
+        let id = result["result"]["plan_id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let store = linguist_store::Store::read_only(&root).unwrap();
+        let plan = store.revision(id, 1).unwrap();
+        assert_eq!(
+            plan.documents[0].sources[0].fields["Unused"],
+            "  original\n"
+        );
+        assert!(plan.binding.is_none() && plan.rendered.is_empty());
+        for digest in &plan.documents[0].archives[0].asset_digests {
+            assert!(!store.asset(digest, 100000).unwrap().is_empty());
+        }
+        if command == "grammar" {
+            assert_eq!(plan.documents[0].explanation_language.as_str(), "vi");
+        }
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+#[test]
+fn revamp_missing_wrong_purpose_and_requested_generation_fail_before_state_creation() {
+    let root =
+        std::env::temp_dir().join(format!("lab-cli-revamp-rejected-{}", uuid::Uuid::new_v4()));
+    for (extra, exit) in [
+        (vec![], 2),
+        (vec!["--purpose", "japanese_grammar"], 2),
+        (vec!["--purpose", "english_vocab"], 3),
+    ] {
+        let out = cli()
+            .arg("--set")
+            .arg(format!("storage.state_dir={}", root.display()))
+            .args(extra)
+            .args(["vocab", "revamp", "--note-id", "123"])
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(exit), "{out:?}");
+        assert!(out.stdout.is_empty());
+        assert!(!root.exists());
+    }
+}

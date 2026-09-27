@@ -31,6 +31,10 @@ cargo run --locked -- decks list --counts
 cargo run --locked -- models list
 cargo run --locked -- notes list --query '' --limit 10
 # Explicit media inspection: notes show NOTE_ID --media
+# Initial revamp source draft (requires configured purpose field mappings):
+cargo run --locked -- --purpose english_vocab --set llm.enabled=false \
+  --set dictionary.provider=authored --set images.search_when_missing=false \
+  vocab revamp --note-id NOTE_ID
 ```
 
 Structured input can be piped or redirected into `vocab add --document -` or `grammar add --document -`. Supply one v2 JSON record; both commands stage a local plan. Current authored preparation requires disabled generation/image search and `dictionary.provider=authored` as described in the implementation status. `document validate -` and `document digest -` also accept piped JSON.

@@ -87,6 +87,11 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum PrepareCommand {
+    /// Capture one existing note into a local review-required source draft; never applies.
+    Revamp {
+        #[arg(long)]
+        note_id: String,
+    },
     /// Prepare one version-2 structured JSON record, from a file or piped stdin.
     Add {
         #[arg(long)]
@@ -371,6 +376,38 @@ fn run(cli: Cli) -> Result<u8, String> {
             )?;
             emit(&result)?;
             Ok(if result.ready { 0 } else { 4 })
+        }
+        Command::Vocab {
+            command: PrepareCommand::Revamp { note_id },
+        }
+        | Command::Grammar {
+            command: PrepareCommand::Revamp { note_id },
+        } => {
+            let purpose = cli
+                .purpose
+                .as_deref()
+                .ok_or("REVAMP_PURPOSE_REQUIRED: select --purpose")?;
+            let correct_kind = if vocab_command {
+                matches!(purpose, "japanese_vocab" | "english_vocab")
+            } else {
+                matches!(purpose, "japanese_grammar" | "english_grammar")
+            };
+            if !correct_kind {
+                return Err("REVAMP_PURPOSE_KIND_INVALID".into());
+            }
+            linguist_anki::wire_id(&serde_json::json!(note_id))?;
+            let client = anki_client(&settings)?;
+            let result = linguist_application::revamp::prepare_source_revamp(
+                &client,
+                &settings,
+                purpose,
+                &note_id,
+                &std::env::vars().collect(),
+            )?;
+            emit(
+                &serde_json::json!({"preparation_stage":"source_draft","result":result,"enrichment_completed":false,"collection_writes_enabled":false}),
+            )?;
+            Ok(4)
         }
         Command::Recover {
             command:

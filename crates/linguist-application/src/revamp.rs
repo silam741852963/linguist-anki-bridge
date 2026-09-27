@@ -265,3 +265,23 @@ pub fn publish_capture_draft(
         duplicate_check_performed: false,
     })
 }
+
+/// Initial CLI preparation path. Explicitly selected unavailable enrichment never gets skipped.
+pub fn prepare_source_revamp(
+    client: &linguist_anki::Client,
+    settings: &Effective,
+    purpose: &str,
+    note_id: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<crate::Prepared, String> {
+    crate::authored_capabilities(settings)?;
+    if settings.values["dictionary.provider"] != "authored" {
+        return Err("CAPABILITY_UNAVAILABLE: revamp dictionary integration is pending; select dictionary.provider=authored for a source draft".into());
+    }
+    if purpose == "japanese_vocab" && settings.values["kanji.enabled"] == true {
+        return Err("CAPABILITY_UNAVAILABLE: revamp kanji enrichment is pending; select kanji.enabled=false for a source draft".into());
+    }
+    crate::freeze_settings(settings, environment)?;
+    let capture = crate::source_archive::capture_for_revamp(client, settings, purpose, note_id)?;
+    publish_capture_draft(&capture, settings, purpose, environment)
+}
