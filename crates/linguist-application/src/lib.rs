@@ -342,6 +342,7 @@ pub fn prepare_with_dictionary(
             .iter()
             .all(|issue| issue.severity == Severity::Warning);
     let plan = PlanRevision {
+        grammar_groups: vec![],
         schema_version: 2,
         id: uuid::Uuid::new_v4(),
         revision: 1,
@@ -390,6 +391,7 @@ pub mod capture;
 pub mod dictionary;
 pub mod export;
 pub mod generation;
+pub mod grammar;
 pub mod jobs;
 pub mod mapping;
 pub mod media;

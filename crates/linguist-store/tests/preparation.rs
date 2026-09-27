@@ -515,6 +515,7 @@ fn matching_approval_projection_cannot_hide_conflicting_published_capture_eviden
         .collect();
     let sources: Vec<_> = documents.iter().flat_map(|d| &d.sources).collect();
     let mut plan = PlanRevision {
+        grammar_groups: vec![],
         schema_version: 2,
         id,
         revision: 1,

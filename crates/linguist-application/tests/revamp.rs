@@ -1213,3 +1213,126 @@ fn mapped_enable_fields_retain_task_candidates_without_claiming_native_mapping()
     assert_eq!(document.requested_tasks, vec![Task::Comprehension]);
     assert_eq!(document.archives[0].original_fields["Spelling"], "   ");
 }
+
+#[test]
+fn grammar_split_records_one_anchor_and_fresh_siblings_with_recoverable_archives() {
+    use linguist_application::grammar::*;
+    let (capture, mut settings) = setup(
+        "english_grammar",
+        &[
+            ("Pattern", "used to / be used to"),
+            ("Meaning", "Original lesson"),
+        ],
+        &[("pattern", "Pattern"), ("meaning", "Meaning")],
+    );
+    let root = std::env::temp_dir().join(format!("lab-grammar-split-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "english_grammar",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-grammar-split".into())]),
+    )
+    .unwrap();
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let base = store.revision(prepared.plan_id, 1).unwrap();
+    let original = &base.documents[0];
+    let LearningContent::Grammar(grammar) = &original.content else {
+        panic!()
+    };
+    let mut first = grammar.clone();
+    first.pattern = "used to".into();
+    first.use_key = "past-habit".into();
+    let mut second = grammar.clone();
+    second.pattern = "be used to".into();
+    second.use_key = "familiarity".into();
+    let mut request = SplitRequest {
+        schema_version: 2,
+        base_revision: 1,
+        base_digest: base.approval_digest().unwrap(),
+        document_id: original.id,
+        input_digest: original.semantic_digest().unwrap(),
+        actor: "source owner".into(),
+        anchor_index: 1,
+        units: vec![first.clone(), second.clone()],
+    };
+    request.anchor_index = 2;
+    let raw = serde_json::to_vec(&request).unwrap();
+    assert!(split(&mut store, &base, &request, &raw).is_err());
+    assert_eq!(store.latest_revision(base.id).unwrap(), 1);
+    request.anchor_index = 1;
+    request.units = vec![first.clone(), first.clone()];
+    let raw = serde_json::to_vec(&request).unwrap();
+    assert!(
+        split(&mut store, &base, &request, &raw)
+            .unwrap_err()
+            .contains("UNIT_INVALID")
+    );
+    request.units = vec![first, second];
+    let saved_pattern = request.units[0].pattern.clone();
+    request.units[0].pattern = "x".repeat(100001);
+    let oversized = serde_json::to_vec(&request).unwrap();
+    assert!(
+        split(&mut store, &base, &request, &oversized)
+            .unwrap_err()
+            .contains("INPUT_LIMIT")
+    );
+    assert_eq!(store.latest_revision(base.id).unwrap(), 1);
+    request.units[0].pattern = saved_pattern;
+    let raw = serde_json::to_vec(&request).unwrap();
+    let child = split(&mut store, &base, &request, &raw).unwrap();
+    assert_eq!(child.revision, 2);
+    assert_eq!(child.parent_digest, Some(base.approval_digest().unwrap()));
+    assert_eq!(child.grammar_groups.len(), 1);
+    let group = &child.grammar_groups[0];
+    assert_eq!(group.anchor_document, original.id);
+    assert_eq!(
+        group.units,
+        child
+            .documents
+            .iter()
+            .map(|document| document.id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(child.documents[1].id, original.id);
+    assert_ne!(child.documents[0].id, original.id);
+    assert!(child.binding.is_none());
+    assert!(child.rendered.is_empty());
+    for document in &child.documents {
+        assert_eq!(document.sources[0], original.sources[0]);
+        assert_eq!(document.archives[0], original.archives[0]);
+        assert!(
+            document
+                .issues
+                .iter()
+                .any(|issue| issue.code == "GRAMMAR_SPLIT_NATIVE_REVIEW")
+        );
+        assert!(document.reviews.is_empty());
+    }
+    assert_eq!(
+        store.asset(&group.request_asset_digest, 100000).unwrap(),
+        raw
+    );
+    let mut forged = child.clone();
+    forged.grammar_groups[0].anchor_document = uuid::Uuid::new_v4();
+    assert!(forged.approval_digest().is_err());
+    let mut forged = child.clone();
+    forged.grammar_groups[0].units[0] = forged.grammar_groups[0].units[1];
+    assert!(forged.approval_digest().is_err());
+    let mut changed = child.clone();
+    changed.grammar_groups[0].actor = "another reviewer".into();
+    assert!(changed.approval_digest().is_err());
+    assert!(
+        split(&mut store, &base, &request, &raw)
+            .unwrap_err()
+            .contains("BASE_CONFLICT")
+    );
+    drop(store);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    assert_eq!(store.revision(base.id, 1).unwrap(), base);
+    assert_eq!(store.revision(base.id, 2).unwrap(), child);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

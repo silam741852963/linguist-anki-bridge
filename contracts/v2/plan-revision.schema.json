@@ -19,6 +19,12 @@
         "$ref": "#/$defs/LearningDocument"
       }
     },
+    "grammar_groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GrammarGroup"
+      }
+    },
     "id": {
       "type": "string",
       "format": "uuid"
@@ -389,6 +395,45 @@
         "formation",
         "recognition_prompt",
         "examples"
+      ]
+    },
+    "GrammarGroup": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "anchor_document": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "request_asset_digest": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_id",
+        "anchor_document",
+        "units",
+        "actor",
+        "request_asset_digest"
       ]
     },
     "Issue": {

@@ -26,6 +26,7 @@ fn plan() -> PlanRevision {
     .unwrap();
     let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
     PlanRevision {
+        grammar_groups: vec![],
         schema_version: 2,
         id: uuid::Uuid::new_v4(),
         revision: 1,

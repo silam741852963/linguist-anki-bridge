@@ -242,6 +242,7 @@ impl Store {
         let source_digest =
             canonical::digest("source-capture", &sources).map_err(|e| e.to_string())?;
         let plan = linguist_core::records::PlanRevision {
+            grammar_groups: vec![],
             schema_version: 2,
             id,
             revision: 1,

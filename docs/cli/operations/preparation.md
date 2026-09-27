@@ -63,3 +63,19 @@ Source-audio inspection: when image format detection is unsupported, probe audio
 Ogg completeness: before probing content beginning with `OggS`, validate every page with RFC 3533 framing and CRC. Require one serial, contiguous sequences, correct continuation flags, complete lacing/payload bytes and a final EOS page with no pending packet or following bytes. Version/reserved flag violations fail. Multiple logical streams and chaining remain unsupported. Successful framing plus Vorbis decoding sets `container_extent_verified=true`; MP3 continues to require completeness review. This verifies framing, not authorship or rendering role.
 
 MP3 completeness: after container probing identifies MP3, require every captured audio byte to belong to a complete indexed-bitrate MPEG Layer III frame or a supported tag extent. Check MPEG-1/2/2.5 headers, frame sizes including padding, stable sample rate/channel/version, leading ID3v2 synchsafe size and optional matching v2.4 footer, and optional trailing 128-byte ID3v1 tag. Do not scan past unexplained junk, infer free-format boundaries or accept partial final frames. Framing plus successful decoding sets `container_extent_verified=true`; original bytes remain archive-only. Whole-frame removal is undetectable without a trusted external length, so this flag proves captured-byte structure rather than authenticity.
+
+Current authored grammar split staging: `plans split-grammar PLAN --request FILE`
+loads the retained source draft and verifies the request's base revision/digest,
+document/input digest and actor. The request contains `schema_version=2`,
+`anchor_index` (zero-based) and ordered `units` using the typed Grammar body.
+Each unit must have a distinct nonempty pattern/use key. One unit retains the
+source document ID; every sibling gets a fresh ID and Recognition task. The
+anchor retains its requested tasks. Preserve original fields, media and archives
+on all units; source archives are evidence, not scheduling instructions.
+Reject stale input, invalid indices, duplicate units, non-user examples and
+frozen byte/character/derived-size limit violations before publishing a child.
+Archive the exact request, then publish one child under parent CAS. The
+approval-bound grammar group records the anchor and ordered siblings, actor and
+request asset digest. Exit 4 with native split/history review unresolved and writes
+disabled. See the [request schema](../../../contracts/v2/grammar-split-request.schema.json).
+Automatic OCR segmentation and native write/recovery execution remain pending.

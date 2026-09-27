@@ -1070,6 +1070,7 @@ fn plan_diff_loads_exact_immutable_revisions_and_rejects_live_checks() {
     let root = std::env::temp_dir().join(format!("lab-diff-cli-{}", uuid::Uuid::new_v4()));
     let mut store = linguist_store::Store::open(&root).unwrap();
     let mut plan = PlanRevision {
+        grammar_groups: vec![],
         schema_version: 2,
         id: uuid::Uuid::new_v4(),
         revision: 1,
@@ -1155,6 +1156,7 @@ fn plan_edit_cli_creates_child_and_rejects_stale_base() {
     ))
     .unwrap();
     let plan = PlanRevision {
+        grammar_groups: vec![],
         schema_version: 2,
         id: uuid::Uuid::new_v4(),
         revision: 1,
@@ -2322,6 +2324,59 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             assert_eq!(plan.documents[0].explanation_language.as_str(), "vi");
         }
         drop(store);
+        if command == "grammar" {
+            let document = &plan.documents[0];
+            let linguist_core::LearningContent::Grammar(grammar) = &document.content else {
+                panic!()
+            };
+            let mut first = grammar.clone();
+            first.pattern = "なら".into();
+            first.use_key = "conditional".into();
+            let mut second = grammar.clone();
+            second.pattern = "ので".into();
+            second.use_key = "reason".into();
+            let request = linguist_application::grammar::SplitRequest {
+                schema_version: 2,
+                base_revision: 1,
+                base_digest: plan.approval_digest().unwrap(),
+                document_id: document.id,
+                input_digest: document.semantic_digest().unwrap(),
+                actor: "reviewer".into(),
+                anchor_index: 0,
+                units: vec![first, second],
+            };
+            let file = root.join("split.json");
+            std::fs::write(&file, serde_json::to_vec(&request).unwrap()).unwrap();
+            let state = format!("storage.state_dir={}", root.display());
+            let plan_id = plan.id.to_string();
+            let args = [
+                "--set",
+                &state,
+                "plans",
+                "split-grammar",
+                &plan_id,
+                "--request",
+                file.to_str().unwrap(),
+            ];
+            let out = cli().args(args).output().unwrap();
+            assert_eq!(out.status.code(), Some(4), "{out:?}");
+            let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+            assert_eq!(value["revision"], 2);
+            assert_eq!(value["writes_enabled"], false);
+            assert_eq!(
+                value["grammar_groups"][0]["anchor_document"],
+                document.id.to_string()
+            );
+            let stale = cli().args(args).output().unwrap();
+            assert_eq!(stale.status.code(), Some(5), "{stale:?}");
+            let store = linguist_store::Store::read_only(&root).unwrap();
+            assert_eq!(store.revision(plan.id, 1).unwrap(), plan);
+            assert_eq!(
+                store.revision(plan.id, 2).unwrap().documents.len(),
+                plan.documents.len() + 1
+            );
+            drop(store);
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 }

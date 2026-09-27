@@ -154,6 +154,7 @@ fn approval_binds_content_but_excludes_review_timestamp_and_epoch() {
     let doc = vocabulary();
     let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
     let mut plan = PlanRevision {
+        grammar_groups: vec![],
         schema_version: 2,
         id: uuid::Uuid::new_v4(),
         revision: 1,

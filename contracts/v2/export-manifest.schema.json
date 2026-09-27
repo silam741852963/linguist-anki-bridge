@@ -400,6 +400,45 @@
         "examples"
       ]
     },
+    "GrammarGroup": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "anchor_document": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "request_asset_digest": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_id",
+        "anchor_document",
+        "units",
+        "actor",
+        "request_asset_digest"
+      ]
+    },
     "Issue": {
       "type": "object",
       "properties": {
@@ -725,6 +764,12 @@
             "$ref": "#/$defs/LearningDocument"
           }
         },
+        "grammar_groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GrammarGroup"
+          }
+        },
         "id": {
           "type": "string",
           "format": "uuid"
@@ -908,6 +953,36 @@
           "properties": {
             "decision": {
               "type": "string",
+              "const": "sense_with_reading"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "reading": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "key",
+                "reading"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
               "const": "anchor"
             },
             "value": {
@@ -1075,6 +1150,60 @@
               "required": [
                 "source_id",
                 "evidence_ids"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "source_media_role"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "asset_digest": {
+                  "type": "string"
+                },
+                "attribution": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "license": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "original_filename": {
+                  "type": "string"
+                },
+                "role": {
+                  "$ref": "#/$defs/MediaRole"
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "asset_digest",
+                "original_filename",
+                "evidence_id",
+                "role",
+                "attribution"
               ]
             }
           },

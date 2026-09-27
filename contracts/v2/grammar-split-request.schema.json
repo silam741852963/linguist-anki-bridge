@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SplitRequest",
+  "type": "object",
+  "properties": {
+    "actor": {
+      "type": "string"
+    },
+    "anchor_index": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "base_digest": {
+      "type": "string"
+    },
+    "base_revision": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "document_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "input_digest": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "units": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Grammar"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "base_revision",
+    "base_digest",
+    "document_id",
+    "input_digest",
+    "actor",
+    "anchor_index",
+    "units"
+  ],
+  "$defs": {
+    "Example": {
+      "type": "object",
+      "properties": {
+        "evidence_ids": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "sentence": {
+          "type": "string"
+        },
+        "translation": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sentence",
+        "translation",
+        "provenance"
+      ]
+    },
+    "Grammar": {
+      "type": "object",
+      "properties": {
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Example"
+          }
+        },
+        "exercise_answer": {
+          "type": "string",
+          "default": ""
+        },
+        "exercise_prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "formation": {
+          "type": "string"
+        },
+        "meaning": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "recognition_prompt": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "string",
+          "default": ""
+        },
+        "use_key": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pattern",
+        "use_key",
+        "meaning",
+        "formation",
+        "recognition_prompt",
+        "examples"
+      ]
+    },
+    "Provenance": {
+      "type": "string",
+      "enum": [
+        "source",
+        "dictionary",
+        "ocr",
+        "generated",
+        "user"
+      ]
+    }
+  }
+}

@@ -9,6 +9,7 @@ fn write<T: schemars::JsonSchema>(name: &str) {
     .unwrap();
 }
 fn main() {
+    write::<linguist_application::grammar::SplitRequest>("grammar-split-request");
     write::<linguist_application::mapping::FieldMapping>("source-field-mapping");
     write::<linguist_application::generation::Supplement>("generation-supplement");
     let export = schemars::schema_for!(linguist_application::export::ExportManifest);

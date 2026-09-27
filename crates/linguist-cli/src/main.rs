@@ -231,6 +231,12 @@ enum RecoveryCommand {
 }
 #[derive(Subcommand)]
 enum PlanCommand {
+    /// Split a retained grammar source into authored units with one explicit anchor.
+    SplitGrammar {
+        plan: uuid::Uuid,
+        #[arg(long)]
+        request: PathBuf,
+    },
     /// Enrich a retained vocabulary draft using its frozen dictionary policy.
     Enrich {
         plan: uuid::Uuid,
@@ -709,6 +715,23 @@ fn run(cli: Cli) -> Result<u8, String> {
             }
             let store = linguist_store::Store::read_only(&root)?;
             match command {
+                PlanCommand::SplitGrammar { plan, request } => {
+                    let raw = read_input(&request, max_bytes, max_chars)?;
+                    let request: linguist_application::grammar::SplitRequest =
+                        canonical::parse(&raw).map_err(|e| e.to_string())?;
+                    let base = store.revision(plan, request.base_revision)?;
+                    drop(store);
+                    let child = linguist_application::grammar::split(
+                        &mut linguist_store::Store::open_existing(&root)?,
+                        &base,
+                        &request,
+                        &raw,
+                    )?;
+                    emit(
+                        &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":child.revision,"digest":child.approval_digest().map_err(|e| e.to_string())?,"grammar_groups":child.grammar_groups,"ready":false,"apply_eligible":false,"writes_enabled":false}),
+                    )?;
+                    return Ok(4);
+                }
                 PlanCommand::Enrich {
                     plan,
                     base_revision,

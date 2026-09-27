@@ -189,6 +189,8 @@ pub struct PlanRevision {
     pub source_digest: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selection: Option<SelectionReceipt>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grammar_groups: Vec<GrammarGroup>,
     pub documents: Vec<LearningDocument>,
     pub rendered: Vec<crate::render::RenderedNote>,
     pub review_decisions: Vec<ReviewDecision>,
@@ -218,8 +220,107 @@ pub struct SelectionReceipt {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_limit: Option<u64>,
 }
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GrammarGroup {
+    pub id: Uuid,
+    pub source_id: Uuid,
+    pub anchor_document: Uuid,
+    pub units: Vec<Uuid>,
+    pub actor: String,
+    pub request_asset_digest: String,
+}
+impl GrammarGroup {
+    pub fn validate(&self, plan: &PlanRevision) -> Result<(), crate::canonical::ContractError> {
+        let fail = || crate::canonical::ContractError("GRAMMAR_GROUP_INVALID".into());
+        if self.units.len() < 2
+            || self.units.len() > 100
+            || !self.units.contains(&self.anchor_document)
+            || self
+                .units
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != self.units.len()
+            || self.actor.trim().is_empty()
+            || self.actor.chars().count() > 200
+            || self.actor.chars().any(char::is_control)
+        {
+            return Err(fail());
+        }
+        for id in &self.units {
+            let document = plan
+                .documents
+                .iter()
+                .find(|document| document.id == *id)
+                .ok_or_else(fail)?;
+            if !matches!(document.content, crate::LearningContent::Grammar(_))
+                || !document.sources.iter().any(|source| {
+                    source.id == self.source_id && source.kind == "anki_read_capture_v2"
+                })
+                || !document
+                    .archives
+                    .iter()
+                    .any(|archive| archive.source_id == self.source_id)
+                || !document.sources.iter().any(|source| {
+                    source.kind == "grammar_split_request_v1"
+                        && source.digest == self.request_asset_digest
+                        && document.archives.iter().any(|archive| {
+                            archive.source_id == source.id
+                                && archive.asset_digests.contains(&self.request_asset_digest)
+                        })
+                })
+            {
+                return Err(fail());
+            }
+            let source = document
+                .sources
+                .iter()
+                .find(|source| {
+                    source.kind == "grammar_split_request_v1"
+                        && source.digest == self.request_asset_digest
+                })
+                .ok_or_else(fail)?;
+            let raw = source.fields.get("split_request").ok_or_else(fail)?;
+            if crate::canonical::asset_digest(raw.as_bytes()) != self.request_asset_digest {
+                return Err(fail());
+            }
+            let request: serde_json::Value = crate::canonical::parse(raw.as_bytes())?;
+            let index = request["anchor_index"]
+                .as_u64()
+                .and_then(|index| usize::try_from(index).ok())
+                .ok_or_else(fail)?;
+            if request["actor"].as_str() != Some(self.actor.as_str())
+                || request["document_id"].as_str()
+                    != Some(self.anchor_document.to_string().as_str())
+                || request["units"].as_array().map(Vec::len) != Some(self.units.len())
+                || self.units.get(index) != Some(&self.anchor_document)
+            {
+                return Err(fail());
+            }
+        }
+        Ok(())
+    }
+}
 impl PlanRevision {
     pub fn approval_digest(&self) -> Result<String, crate::canonical::ContractError> {
+        let mut grouped = std::collections::BTreeSet::new();
+        let mut group_sources = std::collections::BTreeSet::new();
+        for group in &self.grammar_groups {
+            if !group_sources.insert(group.source_id) {
+                return Err(crate::canonical::ContractError(
+                    "GRAMMAR_GROUP_SOURCE_CONFLICT".into(),
+                ));
+            }
+            group.validate(self)?;
+            for unit in &group.units {
+                if !grouped.insert(*unit) {
+                    return Err(crate::canonical::ContractError(
+                        "GRAMMAR_GROUP_OVERLAP".into(),
+                    ));
+                }
+            }
+        }
         if let Some(selection) = &self.selection {
             selection.validate(self)?;
         }

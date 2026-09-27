@@ -705,6 +705,7 @@ fn inference_draft_archives_wire_and_model_evidence_and_recovers_after_restart()
     }
     let config = settings();
     let plan = PlanRevision {
+        grammar_groups: vec![],
         schema_version: 2,
         id: uuid::Uuid::new_v4(),
         revision: 1,

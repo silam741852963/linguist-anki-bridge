@@ -322,6 +322,7 @@ fn full_provider_archive_assets_survive_store_publication_and_restart() {
         assert_eq!(*digest, store.publish_asset(bytes, 100000).unwrap());
     }
     let plan = PlanRevision {
+        grammar_groups: vec![],
         schema_version: 2,
         id: uuid::Uuid::new_v4(),
         revision: 1,

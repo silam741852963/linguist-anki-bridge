@@ -55,6 +55,30 @@ metadata, definitions, forms and URLs. Existing stored projections stay readable
 validation detects projections rendered by the older format as stale and requires
 a newly rendered child before approval. No native template changes are made.
 
+Grammar source splitting is now available through
+`plans split-grammar PLAN --request FILE`. The version-2 request binds the exact
+base revision/digest, source document/input digest, actor, ordered authored grammar
+units and zero-based anchor index. It publishes a child with one original document
+identity as anchor and fresh sibling IDs, preserving source archives and the
+selection order. The explicit `grammar_groups` record is approval-bound and
+validated against the exact archived request, including actor/anchor/unit count.
+Empty groups are omitted so existing plan JSON/digests remain compatible.
+
+Units require nonempty pattern/use keys and distinct pattern/use pairs; supplied
+examples must be authored user examples. The anchor retains requested tasks;
+siblings start with Recognition. Previous reviews and field edits are cleared;
+source context/media/archives remain. Frozen input byte/character limits also bound
+retained asset totals and the derived child size, with an early allocation estimate;
+2–100 units is the current structural ceiling. Invalid/stale requests publish no
+child. The exact request asset precedes plan publication and survives restart.
+Concurrent conflicts can leave unreferenced immutable assets, never alter parents.
+Native history/task mapping stays unresolved (`GRAMMAR_SPLIT_NATIVE_REVIEW`),
+render/apply readiness is false, and no scheduling state is assigned to siblings.
+Automatic screenshot segmentation, reviewed regrouping of existing groups, native
+split execution and recovery/write ordering remain pending. Tests cover the Rust
+boundary and CLI, invalid anchors, duplicate units, stale requests, forged group
+metadata, source/parent preservation and restart recovery.
+
 ## Available foundation
 
 - Root Rust workspace: `linguist-core`, `linguist-config`, `linguist-store`, `linguist-anki`, `linguist-application`, `linguist-dictionary` and `linguist-cli`; no Qt/Python runtime dependency.

@@ -125,7 +125,7 @@
       "path": "implementation/wp-08.md",
       "heading": "## WP-08 \u2014 grammar",
       "title": "WP-08 \u2014 grammar",
-      "words": 80,
+      "words": 127,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
@@ -961,7 +961,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-24 \u2014 `grammar revamp`",
       "title": "OP-24 \u2014 `grammar revamp`",
-      "words": 943,
+      "words": 1096,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
