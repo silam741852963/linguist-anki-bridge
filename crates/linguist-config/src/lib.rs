@@ -1,381 +1,694 @@
-//! Read-only import of the Python YAML config into a versioned native file.
-
+//! Registry-backed configuration. No shell expansion or service discovery.
+use linguist_core::{canonical, document::Language};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
-    fs,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
-pub const NATIVE_CONFIG_VERSION: u16 = 1;
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NativeConfig {
-    pub version: u16,
-    pub anki_url: String,
-    pub ollama_url: String,
-    pub ollama_model: Option<String>,
-    pub dictionary_preset: String,
-    #[serde(default)]
-    pub dictionary_url_template: String,
-    #[serde(default)]
-    pub dictionary_schema: Option<serde_json::Value>,
-    #[serde(default)]
-    pub kanji_source_lang: String,
-    pub dry_run: bool,
-    pub decks: BTreeMap<String, DeckConfig>,
+pub type Result<T> = std::result::Result<T, String>;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Entry {
+    pub key: String,
+    #[serde(rename = "type")]
+    pub value_type: String,
+    pub default: Value,
+    pub constraints: Value,
+    pub scope: String,
+    pub consumer: String,
+    pub description: String,
+    pub sensitive: bool,
 }
-impl Default for NativeConfig {
-    fn default() -> Self {
+#[derive(Clone, Debug)]
+pub struct Registry {
+    pub entries: BTreeMap<String, Entry>,
+}
+fn name_valid(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 64
+        && s.as_bytes()[0].is_ascii_alphabetic()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+impl Registry {
+    pub fn builtin() -> Self {
+        let entries: Vec<Entry> =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/registry.json")))
+                .expect("compiled registry");
         Self {
-            version: NATIVE_CONFIG_VERSION,
-            anki_url: "http://127.0.0.1:8765".into(),
-            ollama_url: "http://127.0.0.1:11434".into(),
-            ollama_model: None,
-            dictionary_preset: "jisho".into(),
-            dictionary_url_template: String::new(),
-            dictionary_schema: None,
-            kanji_source_lang: "english".into(),
-            dry_run: true,
-            decks: BTreeMap::new(),
+            entries: entries.into_iter().map(|e| (e.key.clone(), e)).collect(),
         }
     }
-}
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct DeckConfig {
-    pub deck_name: Option<String>,
-    pub model_name: Option<String>,
-    #[serde(default)]
-    pub ocr_languages: String,
-    pub fields: BTreeMap<String, String>,
-}
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ImportReport {
-    pub config: NativeConfig,
-    pub warnings: Vec<String>,
-}
-#[derive(Debug)]
-pub enum ConfigError {
-    Read(String),
-    Parse(String),
-    UnsupportedVersion(u16),
-    NativeExists(PathBuf),
-}
-impl std::fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Read(v) | Self::Parse(v) => f.write_str(v),
-            Self::UnsupportedVersion(version) => {
-                write!(f, "unsupported native config version {version}")
+    pub fn lookup(&self, key: &str) -> Result<&Entry> {
+        if let Some(e) = self.entries.get(key) {
+            return Ok(e);
+        }
+        for prefix in ["purposes", "profiles"] {
+            let parts: Vec<_> = key.split('.').collect();
+            if parts.len() == 3 && parts[0] == prefix && name_valid(parts[1]) {
+                let pattern = format!(
+                    "{prefix}.{}.{}",
+                    if prefix == "purposes" {
+                        "<purpose>"
+                    } else {
+                        "<name>"
+                    },
+                    parts[2]
+                );
+                if let Some(e) = self.entries.get(&pattern) {
+                    return Ok(e);
+                }
             }
-            Self::NativeExists(v) => write!(f, "native config already exists: {}", v.display()),
         }
+        Err(format!("UNKNOWN_SETTING: {key}"))
     }
-}
-pub fn load_native(path: &Path) -> Result<NativeConfig, ConfigError> {
-    let bytes = fs::read(path).map_err(|error| ConfigError::Read(error.to_string()))?;
-    let config: NativeConfig =
-        serde_json::from_slice(&bytes).map_err(|error| ConfigError::Parse(error.to_string()))?;
-    if config.version != NATIVE_CONFIG_VERSION {
-        return Err(ConfigError::UnsupportedVersion(config.version));
+    pub fn parse_value(&self, key: &str, input: &str) -> Result<Value> {
+        let entry = self.lookup(key)?;
+        let value = match entry.value_type.as_str() {
+            "string" | "string|null" | "enum" => Value::String(input.into()),
+            _ => canonical::parse(input.as_bytes())
+                .map_err(|_| format!("INVALID_TYPED_VALUE: {key}"))?,
+        };
+        self.validate_value(key, &value)?;
+        Ok(value)
     }
-    Ok(config)
-}
-impl std::error::Error for ConfigError {}
-pub fn import_legacy_yaml(contents: &str) -> Result<ImportReport, ConfigError> {
-    let document: serde_json::Value =
-        serde_yaml_ng::from_str(contents).map_err(|error| ConfigError::Parse(error.to_string()))?;
-    if !document.is_object() {
-        return Err(ConfigError::Parse(
-            "legacy config must be a YAML mapping".into(),
-        ));
-    }
-    let mut values = BTreeMap::new();
-    flatten_values(&document, "", &mut values);
-    let mut config = NativeConfig {
-        version: NATIVE_CONFIG_VERSION,
-        anki_url: value(&values, "anki.url"),
-        ollama_url: value(&values, "llm.ollama_url"),
-        ollama_model: optional(&values, "llm.model"),
-        dictionary_preset: value(&values, "dictionary.preset"),
-        dictionary_url_template: value(&values, "dictionary.url_template"),
-        dictionary_schema: document
-            .pointer("/dictionary/schema")
-            .filter(|schema| !schema.is_null() && **schema != serde_json::json!({}))
-            .cloned(),
-        kanji_source_lang: value(&values, "kanji.source_lang"),
-        dry_run: values
-            .get("dry_run")
-            .map(|value| matches!(value.as_str(), "true" | "True" | "TRUE"))
-            .unwrap_or(true),
-        ..Default::default()
-    };
-    let mut warnings = Vec::new();
-    for (path, value) in &values {
-        let parts = path.split('.').collect::<Vec<_>>();
-        if parts.len() >= 3 && parts[0] == "decks" {
-            let deck = config.decks.entry(parts[1].into()).or_default();
-            match parts[2] {
-                "deck_name" => deck.deck_name = nonempty(value),
-                "note_type" => deck.model_name = nonempty(value),
-                "ocr_langs" => deck.ocr_languages = value.clone(),
-                "fields" if parts.len() == 4 => {
-                    deck.fields.insert(parts[3].into(), value.clone());
+    pub fn validate_value(&self, key: &str, value: &Value) -> Result<()> {
+        let e = self.lookup(key)?;
+        let fail = || {
+            format!(
+                "INVALID_SETTING: {key} expects {} within {:?}",
+                e.value_type, e.constraints
+            )
+        };
+        if value.is_null() {
+            return if e.value_type == "string|null" {
+                Ok(())
+            } else {
+                Err(fail())
+            };
+        }
+        let typed = match e.value_type.as_str() {
+            "boolean" => value.is_boolean(),
+            "integer" => value.as_i64().is_some(),
+            "number" => value.as_f64().is_some_and(f64::is_finite),
+            "string" | "string|null" | "enum" => value.is_string(),
+            "string[]" => value
+                .as_array()
+                .is_some_and(|a| a.len() <= 4096 && a.iter().all(Value::is_string)),
+            "field_map" | "task_map" | "override_map" => value.is_object(),
+            _ => false,
+        };
+        if !typed {
+            return Err(fail());
+        }
+        if let Some(number) = value.as_f64()
+            && (e
+                .constraints
+                .get("min")
+                .and_then(Value::as_f64)
+                .is_some_and(|v| number < v)
+                || e.constraints
+                    .get("max")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|v| number > v))
+        {
+            return Err(fail());
+        }
+        if let Some(choices) = e.constraints.get("values").and_then(Value::as_array)
+            && e.value_type == "enum"
+            && !choices.contains(value)
+        {
+            return Err(fail());
+        }
+        if let Some(text) = value.as_str() {
+            check_format(
+                e.constraints
+                    .get("format")
+                    .and_then(Value::as_str)
+                    .unwrap_or("text"),
+                text,
+            )
+            .map_err(|_| fail())?;
+        }
+        if let Some(items) = value.as_array() {
+            if e.constraints["unique"] == true
+                && items
+                    .iter()
+                    .map(Value::to_string)
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    != items.len()
+            {
+                return Err(fail());
+            }
+            for item in items {
+                check_format(
+                    e.constraints
+                        .get("items_format")
+                        .and_then(Value::as_str)
+                        .unwrap_or("text"),
+                    item.as_str().unwrap(),
+                )
+                .map_err(|_| fail())?;
+            }
+        }
+        if let Some(map) = value.as_object() {
+            if map.len() > 4096 {
+                return Err(fail());
+            }
+            match e.value_type.as_str() {
+                "override_map" => {
+                    for (k, v) in map {
+                        let entry = self.lookup(k)?;
+                        if entry.scope != "purpose" {
+                            return Err(format!("INVALID_OVERRIDE_SCOPE: {k}"));
+                        }
+                        self.validate_value(k, v)?;
+                    }
+                }
+                "field_map" => {
+                    for (k, v) in map {
+                        if !e.constraints["keys"]
+                            .as_array()
+                            .unwrap()
+                            .contains(&json!(k))
+                            || !v
+                                .as_str()
+                                .is_some_and(|s| !s.trim().is_empty() && !s.contains('\0'))
+                        {
+                            return Err(fail());
+                        }
+                    }
+                }
+                "task_map" => {
+                    let mut tasks = BTreeSet::new();
+                    for (k, v) in map {
+                        if k.is_empty()
+                            || !k.bytes().all(|b| b.is_ascii_digit())
+                            || (k.len() > 1 && k.starts_with('0'))
+                            || k.parse::<u16>().is_err()
+                            || !e.constraints["values"].as_array().unwrap().contains(v)
+                            || !tasks.insert(v.to_string())
+                        {
+                            return Err(fail());
+                        }
+                    }
                 }
                 _ => {}
             }
         }
+        Ok(())
     }
-    if config.anki_url.is_empty() {
-        warnings.push("Legacy anki.url is missing".into())
-    }
-    if config.decks.is_empty() {
-        warnings.push("Legacy config has no deck mappings".into())
-    }
-    Ok(ImportReport { config, warnings })
-}
-/// Read a legacy YAML file without acquiring write access to it.
-pub fn import_legacy_file(path: &Path) -> Result<ImportReport, ConfigError> {
-    let contents =
-        fs::read_to_string(path).map_err(|error| ConfigError::Read(error.to_string()))?;
-    import_legacy_yaml(&contents)
-}
-/// Write only a native file. The legacy YAML input is never opened for write.
-pub fn save_native_new(path: &Path, config: &NativeConfig) -> Result<(), ConfigError> {
-    if config.version != NATIVE_CONFIG_VERSION {
-        return Err(ConfigError::UnsupportedVersion(config.version));
-    }
-    let bytes = serde_json::to_vec_pretty(config).map_err(|e| ConfigError::Parse(e.to_string()))?;
-    let parent = path
-        .parent()
-        .ok_or_else(|| ConfigError::Read("native config has no parent".into()))?;
-    fs::create_dir_all(parent).map_err(|e| ConfigError::Read(e.to_string()))?;
-    let temporary = temporary_path(path);
-    let result = (|| {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
-            .map_err(|error| ConfigError::Read(error.to_string()))?;
-        use std::io::Write;
-        file.write_all(&bytes)
-            .and_then(|_| file.sync_all())
-            .map_err(|error| ConfigError::Read(error.to_string()))?;
-        match fs::hard_link(&temporary, path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                return Err(ConfigError::NativeExists(path.into()));
+    pub fn defaults(&self) -> BTreeMap<String, Value> {
+        let mut values: BTreeMap<_, _> = self
+            .entries
+            .values()
+            .filter(|e| !e.key.contains('<'))
+            .map(|e| (e.key.clone(), e.default.clone()))
+            .collect();
+        for purpose in presets()["presets"].as_object().unwrap().keys() {
+            for e in self
+                .entries
+                .values()
+                .filter(|e| e.key.starts_with("purposes.<purpose>."))
+            {
+                values.insert(e.key.replace("<purpose>", purpose), e.default.clone());
             }
-            Err(error) => return Err(ConfigError::Read(error.to_string())),
         }
-        fs::File::open(parent)
-            .and_then(|directory| directory.sync_all())
-            .map_err(|error| ConfigError::Read(error.to_string()))
-    })();
-    let _ = fs::remove_file(temporary);
-    result
-}
-/// Atomically replace only the native config. Legacy input is never opened here.
-pub fn save_native_replace(path: &Path, config: &NativeConfig) -> Result<(), ConfigError> {
-    if config.version != NATIVE_CONFIG_VERSION {
-        return Err(ConfigError::UnsupportedVersion(config.version));
+        values
     }
-    let bytes = serde_json::to_vec_pretty(config).map_err(|e| ConfigError::Parse(e.to_string()))?;
-    let parent = path
-        .parent()
-        .ok_or_else(|| ConfigError::Read("native config has no parent".into()))?;
-    fs::create_dir_all(parent).map_err(|e| ConfigError::Read(e.to_string()))?;
-    let temporary = temporary_path(path);
-    let mut file = fs::File::create(&temporary).map_err(|e| ConfigError::Read(e.to_string()))?;
-    use std::io::Write;
-    file.write_all(&bytes)
-        .and_then(|_| file.sync_all())
-        .map_err(|e| ConfigError::Read(e.to_string()))?;
-    fs::rename(&temporary, path).map_err(|e| ConfigError::Read(e.to_string()))?;
-    fs::File::open(parent)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|e| ConfigError::Read(e.to_string()))
 }
-pub fn native_config_path(config_root: &Path) -> PathBuf {
-    config_root
-        .join("linguist-anki-bridge")
-        .join("native-config-v1.json")
+fn check_format(format: &str, s: &str) -> Result<()> {
+    if s.contains('\0') || s.len() > 1024 * 1024 {
+        return Err("invalid string".into());
+    }
+    let valid = match format {
+        "text" => true,
+        "nonempty" => !s.trim().is_empty(),
+        "language" => Language::try_from(s.to_owned()).is_ok(),
+        "env_name" => {
+            !s.is_empty()
+                && (s.as_bytes()[0].is_ascii_alphabetic() || s.starts_with('_'))
+                && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        }
+        "path" | "resource_ref" => !s.trim().is_empty() && !s.contains(['\n', '\r']),
+        "executable" => {
+            !s.is_empty()
+                && !s.chars().any(char::is_whitespace)
+                && !s.contains(['$', '`', ';', '|', '&'])
+        }
+        "url" | "url_template" => {
+            let u = url::Url::parse(s).map_err(|_| "invalid URL")?;
+            matches!(u.scheme(), "http" | "https")
+                && u.host_str().is_some()
+                && u.username().is_empty()
+                && u.password().is_none()
+                && u.fragment().is_none()
+        }
+        "host" => {
+            let u = url::Url::parse(&format!("https://{s}/")).map_err(|_| "invalid host")?;
+            u.host_str()
+                .is_some_and(|host| host.eq_ignore_ascii_case(s.trim_matches(['[', ']'])))
+                && u.port().is_none()
+                && u.username().is_empty()
+                && u.password().is_none()
+                && u.path() == "/"
+        }
+        "duration" => {
+            s == "-1"
+                || s == "0"
+                || ["ms", "s", "m", "h"].iter().any(|suffix| {
+                    s.strip_suffix(suffix)
+                        .is_some_and(|n| n.parse::<f64>().is_ok_and(|v| v.is_finite() && v >= 0.0))
+                })
+        }
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err("invalid format".into())
+    }
 }
-fn temporary_path(path: &Path) -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    path.with_extension(format!("json.tmp-{}-{nonce}", std::process::id()))
+fn presets() -> Value {
+    serde_json::from_str(include_str!(
+        "../../../docs/cli/configuration/purpose-defaults.json"
+    ))
+    .expect("compiled presets")
 }
-fn flatten_values(value: &serde_json::Value, path: &str, result: &mut BTreeMap<String, String>) {
-    match value {
-        serde_json::Value::Object(mapping) => {
-            for (key, value) in mapping {
-                let child = if path.is_empty() {
-                    key.clone()
+#[derive(Clone, Debug, Default)]
+pub struct ConfigFile {
+    pub values: BTreeMap<String, Value>,
+}
+impl ConfigFile {
+    pub fn parse(text: &str, registry: &Registry) -> Result<Self> {
+        let table: toml::Table = toml::from_str(text)
+            .map_err(|_| "INVALID_TOML: malformed or duplicate configuration keys".to_owned())?;
+        let mut values = BTreeMap::new();
+        flatten(
+            "",
+            &serde_json::to_value(table).map_err(|e| e.to_string())?,
+            registry,
+            &mut values,
+        )?;
+        if values.get("config.version") != Some(&json!(2)) {
+            return Err("UNSUPPORTED_CONFIG_VERSION: config.version = 2 is required".into());
+        }
+        for (k, v) in &values {
+            registry.validate_value(k, v)?;
+        }
+        Ok(Self { values })
+    }
+    pub fn read(path: &Path, registry: &Registry) -> Result<Self> {
+        use std::io::Read;
+        let file = std::fs::File::open(path)
+            .map_err(|_| "CONFIG_IO: unable to read selected configuration".to_owned())?;
+        let mut data = Vec::new();
+        file.take(4 * 1024 * 1024 + 1)
+            .read_to_end(&mut data)
+            .map_err(|_| "CONFIG_IO: unable to read selected configuration".to_owned())?;
+        if data.len() > 4 * 1024 * 1024 {
+            return Err("CONFIG_TOO_LARGE".into());
+        }
+        Self::parse(
+            std::str::from_utf8(&data).map_err(|_| "CONFIG_ENCODING")?,
+            registry,
+        )
+    }
+}
+fn flatten(
+    prefix: &str,
+    value: &Value,
+    registry: &Registry,
+    out: &mut BTreeMap<String, Value>,
+) -> Result<()> {
+    if let Ok(entry) = registry.lookup(prefix) {
+        let result = if entry.value_type == "override_map" {
+            let mut nested = BTreeMap::new();
+            flatten_overrides("", value, registry, &mut nested)?;
+            serde_json::to_value(nested).unwrap()
+        } else {
+            value.clone()
+        };
+        if out.insert(prefix.into(), result).is_some() {
+            return Err(format!("DUPLICATE_SETTING: {prefix}"));
+        }
+        return Ok(());
+    }
+    if let Some(table) = value.as_object() {
+        if table.is_empty() && !prefix.is_empty() {
+            return Err(format!("UNKNOWN_SETTING: {prefix}"));
+        }
+        for (k, v) in table {
+            flatten(
+                &if prefix.is_empty() {
+                    k.clone()
                 } else {
-                    format!("{path}.{key}")
-                };
-                flatten_values(value, &child, result);
+                    format!("{prefix}.{k}")
+                },
+                v,
+                registry,
+                out,
+            )?;
+        }
+        Ok(())
+    } else {
+        Err(format!("UNKNOWN_SETTING: {prefix}"))
+    }
+}
+fn flatten_overrides(
+    prefix: &str,
+    value: &Value,
+    registry: &Registry,
+    out: &mut BTreeMap<String, Value>,
+) -> Result<()> {
+    if let Ok(entry) = registry.lookup(prefix) {
+        if entry.scope != "purpose" {
+            return Err(format!("INVALID_OVERRIDE_SCOPE: {prefix}"));
+        }
+        if out.insert(prefix.into(), value.clone()).is_some() {
+            return Err(format!("DUPLICATE_SETTING: {prefix}"));
+        }
+        return Ok(());
+    }
+    if let Some(table) = value.as_object() {
+        if table.is_empty()
+            && !prefix.is_empty()
+            && !registry
+                .entries
+                .values()
+                .any(|e| e.scope == "purpose" && e.key.starts_with(&format!("{prefix}.")))
+        {
+            return Err(format!("UNKNOWN_SETTING: {prefix}"));
+        }
+        for (k, v) in table {
+            flatten_overrides(
+                &if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                },
+                v,
+                registry,
+                out,
+            )?;
+        }
+        Ok(())
+    } else {
+        Err(format!("UNKNOWN_SETTING: {prefix}"))
+    }
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct Effective {
+    pub version: u16,
+    pub values: BTreeMap<String, Value>,
+    pub provenance: BTreeMap<String, String>,
+    pub fingerprint: String,
+}
+#[derive(Default)]
+pub struct ResolveOptions {
+    pub profile: Option<String>,
+    pub purpose: Option<String>,
+    pub environment: BTreeMap<String, String>,
+    pub flags: BTreeMap<String, Value>,
+}
+pub fn resolve(
+    registry: &Registry,
+    file: &ConfigFile,
+    options: &ResolveOptions,
+) -> Result<Effective> {
+    let mut values = registry.defaults();
+    let mut provenance: BTreeMap<_, _> = values
+        .keys()
+        .map(|k| (k.clone(), "builtin".into()))
+        .collect();
+    let presets = presets();
+    if let Some(purpose) = &options.purpose {
+        let preset = presets["presets"]
+            .get(purpose)
+            .ok_or_else(|| format!("UNSUPPORTED_PURPOSE: {purpose}"))?;
+        values.insert(
+            format!("purposes.{purpose}.target_language"),
+            preset["target_language"].clone(),
+        );
+        provenance.insert(
+            format!("purposes.{purpose}.target_language"),
+            "purpose-preset".into(),
+        );
+        for (k, v) in preset["overrides"].as_object().unwrap() {
+            values.insert(k.clone(), v.clone());
+            provenance.insert(k.clone(), "purpose-preset".into());
+        }
+    }
+    for (k, v) in &file.values {
+        values.insert(k.clone(), v.clone());
+        provenance.insert(k.clone(), "file".into());
+    }
+    let profile = options
+        .profile
+        .as_ref()
+        .or_else(|| options.environment.get("LAB_PROFILE"))
+        .cloned()
+        .or_else(|| {
+            values
+                .get("config.default_profile")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    for (key, origin) in profile
+        .as_ref()
+        .map(|p| (format!("profiles.{p}.overrides"), "profile"))
+        .into_iter()
+        .chain(
+            options
+                .purpose
+                .as_ref()
+                .map(|p| (format!("purposes.{p}.overrides"), "purpose")),
+        )
+    {
+        if !name_valid(key.split('.').nth(1).unwrap()) {
+            return Err("INVALID_RECORD_NAME".into());
+        }
+        let record = file.values.get(&key);
+        if origin == "profile" && record.is_none() {
+            return Err("UNKNOWN_PROFILE".into());
+        }
+        if let Some(record) = record {
+            for (k, v) in record.as_object().unwrap() {
+                values.insert(k.clone(), v.clone());
+                provenance.insert(k.clone(), origin.into());
             }
         }
-        serde_json::Value::String(value) => {
-            result.insert(path.into(), value.clone());
+    }
+    for (name, text) in &options.environment {
+        if !name.starts_with("LAB_") || matches!(name.as_str(), "LAB_CONFIG" | "LAB_PROFILE") {
+            continue;
         }
-        serde_json::Value::Null => {}
-        value if value.is_boolean() || value.is_number() => {
-            result.insert(path.into(), value.to_string());
+        let key = name[4..].to_ascii_lowercase().replace("__", ".");
+        let e = registry.lookup(&key)?;
+        if e.scope == "mapping" || key.contains('<') {
+            return Err(format!("ENV_MAPPING_UNSUPPORTED: {name}"));
         }
-        _ => {}
+        values.insert(key.clone(), registry.parse_value(&key, text)?);
+        provenance.insert(key, format!("environment:{name}"));
     }
+    for (k, v) in &options.flags {
+        registry.validate_value(k, v)?;
+        values.insert(k.clone(), v.clone());
+        provenance.insert(k.clone(), "flag".into());
+    }
+    validate_effective(registry, &values)?;
+    let fingerprint = canonical::digest("resolved-settings", &values).map_err(|e| e.to_string())?;
+    Ok(Effective {
+        version: 2,
+        values,
+        provenance,
+        fingerprint,
+    })
 }
-fn value(values: &BTreeMap<String, String>, key: &str) -> String {
-    values.get(key).cloned().unwrap_or_default()
+fn validate_effective(registry: &Registry, values: &BTreeMap<String, Value>) -> Result<()> {
+    for (k, v) in values {
+        registry.validate_value(k, v)?;
+    }
+    let n = |key: &str| values.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+    for (a, b, strict) in [
+        ("jobs.heartbeat_seconds", "jobs.lease_seconds", true),
+        (
+            "retry.initial_backoff_seconds",
+            "retry.max_backoff_seconds",
+            false,
+        ),
+        (
+            "learning.examples_min",
+            "learning.generated_examples_max",
+            false,
+        ),
+    ] {
+        let right = if strict { n(b) / 3.0 } else { n(b) };
+        if (strict && n(a) >= right) || (!strict && n(a) > right) {
+            return Err(format!(
+                "CROSS_FIELD_CONSTRAINT: {a} must be {} {b}",
+                if strict {
+                    "less than one third of"
+                } else {
+                    "at most"
+                }
+            ));
+        }
+    }
+    if n("llm.max_output_tokens") >= n("llm.context_tokens") {
+        return Err(
+            "CROSS_FIELD_CONSTRAINT: llm.max_output_tokens must leave context capacity for input"
+                .into(),
+        );
+    }
+    let hosts: Vec<_> = values["network.allowed_remote_service_hosts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    for key in [
+        "anki.endpoint",
+        "llm.endpoint",
+        "audio.endpoint",
+        "images.custom_endpoint",
+    ] {
+        if let Some(endpoint) = values.get(key).and_then(Value::as_str) {
+            let u = url::Url::parse(endpoint).map_err(|_| format!("INVALID_ENDPOINT: {key}"))?;
+            let host = u.host_str().unwrap();
+            let loopback = host == "localhost"
+                || host
+                    .trim_matches(['[', ']'])
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback());
+            if !loopback
+                && (values["network.offline"] == true
+                    || !hosts.iter().any(|h| h.eq_ignore_ascii_case(host)))
+            {
+                return Err(format!("REMOTE_ENDPOINT_NOT_ALLOWED: {key}"));
+            }
+        }
+    }
+    Ok(())
 }
-fn nonempty(value: &str) -> Option<String> {
-    (!value.is_empty() && !matches!(value, "null" | "None" | "~")).then(|| value.into())
+pub fn config_path(
+    explicit: Option<&Path>,
+    environment: &BTreeMap<String, String>,
+) -> Result<PathBuf> {
+    if let Some(p) = explicit {
+        return Ok(p.to_owned());
+    }
+    if let Some(p) = environment.get("LAB_CONFIG") {
+        return Ok(PathBuf::from(p));
+    }
+    let root = environment
+        .get("XDG_CONFIG_HOME")
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            environment
+                .get("HOME")
+                .map(|s| PathBuf::from(s).join(".config"))
+        })
+        .ok_or("CONFIG_PATH_UNAVAILABLE")?;
+    if !root.is_absolute() {
+        return Err("XDG_CONFIG_HOME_MUST_BE_ABSOLUTE".into());
+    }
+    Ok(root.join("linguist-anki-bridge/config.toml"))
 }
-fn optional(values: &BTreeMap<String, String>, key: &str) -> Option<String> {
-    values.get(key).and_then(|value| nonempty(value))
+/// Publish a minimal private configuration without replacing any existing path.
+pub fn initialize(path: &Path) -> Result<()> {
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut directory = std::fs::DirBuilder::new();
+    directory.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        directory.mode(0o700);
+    }
+    directory.create(parent).map_err(|_| "CONFIG_PARENT_IO")?;
+    let temp = parent.join(format!(".lab-config-{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut f = options.open(&temp).map_err(|_| "CONFIG_TEMP_IO")?;
+        f.write_all(b"[config]\nversion = 2\n")
+            .map_err(|_| "CONFIG_WRITE_IO")?;
+        f.sync_all().map_err(|_| "CONFIG_SYNC_IO")?;
+        std::fs::hard_link(&temp, path).map_err(|_| "CONFIG_EXISTS_OR_PUBLISH_FAILED")?;
+        std::fs::File::open(parent)
+            .and_then(|f| f.sync_all())
+            .map_err(|_| "CONFIG_DIRECTORY_SYNC_FAILED")?;
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(temp);
+    result.map_err(str::to_owned)
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-    #[test]
-    fn imports_known_legacy_settings_without_mutating_yaml() {
-        let source = "anki:\n  url: http://localhost:8765\nllm:\n  ollama_url: http://localhost:11434\n  model: llama\ndictionary:\n  preset: jisho\ndry_run: true\ndecks:\n  japanese_vocab:\n    deck_name: Japanese\n    note_type: Picture Words\n    ocr_langs: jpn+eng+vie\n    fields:\n      expression: Word\n";
-        let report = import_legacy_yaml(source).unwrap();
-        assert_eq!(report.config.version, 1);
-        assert_eq!(
-            report.config.decks["japanese_vocab"].fields["expression"],
-            "Word"
+/// Expand only documented HOME/XDG tokens; this never invokes a shell.
+/// Call when binding a filesystem consumer, then freeze the resulting absolute path.
+pub fn expand_path(input: &str, environment: &BTreeMap<String, String>) -> Result<PathBuf> {
+    let home = environment.get("HOME").filter(|s| !s.is_empty());
+    let mut roots = BTreeMap::new();
+    if let Some(home) = home {
+        roots.insert("HOME", home.clone());
+    }
+    for (name, fallback) in [
+        ("XDG_CONFIG_HOME", ".config"),
+        ("XDG_STATE_HOME", ".local/state"),
+        ("XDG_CACHE_HOME", ".cache"),
+        ("XDG_DATA_HOME", ".local/share"),
+    ] {
+        if let Some(root) = environment.get(name).filter(|s| !s.is_empty()) {
+            if !Path::new(root).is_absolute() {
+                return Err(format!("INVALID_XDG_ROOT: {name}"));
+            }
+            roots.insert(name, root.clone());
+        } else if let Some(home) = home {
+            roots.insert(
+                name,
+                Path::new(home)
+                    .join(fallback)
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+    }
+    let mut output = String::new();
+    let mut rest = input;
+    if rest == "~" || rest.starts_with("~/") {
+        output.push_str(home.ok_or("HOME_UNAVAILABLE")?);
+        rest = &rest[1..];
+    }
+    while let Some(index) = rest.find('$') {
+        output.push_str(&rest[..index]);
+        rest = &rest[index..];
+        if !rest.starts_with("${") {
+            return Err("UNSUPPORTED_PATH_EXPANSION".into());
+        }
+        let end = rest.find('}').ok_or("UNSUPPORTED_PATH_EXPANSION")?;
+        let token = &rest[2..end];
+        output.push_str(
+            roots
+                .get(token)
+                .ok_or("UNAVAILABLE_OR_UNKNOWN_PATH_TOKEN")?,
         );
-        assert_eq!(
-            report.config.decks["japanese_vocab"].ocr_languages,
-            "jpn+eng+vie"
-        );
-        assert_eq!(source.lines().count(), 15);
+        rest = &rest[end + 1..];
     }
-    #[test]
-    fn file_import_keeps_legacy_bytes_and_never_replaces_native() {
-        let root = std::env::temp_dir().join(format!(
-            "config-import-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&root).unwrap();
-        let legacy = root.join("config.yaml");
-        let native = root.join("native-config-v1.json");
-        let source = b"anki:\n  url: http://localhost:8765\ndry_run: true\n";
-        fs::write(&legacy, source).unwrap();
-        let report = import_legacy_file(&legacy).unwrap();
-        save_native_new(&native, &report.config).unwrap();
-        let first_native = fs::read(&native).unwrap();
-        let mut changed = report.config;
-        changed.anki_url = "http://other.test".into();
-        assert!(matches!(
-            save_native_new(&native, &changed),
-            Err(ConfigError::NativeExists(path)) if path == native
-        ));
-        assert_eq!(fs::read(&legacy).unwrap(), source);
-        assert_eq!(fs::read(&native).unwrap(), first_native);
-        assert_eq!(
-            fs::read_dir(&root).unwrap().count(),
-            2,
-            "temporary files must be cleaned"
-        );
-        fs::remove_dir_all(root).unwrap();
+    output.push_str(rest);
+    if output.contains('\0') || output.starts_with('~') {
+        return Err("UNSUPPORTED_PATH_EXPANSION".into());
     }
-    #[test]
-    fn imports_custom_dictionary_schema_and_preserves_old_native_files() {
-        let source = "dictionary:\n  preset: custom\n  url_template: 'https://example.test/search/{word}'\n  schema:\n    baseSelector: .entry\n    fields:\n      - name: definition\n        selector: .sense\n        multiple: true\n      - name: audio_url\n        selector: audio\n        type: attribute\n        attribute: src\n";
-        let report = import_legacy_yaml(source).unwrap();
-        assert_eq!(report.config.dictionary_preset, "custom");
-        assert_eq!(
-            report.config.dictionary_url_template,
-            "https://example.test/search/{word}"
-        );
-        let schema = report.config.dictionary_schema.unwrap();
-        assert_eq!(schema["baseSelector"], ".entry");
-        assert_eq!(schema["fields"][0]["multiple"], true);
-        assert_eq!(schema["fields"][1]["attribute"], "src");
-        let old = r#"{"version":1,"anki_url":"","ollama_url":"","ollama_model":null,"dictionary_preset":"jisho","dry_run":false,"decks":{}}"#;
-        let loaded: NativeConfig = serde_json::from_str(old).unwrap();
-        assert!(loaded.dictionary_schema.is_none());
-        assert!(loaded.dictionary_url_template.is_empty());
-        assert!(loaded.kanji_source_lang.is_empty());
-    }
-    #[test]
-    fn imports_kanji_language_choice() {
-        let report = import_legacy_yaml("kanji:\n  source_lang: vietnamese\n").unwrap();
-        assert_eq!(report.config.kanji_source_lang, "vietnamese");
-    }
-    #[test]
-    fn rejects_malformed_and_never_overwrites_native() {
-        assert!(import_legacy_yaml("- list").is_err());
-        let path = std::env::temp_dir().join(format!(
-            "config-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let config = NativeConfig {
-            version: 1,
-            ..Default::default()
-        };
-        save_native_new(&path, &config).unwrap();
-        assert_eq!(load_native(&path).unwrap(), config);
-        assert!(matches!(
-            save_native_new(&path, &config),
-            Err(ConfigError::NativeExists(_))
-        ));
-        let _ = fs::remove_file(path);
-    }
+    Ok(PathBuf::from(output))
+}
 
-    #[test]
-    fn native_loader_rejects_unknown_schema_versions() {
-        let path = std::env::temp_dir().join(format!(
-            "config-version-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::write(&path, r#"{"version":99,"anki_url":"","ollama_url":"","ollama_model":null,"dictionary_preset":"","dry_run":true,"decks":{}}"#).unwrap();
-        assert!(matches!(
-            load_native(&path),
-            Err(ConfigError::UnsupportedVersion(99))
-        ));
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn native_replace_is_versioned_and_replaces_existing_file() {
-        let path = std::env::temp_dir().join(format!(
-            "config-replace-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let mut config = NativeConfig {
-            version: NATIVE_CONFIG_VERSION,
-            ..Default::default()
-        };
-        save_native_replace(&path, &config).unwrap();
-        config.anki_url = "http://localhost:8765".into();
-        save_native_replace(&path, &config).unwrap();
-        assert_eq!(load_native(&path).unwrap(), config);
-        config.version = 99;
-        assert!(matches!(
-            save_native_replace(&path, &config),
-            Err(ConfigError::UnsupportedVersion(99))
-        ));
-        let _ = fs::remove_file(path);
-    }
-}
+pub mod edit;

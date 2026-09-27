@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "editing.editor_argv",
+      "type": "string[]",
+      "default": [],
+      "constraints": {
+        "items_format": "text",
+        "unique": false
+      },
+      "scope": "global",
+      "consumer": "OP-28",
+      "description": "Explicit executable/argument vector; empty uses VISUAL/EDITOR only in requested --editor mode.",
+      "sensitive": false
+    }
+  ]
+}

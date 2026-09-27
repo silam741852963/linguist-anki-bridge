@@ -1,0 +1,12 @@
+# Write and recovery algorithm
+
+## ALG-APPLY — one item
+
+1. Require explicit current invocation `--apply`, validated plan revision, matching approval or explicit approval of a ready revision by this invocation. `--yes` only accepts already-visible warnings; it cannot resolve review choices. Preview/simulation never acquires write authority.
+2. Acquire exclusive collection writer lease and native owner token; require verified lab-native-v1/auth/identity and apply eligibility. Verify source/settings/assets, duplicate decisions and model capability. Freeze operation UUID and desired final manifest, including app operation tag for creations. Store database transaction plus fsync durability before network mutation.
+3. Complete ALG-BACKUP once for the scope-closed recovery group, escalating to collection/media checkpoint for model changes. Persist fresh immutable per-item pre-write snapshot and per-step intent. Snapshot contains source archive and fresh scheduling evidence, not intended after-state.
+4. Install/reuse verified model if needed. Upload staged media by content-addressed safe name; check existing filename contents first. Collision with different bytes chooses a new filename and revises plan before apply, never overwrites. Verify each uploaded hash.
+5. For existing notes, execute ALG-MIGRATE if needed; set effective fields, merge/remove only explicitly planned tags, and move each card according to reviewed deck mapping. For creation, journal stable add intent and submit native create_note with UUID/payload digest; poll its status/receipt and reconcile before retry. Plain addNote is not a managed-write fallback.
+6. Read all final fields/model/tags/card tasks/decks/media and retained scheduling/history through consistent native inspection; compare current bindings and server receipt. Compare actual state to desired post-state. Save *observed* post-state and receipt atomically; only then mark committed.
+7. On failure before mutation, mark failed safely. Once any mutation could have occurred, classify known partial vs unknown; stop dependent writes and run ALG-RECONCILE. Do not overwrite snapshot, regenerate, delete source assets or auto-retry creation.
+8. Release lease after durable state. Print receipt/snapshot ID and next recovery command when unresolved. Batch processing may continue independent items according to policy, but an identity/shared-model fault stops the group.

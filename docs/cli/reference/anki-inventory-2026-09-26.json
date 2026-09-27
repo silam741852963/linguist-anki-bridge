@@ -1,0 +1,289 @@
+{
+  "inspected_at": "2026-09-26T02:51:18.870574+00:00",
+  "endpoint": "http://127.0.0.1:8765",
+  "protocol": 6,
+  "read_only": true,
+  "models": [
+    {
+      "name": "1. Minimal Pairs",
+      "note_count": 0,
+      "fields": [
+        "Word 1",
+        "Recording 1",
+        "Word 2",
+        "Recording 2",
+        "Word 3",
+        "Recording 3",
+        "Compare Word 2 to Word 3? (y = yes, leave blank = no)",
+        "Audio"
+      ],
+      "templates": [
+        "Card 1",
+        "Card 2",
+        "Card 3",
+        "Card 4",
+        "Card 5",
+        "Card 6"
+      ],
+      "css_bytes": 111
+    },
+    {
+      "name": "1. Spellings and Sounds",
+      "note_count": 0,
+      "fields": [
+        "Spelling (a letter or combination of letters)",
+        "Example word for that spelling/sound combination",
+        "Picture of the example word",
+        "Recording of the Word (/IPA)"
+      ],
+      "templates": [
+        "What's the sound?",
+        "What's the spelling?"
+      ],
+      "css_bytes": 187
+    },
+    {
+      "name": "2. Mnemonics",
+      "note_count": 0,
+      "fields": [
+        "Mnemonic Image (Burning, Exploding. Use a picture)",
+        "Meaning of this mnemonic (Masculine, feminine)",
+        "Example word for this mnemonic (With pictures)",
+        "Optional: Any extra info (Back side of both cards)",
+        "(Just for copy/paste)"
+      ],
+      "templates": [
+        "What's the mnemonic mean?",
+        "What's the mnemonic for __?"
+      ],
+      "css_bytes": 187
+    },
+    {
+      "name": "2. Picture Words",
+      "note_count": 18421,
+      "fields": [
+        "Word",
+        "Picture",
+        "Gender, Personal Connection, Extra Info (Back side)",
+        "Pronunciation (Recording and/or IPA)",
+        "Test Spelling? (y = yes, blank = no)"
+      ],
+      "templates": [
+        "Comprehension Card",
+        "Production Card",
+        "Spelling?"
+      ],
+      "css_bytes": 187
+    },
+    {
+      "name": "3. All-Purpose Card",
+      "note_count": 0,
+      "fields": [
+        "Front (Example with word blanked out or missing)",
+        "Front (Picture)",
+        "Front (Definitions, base word, etc.)",
+        "Back (a single word/phrase, no context)",
+        "- The full sentence (no words blanked out)",
+        "- Extra Info (Pronunciation, personal connections, conjugations, etc)",
+        "• Make 2 cards? (\"y\" = yes, blank = no)",
+        "• Test Spelling (Insert sound file/pronunciation here to test, leave blank otherwise)",
+        "(Copy and paste area)"
+      ],
+      "templates": [
+        "Card 1: What word fits into the blank?",
+        "Optional Card 2: Give an example for this word",
+        "Optional Card #3: Test spelling (For Chinese, Japanese)"
+      ],
+      "css_bytes": 111
+    },
+    {
+      "name": "Basic (type in the answer)",
+      "note_count": 0,
+      "fields": [
+        "Mặt trước",
+        "Mặt sau"
+      ],
+      "templates": [
+        "Thẻ 1"
+      ],
+      "css_bytes": 111
+    },
+    {
+      "name": "Cơ bản",
+      "note_count": 554,
+      "fields": [
+        "Mặt trước",
+        "Mặt sau"
+      ],
+      "templates": [
+        "Thẻ 1"
+      ],
+      "css_bytes": 111
+    },
+    {
+      "name": "Cơ bản (thẻ ngược tùy chọn)",
+      "note_count": 0,
+      "fields": [
+        "Mặt trước",
+        "Mặt sau",
+        "Thêm Thẻ ngược"
+      ],
+      "templates": [
+        "Thẻ 1",
+        "Thẻ 2"
+      ],
+      "css_bytes": 111
+    },
+    {
+      "name": "Cơ bản (với thẻ ngược)",
+      "note_count": 0,
+      "fields": [
+        "Mặt trước",
+        "Mặt sau"
+      ],
+      "templates": [
+        "Thẻ 1",
+        "Thẻ 2"
+      ],
+      "css_bytes": 111
+    },
+    {
+      "name": "Image Occlusion",
+      "note_count": 0,
+      "fields": [
+        "Occlusion",
+        "Image",
+        "Header",
+        "Back Extra",
+        "Comments"
+      ],
+      "templates": [
+        "Image Occlusion"
+      ],
+      "css_bytes": 309
+    },
+    {
+      "name": "Linguist Japanese Vocabulary",
+      "note_count": 0,
+      "fields": [
+        "Expression",
+        "Picture",
+        "Meaning",
+        "Kanji",
+        "Audio"
+      ],
+      "templates": [
+        "Japanese Recognition"
+      ],
+      "css_bytes": 3818
+    },
+    {
+      "name": "Điền chỗ trống",
+      "note_count": 0,
+      "fields": [
+        "Văn bản"
+      ],
+      "templates": [
+        "Điền chỗ trống"
+      ],
+      "css_bytes": 197
+    }
+  ],
+  "decks": [
+    {
+      "name": "Custom Study Session",
+      "note_count": 0,
+      "card_count": 0,
+      "model_counts": {},
+      "notes_with_images": 0,
+      "notes_with_audio": 0,
+      "expression_linebreak_candidates": 0,
+      "sample_card_types": {},
+      "sample_card_ordinals": {}
+    },
+    {
+      "name": "Moonlit Manuscripts",
+      "note_count": 6161,
+      "card_count": 18480,
+      "model_counts": {
+        "2. Picture Words": 6161
+      },
+      "notes_with_images": 6161,
+      "notes_with_audio": 5986,
+      "expression_linebreak_candidates": 85,
+      "sample_card_types": {
+        "2": 20
+      },
+      "sample_card_ordinals": {
+        "0": 7,
+        "1": 7,
+        "2": 6
+      }
+    },
+    {
+      "name": "Mặc định",
+      "note_count": 0,
+      "card_count": 0,
+      "model_counts": {},
+      "notes_with_images": 0,
+      "notes_with_audio": 0,
+      "expression_linebreak_candidates": 0,
+      "sample_card_types": {},
+      "sample_card_ordinals": {}
+    },
+    {
+      "name": "夕暮れの詞",
+      "note_count": 544,
+      "card_count": 544,
+      "model_counts": {
+        "Cơ bản": 544
+      },
+      "notes_with_images": 544,
+      "notes_with_audio": 0,
+      "expression_linebreak_candidates": 0,
+      "sample_card_types": {
+        "2": 20
+      },
+      "sample_card_ordinals": {
+        "0": 20
+      }
+    },
+    {
+      "name": "森の言葉",
+      "note_count": 12270,
+      "card_count": 36737,
+      "model_counts": {
+        "2. Picture Words": 12260,
+        "Cơ bản": 10
+      },
+      "notes_with_images": 11887,
+      "notes_with_audio": 11733,
+      "expression_linebreak_candidates": 110,
+      "sample_card_types": {
+        "2": 20
+      },
+      "sample_card_ordinals": {
+        "0": 7,
+        "1": 7,
+        "2": 6
+      }
+    }
+  ],
+  "profile_fingerprint": "e735fcdd4c714d9bb8d94387a734375584e2686d05383a68c5a85089730c7246",
+  "capabilities": {
+    "scopes": [
+      "actions"
+    ],
+    "actions": [
+      "updateNoteModel",
+      "exportPackage",
+      "getActiveProfile",
+      "getProfiles",
+      "cardsInfo",
+      "changeDeck",
+      "modelFieldAdd",
+      "modelTemplateAdd",
+      "modelTemplateRemove"
+    ]
+  }
+}

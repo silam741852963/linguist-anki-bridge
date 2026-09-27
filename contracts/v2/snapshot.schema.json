@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Snapshot",
+  "type": "object",
+  "properties": {
+    "archives": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SourceArchive"
+      }
+    },
+    "before_digest": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "media": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/MediaAsset"
+      }
+    },
+    "operation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "originals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SourceRecord"
+      }
+    },
+    "verified_after_digest": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "operation_id",
+    "originals",
+    "archives",
+    "media",
+    "before_digest"
+  ],
+  "$defs": {
+    "AnkiId": {
+      "type": "string"
+    },
+    "CardState": {
+      "type": "object",
+      "properties": {
+        "deck_id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "history_digest": {
+          "type": "string"
+        },
+        "home_deck_id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "scheduler": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "task",
+        "deck_id",
+        "home_deck_id",
+        "scheduler",
+        "history_digest"
+      ]
+    },
+    "MediaAsset": {
+      "type": "object",
+      "properties": {
+        "attribution": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "license": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mime": {
+          "type": "string"
+        },
+        "original_filename": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner": {
+          "$ref": "#/$defs/MediaOwner"
+        },
+        "role": {
+          "$ref": "#/$defs/MediaRole"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "source_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "filename",
+        "size_bytes",
+        "mime",
+        "owner",
+        "role",
+        "attribution"
+      ]
+    },
+    "MediaOwner": {
+      "type": "string",
+      "enum": [
+        "source",
+        "app",
+        "external"
+      ]
+    },
+    "MediaRole": {
+      "type": "string",
+      "enum": [
+        "picture",
+        "audio",
+        "archive"
+      ]
+    },
+    "SourceArchive": {
+      "type": "object",
+      "properties": {
+        "asset_digests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "digest": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "original_fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "source_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_id",
+        "digest",
+        "original_fields",
+        "asset_digests"
+      ]
+    },
+    "SourceRecord": {
+      "type": "object",
+      "properties": {
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardState"
+          }
+        },
+        "digest": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "media_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "model_manifest": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "location",
+        "digest",
+        "fields",
+        "model_manifest",
+        "tags",
+        "cards",
+        "media_refs"
+      ]
+    },
+    "Task": {
+      "type": "string",
+      "enum": [
+        "comprehension",
+        "production",
+        "spelling",
+        "recognition",
+        "application"
+      ]
+    }
+  }
+}

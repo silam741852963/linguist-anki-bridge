@@ -1,50 +1,40 @@
 [workspace]
-members = [
-    "crates/linguist-core",
-    "crates/linguist-anki",
-    "crates/linguist-snapshots",
-    "crates/linguist-application",
-    "crates/linguist-jobs",
-    "crates/linguist-desktop",
-    "crates/linguist-ollama",
-    "crates/linguist-ocr",
-    "crates/linguist-dictionary",
-    "crates/linguist-media",
-    "crates/linguist-audio",
-    "crates/linguist-pipeline",
-    "crates/linguist-config",
-]
+members = ["crates/linguist-core", "crates/linguist-cli", "crates/linguist-config", "crates/linguist-store", "crates/linguist-anki", "crates/linguist-application", "crates/linguist-dictionary"]
+default-members = ["crates/linguist-cli"]
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.98.1"
 license = "MIT"
-rust-version = "1.85"
 
 [workspace.dependencies]
 linguist-core = { path = "crates/linguist-core" }
-linguist-application = { path = "crates/linguist-application" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+serde_jcs = "=0.2.0"
+sha2 = "0.10"
+schemars = { version = "=1.2.2", features = ["uuid1"] }
+ammonia = "=4.2.0"
+language-tags = "0.3"
+uuid = { version = "1", features = ["serde", "v4"] }
+clap = { version = "=4.6.7", features = ["derive"] }
+toml = "0.9"
+
 linguist-config = { path = "crates/linguist-config" }
+url = "2.5"
+rusqlite = { version = "=0.40.2", features = ["bundled", "backup"] }
+linguist-store = { path = "crates/linguist-store" }
+reqwest = { version = "=0.13.5", default-features = false, features = ["blocking", "json", "rustls"] }
 linguist-anki = { path = "crates/linguist-anki" }
-linguist-snapshots = { path = "crates/linguist-snapshots" }
-linguist-ollama = { path = "crates/linguist-ollama" }
-linguist-jobs = { path = "crates/linguist-jobs" }
+linguist-application = { path = "crates/linguist-application" }
+base64 = { version = "=0.23.1", default-features = false, features = ["std"] }
+
 linguist-dictionary = { path = "crates/linguist-dictionary" }
-linguist-pipeline = { path = "crates/linguist-pipeline" }
-linguist-audio = { path = "crates/linguist-audio" }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.150"
-serde_yaml_ng = "0.10.0"
-rusqlite = { version = "0.32.1", features = ["bundled"] }
-libc = "0.2.189"
-base64 = "0.22.1"
-chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls"] }
-scraper = "0.27.0"
-tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "time", "io-util", "sync"] }
-cxx = "1.0"
-cxx-qt = "0.10"
-cxx-qt-lib = { version = "0.10", features = ["full"] }
-cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
-image = { version = "0.24.9", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+html-escape = "=0.2.15"
+httpdate = "=1.0.3"
+clap_complete = "=4.6.11"
+scraper = "=0.27.0"
+percent-encoding = "=2.3.2"
+unicode-normalization = "=0.1.25"

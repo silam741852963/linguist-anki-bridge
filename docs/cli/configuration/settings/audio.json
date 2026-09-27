@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "audio.provider",
+      "type": "enum",
+      "default": "preserve",
+      "constraints": {
+        "values": [
+          "preserve",
+          "dictionary",
+          "piper",
+          "custom",
+          "disabled"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "audio adapter",
+      "description": "New audio source; preserve available source recording.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.voice",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "purpose",
+      "consumer": "audio adapter",
+      "description": "Explicit voice for synthesis.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.endpoint",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "url"
+      },
+      "scope": "purpose",
+      "consumer": "audio adapter",
+      "description": "Explicit custom TTS service endpoint.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.api_key_env",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "env_name"
+      },
+      "scope": "purpose",
+      "consumer": "audio adapter",
+      "description": "Environment variable credential name.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.executable",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "executable"
+      },
+      "scope": "purpose",
+      "consumer": "audio adapter",
+      "description": "Piper executable; argument array only.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.voice_resource",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "path"
+      },
+      "scope": "purpose",
+      "consumer": "audio adapter",
+      "description": "Pinned voice resource with license evidence.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.speed",
+      "type": "number",
+      "default": 1.0,
+      "constraints": {
+        "min": 0.5,
+        "max": 2.0
+      },
+      "scope": "purpose",
+      "consumer": "audio adapter",
+      "description": "Supported provider speech-rate option.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.timeout_seconds",
+      "type": "integer",
+      "default": 60,
+      "constraints": {
+        "min": 1,
+        "max": 600
+      },
+      "scope": "purpose",
+      "consumer": "audio adapter",
+      "description": "Synthesis/download deadline.",
+      "sensitive": false
+    }
+  ]
+}

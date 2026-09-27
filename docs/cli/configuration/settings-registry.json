@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "config_version": 2,
+  "status": "target_not_implemented",
+  "groups": [
+    {
+      "name": "anki",
+      "path": "settings/anki.json",
+      "count": 7
+    },
+    {
+      "name": "audio",
+      "path": "settings/audio.json",
+      "count": 8
+    },
+    {
+      "name": "backup",
+      "path": "settings/backup.json",
+      "count": 3
+    },
+    {
+      "name": "browser",
+      "path": "settings/browser.json",
+      "count": 4
+    },
+    {
+      "name": "cache",
+      "path": "settings/cache.json",
+      "count": 4
+    },
+    {
+      "name": "classification",
+      "path": "settings/classification.json",
+      "count": 4
+    },
+    {
+      "name": "config",
+      "path": "settings/config.json",
+      "count": 2
+    },
+    {
+      "name": "dictionary",
+      "path": "settings/dictionary.json",
+      "count": 5
+    },
+    {
+      "name": "editing",
+      "path": "settings/editing.json",
+      "count": 1
+    },
+    {
+      "name": "filters",
+      "path": "settings/filters.json",
+      "count": 3
+    },
+    {
+      "name": "helpers",
+      "path": "settings/helpers.json",
+      "count": 2
+    },
+    {
+      "name": "images",
+      "path": "settings/images.json",
+      "count": 6
+    },
+    {
+      "name": "input",
+      "path": "settings/input.json",
+      "count": 2
+    },
+    {
+      "name": "jobs",
+      "path": "settings/jobs.json",
+      "count": 6
+    },
+    {
+      "name": "kanji",
+      "path": "settings/kanji.json",
+      "count": 4
+    },
+    {
+      "name": "learning",
+      "path": "settings/learning.json",
+      "count": 6
+    },
+    {
+      "name": "llm",
+      "path": "settings/llm.json",
+      "count": 15
+    },
+    {
+      "name": "logging",
+      "path": "settings/logging.json",
+      "count": 5
+    },
+    {
+      "name": "media",
+      "path": "settings/media.json",
+      "count": 3
+    },
+    {
+      "name": "network",
+      "path": "settings/network.json",
+      "count": 7
+    },
+    {
+      "name": "ocr",
+      "path": "settings/ocr.json",
+      "count": 11
+    },
+    {
+      "name": "output",
+      "path": "settings/output.json",
+      "count": 6
+    },
+    {
+      "name": "profiles",
+      "path": "settings/profiles.json",
+      "count": 1
+    },
+    {
+      "name": "purposes",
+      "path": "settings/purposes.json",
+      "count": 8
+    },
+    {
+      "name": "resources",
+      "path": "settings/resources.json",
+      "count": 2
+    },
+    {
+      "name": "retry",
+      "path": "settings/retry.json",
+      "count": 4
+    },
+    {
+      "name": "selection",
+      "path": "settings/selection.json",
+      "count": 4
+    },
+    {
+      "name": "services",
+      "path": "settings/services.json",
+      "count": 10
+    },
+    {
+      "name": "storage",
+      "path": "settings/storage.json",
+      "count": 7
+    }
+  ]
+}

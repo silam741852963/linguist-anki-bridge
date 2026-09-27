@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "kanji.enabled",
+      "type": "boolean",
+      "default": true,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "ALG-VOCAB",
+      "description": "Applicable Japanese kanji only.",
+      "sensitive": false
+    },
+    {
+      "key": "kanji.explanation_language",
+      "type": "string",
+      "default": "en",
+      "constraints": {
+        "format": "language"
+      },
+      "scope": "purpose",
+      "consumer": "kanji adapter",
+      "description": "Language used for optional kanji explanation.",
+      "sensitive": false
+    },
+    {
+      "key": "kanji.url_template",
+      "type": "string",
+      "default": "https://jisho.org/search/{char}%23kanji",
+      "constraints": {
+        "format": "url_template"
+      },
+      "scope": "purpose",
+      "consumer": "kanji adapter",
+      "description": "Validated URL template.",
+      "sensitive": false
+    },
+    {
+      "key": "kanji.schema",
+      "type": "string",
+      "default": "builtin:jisho-kanji-v2",
+      "constraints": {
+        "format": "resource_ref"
+      },
+      "scope": "purpose",
+      "consumer": "kanji adapter",
+      "description": "Pinned extraction schema.",
+      "sensitive": false
+    }
+  ]
+}

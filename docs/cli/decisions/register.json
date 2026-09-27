@@ -1,0 +1,430 @@
+{
+  "schema_version": 1,
+  "status": "design_finalized_evidence_pending",
+  "date": "2026-09-26",
+  "user_review_required_before_implementation": false,
+  "decisions": [
+    {
+      "id": "R01",
+      "status": "resolved",
+      "decision": "Japanese/English; all four workflows",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R02",
+      "status": "resolved",
+      "decision": "New root Rust CLI; archived Python parity, no UI imports",
+      "document": "release-gates.md"
+    },
+    {
+      "id": "R03",
+      "status": "resolved",
+      "decision": "Group collection checkpoint for model changes; scheduled/media affected scope otherwise",
+      "document": "ux-and-operations.md"
+    },
+    {
+      "id": "R04",
+      "status": "resolved",
+      "decision": "Canonical executable; cargo run during development",
+      "document": "ux-and-operations.md"
+    },
+    {
+      "id": "R05",
+      "status": "resolved",
+      "decision": "Digest approval and current invocation --apply; no review bypass",
+      "document": "ux-and-operations.md"
+    },
+    {
+      "id": "R06",
+      "status": "resolved",
+      "decision": "Shared stable exit/status table and explicit partial counts",
+      "document": "ux-and-operations.md"
+    },
+    {
+      "id": "R07",
+      "status": "resolved",
+      "decision": "Strict TOML/presets; gemma4:12b candidate pinned per plan",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R08",
+      "status": "resolved",
+      "decision": "Explicit pinned resources only; no processing-time downloads",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R09",
+      "status": "resolved",
+      "decision": "Retain per-card home decks; explicit deck for new/ambiguous task",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R10",
+      "status": "resolved",
+      "decision": "Completeness from verified receipts/models/tasks, independent of scheduler new/reviewed",
+      "document": "ux-and-operations.md"
+    },
+    {
+      "id": "R11",
+      "status": "resolved",
+      "decision": "Semantic lookup NFC/HTML whitespace; raw archive unchanged, optional destructive filters",
+      "document": "storage-and-wire.md"
+    },
+    {
+      "id": "R12",
+      "status": "resolved",
+      "decision": "Japanese/English baseline; Taiwanese/German/other production deferred",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R13",
+      "status": "resolved",
+      "decision": "Typed records and explicit duplicate review/skip_exact, no add-to-update conversion",
+      "document": "ux-and-operations.md"
+    },
+    {
+      "id": "R14",
+      "status": "resolved",
+      "decision": "Correction is a reviewed new revision, relookup/recheck duplicates",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R15",
+      "status": "resolved",
+      "decision": "Reviewed units/one anchor/fresh siblings; audio assigned to grounded unit",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R16",
+      "status": "resolved",
+      "decision": "Tesseract baseline, confidence-based review, vision off",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R17",
+      "status": "resolved",
+      "decision": "Related-only senses review; rich dictionary evidence preserved",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R18",
+      "status": "resolved",
+      "decision": "Browser optional feature gate/off; baseline direct adapters",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R19",
+      "status": "resolved",
+      "decision": "Core semantic minimum; optional failures preserve and warn",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R20",
+      "status": "resolved",
+      "decision": "Deterministic kanji facts; authored/generated translations labelled",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R21",
+      "status": "resolved",
+      "decision": "Preserve pictures; reviewed Commons candidates with attribution",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R22",
+      "status": "resolved",
+      "decision": "Preserve recordings; explicit dictionary/local/custom audio, no silent fallback",
+      "document": "learning-and-providers.md"
+    },
+    {
+      "id": "R23",
+      "status": "resolved",
+      "decision": "Typed patch or explicit safe editor argv, immutable new revision",
+      "document": "ux-and-operations.md"
+    },
+    {
+      "id": "R24",
+      "status": "resolved",
+      "decision": "Fixed v2 tasks/cues; retained mappings/history mandatory",
+      "document": "native-bridge.md"
+    },
+    {
+      "id": "R25",
+      "status": "resolved",
+      "decision": "Plain diff plus safe optional HTML; no required browser",
+      "document": "ux-and-operations.md"
+    },
+    {
+      "id": "R26",
+      "status": "resolved",
+      "decision": "Bridge lineage+collection epoch+manifest+explicit rebind; uncertain writes block",
+      "document": "native-bridge.md"
+    },
+    {
+      "id": "R27",
+      "status": "resolved",
+      "decision": "No ordinary physical source-media deletion",
+      "document": "storage-and-wire.md"
+    },
+    {
+      "id": "R28",
+      "status": "resolved",
+      "decision": "Safe readable prefix+content hash; collision never overwrites",
+      "document": "storage-and-wire.md"
+    },
+    {
+      "id": "R29",
+      "status": "resolved",
+      "decision": "Client/server durable UUID journals, dedupe and conservative unknown reconciliation",
+      "document": "native-bridge.md"
+    },
+    {
+      "id": "R30",
+      "status": "resolved",
+      "decision": "Separate model intents/checkpoint scope; no shared-model rollback deletion",
+      "document": "ux-and-operations.md"
+    },
+    {
+      "id": "R31",
+      "status": "resolved",
+      "decision": "One writer/bounded providers/typed retries and immutable modes",
+      "document": "storage-and-wire.md"
+    },
+    {
+      "id": "R32",
+      "status": "resolved",
+      "decision": "Tombstone summaries; protected reachable history; no automatic history deletion",
+      "document": "storage-and-wire.md"
+    },
+    {
+      "id": "R33",
+      "status": "resolved",
+      "decision": "Legacy unverifiable snapshots inspect/export only; no force restore",
+      "document": "storage-and-wire.md"
+    },
+    {
+      "id": "R34",
+      "status": "resolved",
+      "decision": "XDG private stores; nonempty active-state relocation deferred",
+      "document": "storage-and-wire.md"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "FG-01",
+      "status": "approach_finalized",
+      "gap": "Native extension integration",
+      "approach": "Additive pinned companion registration on existing AnkiConnect; fail closed",
+      "document": "native-bridge.md",
+      "owner": "WP-03",
+      "evidence_gate": "EV-03"
+    },
+    {
+      "id": "FG-02",
+      "status": "approach_finalized",
+      "gap": "Collection identity and replacement",
+      "approach": "Epoch/lineage/manifest and explicit current-state rebind, no UUID-only trust",
+      "document": "native-bridge.md",
+      "owner": "WP-03",
+      "evidence_gate": "EV-04"
+    },
+    {
+      "id": "FG-03",
+      "status": "approach_finalized",
+      "gap": "Race and CAS semantics",
+      "approach": "Precondition and note changes within serialized native operation; per-effect journal",
+      "document": "native-bridge.md",
+      "owner": "WP-11",
+      "evidence_gate": "EV-06"
+    },
+    {
+      "id": "FG-04",
+      "status": "approach_finalized",
+      "gap": "Queued/unknown creation dispatch",
+      "approach": "Durable server UUID dedupe plus client snapshot; no missing-tag absence inference",
+      "document": "native-bridge.md",
+      "owner": "WP-11",
+      "evidence_gate": "EV-07"
+    },
+    {
+      "id": "FG-05",
+      "status": "approach_finalized",
+      "gap": "Backup frequency/scope",
+      "approach": "Group checkpoint with complete planned scope; fresh item snapshots; no per-note full export",
+      "document": "ux-and-operations.md",
+      "owner": "WP-10",
+      "evidence_gate": "EV-05"
+    },
+    {
+      "id": "FG-06",
+      "status": "approach_finalized",
+      "gap": "Package import versus selective restore",
+      "approach": "Snapshots/native reverse mappings; .apkg merge not rollback; .colpkg manual disaster only",
+      "document": "ux-and-operations.md",
+      "owner": "WP-12",
+      "evidence_gate": "EV-05"
+    },
+    {
+      "id": "FG-07",
+      "status": "approach_finalized",
+      "gap": "Canonical bytes and integer IDs",
+      "approach": "RFC8785 lab-jcs-v1, typed string IDs, finite numbers, duplicate-key rejection",
+      "document": "storage-and-wire.md",
+      "owner": "WP-01",
+      "evidence_gate": "EV-01"
+    },
+    {
+      "id": "FG-08",
+      "status": "approach_finalized",
+      "gap": "SQLite and filesystem durability",
+      "approach": "WAL/FULL/private fsync publish order; no weaker mode or network state filesystem",
+      "document": "storage-and-wire.md",
+      "owner": "WP-04",
+      "evidence_gate": "EV-07"
+    },
+    {
+      "id": "FG-09",
+      "status": "approach_finalized",
+      "gap": "Worker liveness/lease fencing",
+      "approach": "Boot/PID/start identity and sidecar token; heartbeat alone insufficient",
+      "document": "storage-and-wire.md",
+      "owner": "WP-13",
+      "evidence_gate": "EV-12"
+    },
+    {
+      "id": "FG-10",
+      "status": "approach_finalized",
+      "gap": "Filtered decks and retention of study state",
+      "approach": "Block migration while filtered; preserve home decks/current scheduler/history",
+      "document": "learning-and-providers.md",
+      "owner": "WP-11",
+      "evidence_gate": "EV-10"
+    },
+    {
+      "id": "FG-11",
+      "status": "approach_finalized",
+      "gap": "Explanation language policy",
+      "approach": "Builtin Japanese grammar vi preset; others en; explicit override/preserved source",
+      "document": "learning-and-providers.md",
+      "owner": "WP-02",
+      "evidence_gate": "EV-02"
+    },
+    {
+      "id": "FG-12",
+      "status": "approach_finalized",
+      "gap": "Dictionary-only and minimum examples",
+      "approach": "Generation target distinct from readiness; one grammar example, optional vocab examples",
+      "document": "learning-and-providers.md",
+      "owner": "WP-09",
+      "evidence_gate": "EV-11"
+    },
+    {
+      "id": "FG-13",
+      "status": "approach_finalized",
+      "gap": "Model choice and repair policy",
+      "approach": "gemma4:12b candidate, temperature0, explicit installed digest, bounded schema-only repair",
+      "document": "learning-and-providers.md",
+      "owner": "WP-06",
+      "evidence_gate": "EV-11"
+    },
+    {
+      "id": "FG-14",
+      "status": "approach_finalized",
+      "gap": "Quality measurement",
+      "approach": "120 stratified fixtures, zero critical losses/leaks/unsupported claims; schema target95%",
+      "document": "learning-and-providers.md",
+      "owner": "WP-15",
+      "evidence_gate": "EV-11"
+    },
+    {
+      "id": "FG-15",
+      "status": "approach_finalized",
+      "gap": "Provider baseline versus optional technology",
+      "approach": "Tesseract/Jisho/Wiktionary/Commons; explicit optional unsupported-feature rejection",
+      "document": "learning-and-providers.md",
+      "owner": "WP-06",
+      "evidence_gate": "EV-13"
+    },
+    {
+      "id": "FG-16",
+      "status": "approach_finalized",
+      "gap": "Missing deck operation",
+      "approach": "No automatic deck creation baseline; existing regular decks only",
+      "document": "ux-and-operations.md",
+      "owner": "WP-05",
+      "evidence_gate": "EV-10"
+    },
+    {
+      "id": "FG-17",
+      "status": "approach_finalized",
+      "gap": "External editor contract",
+      "approach": "Explicit --editor and configured argv/VISUAL/EDITOR, no shell",
+      "document": "ux-and-operations.md",
+      "owner": "WP-09",
+      "evidence_gate": "EV-02"
+    },
+    {
+      "id": "FG-18",
+      "status": "approach_finalized",
+      "gap": "Content ready versus apply eligible",
+      "approach": "Offline review/export permitted; separate live capability/preflight gates",
+      "document": "storage-and-wire.md",
+      "owner": "WP-09",
+      "evidence_gate": "EV-14"
+    },
+    {
+      "id": "FG-19",
+      "status": "approach_finalized",
+      "gap": "Job state/mode meaning",
+      "approach": "Preparation completion means durable plans; simulation means report; apply means receipts",
+      "document": "storage-and-wire.md",
+      "owner": "WP-13",
+      "evidence_gate": "EV-12"
+    },
+    {
+      "id": "FG-20",
+      "status": "approach_finalized",
+      "gap": "Schema confirmation/full sync",
+      "approach": "Explicit impact warning; no sync upload/download automation or confirmation bypass",
+      "document": "ux-and-operations.md",
+      "owner": "WP-11",
+      "evidence_gate": "EV-06"
+    },
+    {
+      "id": "FG-21",
+      "status": "approach_finalized",
+      "gap": "Resource/helper bounds",
+      "approach": "Typed download/unpack/memory/output caps and pinned manifests; no truncation",
+      "document": "release-gates.md",
+      "owner": "WP-14",
+      "evidence_gate": "EV-13"
+    },
+    {
+      "id": "FG-22",
+      "status": "approach_finalized",
+      "gap": "Complete configuration inheritance",
+      "approach": "Purpose presets before user overrides; minimal init; every setting consumed or rejected",
+      "document": "ux-and-operations.md",
+      "owner": "WP-02",
+      "evidence_gate": "EV-02"
+    },
+    {
+      "id": "FG-23",
+      "status": "approach_finalized",
+      "gap": "Future versus baseline scope",
+      "approach": "Custom target models/history purge/state relocation/other languages/sync deferred explicitly",
+      "document": "release-gates.md",
+      "owner": "WP-15",
+      "evidence_gate": "EV-14"
+    },
+    {
+      "id": "FG-24",
+      "status": "approach_finalized",
+      "gap": "MSRV and dependency baseline",
+      "approach": "Rust1.98.1/2024 locked dependencies; upgrades isolated and tested",
+      "document": "release-gates.md",
+      "owner": "WP-01",
+      "evidence_gate": "EV-14"
+    }
+  ]
+}

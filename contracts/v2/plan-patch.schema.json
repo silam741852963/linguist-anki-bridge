@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PlanPatch",
+  "type": "object",
+  "properties": {
+    "base_digest": {
+      "type": "string"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ItemPatch"
+      }
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "base_digest",
+    "items"
+  ],
+  "$defs": {
+    "FieldIntent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "const": "keep"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "intent"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "intent",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "const": "clear"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "intent"
+          ]
+        }
+      ]
+    },
+    "ItemPatch": {
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/FieldIntent"
+          },
+          "default": {}
+        },
+        "personal_notes": {
+          "$ref": "#/$defs/FieldIntent",
+          "default": {
+            "intent": "keep"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "document_id"
+      ]
+    }
+  }
+}

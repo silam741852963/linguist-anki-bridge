@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "images.existing_policy",
+      "type": "enum",
+      "default": "preserve",
+      "constraints": {
+        "values": [
+          "preserve",
+          "inspect",
+          "review_replace",
+          "omit_reference"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "No policy physically deletes source media.",
+      "sensitive": false
+    },
+    {
+      "key": "images.search_when_missing",
+      "type": "boolean",
+      "default": true,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "image adapter",
+      "description": "Search candidates; rights/relevance review before acceptance.",
+      "sensitive": false
+    },
+    {
+      "key": "images.provider",
+      "type": "enum",
+      "default": "wikimedia",
+      "constraints": {
+        "values": [
+          "wikimedia",
+          "custom",
+          "disabled"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "image adapter",
+      "description": "Provider attribution retained.",
+      "sensitive": false
+    },
+    {
+      "key": "images.custom_endpoint",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "url"
+      },
+      "scope": "purpose",
+      "consumer": "image adapter",
+      "description": "Required for custom provider.",
+      "sensitive": false
+    },
+    {
+      "key": "images.query_suffix",
+      "type": "string",
+      "default": "",
+      "constraints": {
+        "format": "text"
+      },
+      "scope": "purpose",
+      "consumer": "image adapter",
+      "description": "Extra query text.",
+      "sensitive": false
+    },
+    {
+      "key": "images.candidate_limit",
+      "type": "integer",
+      "default": 5,
+      "constraints": {
+        "min": 1,
+        "max": 20
+      },
+      "scope": "purpose",
+      "consumer": "image adapter",
+      "description": "Bound search result set.",
+      "sensitive": false
+    }
+  ]
+}

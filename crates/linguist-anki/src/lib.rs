@@ -1,1791 +1,649 @@
-//! Minimal asynchronous AnkiConnect transport.
-//!
-//! This crate deliberately starts with connectivity and permission only. Read
-//! and write actions are added in later slices after their domain boundaries
-//! have tests, so the desktop cannot mutate Anki by accident.
-
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
-use linguist_application::{
-    BatchSelector, CardTemplate, CommitPort, CommitSource, DeckName, ExactExpressionRequest,
-    ExpressionResolution, ImageFilter, MediaFile, MediaPort, ModelFields, ModelName, ModelStyling,
-    ModelTemplates, NATIVE_POST_WRITE_EXTENSION, NoteInfo, NoteMutation, NoteSummary, PortError,
-    PortFuture, PostWriteState, RestorePort, SelectorMetadataPort, SelectorPreview,
-    SnapshotCapture, SnapshotHandle, TemplateMutation, resolve_exact_expression,
-};
-use linguist_core::{
-    CONTRACT_VERSION, CardMode, ManagedModelSpec, ManagedTemplatePlan, ModelTemplate,
-    ObservedModel, SnapshotContract, SnapshotDocument, SnapshotOriginalNote, japanese_vocab_spec,
-    plan_japanese_vocab_template,
-};
-use linguist_snapshots::SnapshotRepository;
-use reqwest::{Client, Url};
+//! Read-only AnkiConnect port. No public arbitrary-action or mutation interface.
+use linguist_config::Effective;
+use linguist_core::canonical;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-
-static SNAPSHOT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-/// AnkiConnect v6 envelope version used by the existing Python application.
-pub const ANKI_CONNECT_VERSION: u8 = 6;
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(3);
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Permission {
-    Granted,
-    Denied,
+use std::{
+    collections::BTreeMap,
+    io::Read,
+    net::{IpAddr, SocketAddr, ToSocketAddrs},
+};
+pub type Result<T> = std::result::Result<T, String>;
+mod capture;
+pub use capture::ReadCapture;
+#[derive(Clone, Copy, Debug)]
+enum Action {
+    Version,
+    Reflect,
+    Profile,
+    Decks,
+    Models,
+    Fields,
+    Templates,
+    Styling,
+    FindNotes,
+    FindCards,
+    NotesInfo,
+    CardsInfo,
+    RetrieveMedia,
 }
-
-/// Result returned by AnkiConnect's `requestPermission` action.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct PermissionStatus {
-    pub permission: Permission,
-    #[serde(default, rename = "requireApiKey")]
-    pub requires_api_key: Option<bool>,
-    #[serde(default)]
-    pub version: Option<u32>,
-}
-
-impl PermissionStatus {
-    pub fn is_granted(&self) -> bool {
-        self.permission == Permission::Granted
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct AnkiConnectTransport {
-    client: Client,
-    url: Url,
-    timeout: Duration,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AnkiConnectError {
-    InvalidUrl(String),
-    Transport { message: String, retryable: bool },
-    Timeout { timeout: Duration },
-    HttpStatus { status: u16, message: String },
-    MalformedResponse { message: String },
-    Remote { action: String, message: String },
-}
-
-impl std::fmt::Display for AnkiConnectError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Action {
+    fn name(self) -> &'static str {
         match self {
-            Self::InvalidUrl(message) => write!(formatter, "invalid AnkiConnect URL: {message}"),
-            Self::Transport { message, .. } => {
-                write!(formatter, "AnkiConnect transport: {message}")
-            }
-            Self::Timeout { timeout } => {
-                write!(formatter, "AnkiConnect timed out after {timeout:?}")
-            }
-            Self::HttpStatus { status, message } => {
-                write!(formatter, "AnkiConnect returned HTTP {status}: {message}")
-            }
-            Self::MalformedResponse { message } => {
-                write!(formatter, "malformed AnkiConnect response: {message}")
-            }
-            Self::Remote { action, message } => {
-                write!(formatter, "AnkiConnect {action}: {message}")
-            }
+            Self::Version => "version",
+            Self::Reflect => "apiReflect",
+            Self::Profile => "getActiveProfile",
+            Self::Decks => "deckNamesAndIds",
+            Self::Models => "modelNamesAndIds",
+            Self::Fields => "modelFieldNames",
+            Self::Templates => "modelTemplates",
+            Self::Styling => "modelStyling",
+            Self::FindNotes => "findNotes",
+            Self::FindCards => "findCards",
+            Self::NotesInfo => "notesInfo",
+            Self::CardsInfo => "cardsInfo",
+            Self::RetrieveMedia => "retrieveMediaFile",
         }
     }
 }
-
-impl std::error::Error for AnkiConnectError {}
-
-impl AnkiConnectTransport {
-    pub fn new(url: &str) -> Result<Self, AnkiConnectError> {
-        Self::with_timeout(url, DEFAULT_TIMEOUT)
-    }
-
-    pub fn with_timeout(url: &str, timeout: Duration) -> Result<Self, AnkiConnectError> {
-        let url =
-            Url::parse(url).map_err(|error| AnkiConnectError::InvalidUrl(error.to_string()))?;
-        if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
-            return Err(AnkiConnectError::InvalidUrl(
-                "URL must have an http(s) scheme and host".into(),
-            ));
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Envelope {
+    result: Value,
+    error: Value,
+}
+pub struct Client {
+    http: reqwest::blocking::Client,
+    endpoint: url::Url,
+    key: Option<String>,
+    limit: u64,
+    batch: usize,
+    media_limit: u64,
+    expected_profile: Option<String>,
+    observed_profile: std::sync::Mutex<Option<String>>,
+}
+#[derive(Debug, Serialize)]
+pub struct Capabilities {
+    pub api_version: u32,
+    pub profile: String,
+    pub available_actions: Vec<String>,
+    pub read_ready: bool,
+    pub native_advertised: bool,
+    pub native_verified: bool,
+    pub collection_writes_enabled: bool,
+    pub identity_confidence: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NamedId {
+    pub id: String,
+    pub name: String,
+}
+#[derive(Debug, Serialize)]
+pub struct ModelInspection {
+    pub model: NamedId,
+    pub fields: Vec<String>,
+    pub templates: BTreeMap<String, Value>,
+    pub css: String,
+    pub template_order_verified: bool,
+    pub managed_verified: bool,
+    pub content_matches_managed: bool,
+    pub compatibility: Vec<linguist_core::model::ModelComparison>,
+}
+/// Captured original bytes; callers must still validate decoded media type/content.
+#[derive(Debug)]
+pub struct MediaFile {
+    pub filename: String,
+    pub bytes: Vec<u8>,
+    pub digest: String,
+}
+#[derive(Debug, Serialize)]
+pub struct Counts {
+    pub note_count: usize,
+    pub card_count: usize,
+}
+fn public_address(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v) => {
+            let o = v.octets();
+            !v.is_private()
+                && !v.is_loopback()
+                && !v.is_link_local()
+                && !v.is_broadcast()
+                && !v.is_unspecified()
+                && !v.is_multicast()
+                && o[0] != 0
+                && o[0] < 240
+                && !(o[0] == 100 && (64..=127).contains(&o[1]))
+                && !(o[0] == 198 && (18..=19).contains(&o[1]))
+                && !(o[0] == 192 && o[1] == 0)
+                && !(o[0] == 198 && o[1] == 51 && o[2] == 100)
+                && !(o[0] == 203 && o[1] == 0 && o[2] == 113)
         }
-        let client = Client::builder()
-            .timeout(timeout)
+        IpAddr::V6(v) => v
+            .to_ipv4_mapped()
+            .map(|v| public_address(IpAddr::V4(v)))
+            .unwrap_or_else(|| {
+                let s = v.segments();
+                s[0] & 0xe000 == 0x2000 && !(s[0] == 0x2001 && s[1] == 0xdb8)
+            }),
+    }
+}
+impl Client {
+    pub fn from_settings(
+        settings: &Effective,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<Self> {
+        let value = |key: &str| {
+            settings
+                .values
+                .get(key)
+                .ok_or_else(|| format!("MISSING_SETTING: {key}"))
+        };
+        let registry = linguist_config::Registry::builtin();
+        for key in [
+            "anki.endpoint",
+            "anki.api_key_env",
+            "anki.expected_profile",
+            "anki.request_timeout_seconds",
+            "anki.read_batch_size",
+            "media.max_asset_mb",
+            "network.offline",
+            "network.proxy_env",
+            "network.connect_timeout_seconds",
+            "network.max_response_mb",
+            "network.allowed_remote_service_hosts",
+        ] {
+            registry.validate_value(key, value(key)?)?;
+        }
+        let endpoint = url::Url::parse(
+            value("anki.endpoint")?
+                .as_str()
+                .ok_or("INVALID_ANKI_ENDPOINT")?,
+        )
+        .map_err(|_| "INVALID_ANKI_ENDPOINT")?;
+        if !matches!(endpoint.scheme(), "http" | "https")
+            || !endpoint.username().is_empty()
+            || endpoint.password().is_some()
+            || endpoint.fragment().is_some()
+        {
+            return Err("INVALID_ANKI_ENDPOINT".into());
+        }
+        if !value("network.proxy_env")?.is_null() {
+            return Err(
+                "CAPABILITY_UNAVAILABLE: policy-checked proxy transport is not implemented".into(),
+            );
+        }
+        let host = endpoint.host_str().ok_or("INVALID_ANKI_ENDPOINT")?;
+        let bare = host.trim_matches(['[', ']']);
+        let port = endpoint
+            .port_or_known_default()
+            .ok_or("INVALID_ANKI_ENDPOINT")?;
+        let loopback =
+            bare == "localhost" || bare.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback());
+        if !loopback
+            && (value("network.offline")? == &json!(true)
+                || !value("network.allowed_remote_service_hosts")?
+                    .as_array()
+                    .ok_or("INVALID_HOST_POLICY")?
+                    .iter()
+                    .any(|h| h.as_str().is_some_and(|s| s.eq_ignore_ascii_case(host))))
+        {
+            return Err("REMOTE_ENDPOINT_NOT_ALLOWED".into());
+        }
+        let addresses: Vec<SocketAddr> = if bare == "localhost" {
+            vec![
+                SocketAddr::from(([127, 0, 0, 1], port)),
+                SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 1], port)),
+            ]
+        } else if let Ok(ip) = bare.parse::<IpAddr>() {
+            vec![SocketAddr::new(ip, port)]
+        } else {
+            let host = bare.to_owned();
+            let (sender, receiver) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let result = (host.as_str(), port)
+                    .to_socket_addrs()
+                    .map(|a| a.take(65).collect::<Vec<_>>());
+                let _ = sender.send(result);
+            });
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(
+                    value("network.connect_timeout_seconds")?.as_u64().unwrap(),
+                ))
+                .map_err(|_| "ANKI_DNS_UNAVAILABLE")?
+                .map_err(|_| "ANKI_DNS_UNAVAILABLE")?
+        };
+        if addresses.len() > 64
+            || addresses.is_empty()
+            || addresses.iter().any(|a| {
+                if loopback {
+                    !a.ip().is_loopback()
+                } else {
+                    !public_address(a.ip())
+                }
+            })
+        {
+            return Err("ENDPOINT_ADDRESS_POLICY_REJECTED".into());
+        }
+        let key = value("anki.api_key_env")?
+            .as_str()
+            .map(|name| {
+                environment
+                    .get(name)
+                    .filter(|v| !v.trim().is_empty())
+                    .cloned()
+                    .ok_or("ANKI_CREDENTIAL_UNAVAILABLE")
+            })
+            .transpose()?;
+        let http = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .resolve_to_addrs(bare, &addresses)
+            .connect_timeout(std::time::Duration::from_secs(
+                value("network.connect_timeout_seconds")?
+                    .as_u64()
+                    .ok_or("INVALID_CONNECT_TIMEOUT")?,
+            ))
+            .timeout(std::time::Duration::from_secs(
+                value("anki.request_timeout_seconds")?
+                    .as_u64()
+                    .ok_or("INVALID_REQUEST_TIMEOUT")?,
+            ))
             .build()
-            .map_err(|error| AnkiConnectError::Transport {
-                message: error.to_string(),
-                retryable: false,
-            })?;
+            .map_err(|_| "ANKI_TRANSPORT_UNAVAILABLE")?;
         Ok(Self {
-            client,
-            url,
-            timeout,
+            http,
+            endpoint,
+            key,
+            limit: value("network.max_response_mb")?
+                .as_u64()
+                .ok_or("INVALID_RESPONSE_LIMIT")?
+                * 1024
+                * 1024,
+            batch: value("anki.read_batch_size")?
+                .as_u64()
+                .ok_or("INVALID_BATCH_SIZE")? as usize,
+            media_limit: value("media.max_asset_mb")?
+                .as_u64()
+                .ok_or("INVALID_MEDIA_LIMIT")?
+                * 1024
+                * 1024,
+            expected_profile: value("anki.expected_profile")?.as_str().map(str::to_owned),
+            observed_profile: std::sync::Mutex::new(None),
         })
     }
-
-    pub fn url(&self) -> &Url {
-        &self.url
-    }
-
-    /// Check the local AnkiConnect API version without changing collection data.
-    pub async fn version(&self) -> Result<u32, AnkiConnectError> {
-        self.send("version", Value::Null).await
-    }
-
-    /// Ask AnkiConnect to grant this local application permission.
-    pub async fn request_permission(&self) -> Result<PermissionStatus, AnkiConnectError> {
-        self.send("requestPermission", Value::Null).await
-    }
-
-    /// Return collection deck names without loading their notes.
-    pub async fn deck_names(&self) -> Result<Vec<DeckName>, AnkiConnectError> {
-        self.send::<Vec<String>>("deckNames", Value::Null)
-            .await
-            .map(|names| names.into_iter().map(DeckName).collect())
-    }
-
-    /// Return model names without loading model definitions.
-    pub async fn model_names(&self) -> Result<Vec<ModelName>, AnkiConnectError> {
-        self.send::<Vec<String>>("modelNames", Value::Null)
-            .await
-            .map(|names| names.into_iter().map(ModelName).collect())
-    }
-
-    pub async fn model_fields(
-        &self,
-        model_name: &ModelName,
-    ) -> Result<ModelFields, AnkiConnectError> {
-        let fields = self
-            .send("modelFieldNames", json!({"modelName": model_name.0}))
-            .await?;
-        Ok(ModelFields {
-            model_name: model_name.clone(),
-            fields,
-        })
-    }
-
-    pub async fn model_templates(
-        &self,
-        model_name: &ModelName,
-    ) -> Result<ModelTemplates, AnkiConnectError> {
-        let templates: serde_json::Map<String, Value> = self
-            .send("modelTemplates", json!({"modelName": model_name.0}))
-            .await?;
-        let mut converted = Vec::with_capacity(templates.len());
-        for (name, template) in templates {
-            let object =
-                template
-                    .as_object()
-                    .ok_or_else(|| AnkiConnectError::MalformedResponse {
-                        message: format!("template {name:?} is not an object"),
-                    })?;
-            let front = required_string(object, "Front", "modelTemplates")?;
-            let back = required_string(object, "Back", "modelTemplates")?;
-            converted.push(CardTemplate { name, front, back });
-        }
-        Ok(ModelTemplates {
-            model_name: model_name.clone(),
-            templates: converted,
-        })
-    }
-
-    pub async fn model_styling(
-        &self,
-        model_name: &ModelName,
-    ) -> Result<ModelStyling, AnkiConnectError> {
-        let styling: serde_json::Map<String, Value> = self
-            .send("modelStyling", json!({"modelName": model_name.0}))
-            .await?;
-        Ok(ModelStyling {
-            model_name: model_name.clone(),
-            css: required_string(&styling, "css", "modelStyling")?,
-        })
-    }
-
-    /// Search Anki's indexed collection without embedding search policy here.
-    pub async fn find_notes(&self, query: &str) -> Result<Vec<i64>, AnkiConnectError> {
-        self.send("findNotes", json!({"query": query})).await
-    }
-
-    pub async fn create_backup(&self) -> Result<(), AnkiConnectError> {
-        let _: Value = self.send("createBackup", Value::Null).await?;
-        Ok(())
-    }
-
-    pub async fn add_note(
-        &self,
-        deck_name: &str,
-        model_name: &str,
-        fields: &std::collections::BTreeMap<String, String>,
-        tags: &[String],
-    ) -> Result<i64, AnkiConnectError> {
-        self.send("addNote", json!({"note":{"deckName":deck_name,"modelName":model_name,"fields":fields,"tags":tags}})).await
-    }
-
-    pub async fn update_note(
-        &self,
-        note_id: i64,
-        model_name: &str,
-        fields: &std::collections::BTreeMap<String, String>,
-        tags: &[String],
-    ) -> Result<(), AnkiConnectError> {
-        let _: Value = self
-            .send(
-                "updateNoteModel",
-                json!({"note":{"id":note_id,"modelName":model_name,"fields":fields,"tags":tags}}),
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn create_model(&self, spec: &ManagedModelSpec) -> Result<(), AnkiConnectError> {
-        let templates = spec.templates.iter().map(template_json).collect::<Vec<_>>();
-        let _: Value = self
-            .send(
-                "createModel",
-                json!({
-                    "modelName": spec.model_name,
-                    "inOrderFields": spec.fields,
-                    "css": spec.css,
-                    "isCloze": false,
-                    "cardTemplates": templates,
-                }),
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn update_model_templates(
-        &self,
-        model_name: &str,
-        templates: &[ModelTemplate],
-    ) -> Result<(), AnkiConnectError> {
-        let templates = templates
-            .iter()
-            .map(|template| {
-                (
-                    template.name.clone(),
-                    json!({"Front":template.front,"Back":template.back}),
-                )
-            })
-            .collect::<serde_json::Map<_, _>>();
-        let _: Value = self
-            .send(
-                "updateModelTemplates",
-                json!({"model":{"name":model_name,"templates":templates}}),
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn update_model_styling(
-        &self,
-        model_name: &str,
-        css: &str,
-    ) -> Result<(), AnkiConnectError> {
-        let _: Value = self
-            .send(
-                "updateModelStyling",
-                json!({"model":{"name":model_name,"css":css}}),
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn add_model_template(
-        &self,
-        model_name: &str,
-        template: &ModelTemplate,
-    ) -> Result<(), AnkiConnectError> {
-        let _: Value = self
-            .send(
-                "modelTemplateAdd",
-                json!({"modelName":model_name,"template":template_json(template)}),
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn rename_model_template(
-        &self,
-        model_name: &str,
-        old: &str,
-        new: &str,
-    ) -> Result<(), AnkiConnectError> {
-        let _: Value = self
-            .send(
-                "modelTemplateRename",
-                json!({"modelName":model_name,"oldTemplateName":old,"newTemplateName":new}),
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn remove_model_template(
-        &self,
-        model_name: &str,
-        name: &str,
-    ) -> Result<(), AnkiConnectError> {
-        let _: Value = self
-            .send(
-                "modelTemplateRemove",
-                json!({"modelName":model_name,"templateName":name}),
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn delete_model(&self, model_name: &str) -> Result<(), AnkiConnectError> {
-        let _: Value = self
-            .send("deleteModels", json!({"modelNames":[model_name]}))
-            .await?;
-        Ok(())
-    }
-
-    pub async fn delete_notes(&self, note_ids: &[i64]) -> Result<(), AnkiConnectError> {
-        let _: Value = self.send("deleteNotes", json!({"notes":note_ids})).await?;
-        Ok(())
-    }
-
-    pub async fn change_deck(
-        &self,
-        note_ids: &[i64],
-        deck_name: &str,
-    ) -> Result<(), AnkiConnectError> {
-        let _: Value = self
-            .send("changeDeck", json!({"cards":note_ids,"deck":deck_name}))
-            .await?;
-        Ok(())
-    }
-
-    /// Ask Anki for indexed candidates, then defer exact comparison and mode
-    /// selection to the application use case.
-    pub async fn resolve_exact_expression(
-        &self,
-        deck_name: &str,
-        request: &ExactExpressionRequest,
-    ) -> Result<ExpressionResolution, AnkiConnectError> {
-        let normalized = linguist_core::normalize_expression(&request.expression);
-        if normalized.is_empty() {
-            return Ok(resolve_exact_expression(request, []));
-        }
-        let query = format!(
-            "deck:\"{}\" \"{}\"",
-            escape_anki_query(deck_name),
-            escape_anki_query(&normalized)
-        );
-        let note_ids = self.find_notes(&query).await?;
-        let notes = self.notes_info(&note_ids).await?;
-        Ok(resolve_exact_expression(request, notes))
-    }
-
-    /// Convert Anki's rich note-info response into the read-only application model.
-    pub async fn notes_info(&self, note_ids: &[i64]) -> Result<Vec<NoteInfo>, AnkiConnectError> {
-        let raw: Vec<RawNoteInfo> = self.send("notesInfo", json!({"notes": note_ids})).await?;
-        let card_ids = raw
-            .iter()
-            .flat_map(|note| {
-                note.cards.iter().filter_map(|card| match card {
-                    RawCardRef::Id(id) => Some(*id),
-                    RawCardRef::Info { .. } => None,
-                })
-            })
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        let mut card_decks = HashMap::new();
-        for chunk in card_ids.chunks(500) {
-            let cards: Vec<RawCardDetails> =
-                self.send("cardsInfo", json!({"cards": chunk})).await?;
-            card_decks.extend(cards.into_iter().map(|card| (card.card_id, card.deck_name)));
-        }
-        Ok(raw
-            .into_iter()
-            .map(|note| note.into_note(&card_decks))
-            .collect())
-    }
-
-    /// Retrieve a media payload. A missing Anki media file is represented as `None`.
-    pub async fn retrieve_media_file(
-        &self,
-        filename: &str,
-    ) -> Result<Option<MediaFile>, AnkiConnectError> {
-        let data_base64: Option<String> = self
-            .send("retrieveMediaFile", json!({"filename": filename}))
-            .await?;
-        Ok(data_base64.map(|data_base64| MediaFile {
-            filename: filename.to_owned(),
-            data_base64,
-        }))
-    }
-
-    pub async fn store_media_file(
-        &self,
-        filename: &str,
-        data_base64: &str,
-    ) -> Result<(), AnkiConnectError> {
-        let _: Value = self
-            .send(
-                "storeMediaFile",
-                json!({"filename": filename, "data": data_base64}),
-            )
-            .await?;
-        Ok(())
-    }
-
-    pub async fn delete_media_file(&self, filename: &str) -> Result<(), AnkiConnectError> {
-        let _: Value = self
-            .send("deleteMediaFile", json!({"filename": filename}))
-            .await?;
-        Ok(())
-    }
-
-    async fn send<T>(&self, action: &str, params: Value) -> Result<T, AnkiConnectError>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let mut request = json!({"action": action, "version": ANKI_CONNECT_VERSION});
-        if !params.is_null() {
-            request["params"] = params;
+    fn call(&self, action: Action, params: Value) -> Result<Value> {
+        let mut request = json!({"action":action.name(),"version":6,"params":params});
+        if let Some(key) = &self.key {
+            request["key"] = json!(key)
         }
         let response = self
-            .client
-            .post(self.url.clone())
+            .http
+            .post(self.endpoint.clone())
             .json(&request)
             .send()
-            .await
-            .map_err(|error| self.transport_error(error))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| self.transport_error(error))?;
-        if !status.is_success() {
-            return Err(AnkiConnectError::HttpStatus {
-                status: status.as_u16(),
-                message: body,
-            });
-        }
-        let envelope: Value =
-            serde_json::from_str(&body).map_err(|error| AnkiConnectError::MalformedResponse {
-                message: format!("response is not JSON: {error}"),
-            })?;
-        let object = envelope
-            .as_object()
-            .ok_or_else(|| AnkiConnectError::MalformedResponse {
-                message: "response must be an object".into(),
-            })?;
-        let error = object
-            .get("error")
-            .ok_or_else(|| AnkiConnectError::MalformedResponse {
-                message: "response is missing error".into(),
-            })?;
-        let result = object
-            .get("result")
-            .ok_or_else(|| AnkiConnectError::MalformedResponse {
-                message: "response is missing result".into(),
-            })?;
-        if !error.is_null() {
-            let message = error
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| error.to_string());
-            return Err(AnkiConnectError::Remote {
-                action: action.to_owned(),
-                message,
-            });
-        }
-        serde_json::from_value(result.clone()).map_err(|error| {
-            AnkiConnectError::MalformedResponse {
-                message: format!("invalid result for {action}: {error}"),
-            }
-        })
-    }
-
-    fn transport_error(&self, error: reqwest::Error) -> AnkiConnectError {
-        if error.is_timeout() {
-            return AnkiConnectError::Timeout {
-                timeout: self.timeout,
-            };
-        }
-        AnkiConnectError::Transport {
-            message: error.to_string(),
-            retryable: error.is_connect() || error.is_request(),
-        }
-    }
-}
-
-impl MediaPort for AnkiConnectTransport {
-    fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
-        Box::pin(async move {
-            self.retrieve_media_file(filename)
-                .await
-                .map_err(|error| media_port_error("retrieve media", error))
-        })
-    }
-
-    fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            self.store_media_file(&media.filename, &media.data_base64)
-                .await
-                .map_err(|error| media_port_error("store media", error))
-        })
-    }
-
-    fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            self.delete_media_file(filename)
-                .await
-                .map_err(|error| media_port_error("delete media", error))
-        })
-    }
-}
-
-impl SelectorMetadataPort for AnkiConnectTransport {
-    fn preview<'a>(
-        &'a self,
-        selector: &'a BatchSelector,
-        preview_limit: usize,
-    ) -> PortFuture<'a, SelectorPreview> {
-        Box::pin(async move {
-            let query = selector.query().map_err(|message| PortError {
-                operation: "selector query",
-                message,
-                retryable: false,
-            })?;
-            let ids = self
-                .find_notes(&query)
-                .await
-                .map_err(|error| media_port_error("selector preview", error))?;
-            let selection_limit = if selector.limit == 0 {
-                usize::MAX
-            } else {
-                selector.limit
-            };
-            if selector.image == ImageFilter::Any {
-                let total = ids.len().min(selection_limit);
-                let requested = total.min(preview_limit);
-                let mut notes = Vec::with_capacity(requested);
-                for chunk in ids[..requested].chunks(250) {
-                    notes.extend(
-                        self.notes_info(chunk)
-                            .await
-                            .map_err(|error| media_port_error("selector preview", error))?
-                            .into_iter()
-                            .map(note_summary),
-                    );
+            .map_err(|e| {
+                if e.is_timeout() {
+                    "ANKI_READ_TIMEOUT"
+                } else {
+                    "ANKI_DEPENDENCY_UNAVAILABLE"
                 }
-                return Ok(SelectorPreview {
-                    total: total as u64,
-                    limited: total > notes.len(),
-                    notes,
-                });
-            }
-            let mut total = 0_usize;
-            let mut summaries = Vec::new();
-            for chunk in ids.chunks(250) {
-                let notes = self
-                    .notes_info(chunk)
-                    .await
-                    .map_err(|error| media_port_error("selector preview", error))?;
-                for note in notes {
-                    if selector_matches_image(selector.image, &note) {
-                        total += 1;
-                        if summaries.len() < preview_limit {
-                            summaries.push(note_summary(note));
-                        }
-                        if total >= selection_limit {
-                            break;
-                        }
-                    }
-                }
-                if total >= selection_limit {
-                    break;
-                }
-            }
-            Ok(SelectorPreview {
-                total: total as u64,
-                limited: total > summaries.len(),
-                notes: summaries,
-            })
-        })
-    }
-}
-
-fn selector_matches_image(filter: ImageFilter, note: &NoteInfo) -> bool {
-    let has_image = note
-        .fields
-        .values()
-        .any(|value| value.to_ascii_lowercase().contains("<img"));
-    match filter {
-        ImageFilter::Any => true,
-        ImageFilter::HasImage => has_image,
-        ImageFilter::NoImage => !has_image,
-    }
-}
-
-fn note_summary(note: NoteInfo) -> NoteSummary {
-    NoteSummary {
-        note_id: note.note_id,
-        expression: ["Expression", "Word", "Front", "Vocabulary"]
-            .into_iter()
-            .find_map(|field| note.fields.get(field))
-            .cloned()
-            .or_else(|| note.fields.values().next().cloned())
-            .unwrap_or_default(),
-        deck_key: note
-            .deck_names
-            .first()
-            .map(|deck| deck.0.clone())
-            .unwrap_or_default(),
-        model_name: note.model_name.0,
-    }
-}
-
-/// Native commit adapter. Snapshot persistence is completed before any note
-/// mutation and finalized only after the write succeeds.
-#[derive(Clone, Debug)]
-pub struct AnkiCommitPort {
-    transport: AnkiConnectTransport,
-    snapshots: SnapshotRepository,
-}
-
-impl AnkiCommitPort {
-    pub fn new(transport: AnkiConnectTransport, snapshots: SnapshotRepository) -> Self {
-        Self {
-            transport,
-            snapshots,
+            })?;
+        if !response.status().is_success() {
+            return Err(format!("ANKI_HTTP_FAILURE: {}", response.status().as_u16()));
         }
+        if response.content_length().is_some_and(|n| n > self.limit) {
+            return Err("ANKI_RESPONSE_TOO_LARGE".into());
+        }
+        let mut bytes = Vec::new();
+        response
+            .take(self.limit + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "ANKI_RESPONSE_IO")?;
+        if bytes.len() as u64 > self.limit {
+            return Err("ANKI_RESPONSE_TOO_LARGE".into());
+        }
+        let envelope: Envelope = canonical::parse(&bytes)
+            .map_err(|_| "ANKI_PROTOCOL_INVALID: malformed envelope or unsafe numbers")?;
+        if !envelope.error.is_null() {
+            return Err(format!("ANKI_ACTION_REJECTED: {}", action.name()));
+        }
+        Ok(envelope.result)
     }
-
-    pub async fn note_info(&self, note_id: i64) -> Result<Option<NoteInfo>, AnkiConnectError> {
-        self.transport
-            .notes_info(&[note_id])
-            .await
-            .map(|mut notes| notes.pop())
-    }
-
-    pub async fn japanese_template_plan(&self) -> Result<ManagedTemplatePlan, AnkiConnectError> {
-        let spec = japanese_vocab_spec();
-        if !self
-            .transport
-            .model_names()
-            .await?
-            .iter()
-            .any(|model| model.0 == spec.model_name)
+    pub fn capabilities(&self) -> Result<Capabilities> {
+        let version = self
+            .call(Action::Version, json!({}))?
+            .as_u64()
+            .filter(|v| *v == 6)
+            .ok_or("ANKI_PROTOCOL_UNSUPPORTED")? as u32;
+        let profile = self
+            .call(Action::Profile, json!({}))?
+            .as_str()
+            .ok_or("ANKI_PROFILE_INVALID")?
+            .to_owned();
+        if self
+            .expected_profile
+            .as_ref()
+            .is_some_and(|p| p != &profile)
         {
-            return Ok(ManagedTemplatePlan::Create { spec });
+            return Err("ANKI_PROFILE_CONFLICT".into());
         }
-        let name = ModelName(spec.model_name.clone());
-        let fields = self.transport.model_fields(&name).await?.fields;
-        let templates = self
-            .transport
-            .model_templates(&name)
-            .await?
-            .templates
-            .into_iter()
-            .map(|template| ModelTemplate {
-                name: template.name,
-                front: template.front,
-                back: template.back,
+        {
+            let mut pinned = self
+                .observed_profile
+                .lock()
+                .map_err(|_| "ANKI_PROFILE_LOCK_FAILURE")?;
+            if pinned.as_ref().is_some_and(|p| p != &profile) {
+                return Err("ANKI_PROFILE_CONFLICT".into());
+            }
+            *pinned = Some(profile.clone());
+        }
+        let reflection = self.call(Action::Reflect, json!({"scopes":["actions"]}))?;
+        let mut actions: Vec<String> = serde_json::from_value(
+            reflection
+                .get("actions")
+                .cloned()
+                .ok_or("ANKI_REFLECTION_INVALID")?,
+        )
+        .map_err(|_| "ANKI_REFLECTION_INVALID")?;
+        actions.sort();
+        actions.dedup();
+        let read_ready = [
+            "findNotes",
+            "findCards",
+            "notesInfo",
+            "cardsInfo",
+            "deckNamesAndIds",
+            "modelFieldNames",
+            "modelNamesAndIds",
+            "modelTemplates",
+            "modelStyling",
+        ]
+        .iter()
+        .all(|a| actions.iter().any(|s| s == a));
+        Ok(Capabilities {
+            api_version: version,
+            profile,
+            read_ready,
+            native_advertised: actions.iter().any(|a| a == "labCapabilities"),
+            available_actions: actions,
+            native_verified: false,
+            collection_writes_enabled: false,
+            identity_confidence: "weak".into(),
+        })
+    }
+    pub fn check_profile(&self) -> Result<()> {
+        let actual = self.call(Action::Profile, json!({}))?;
+        let actual = actual.as_str().ok_or("ANKI_PROFILE_INVALID")?;
+        if self.expected_profile.as_ref().is_some_and(|p| p != actual) {
+            return Err("ANKI_PROFILE_CONFLICT".into());
+        }
+        let mut pinned = self
+            .observed_profile
+            .lock()
+            .map_err(|_| "ANKI_PROFILE_LOCK_FAILURE")?;
+        if pinned.as_ref().is_some_and(|p| p != actual) {
+            return Err("ANKI_PROFILE_CONFLICT".into());
+        }
+        *pinned = Some(actual.to_owned());
+        Ok(())
+    }
+    fn names(&self, action: Action) -> Result<Vec<NamedId>> {
+        let map = self.call(action, json!({}))?;
+        let entries = map.as_object().ok_or("ANKI_NAME_MAP_INVALID")?;
+        let mut out = Vec::new();
+        for (name, id) in entries {
+            out.push(NamedId {
+                id: wire_id(id)?,
+                name: name.clone(),
+            });
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+        Ok(out)
+    }
+    pub fn decks(&self) -> Result<Vec<NamedId>> {
+        self.check_profile()?;
+        self.names(Action::Decks)
+    }
+    pub fn models(&self) -> Result<Vec<NamedId>> {
+        self.check_profile()?;
+        self.names(Action::Models)
+    }
+    pub fn inspect_model(&self, selector: &str) -> Result<ModelInspection> {
+        let model = select_name(self.models()?, selector)?;
+        let params = json!({"modelName":model.name});
+        let fields: Vec<String> =
+            serde_json::from_value(self.call(Action::Fields, params.clone())?)
+                .map_err(|_| "ANKI_MODEL_FIELDS_INVALID")?;
+        let templates: BTreeMap<String, Value> =
+            serde_json::from_value(self.call(Action::Templates, params.clone())?)
+                .map_err(|_| "ANKI_MODEL_TEMPLATES_INVALID")?;
+        let styling = self.call(Action::Styling, params)?;
+        let css = styling
+            .get("css")
+            .and_then(Value::as_str)
+            .ok_or("ANKI_MODEL_CSS_INVALID")?
+            .to_owned();
+        let template_content = templates
+            .iter()
+            .map(|(name, value)| {
+                let front = value["Front"]
+                    .as_str()
+                    .ok_or("ANKI_MODEL_TEMPLATES_INVALID")?;
+                let back = value["Back"]
+                    .as_str()
+                    .ok_or("ANKI_MODEL_TEMPLATES_INVALID")?;
+                Ok((name.clone(), (front.to_owned(), back.to_owned())))
             })
-            .collect();
-        let css = self.transport.model_styling(&name).await?.css;
-        plan_japanese_vocab_template(Some(&ObservedModel {
-            model_name: spec.model_name,
+            .collect::<Result<BTreeMap<_, _>>>()?;
+        self.check_profile()?;
+        let compatibility = [
+            linguist_core::model::vocabulary(),
+            linguist_core::model::grammar(),
+        ]
+        .iter()
+        .map(|target| {
+            linguist_core::model::compare(&model.name, &fields, &template_content, &css, target)
+        })
+        .collect::<Vec<_>>();
+        let content_matches_managed = compatibility
+            .iter()
+            .any(|c| c.name_matches && c.exact_content_match);
+        Ok(ModelInspection {
+            model,
             fields,
             templates,
             css,
+            template_order_verified: false,
+            managed_verified: false,
+            content_matches_managed,
+            compatibility,
+        })
+    }
+    pub fn find_notes(&self, query: &str) -> Result<Vec<String>> {
+        self.check_profile()?;
+        ids(self.call(Action::FindNotes, json!({"query":query}))?)
+    }
+    pub fn counts(&self, query: &str) -> Result<Counts> {
+        let notes = self.find_notes(query)?;
+        let cards = ids(self.call(Action::FindCards, json!({"query":query}))?)?;
+        self.check_profile()?;
+        Ok(Counts {
+            note_count: notes.len(),
+            card_count: cards.len(),
+        })
+    }
+    /// Read only, with profile checks on both sides. False is the documented missing-file result.
+    pub fn retrieve_media_file(&self, filename: &str) -> Result<Option<MediaFile>> {
+        use base64::Engine;
+        if !linguist_core::validation::safe_media_name(filename)
+            || filename.trim().is_empty()
+            || filename.ends_with([' ', '.'])
+            || filename.contains(['*', '|'])
+            || !unicode_normalization::is_nfc(filename)
+        {
+            return Err("ANKI_MEDIA_FILENAME_UNSAFE".into());
+        }
+        self.check_profile()?;
+        let result = self.call(Action::RetrieveMedia, json!({"filename":filename}))?;
+        self.check_profile()?;
+        if result == Value::Bool(false) {
+            return Ok(None);
+        }
+        let encoded = result.as_str().ok_or("ANKI_MEDIA_PROTOCOL_INVALID")?;
+        if encoded.len() % 4 != 0 {
+            return Err("ANKI_MEDIA_ENCODING_INVALID".into());
+        }
+        let padding = if encoded.ends_with("==") {
+            2
+        } else if encoded.ends_with('=') {
+            1
+        } else {
+            0
+        };
+        let decoded_size = encoded
+            .len()
+            .checked_div(4)
+            .and_then(|n| n.checked_mul(3))
+            .and_then(|n| n.checked_sub(padding))
+            .ok_or("ANKI_MEDIA_ENCODING_INVALID")?;
+        if decoded_size as u64 > self.media_limit {
+            return Err("ANKI_MEDIA_TOO_LARGE".into());
+        }
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|_| "ANKI_MEDIA_ENCODING_INVALID")?;
+        if bytes.len() as u64 > self.media_limit {
+            return Err("ANKI_MEDIA_TOO_LARGE".into());
+        }
+        Ok(Some(MediaFile {
+            filename: filename.into(),
+            digest: canonical::asset_digest(&bytes),
+            bytes,
         }))
-        .map_err(|error| AnkiConnectError::MalformedResponse {
-            message: error.to_string(),
-        })
     }
-}
-
-impl MediaPort for AnkiCommitPort {
-    fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
-        self.transport.retrieve_media(filename)
+    pub fn notes_info(&self, note_ids: &[String]) -> Result<Vec<Value>> {
+        self.info(Action::NotesInfo, "notes", note_ids)
     }
-    fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
-        self.transport.store_media(media)
+    pub fn cards_info(&self, card_ids: &[String]) -> Result<Vec<Value>> {
+        self.info(Action::CardsInfo, "cards", card_ids)
     }
-    fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
-        self.transport.delete_media(filename)
-    }
-}
-
-impl CommitPort for AnkiCommitPort {
-    fn backup_deck<'a>(&'a self, _deck_name: &'a str) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            self.transport
-                .create_backup()
-                .await
-                .map_err(|error| PortError {
-                    operation: "create backup",
-                    message: error.to_string(),
-                    retryable: false,
-                })
-        })
-    }
-
-    fn capture_snapshot<'a>(
-        &'a self,
-        capture: &'a SnapshotCapture,
-    ) -> PortFuture<'a, SnapshotHandle> {
-        Box::pin(async move {
-            let id = format!(
-                "native-{}-{}",
-                unix_millis(),
-                SNAPSHOT_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-            );
-            let original_note = capture.source.as_ref().map(|source| SnapshotOriginalNote {
-                note_id: Some(source.note_id),
-                model_name: source.model_name.clone(),
-                deck_name: String::new(),
-                tags: source.tags.clone(),
-                fields: source.fields.clone(),
-                extensions: BTreeMap::new(),
-            });
-            let media_before = capture
-                .media_before
+    fn info(&self, action: Action, key: &str, ids: &[String]) -> Result<Vec<Value>> {
+        for id in ids {
+            numeric_id(id)?;
+        }
+        self.check_profile()?;
+        if self.batch == 0 {
+            return Err("INVALID_BATCH_SIZE".into());
+        }
+        let mut result = Vec::new();
+        for chunk in ids.chunks(self.batch) {
+            let numbers: Vec<_> = chunk
                 .iter()
-                .map(|(name, media)| {
-                    (
-                        name.clone(),
-                        media.as_ref().map(|file| file.data_base64.clone()),
-                    )
-                })
-                .collect();
-            let processed = serde_json::to_value(&capture.document).map_err(|error| PortError {
-                operation: "snapshot",
-                message: error.to_string(),
-                retryable: false,
-            })?;
-            let document = SnapshotDocument {
-                schema_version: CONTRACT_VERSION,
-                snapshot: SnapshotContract {
-                    id: id.clone(),
-                    created_at: unix_timestamp(),
-                    word: capture.word.clone(),
-                    mode: mode_name(capture.mode),
-                    deck_key: capture.deck_key.clone(),
-                    dry_run: false,
-                    status: "started".into(),
-                    original_note,
-                    processed,
-                    media_before,
-                    result_note_id: None,
-                    created_note_ids: Vec::new(),
-                    error: String::new(),
-                    reverted_at: None,
-                    extensions: BTreeMap::new(),
-                },
-            };
-            self.snapshots.save(&document).map_err(snapshot_error)?;
-            Ok(SnapshotHandle(id))
-        })
-    }
-
-    fn finalize_snapshot<'a>(
-        &'a self,
-        snapshot: &'a SnapshotHandle,
-        state: &'a PostWriteState,
-    ) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            let mut document = find_snapshot(&self.snapshots, &snapshot.0)?;
-            document.snapshot.status = "committed".into();
-            document.snapshot.result_note_id = Some(state.note.note_id);
-            document.snapshot.extensions.insert(
-                NATIVE_POST_WRITE_EXTENSION.into(),
-                serde_json::to_value(state).map_err(|error| PortError {
-                    operation: "snapshot",
-                    message: error.to_string(),
-                    retryable: false,
-                })?,
-            );
-            self.snapshots.replace(&document).map_err(snapshot_error)
-        })
-    }
-
-    fn fail_snapshot<'a>(
-        &'a self,
-        snapshot: &'a SnapshotHandle,
-        error: &'a str,
-    ) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            let mut document = find_snapshot(&self.snapshots, &snapshot.0)?;
-            document.snapshot.status = "failed".into();
-            document.snapshot.error = error.into();
-            self.snapshots.replace(&document).map_err(snapshot_error)
-        })
-    }
-
-    fn apply_template<'a>(
-        &'a self,
-        plan: &'a ManagedTemplatePlan,
-    ) -> PortFuture<'a, TemplateMutation> {
-        Box::pin(async move {
-            if matches!(plan, ManagedTemplatePlan::NoChange) {
-                return Ok(TemplateMutation::default());
+                .map(|id| numeric_id(id))
+                .collect::<Result<_>>()?;
+            let rows = self.call(action, json!({key:numbers}))?;
+            let rows = rows.as_array().ok_or("ANKI_INFO_INVALID")?;
+            if rows.len() != chunk.len() {
+                return Err("ANKI_INFO_COUNT_CONFLICT".into());
             }
-            let spec = match plan {
-                ManagedTemplatePlan::Create { spec } => spec.clone(),
-                _ => japanese_vocab_spec(),
-            };
-            let mut mutation = TemplateMutation {
-                model_name: spec.model_name.clone(),
-                created: matches!(plan, ManagedTemplatePlan::Create { .. }),
-                ..Default::default()
-            };
-            if mutation.created {
-                self.transport
-                    .create_model(&spec)
-                    .await
-                    .map_err(template_error)?;
-                return Ok(mutation);
-            }
-            let model = ModelName(spec.model_name.clone());
-            mutation.previous_templates = self
-                .transport
-                .model_templates(&model)
-                .await
-                .map_err(template_error)?
-                .templates
-                .into_iter()
-                .map(|template| ModelTemplate {
-                    name: template.name,
-                    front: template.front,
-                    back: template.back,
-                })
-                .collect();
-            mutation.previous_css = self
-                .transport
-                .model_styling(&model)
-                .await
-                .map_err(template_error)?
-                .css;
-
-            let apply_result = async {
-                if let ManagedTemplatePlan::UpgradeLegacy { rename, add, .. } = plan {
-                    self.transport
-                        .rename_model_template(&spec.model_name, &rename.0, &rename.1)
-                        .await?;
-                    mutation.renamed_template = Some(rename.clone());
-                    for template in add {
-                        self.transport
-                            .add_model_template(&spec.model_name, template)
-                            .await?;
-                        mutation.added_templates.push(template.name.clone());
-                    }
-                }
-                let refresh_templates = matches!(
-                    plan,
-                    ManagedTemplatePlan::UpgradeLegacy {
-                        refresh_templates: true,
-                        ..
-                    } | ManagedTemplatePlan::Refresh {
-                        templates: true,
-                        ..
-                    }
-                );
-                let refresh_css = matches!(
-                    plan,
-                    ManagedTemplatePlan::UpgradeLegacy {
-                        refresh_css: true,
-                        ..
-                    } | ManagedTemplatePlan::Refresh { css: true, .. }
-                );
-                if refresh_templates {
-                    self.transport
-                        .update_model_templates(&spec.model_name, &spec.templates)
-                        .await?;
-                }
-                if refresh_css {
-                    self.transport
-                        .update_model_styling(&spec.model_name, &spec.css)
-                        .await?;
-                }
-                Ok::<(), AnkiConnectError>(())
-            }
-            .await;
-            if let Err(error) = apply_result {
-                let rollback = rollback_template_mutation(&self.transport, &mutation).await;
-                let message = match rollback {
-                    Ok(()) => error.to_string(),
-                    Err(rollback) => format!("{error}; rollback failed: {rollback}"),
-                };
-                return Err(PortError {
-                    operation: "template",
-                    message,
-                    retryable: false,
-                });
-            }
-            Ok(mutation)
-        })
-    }
-
-    fn rollback_template<'a>(&'a self, mutation: &'a TemplateMutation) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            rollback_template_mutation(&self.transport, mutation)
-                .await
-                .map_err(template_error)
-        })
-    }
-
-    fn update_note<'a>(
-        &'a self,
-        source: &'a CommitSource,
-        fields: &'a BTreeMap<String, String>,
-        target_model: &'a str,
-    ) -> PortFuture<'a, NoteMutation> {
-        Box::pin(async move {
-            self.transport
-                .update_note(source.note_id, target_model, fields, &source.tags)
-                .await
-                .map_err(|error| PortError {
-                    operation: "update note",
-                    message: error.to_string(),
-                    retryable: false,
-                })?;
-            Ok(NoteMutation {
-                note_id: source.note_id,
-                created: false,
-            })
-        })
-    }
-
-    fn create_note<'a>(
-        &'a self,
-        deck_name: &'a str,
-        model_name: &'a str,
-        fields: &'a BTreeMap<String, String>,
-        tags: &'a [String],
-    ) -> PortFuture<'a, NoteMutation> {
-        Box::pin(async move {
-            let note_id = self
-                .transport
-                .add_note(deck_name, model_name, fields, tags)
-                .await
-                .map_err(|error| PortError {
-                    operation: "create note",
-                    message: error.to_string(),
-                    retryable: false,
-                })?;
-            Ok(NoteMutation {
-                note_id,
-                created: true,
-            })
-        })
-    }
-
-    fn rollback_note<'a>(
-        &'a self,
-        mutation: &'a NoteMutation,
-        source: Option<&'a CommitSource>,
-    ) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            if mutation.created {
-                self.transport
-                    .delete_notes(&[mutation.note_id])
-                    .await
-                    .map_err(|error| PortError {
-                        operation: "rollback note",
-                        message: error.to_string(),
-                        retryable: false,
-                    })
-            } else if let Some(source) = source {
-                self.transport
-                    .update_note(
-                        source.note_id,
-                        &source.model_name,
-                        &source.fields,
-                        &source.tags,
-                    )
-                    .await
-                    .map_err(|error| PortError {
-                        operation: "rollback note",
-                        message: error.to_string(),
-                        retryable: false,
-                    })
+            let id_field = if matches!(action, Action::NotesInfo) {
+                "noteId"
             } else {
-                Ok(())
+                "cardId"
+            };
+            for (row, expected) in rows.iter().zip(chunk) {
+                if !row.as_object().is_some_and(|v| v.is_empty())
+                    && row.get(id_field).map(wire_id).transpose()?.as_ref() != Some(expected)
+                {
+                    return Err("ANKI_INFO_ID_CONFLICT".into());
+                }
             }
-        })
+            result.extend(rows.iter().cloned());
+        }
+        self.check_profile()?;
+        Ok(result)
     }
 }
-
-impl RestorePort for AnkiCommitPort {
-    fn snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, bool> {
-        Box::pin(async move {
-            let document = find_snapshot(&self.snapshots, snapshot_id)?;
-            Ok(document.snapshot.status == "reverted" || document.snapshot.reverted_at.is_some())
-        })
-    }
-
-    fn note_info<'a>(&'a self, note_id: i64) -> PortFuture<'a, Option<NoteInfo>> {
-        Box::pin(async move {
-            self.transport
-                .notes_info(&[note_id])
-                .await
-                .map(|mut notes| notes.pop())
-                .map_err(|error| PortError {
-                    operation: "note info",
-                    message: error.to_string(),
-                    retryable: false,
-                })
-        })
-    }
-
-    fn delete_notes<'a>(&'a self, note_ids: &'a [i64]) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            self.transport
-                .delete_notes(note_ids)
-                .await
-                .map_err(|error| PortError {
-                    operation: "delete notes",
-                    message: error.to_string(),
-                    retryable: false,
-                })
-        })
-    }
-
-    fn restore_note<'a>(&'a self, original: &'a SnapshotOriginalNote) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            let note_id = original.note_id.ok_or_else(|| PortError {
-                operation: "restore note",
-                message: "original note has no id".into(),
-                retryable: false,
-            })?;
-            self.transport
-                .update_note(
-                    note_id,
-                    &original.model_name,
-                    &original.fields,
-                    &original.tags,
-                )
-                .await
-                .map_err(|error| PortError {
-                    operation: "restore note",
-                    message: error.to_string(),
-                    retryable: false,
-                })
-        })
-    }
-
-    fn mark_snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, ()> {
-        Box::pin(async move {
-            let mut document = find_snapshot(&self.snapshots, snapshot_id)?;
-            document.snapshot.status = "reverted".into();
-            document.snapshot.reverted_at = Some(unix_timestamp());
-            self.snapshots.replace(&document).map_err(snapshot_error)
-        })
-    }
+pub fn wire_id(value: &Value) -> Result<String> {
+    let id = match value {
+        Value::String(s) => s.clone(),
+        _ => value
+            .as_u64()
+            .filter(|n| *n > 0 && *n <= 9_007_199_254_740_991)
+            .ok_or("ANKI_ID_INVALID")?
+            .to_string(),
+    };
+    numeric_id(&id)?;
+    Ok(id)
 }
-
-fn find_snapshot(repository: &SnapshotRepository, id: &str) -> Result<SnapshotDocument, PortError> {
-    repository
-        .load()
-        .map_err(snapshot_error)?
-        .snapshots
+fn numeric_id(s: &str) -> Result<u64> {
+    if s.starts_with('0') || s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return Err("ANKI_ID_INVALID".into());
+    }
+    s.parse::<u64>()
+        .ok()
+        .filter(|n| *n > 0 && *n <= 9_007_199_254_740_991)
+        .ok_or("ANKI_ID_UNREPRESENTABLE_ON_V6_WIRE".into())
+}
+fn ids(value: Value) -> Result<Vec<String>> {
+    let mut ids: Vec<_> = value
+        .as_array()
+        .ok_or("ANKI_IDS_INVALID")?
+        .iter()
+        .map(wire_id)
+        .collect::<Result<_>>()?;
+    ids.sort_by_key(|id| id.parse::<u64>().unwrap());
+    ids.dedup();
+    Ok(ids)
+}
+pub fn select_name(entries: Vec<NamedId>, selector: &str) -> Result<NamedId> {
+    let matches: Vec<_> = entries
         .into_iter()
-        .find(|document| document.snapshot.id == id)
-        .ok_or_else(|| PortError {
-            operation: "snapshot",
-            message: format!("snapshot {id} not found"),
-            retryable: false,
-        })
-}
-
-fn snapshot_error(error: impl std::fmt::Display) -> PortError {
-    PortError {
-        operation: "snapshot",
-        message: error.to_string(),
-        retryable: false,
+        .filter(|e| e.name == selector || e.id == selector)
+        .collect();
+    if matches.len() != 1 {
+        return Err("ANKI_NAME_MISSING_OR_AMBIGUOUS".into());
     }
+    Ok(matches.into_iter().next().unwrap())
 }
-
-fn template_json(template: &ModelTemplate) -> Value {
-    json!({"Name":template.name,"Front":template.front,"Back":template.back})
-}
-
-fn template_error(error: AnkiConnectError) -> PortError {
-    PortError {
-        operation: "template",
-        message: error.to_string(),
-        retryable: false,
+pub fn deck_query(name: &str) -> Result<String> {
+    if name.chars().any(char::is_control) {
+        return Err("INVALID_DECK_SELECTOR".into());
     }
+    Ok(format!(
+        "deck:\"{}\"",
+        name.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('*', "\\*")
+            .replace('_', "\\_")
+    ))
 }
-
-async fn rollback_template_mutation(
-    transport: &AnkiConnectTransport,
-    mutation: &TemplateMutation,
-) -> Result<(), AnkiConnectError> {
-    if mutation.model_name.is_empty() {
-        return Ok(());
-    }
-    if mutation.created {
-        return transport.delete_model(&mutation.model_name).await;
-    }
-    for name in mutation.added_templates.iter().rev() {
-        transport
-            .remove_model_template(&mutation.model_name, name)
-            .await?;
-    }
-    if let Some((old, new)) = &mutation.renamed_template {
-        transport
-            .rename_model_template(&mutation.model_name, new, old)
-            .await?;
-    }
-    transport
-        .update_model_templates(&mutation.model_name, &mutation.previous_templates)
-        .await?;
-    transport
-        .update_model_styling(&mutation.model_name, &mutation.previous_css)
-        .await
-}
-
-fn unix_timestamp() -> String {
-    unix_millis().to_string()
-}
-fn unix_millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-}
-fn mode_name(mode: CardMode) -> String {
-    match mode {
-        CardMode::Modernize => "modernize",
-        CardMode::Inject => "inject",
-    }
-    .into()
-}
-
-fn media_port_error(operation: &'static str, error: AnkiConnectError) -> PortError {
-    let retryable = matches!(
-        error,
-        AnkiConnectError::Transport {
-            retryable: true,
-            ..
-        } | AnkiConnectError::Timeout { .. }
-    );
-    PortError {
-        operation,
-        message: error.to_string(),
-        retryable,
-    }
-}
-
-fn required_string(
-    object: &serde_json::Map<String, Value>,
-    field: &str,
-    action: &str,
-) -> Result<String, AnkiConnectError> {
-    object
-        .get(field)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| AnkiConnectError::MalformedResponse {
-            message: format!("{action} result is missing string {field:?}"),
-        })
-}
-
-fn escape_anki_query(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-#[derive(Deserialize)]
-struct RawNoteInfo {
-    #[serde(rename = "noteId")]
-    note_id: i64,
-    #[serde(rename = "modelName")]
-    model_name: String,
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default)]
-    fields: std::collections::BTreeMap<String, RawField>,
-    #[serde(default)]
-    cards: Vec<RawCardRef>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum RawField {
-    Info { value: String },
-    Value(String),
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum RawCardRef {
-    Id(i64),
-    Info {
-        #[serde(rename = "deckName")]
-        deck_name: Option<String>,
-    },
-}
-
-#[derive(Deserialize)]
-struct RawCardDetails {
-    #[serde(rename = "cardId")]
-    card_id: i64,
-    #[serde(rename = "deckName")]
-    deck_name: String,
-}
-
-impl RawNoteInfo {
-    fn into_note(self, card_decks: &HashMap<i64, String>) -> NoteInfo {
-        let fields = self
-            .fields
-            .into_iter()
-            .map(|(name, value)| {
-                let value = match value {
-                    RawField::Info { value } | RawField::Value(value) => value,
-                };
-                (name, value)
-            })
-            .collect();
-        let deck_names = self
-            .cards
-            .into_iter()
-            .filter_map(|card| match card {
-                RawCardRef::Id(id) => card_decks.get(&id).cloned(),
-                RawCardRef::Info { deck_name } => deck_name,
-            })
-            .map(DeckName)
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        NoteInfo {
-            note_id: self.note_id,
-            model_name: ModelName(self.model_name),
-            deck_names,
-            fields,
-            tags: self.tags,
+/// Convert known wire ID positions before output or archival; preserve other values verbatim.
+pub fn normalize_note_ids(mut value: Value) -> Result<Value> {
+    for key in ["noteId", "modelId"] {
+        if let Some(id) = value.get_mut(key) {
+            *id = json!(wire_id(id)?);
         }
     }
+    if let Some(cards) = value.get_mut("cards").and_then(Value::as_array_mut) {
+        for id in cards {
+            *id = json!(wire_id(id)?);
+        }
+    }
+    Ok(value)
 }
 
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpListener,
-        sync::oneshot,
-    };
-
-    use super::*;
-
-    async fn mock_server(
-        status: u16,
-        body: &'static str,
-        delay: Duration,
-    ) -> (String, oneshot::Receiver<String>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let (request_tx, request_rx) = oneshot::channel();
-        tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = vec![0; 4096];
-            let count = stream.read(&mut request).await.unwrap();
-            request.truncate(count);
-            let _ = request_tx.send(String::from_utf8_lossy(&request).into_owned());
-            if !delay.is_zero() {
-                tokio::time::sleep(delay).await;
+pub fn normalize_card_ids(mut value: Value) -> Result<Value> {
+    for key in ["cardId", "note", "deckId", "originalDeckId"] {
+        if let Some(id) = value.get_mut(key) {
+            if id.as_u64() == Some(0) && key == "originalDeckId" {
+                *id = json!("0");
+            } else {
+                *id = json!(wire_id(id)?);
             }
-            let response = format!(
-                "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-        });
-        (format!("http://{address}"), request_rx)
+        }
     }
-
-    async fn mock_sequence(
-        responses: Vec<&'static str>,
-    ) -> (String, oneshot::Receiver<Vec<String>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let (request_tx, request_rx) = oneshot::channel();
-        tokio::spawn(async move {
-            let mut requests = Vec::with_capacity(responses.len());
-            for body in responses {
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let mut request = vec![0; 4096];
-                let count = stream.read(&mut request).await.unwrap();
-                request.truncate(count);
-                requests.push(String::from_utf8_lossy(&request).into_owned());
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                stream.write_all(response.as_bytes()).await.unwrap();
-            }
-            let _ = request_tx.send(requests);
-        });
-        (format!("http://{address}"), request_rx)
-    }
-
-    #[tokio::test]
-    async fn sends_version_in_the_anki_connect_envelope() {
-        let (url, request) =
-            mock_server(200, r#"{"result": 6, "error": null}"#, Duration::ZERO).await;
-        let transport = AnkiConnectTransport::new(&url).unwrap();
-        assert_eq!(transport.version().await.unwrap(), 6);
-        let request = request.await.unwrap();
-        assert!(request.starts_with("POST / HTTP/1.1"));
-        assert!(request.contains(r#"{"action":"version","version":6}"#));
-    }
-
-    #[tokio::test]
-    async fn requests_permission_without_collection_writes() {
-        let (url, request) = mock_server(
-            200,
-            r#"{"result":{"permission":"granted","requireApiKey":false,"version":6},"error":null}"#,
-            Duration::ZERO,
-        )
-        .await;
-        let transport = AnkiConnectTransport::new(&url).unwrap();
-        assert_eq!(
-            transport.request_permission().await.unwrap(),
-            PermissionStatus {
-                permission: Permission::Granted,
-                requires_api_key: Some(false),
-                version: Some(6),
-            }
-        );
-        assert!(
-            request
-                .await
-                .unwrap()
-                .contains(r#"{"action":"requestPermission","version":6}"#)
-        );
-    }
-
-    #[tokio::test]
-    async fn mutation_methods_use_typed_write_actions() {
-        let (url, requests) = mock_sequence(vec![
-            r#"{"result":null,"error":null}"#,
-            r#"{"result":91,"error":null}"#,
-            r#"{"result":null,"error":null}"#,
-            r#"{"result":null,"error":null}"#,
-        ])
-        .await;
-        let transport = AnkiConnectTransport::new(&url).unwrap();
-        let fields = std::collections::BTreeMap::from([("Word".into(), "俳優".into())]);
-        transport.create_backup().await.unwrap();
-        assert_eq!(
-            transport
-                .add_note("Japanese", "Basic", &fields, &["linguist".into()])
-                .await
-                .unwrap(),
-            91
-        );
-        transport
-            .update_note(91, "Basic", &fields, &[])
-            .await
-            .unwrap();
-        transport.delete_notes(&[91]).await.unwrap();
-        let requests = requests.await.unwrap();
-        assert!(requests[0].contains(r#""action":"createBackup""#));
-        assert!(requests[1].contains(r#""action":"addNote""#) && requests[1].contains("俳優"));
-        assert!(requests[2].contains(r#""action":"updateNoteModel""#));
-        assert!(requests[3].contains(r#""action":"deleteNotes""#));
-    }
-
-    #[tokio::test]
-    async fn managed_model_create_has_compensating_delete() {
-        let (url, requests) = mock_sequence(vec![
-            r#"{"result":1,"error":null}"#,
-            r#"{"result":null,"error":null}"#,
-        ])
-        .await;
-        let port = AnkiCommitPort::new(
-            AnkiConnectTransport::new(&url).unwrap(),
-            SnapshotRepository::at_config_dir(std::env::temp_dir()),
-        );
-        let mutation = port
-            .apply_template(&ManagedTemplatePlan::Create {
-                spec: japanese_vocab_spec(),
-            })
-            .await
-            .unwrap();
-        assert!(mutation.created);
-        port.rollback_template(&mutation).await.unwrap();
-        let requests = requests.await.unwrap();
-        assert!(requests[0].contains(r#""action":"createModel""#));
-        assert!(requests[0].contains("Comprehension"));
-        assert!(requests[1].contains(r#""action":"deleteModels""#));
-    }
-
-    #[tokio::test]
-    async fn exposes_anki_connect_errors_structurally() {
-        let (url, _) = mock_server(
-            200,
-            r#"{"result": null, "error": "permission denied"}"#,
-            Duration::ZERO,
-        )
-        .await;
-        let error = AnkiConnectTransport::new(&url)
-            .unwrap()
-            .version()
-            .await
-            .unwrap_err();
-        assert_eq!(
-            error,
-            AnkiConnectError::Remote {
-                action: "version".into(),
-                message: "permission denied".into(),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn times_out_without_requiring_anki() {
-        let (url, _) = mock_server(
-            200,
-            r#"{"result": 6, "error": null}"#,
-            Duration::from_millis(100),
-        )
-        .await;
-        let transport = AnkiConnectTransport::with_timeout(&url, Duration::from_millis(5)).unwrap();
-        assert_eq!(
-            transport.version().await.unwrap_err(),
-            AnkiConnectError::Timeout {
-                timeout: Duration::from_millis(5),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn reports_unreachable_local_transport_structurally() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        drop(listener);
-        let error = AnkiConnectTransport::new(&format!("http://{address}"))
-            .unwrap()
-            .version()
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            AnkiConnectError::Transport {
-                retryable: true,
-                ..
-            }
-        ));
-    }
-
-    #[tokio::test]
-    async fn rejects_malformed_response_envelopes() {
-        let (url, _) = mock_server(200, r#"{"result": 6}"#, Duration::ZERO).await;
-        let error = AnkiConnectTransport::new(&url)
-            .unwrap()
-            .version()
-            .await
-            .unwrap_err();
-        assert!(matches!(error, AnkiConnectError::MalformedResponse { .. }));
-    }
-
-    #[tokio::test]
-    async fn converts_empty_decks_and_missing_notes_at_the_adapter_boundary() {
-        let (deck_url, _) = mock_server(200, r#"{"result":[],"error":null}"#, Duration::ZERO).await;
-        assert!(
-            AnkiConnectTransport::new(&deck_url)
-                .unwrap()
-                .deck_names()
-                .await
-                .unwrap()
-                .is_empty()
-        );
-
-        let (search_url, request) =
-            mock_server(200, r#"{"result":[],"error":null}"#, Duration::ZERO).await;
-        let transport = AnkiConnectTransport::new(&search_url).unwrap();
-        assert!(
-            transport
-                .find_notes("deck:Japanese missing")
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        assert!(request.await.unwrap().contains(r#"{"action":"findNotes"#));
-
-        let (notes_url, _) =
-            mock_server(200, r#"{"result":[],"error":null}"#, Duration::ZERO).await;
-        assert!(
-            AnkiConnectTransport::new(&notes_url)
-                .unwrap()
-                .notes_info(&[404])
-                .await
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    #[tokio::test]
-    async fn preserves_html_fields_tags_and_note_decks() {
-        let response = r#"{
-          "result":[{
-            "noteId":42,"modelName":"Japanese","tags":["source","needs review"],
-            "fields":{"Expression":{"order":0,"value":"<b>俳優</b>"},"Meaning":{"order":1,"value":"actor<br>performer"}},
-            "cards":[{"deckName":"Japanese::Media"},{"deckName":"Japanese::Media"}]
-          }],"error":null
-        }"#;
-        let (url, _) = mock_server(200, response, Duration::ZERO).await;
-        let note = AnkiConnectTransport::new(&url)
-            .unwrap()
-            .notes_info(&[42])
-            .await
-            .unwrap()
-            .pop()
-            .unwrap();
-        assert_eq!(note.note_id, 42);
-        assert_eq!(note.model_name, ModelName("Japanese".into()));
-        assert_eq!(note.fields["Expression"], "<b>俳優</b>");
-        assert_eq!(note.fields["Meaning"], "actor<br>performer");
-        assert_eq!(note.tags, ["source", "needs review"]);
-        assert_eq!(note.deck_names, [DeckName("Japanese::Media".into())]);
-    }
-
-    #[tokio::test]
-    async fn resolves_numeric_note_cards_through_cards_info() {
-        let (url, requests) = mock_sequence(vec![
-            r#"{"result":[{"noteId":42,"modelName":"Basic","tags":[],"fields":{"Word":{"value":"hello","order":0}},"cards":[101,102]}],"error":null}"#,
-            r#"{"result":[{"cardId":101,"deckName":"English"},{"cardId":102,"deckName":"English::Review"}],"error":null}"#,
-        ]).await;
-        let notes = AnkiConnectTransport::new(&url)
-            .unwrap()
-            .notes_info(&[42])
-            .await
-            .unwrap();
-        assert_eq!(notes[0].fields["Word"], "hello");
-        assert_eq!(
-            notes[0].deck_names,
-            [
-                DeckName("English".into()),
-                DeckName("English::Review".into())
-            ]
-        );
-        let requests = requests.await.unwrap();
-        assert!(requests[0].contains(r#""action":"notesInfo""#));
-        assert!(requests[1].contains(r#""action":"cardsInfo""#));
-        assert!(requests[1].contains(r#""cards":[101,102]"#));
-    }
-
-    #[tokio::test]
-    async fn converts_multiple_models_fields_templates_and_media() {
-        let (models_url, _) = mock_server(
-            200,
-            r#"{"result":["Basic","Japanese"],"error":null}"#,
-            Duration::ZERO,
-        )
-        .await;
-        assert_eq!(
-            AnkiConnectTransport::new(&models_url)
-                .unwrap()
-                .model_names()
-                .await
-                .unwrap(),
-            [ModelName("Basic".into()), ModelName("Japanese".into())]
-        );
-
-        let (fields_url, _) = mock_server(
-            200,
-            r#"{"result":["Expression","Meaning"],"error":null}"#,
-            Duration::ZERO,
-        )
-        .await;
-        let model = ModelName("Japanese".into());
-        assert_eq!(
-            AnkiConnectTransport::new(&fields_url)
-                .unwrap()
-                .model_fields(&model)
-                .await
-                .unwrap()
-                .fields,
-            ["Expression", "Meaning"]
-        );
-
-        let (templates_url, _) = mock_server(
-            200,
-            r#"{"result":{"Recognition":{"Front":"{{Expression}}","Back":"{{FrontSide}}<hr>{{Meaning}}"}},"error":null}"#,
-            Duration::ZERO,
-        )
-        .await;
-        assert_eq!(
-            AnkiConnectTransport::new(&templates_url)
-                .unwrap()
-                .model_templates(&model)
-                .await
-                .unwrap()
-                .templates,
-            [CardTemplate {
-                name: "Recognition".into(),
-                front: "{{Expression}}".into(),
-                back: "{{FrontSide}}<hr>{{Meaning}}".into(),
-            }]
-        );
-
-        let (styling_url, _) = mock_server(
-            200,
-            r#"{"result":{"css":".card { color: white; }"},"error":null}"#,
-            Duration::ZERO,
-        )
-        .await;
-        assert_eq!(
-            AnkiConnectTransport::new(&styling_url)
-                .unwrap()
-                .model_styling(&model)
-                .await
-                .unwrap()
-                .css,
-            ".card { color: white; }"
-        );
-
-        let (media_url, _) =
-            mock_server(200, r#"{"result":null,"error":null}"#, Duration::ZERO).await;
-        assert_eq!(
-            AnkiConnectTransport::new(&media_url)
-                .unwrap()
-                .retrieve_media_file("missing.mp3")
-                .await
-                .unwrap(),
-            None
-        );
-
-        let (media_url, _) = mock_server(
-            200,
-            r#"{"result":"base64-audio","error":null}"#,
-            Duration::ZERO,
-        )
-        .await;
-        assert_eq!(
-            AnkiConnectTransport::new(&media_url)
-                .unwrap()
-                .retrieve_media_file("audio.mp3")
-                .await
-                .unwrap(),
-            Some(MediaFile {
-                filename: "audio.mp3".into(),
-                data_base64: "base64-audio".into(),
-            })
-        );
-    }
-
-    #[tokio::test]
-    async fn adapter_uses_indexed_candidates_then_application_resolution() {
-        let (url, requests) = mock_sequence(vec![
-            r#"{"result":[42],"error":null}"#,
-            r#"{"result":[{"noteId":42,"modelName":"Legacy","fields":{"Word":{"value":"<b>俳優</b>"}},"tags":[],"cards":[]}],"error":null}"#,
-        ])
-        .await;
-        let resolution = AnkiConnectTransport::new(&url)
-            .unwrap()
-            .resolve_exact_expression(
-                "Japanese::Vocabulary",
-                &ExactExpressionRequest {
-                    deck_key: "japanese_vocab".into(),
-                    expression: " 俳優 ".into(),
-                    preferred_fields: vec!["Word".into()],
-                },
-            )
-            .await
-            .unwrap();
-        assert!(matches!(
-            resolution,
-            ExpressionResolution::Modernize { note, .. } if note.note_id == 42
-        ));
-        let requests = requests.await.unwrap();
-        assert!(requests[0].contains(r#""action":"findNotes"#));
-        assert!(requests[0].contains(r#"deck:\"Japanese::Vocabulary\" \"俳優\""#));
-        assert!(requests[1].contains(r#""action":"notesInfo"#));
-    }
-
-    #[tokio::test]
-    async fn selector_applies_local_image_filter_and_limit() {
-        let (url, requests) = mock_sequence(vec![
-            r#"{"result":[1,2],"error":null}"#,
-            r#"{"result":[{"noteId":1,"modelName":"Legacy","fields":{"Word":{"value":"cat"},"Picture":{"value":"<img src=\"cat.jpg\">"}},"tags":[],"cards":[]},{"noteId":2,"modelName":"Legacy","fields":{"Word":{"value":"dog"}},"tags":[],"cards":[]}],"error":null}"#,
-        ])
-        .await;
-        let preview = AnkiConnectTransport::new(&url)
-            .unwrap()
-            .preview(
-                &BatchSelector {
-                    image: ImageFilter::HasImage,
-                    limit: 1,
-                    ..Default::default()
-                },
-                200,
-            )
-            .await
-            .unwrap();
-        assert_eq!(preview.total, 1);
-        assert_eq!(preview.notes[0].expression, "cat");
-        let requests = requests.await.unwrap();
-        assert!(requests[0].contains(r#""action":"findNotes""#));
-        assert!(!requests[0].contains("picture"));
-        assert!(requests[1].contains(r#""action":"notesInfo""#));
-    }
-
-    #[tokio::test]
-    async fn selector_bounds_each_metadata_request() {
-        let ids = (1_i64..=251).collect::<Vec<_>>();
-        let response = |value: Value| -> &'static str {
-            Box::leak(
-                serde_json::to_string(&json!({"result": value, "error": null}))
-                    .unwrap()
-                    .into_boxed_str(),
-            )
-        };
-        let note = |id: i64| {
-            json!({
-                "noteId": id,
-                "modelName": "Legacy",
-                "fields": {"Word": {"value": format!("word-{id}")}},
-                "tags": [],
-                "cards": []
-            })
-        };
-        let (url, requests) = mock_sequence(vec![
-            response(json!(ids)),
-            response(json!((1_i64..=250).map(note).collect::<Vec<_>>())),
-            response(json!([note(251)])),
-        ])
-        .await;
-        let preview = AnkiConnectTransport::new(&url)
-            .unwrap()
-            .preview(&BatchSelector::default(), usize::MAX)
-            .await
-            .unwrap();
-        assert_eq!(preview.total, 251);
-        assert_eq!(preview.notes.len(), 251);
-        let requests = requests.await.unwrap();
-        assert_eq!(requests.len(), 3);
-        assert!(requests[1].contains(r#""notes":[1,2,3"#));
-        assert!(requests[2].contains(r#""notes":[251]"#));
-    }
-
-    #[tokio::test]
-    async fn media_write_actions_use_anki_connect_envelopes() {
-        let (url, requests) = mock_sequence(vec![
-            r#"{"result":"new.jpg","error":null}"#,
-            r#"{"result":null,"error":null}"#,
-        ])
-        .await;
-        let transport = AnkiConnectTransport::new(&url).unwrap();
-        transport.store_media_file("new.jpg", "bmV3").await.unwrap();
-        transport.delete_media_file("old.jpg").await.unwrap();
-        let requests = requests.await.unwrap();
-        assert!(requests[0].contains(r#""action":"storeMediaFile"#));
-        assert!(requests[0].contains(r#""filename":"new.jpg"#));
-        assert!(requests[1].contains(r#""action":"deleteMediaFile"#));
-    }
+    Ok(value)
 }

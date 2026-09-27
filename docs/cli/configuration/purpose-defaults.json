@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "presets": {
+    "japanese_vocab": {
+      "target_language": "ja",
+      "overrides": {
+        "learning.explanation_language": "en",
+        "ocr.languages": [
+          "jpn",
+          "eng"
+        ],
+        "dictionary.provider": "jisho"
+      }
+    },
+    "japanese_grammar": {
+      "target_language": "ja",
+      "overrides": {
+        "learning.explanation_language": "vi",
+        "ocr.languages": [
+          "jpn",
+          "eng",
+          "vie"
+        ]
+      }
+    },
+    "english_vocab": {
+      "target_language": "en",
+      "overrides": {
+        "learning.explanation_language": "en",
+        "ocr.languages": [
+          "eng"
+        ],
+        "dictionary.provider": "wiktionary"
+      }
+    },
+    "english_grammar": {
+      "target_language": "en",
+      "overrides": {
+        "learning.explanation_language": "en",
+        "ocr.languages": [
+          "eng"
+        ]
+      }
+    }
+  }
+}

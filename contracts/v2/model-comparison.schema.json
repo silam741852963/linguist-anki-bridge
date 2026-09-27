@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ModelComparison",
+  "type": "object",
+  "properties": {
+    "apply_authorized": {
+      "type": "boolean"
+    },
+    "css_matches": {
+      "type": "boolean"
+    },
+    "duplicate_source_fields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exact_content_match": {
+      "type": "boolean"
+    },
+    "field_order_matches": {
+      "type": "boolean"
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FieldMatch"
+      }
+    },
+    "missing_fields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "name_matches": {
+      "type": "boolean"
+    },
+    "source_template_ordinals_verified": {
+      "type": "boolean"
+    },
+    "target_model": {
+      "type": "string"
+    },
+    "target_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "templates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TemplateMatch"
+      }
+    },
+    "unexpected_fields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unexpected_templates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "target_model",
+    "target_version",
+    "name_matches",
+    "field_order_matches",
+    "fields",
+    "missing_fields",
+    "unexpected_fields",
+    "duplicate_source_fields",
+    "templates",
+    "unexpected_templates",
+    "css_matches",
+    "exact_content_match",
+    "source_template_ordinals_verified",
+    "apply_authorized"
+  ],
+  "$defs": {
+    "FieldMatch": {
+      "type": "object",
+      "properties": {
+        "source_ordinals": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "target_field": {
+          "type": "string"
+        },
+        "target_ordinal": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "target_field",
+        "target_ordinal",
+        "source_ordinals"
+      ]
+    },
+    "TemplateMatch": {
+      "type": "object",
+      "properties": {
+        "back_matches": {
+          "type": "boolean"
+        },
+        "front_matches": {
+          "type": "boolean"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "target_ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "target_template": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_template",
+        "target_ordinal",
+        "present",
+        "front_matches",
+        "back_matches"
+      ]
+    }
+  }
+}

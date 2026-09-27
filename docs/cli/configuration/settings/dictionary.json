@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "dictionary.provider",
+      "type": "enum",
+      "default": "auto",
+      "constraints": {
+        "values": [
+          "auto",
+          "jisho",
+          "wiktionary",
+          "custom",
+          "authored"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "ALG-VOCAB",
+      "description": "Auto routes by supported target language; never Japanese fallback.",
+      "sensitive": false
+    },
+    {
+      "key": "dictionary.url_template",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "url_template"
+      },
+      "scope": "purpose",
+      "consumer": "dictionary adapter",
+      "description": "Only custom provider; validated placeholders/host.",
+      "sensitive": false
+    },
+    {
+      "key": "dictionary.schema_path",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "path"
+      },
+      "scope": "purpose",
+      "consumer": "dictionary adapter",
+      "description": "Versioned extraction schema resource.",
+      "sensitive": false
+    },
+    {
+      "key": "dictionary.browser_fallback",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "dictionary adapter",
+      "description": "Explicit optional browser dependency.",
+      "sensitive": false
+    },
+    {
+      "key": "dictionary.user_agent",
+      "type": "string",
+      "default": "LinguistAnkiBridge/CLI",
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "purpose",
+      "consumer": "dictionary adapter",
+      "description": "Identify client; site limits/terms still apply.",
+      "sensitive": false
+    }
+  ]
+}

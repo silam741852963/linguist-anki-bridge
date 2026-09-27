@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "anki.endpoint",
+      "type": "string",
+      "default": "http://127.0.0.1:8765",
+      "constraints": {
+        "format": "url"
+      },
+      "scope": "global",
+      "consumer": "Anki adapter",
+      "description": "Remote allowlisted reads supported; baseline managed writes require same-host loopback bridge.",
+      "sensitive": false
+    },
+    {
+      "key": "anki.api_key_env",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "env_name"
+      },
+      "scope": "global",
+      "consumer": "Anki adapter",
+      "description": "Name of environment variable containing API key; never the key.",
+      "sensitive": false
+    },
+    {
+      "key": "anki.expected_profile",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "global",
+      "consumer": "ALG-IDENTITY",
+      "description": "Expected Anki profile name, checked but not a strong collection identity.",
+      "sensitive": false
+    },
+    {
+      "key": "anki.request_timeout_seconds",
+      "type": "integer",
+      "default": 30,
+      "constraints": {
+        "min": 1,
+        "max": 600
+      },
+      "scope": "global",
+      "consumer": "Anki adapter",
+      "description": "Timeout enters reconciliation when a mutation was sent.",
+      "sensitive": false
+    },
+    {
+      "key": "anki.read_batch_size",
+      "type": "integer",
+      "default": 100,
+      "constraints": {
+        "min": 1,
+        "max": 1000
+      },
+      "scope": "global",
+      "consumer": "ALG-CAPTURE",
+      "description": "Bound read payload.",
+      "sensitive": false
+    },
+    {
+      "key": "anki.commit_interval_seconds",
+      "type": "number",
+      "default": 0.25,
+      "constraints": {
+        "min": 0,
+        "max": 60
+      },
+      "scope": "global",
+      "consumer": "ALG-APPLY",
+      "description": "Minimum gap between note mutations.",
+      "sensitive": false
+    },
+    {
+      "key": "anki.native_adapter",
+      "type": "string",
+      "default": "lab-native-v1",
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "global",
+      "consumer": "ALG-MIGRATE",
+      "description": "Mandatory verified companion protocol for all managed collection writes.",
+      "sensitive": false
+    }
+  ]
+}

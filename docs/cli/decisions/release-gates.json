@@ -1,0 +1,283 @@
+{
+  "schema_version": 1,
+  "gates": [
+    {
+      "id": "EV-01",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-01",
+        "WP-09"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-07"
+      ],
+      "review_ids": [
+        "RV-01",
+        "RV-15"
+      ]
+    },
+    {
+      "id": "EV-02",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-02",
+        "WP-09",
+        "WP-14"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-11",
+        "FG-17",
+        "FG-22"
+      ],
+      "review_ids": [
+        "RV-13"
+      ]
+    },
+    {
+      "id": "EV-03",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-03"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-01"
+      ],
+      "review_ids": [
+        "RV-01"
+      ]
+    },
+    {
+      "id": "EV-04",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-03",
+        "WP-11"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-02"
+      ],
+      "review_ids": [
+        "RV-03"
+      ]
+    },
+    {
+      "id": "EV-05",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-03",
+        "WP-10",
+        "WP-12"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-05",
+        "FG-06"
+      ],
+      "review_ids": [
+        "RV-02"
+      ]
+    },
+    {
+      "id": "EV-06",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-03",
+        "WP-11",
+        "WP-12"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-03",
+        "FG-20"
+      ],
+      "review_ids": [
+        "RV-01",
+        "RV-05",
+        "RV-09"
+      ]
+    },
+    {
+      "id": "EV-07",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-04",
+        "WP-11"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-04",
+        "FG-08"
+      ],
+      "review_ids": [
+        "RV-04",
+        "RV-14"
+      ]
+    },
+    {
+      "id": "EV-08",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-05",
+        "WP-10",
+        "WP-12"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [],
+      "review_ids": [
+        "RV-07",
+        "RV-10"
+      ]
+    },
+    {
+      "id": "EV-09",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-08",
+        "WP-12"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [],
+      "review_ids": [
+        "RV-06"
+      ]
+    },
+    {
+      "id": "EV-10",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-05",
+        "WP-11",
+        "WP-12"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-10",
+        "FG-16"
+      ],
+      "review_ids": [
+        "RV-05",
+        "RV-15"
+      ]
+    },
+    {
+      "id": "EV-11",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-06",
+        "WP-07",
+        "WP-08",
+        "WP-09",
+        "WP-15"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-12",
+        "FG-13",
+        "FG-14"
+      ],
+      "review_ids": [
+        "RV-07",
+        "RV-11"
+      ]
+    },
+    {
+      "id": "EV-12",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-04",
+        "WP-13"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-09",
+        "FG-19"
+      ],
+      "review_ids": [
+        "RV-08"
+      ]
+    },
+    {
+      "id": "EV-13",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-06",
+        "WP-14"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-15",
+        "FG-21"
+      ],
+      "review_ids": [
+        "RV-12"
+      ]
+    },
+    {
+      "id": "EV-14",
+      "status": "not_run",
+      "design": "finalized",
+      "owners": [
+        "WP-01",
+        "WP-09",
+        "WP-15",
+        "WP-16"
+      ],
+      "document": "release-gates.md",
+      "evidence_required": true,
+      "blocks_production_write": true,
+      "gap_ids": [
+        "FG-18",
+        "FG-23",
+        "FG-24"
+      ],
+      "review_ids": [
+        "RV-01",
+        "RV-02",
+        "RV-09"
+      ]
+    }
+  ]
+}

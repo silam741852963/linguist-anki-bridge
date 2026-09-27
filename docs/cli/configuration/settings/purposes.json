@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "purposes.<purpose>.source_deck",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "mapping",
+      "consumer": "ALG-CAPTURE",
+      "description": "Revamp selector default; never destination inference.",
+      "sensitive": false
+    },
+    {
+      "key": "purposes.<purpose>.target_deck",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "mapping",
+      "consumer": "ALG-CAPTURE",
+      "description": "Destination must exist or have an explicit reviewed creation action.",
+      "sensitive": false
+    },
+    {
+      "key": "purposes.<purpose>.source_model",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "mapping",
+      "consumer": "ALG-CAPTURE",
+      "description": "Expected model, still inspect manifest.",
+      "sensitive": false
+    },
+    {
+      "key": "purposes.<purpose>.target_language",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "language"
+      },
+      "scope": "mapping",
+      "consumer": "ALG-CAPTURE",
+      "description": "BCP47 target language.",
+      "sensitive": false
+    },
+    {
+      "key": "purposes.<purpose>.ocr_languages",
+      "type": "string[]",
+      "default": [],
+      "constraints": {
+        "items_format": "nonempty",
+        "unique": true
+      },
+      "scope": "mapping",
+      "consumer": "ALG-OCR",
+      "description": "Empty inherits ocr.languages; explicit mapping validated.",
+      "sensitive": false
+    },
+    {
+      "key": "purposes.<purpose>.fields",
+      "type": "field_map",
+      "default": {},
+      "constraints": {
+        "keys": [
+          "expression",
+          "reading",
+          "meaning",
+          "picture",
+          "audio",
+          "personal_notes",
+          "source",
+          "pattern",
+          "formation",
+          "usage",
+          "examples",
+          "exercise_prompt",
+          "exercise_answer",
+          "pronunciation",
+          "kanji",
+          "sense_key",
+          "use_key",
+          "production_prompt",
+          "spelling_prompt",
+          "recognition_prompt",
+          "explanation_language",
+          "language",
+          "enable_production",
+          "enable_spelling",
+          "enable_application"
+        ],
+        "values": "existing exact source field names; multiple roles may share a field with provenance"
+      },
+      "scope": "mapping",
+      "consumer": "ALG-CAPTURE",
+      "description": "Only source mapping; target v2 fields are fixed.",
+      "sensitive": false
+    },
+    {
+      "key": "purposes.<purpose>.card_tasks",
+      "type": "task_map",
+      "default": {},
+      "constraints": {
+        "keys": "observed source template ordinal as decimal string",
+        "values": [
+          "comprehension",
+          "production",
+          "spelling",
+          "recognition",
+          "application"
+        ],
+        "unique_values": true
+      },
+      "scope": "mapping",
+      "consumer": "ALG-MIGRATE",
+      "description": "Explicit reviewed source task map; cannot assume arbitrary ordinals.",
+      "sensitive": false
+    },
+    {
+      "key": "purposes.<purpose>.overrides",
+      "type": "override_map",
+      "default": {},
+      "constraints": {
+        "keys": "registered purpose-scope keys only",
+        "unknown_keys": "reject"
+      },
+      "scope": "mapping",
+      "consumer": "ALG-CONFIG",
+      "description": "Per-purpose overrides reuse typed entries.",
+      "sensitive": false
+    }
+  ]
+}

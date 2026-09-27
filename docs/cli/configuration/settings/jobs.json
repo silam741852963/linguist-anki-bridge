@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "jobs.prepare_workers",
+      "type": "integer",
+      "default": 2,
+      "constraints": {
+        "min": 1,
+        "max": 16
+      },
+      "scope": "global",
+      "consumer": "ALG-JOB",
+      "description": "Parallel read/preparation workers; Anki writer always one.",
+      "sensitive": false
+    },
+    {
+      "key": "jobs.max_item_attempts",
+      "type": "integer",
+      "default": 3,
+      "constraints": {
+        "min": 1,
+        "max": 10
+      },
+      "scope": "global",
+      "consumer": "ALG-JOB",
+      "description": "Count only retry-eligible classified failures.",
+      "sensitive": false
+    },
+    {
+      "key": "jobs.on_item_error",
+      "type": "enum",
+      "default": "continue",
+      "constraints": {
+        "values": [
+          "continue",
+          "stop"
+        ]
+      },
+      "scope": "global",
+      "consumer": "ALG-JOB",
+      "description": "Shared identity/schema/recovery faults always halt affected group.",
+      "sensitive": false
+    },
+    {
+      "key": "jobs.lease_seconds",
+      "type": "integer",
+      "default": 60,
+      "constraints": {
+        "min": 10,
+        "max": 600
+      },
+      "scope": "global",
+      "consumer": "ALG-JOB",
+      "description": "Lease expires only with worker-liveness check.",
+      "sensitive": false
+    },
+    {
+      "key": "jobs.heartbeat_seconds",
+      "type": "integer",
+      "default": 10,
+      "constraints": {
+        "min": 1,
+        "max": 60
+      },
+      "scope": "global",
+      "consumer": "ALG-JOB",
+      "description": "Must be less than lease/3.",
+      "sensitive": false
+    },
+    {
+      "key": "jobs.pause_poll_ms",
+      "type": "integer",
+      "default": 250,
+      "constraints": {
+        "min": 50,
+        "max": 5000
+      },
+      "scope": "global",
+      "consumer": "ALG-JOB",
+      "description": "Control polling; cannot skip durable step completion.",
+      "sensitive": false
+    }
+  ]
+}

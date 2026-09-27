@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "filters.remove_parentheses",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "ALG-CAPTURE",
+      "description": "Optional lookup normalization, never source archive mutation.",
+      "sensitive": false
+    },
+    {
+      "key": "filters.clean_word_only",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "ALG-CAPTURE",
+      "description": "Optional reviewed lookup cleanup.",
+      "sensitive": false
+    },
+    {
+      "key": "filters.normalize_unicode",
+      "type": "boolean",
+      "default": true,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "ALG-CAPTURE",
+      "description": "NFC semantic identity only; raw fields preserved.",
+      "sensitive": false
+    }
+  ]
+}

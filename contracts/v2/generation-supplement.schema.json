@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Supplement",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/VocabularySupplement"
+        },
+        "kind": {
+          "type": "string",
+          "const": "vocabulary"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "body"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/GrammarSupplement"
+        },
+        "kind": {
+          "type": "string",
+          "const": "grammar"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "body"
+      ]
+    }
+  ],
+  "$defs": {
+    "GeneratedExample": {
+      "type": "object",
+      "properties": {
+        "sentence": {
+          "type": "string"
+        },
+        "translation": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sentence",
+        "translation"
+      ]
+    },
+    "GrammarSupplement": {
+      "type": "object",
+      "properties": {
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GeneratedExample"
+          }
+        },
+        "exercise_answer": {
+          "type": "string"
+        },
+        "exercise_prompt": {
+          "type": "string"
+        },
+        "formation": {
+          "type": "string"
+        },
+        "meaning": {
+          "type": "string"
+        },
+        "recognition_prompt": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "meaning",
+        "formation",
+        "usage",
+        "examples",
+        "recognition_prompt",
+        "exercise_prompt",
+        "exercise_answer"
+      ]
+    },
+    "VocabularySupplement": {
+      "type": "object",
+      "properties": {
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GeneratedExample"
+          }
+        },
+        "production_prompt": {
+          "type": "string"
+        },
+        "spelling_prompt": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "usage",
+        "examples",
+        "production_prompt",
+        "spelling_prompt"
+      ]
+    }
+  }
+}

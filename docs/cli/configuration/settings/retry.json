@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "retry.read_attempts",
+      "type": "integer",
+      "default": 3,
+      "constraints": {
+        "min": 1,
+        "max": 10
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "No blind mutation retry.",
+      "sensitive": false
+    },
+    {
+      "key": "retry.initial_backoff_seconds",
+      "type": "number",
+      "default": 0.6,
+      "constraints": {
+        "min": 0.1,
+        "max": 60
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "First transient-read delay.",
+      "sensitive": false
+    },
+    {
+      "key": "retry.max_backoff_seconds",
+      "type": "integer",
+      "default": 15,
+      "constraints": {
+        "min": 0.1,
+        "max": 300
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Must be >= initial backoff.",
+      "sensitive": false
+    },
+    {
+      "key": "retry.jitter_fraction",
+      "type": "number",
+      "default": 0.2,
+      "constraints": {
+        "min": 0,
+        "max": 1
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Randomized bounded backoff.",
+      "sensitive": false
+    }
+  ]
+}

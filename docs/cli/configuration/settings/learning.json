@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "learning.examples_min",
+      "type": "integer",
+      "default": 3,
+      "constraints": {
+        "min": 1,
+        "max": 20
+      },
+      "scope": "purpose",
+      "consumer": "generation/ALG-VALIDATE",
+      "description": "Generation supplement target; not an unconditional readiness minimum; preserve source examples.",
+      "sensitive": false
+    },
+    {
+      "key": "learning.generated_examples_max",
+      "type": "integer",
+      "default": 5,
+      "constraints": {
+        "min": 1,
+        "max": 30
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Limits new examples, never discards archival source examples.",
+      "sensitive": false
+    },
+    {
+      "key": "learning.explanation_language",
+      "type": "string",
+      "default": "en",
+      "constraints": {
+        "format": "language"
+      },
+      "scope": "purpose",
+      "consumer": "ALG-CAPTURE",
+      "description": "Supported BCP47 explanation language; separate from target.",
+      "sensitive": false
+    },
+    {
+      "key": "learning.vocabulary.production",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "ALG-RENDER",
+      "description": "Default for new notes; retained tasks unaffected.",
+      "sensitive": false
+    },
+    {
+      "key": "learning.vocabulary.spelling",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "ALG-RENDER",
+      "description": "Default for new notes; valid cue needed.",
+      "sensitive": false
+    },
+    {
+      "key": "learning.grammar.application",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "ALG-RENDER",
+      "description": "Default for new notes; exercise validation needed.",
+      "sensitive": false
+    }
+  ]
+}

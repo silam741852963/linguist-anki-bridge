@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "resources.max_download_mb",
+      "type": "integer",
+      "default": 16384,
+      "constraints": {
+        "min": 1,
+        "max": 32768
+      },
+      "scope": "global",
+      "consumer": "OP-58",
+      "description": "Manifest-bounded explicit resource/model installation size cap.",
+      "sensitive": false
+    },
+    {
+      "key": "resources.max_unpacked_mb",
+      "type": "integer",
+      "default": 32768,
+      "constraints": {
+        "min": 1,
+        "max": 65536
+      },
+      "scope": "global",
+      "consumer": "OP-58",
+      "description": "Total extracted resource size cap; paths/symlinks/expansion checked.",
+      "sensitive": false
+    }
+  ]
+}

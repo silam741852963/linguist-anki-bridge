@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "backup.scope",
+      "type": "enum",
+      "default": "affected",
+      "constraints": {
+        "values": [
+          "affected",
+          "collection"
+        ]
+      },
+      "scope": "global",
+      "consumer": "ALG-BACKUP",
+      "description": "Schema migration escalates coverage regardless of preference.",
+      "sensitive": false
+    },
+    {
+      "key": "backup.reuse_max_age_seconds",
+      "type": "integer",
+      "default": 0,
+      "constraints": {
+        "min": 0,
+        "max": 3600
+      },
+      "scope": "global",
+      "consumer": "ALG-BACKUP",
+      "description": "Zero creates a fresh checkpoint; unchanged manifests still required.",
+      "sensitive": false
+    },
+    {
+      "key": "backup.verify_timeout_seconds",
+      "type": "integer",
+      "default": 120,
+      "constraints": {
+        "min": 10,
+        "max": 3600
+      },
+      "scope": "global",
+      "consumer": "ALG-BACKUP",
+      "description": "Package verification deadline.",
+      "sensitive": false
+    }
+  ]
+}

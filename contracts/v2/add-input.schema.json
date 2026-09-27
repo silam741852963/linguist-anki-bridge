@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AddInput",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/VocabularyInput"
+        },
+        "context": {
+          "type": "string",
+          "default": ""
+        },
+        "explanation_language": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Language"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "const": "vocabulary"
+        },
+        "personal_notes": {
+          "type": "string",
+          "default": ""
+        },
+        "requested_tasks": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/Task"
+          }
+        },
+        "schema_version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "source_summary": {
+          "type": "string",
+          "default": ""
+        },
+        "tags": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "target_language": {
+          "$ref": "#/$defs/Language"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "schema_version",
+        "target_language",
+        "body"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/Grammar"
+        },
+        "context": {
+          "type": "string",
+          "default": ""
+        },
+        "explanation_language": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Language"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "const": "grammar"
+        },
+        "personal_notes": {
+          "type": "string",
+          "default": ""
+        },
+        "requested_tasks": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/Task"
+          }
+        },
+        "schema_version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "source_summary": {
+          "type": "string",
+          "default": ""
+        },
+        "tags": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "target_language": {
+          "$ref": "#/$defs/Language"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "schema_version",
+        "target_language",
+        "body"
+      ]
+    }
+  ],
+  "$defs": {
+    "DictionaryEntry": {
+      "type": "object",
+      "properties": {
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "language": {
+          "$ref": "#/$defs/Language"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default": {}
+        },
+        "provider": {
+          "type": "string"
+        },
+        "readings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "related_entries": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "senses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Sense"
+          }
+        },
+        "source_url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "source_url",
+        "language",
+        "forms",
+        "readings",
+        "senses"
+      ]
+    },
+    "Example": {
+      "type": "object",
+      "properties": {
+        "evidence_ids": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "sentence": {
+          "type": "string"
+        },
+        "translation": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sentence",
+        "translation",
+        "provenance"
+      ]
+    },
+    "Grammar": {
+      "type": "object",
+      "properties": {
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Example"
+          }
+        },
+        "exercise_answer": {
+          "type": "string",
+          "default": ""
+        },
+        "exercise_prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "formation": {
+          "type": "string"
+        },
+        "meaning": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "recognition_prompt": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "string",
+          "default": ""
+        },
+        "use_key": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pattern",
+        "use_key",
+        "meaning",
+        "formation",
+        "recognition_prompt",
+        "examples"
+      ]
+    },
+    "Language": {
+      "type": "string"
+    },
+    "Provenance": {
+      "type": "string",
+      "enum": [
+        "source",
+        "dictionary",
+        "ocr",
+        "generated",
+        "user"
+      ]
+    },
+    "Sense": {
+      "type": "object",
+      "properties": {
+        "definitions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "examples": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Example"
+          }
+        },
+        "key": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "definitions"
+      ]
+    },
+    "Task": {
+      "type": "string",
+      "enum": [
+        "comprehension",
+        "production",
+        "spelling",
+        "recognition",
+        "application"
+      ]
+    },
+    "VocabularyInput": {
+      "type": "object",
+      "properties": {
+        "dictionary": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DictionaryEntry"
+          }
+        },
+        "examples": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Example"
+          }
+        },
+        "expression": {
+          "type": "string"
+        },
+        "kanji": {
+          "type": "string",
+          "default": ""
+        },
+        "meaning": {
+          "type": "string",
+          "default": ""
+        },
+        "production_prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "pronunciation": {
+          "type": "string",
+          "default": ""
+        },
+        "reading": {
+          "type": "string",
+          "default": ""
+        },
+        "sense_key": {
+          "type": "string",
+          "default": ""
+        },
+        "spelling_prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "usage": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "expression"
+      ]
+    }
+  }
+}

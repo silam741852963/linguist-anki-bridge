@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OperationJournal",
+  "type": "object",
+  "properties": {
+    "approval_digest": {
+      "type": "string"
+    },
+    "backup_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "binding": {
+      "$ref": "#/$defs/CollectionBinding"
+    },
+    "group_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Issue"
+      }
+    },
+    "snapshot_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "state": {
+      "$ref": "#/$defs/OperationState"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/JournalStep"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "approval_digest",
+    "binding",
+    "snapshot_id",
+    "backup_id",
+    "state",
+    "steps",
+    "issues"
+  ],
+  "$defs": {
+    "CollectionBinding": {
+      "type": "object",
+      "properties": {
+        "bridge_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "capability_digest": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "lineage_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "path_fingerprint": {
+          "type": "string"
+        },
+        "profile_fingerprint": {
+          "type": "string"
+        },
+        "session_epoch": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "endpoint",
+        "profile_fingerprint",
+        "path_fingerprint",
+        "bridge_id",
+        "lineage_id",
+        "session_epoch",
+        "capability_digest"
+      ]
+    },
+    "Issue": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stage": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "code",
+        "severity",
+        "stage",
+        "source_refs",
+        "message"
+      ]
+    },
+    "JournalStep": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "expected_post_digest": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "observed_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload_digest": {
+          "type": "string"
+        },
+        "precondition_digest": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/StepState"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "action",
+        "payload_digest",
+        "precondition_digest",
+        "expected_post_digest",
+        "state"
+      ]
+    },
+    "OperationState": {
+      "type": "string",
+      "enum": [
+        "prepared",
+        "preflight",
+        "checkpointed",
+        "mutating",
+        "verifying",
+        "committed",
+        "failed_before_write",
+        "needs_recovery",
+        "compensated",
+        "restored"
+      ]
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "warning",
+        "error",
+        "review"
+      ]
+    },
+    "StepState": {
+      "type": "string",
+      "enum": [
+        "intent_recorded",
+        "request_started",
+        "observed_success",
+        "observed_failure",
+        "unknown",
+        "verified"
+      ]
+    }
+  }
+}

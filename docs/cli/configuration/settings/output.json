@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "output.format",
+      "type": "enum",
+      "default": "text",
+      "constraints": {
+        "values": [
+          "text",
+          "json",
+          "jsonl"
+        ]
+      },
+      "scope": "global",
+      "consumer": "OP wrapper",
+      "description": "Machine output is versioned.",
+      "sensitive": false
+    },
+    {
+      "key": "output.color",
+      "type": "enum",
+      "default": "auto",
+      "constraints": {
+        "values": [
+          "auto",
+          "always",
+          "never"
+        ]
+      },
+      "scope": "global",
+      "consumer": "OP wrapper",
+      "description": "Auto disabled on pipes/NO_COLOR.",
+      "sensitive": false
+    },
+    {
+      "key": "output.progress",
+      "type": "boolean",
+      "default": true,
+      "constraints": {},
+      "scope": "global",
+      "consumer": "OP wrapper",
+      "description": "Progress only on stderr; JSON stdout stays clean.",
+      "sensitive": false
+    },
+    {
+      "key": "output.quiet",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "global",
+      "consumer": "OP wrapper",
+      "description": "Hide routine progress, retain errors.",
+      "sensitive": false
+    },
+    {
+      "key": "output.page_size",
+      "type": "integer",
+      "default": 100,
+      "constraints": {
+        "min": 1,
+        "max": 10000
+      },
+      "scope": "global",
+      "consumer": "OP read commands",
+      "description": "Bounded pagination; counts remain exact.",
+      "sensitive": false
+    },
+    {
+      "key": "output.language",
+      "type": "enum",
+      "default": "en",
+      "constraints": {
+        "values": [
+          "en"
+        ]
+      },
+      "scope": "global",
+      "consumer": "OP wrapper",
+      "description": "Initial CLI message locale.",
+      "sensitive": false
+    }
+  ]
+}

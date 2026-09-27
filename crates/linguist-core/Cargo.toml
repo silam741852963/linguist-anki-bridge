@@ -2,11 +2,15 @@
 name = "linguist-core"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-
-[dev-dependencies]
+serde_jcs.workspace = true
+sha2.workspace = true
+schemars.workspace = true
+ammonia.workspace = true
+language-tags.workspace = true
+uuid.workspace = true

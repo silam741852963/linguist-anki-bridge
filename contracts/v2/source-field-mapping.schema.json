@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FieldMapping",
+  "type": "object",
+  "properties": {
+    "apply_authorized": {
+      "type": "boolean"
+    },
+    "kind": {
+      "$ref": "#/$defs/SourceKind"
+    },
+    "mapping_digest": {
+      "type": "string"
+    },
+    "missing_required_roles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "normalized_facts_verified": {
+      "type": "boolean"
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/MappedField"
+      }
+    },
+    "shared_fields": {
+      "description": "Shared source values need role-specific parsing, never blind duplication into facts.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "source_digest": {
+      "type": "string"
+    },
+    "unmapped_fields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "kind",
+    "source_digest",
+    "mapping_digest",
+    "roles",
+    "unmapped_fields",
+    "shared_fields",
+    "missing_required_roles",
+    "normalized_facts_verified",
+    "apply_authorized"
+  ],
+  "$defs": {
+    "MappedField": {
+      "type": "object",
+      "properties": {
+        "raw_value": {
+          "type": "string"
+        },
+        "source_field": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_field",
+        "raw_value"
+      ]
+    },
+    "SourceKind": {
+      "type": "string",
+      "enum": [
+        "vocabulary",
+        "grammar"
+      ]
+    }
+  }
+}

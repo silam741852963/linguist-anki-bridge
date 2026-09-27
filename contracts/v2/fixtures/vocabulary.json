@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "id": "c17625b0-7a88-4aab-a8a5-c1d993c72a00",
+  "target_language": "ja",
+  "explanation_language": "en",
+  "content": {"kind":"vocabulary","body":{"expression":"食べる","reading":"たべる","meaning":"to eat","sense_key":"eat-food","examples":[{"sentence":"パンを食べます。","translation":"I eat bread.","provenance":"user"}]}},
+  "requested_tasks": ["comprehension"]
+}

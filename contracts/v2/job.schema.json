@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Job",
+  "type": "object",
+  "properties": {
+    "cancel_requested": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "item_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "mode": {
+      "$ref": "#/$defs/JobMode"
+    },
+    "pause_requested": {
+      "type": "boolean"
+    },
+    "plan_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "settings": {
+      "$ref": "#/$defs/ResolvedSettings"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "mode",
+    "settings",
+    "plan_refs",
+    "item_ids",
+    "pause_requested",
+    "cancel_requested"
+  ],
+  "$defs": {
+    "JobMode": {
+      "type": "string",
+      "enum": [
+        "prepare",
+        "simulate",
+        "apply"
+      ]
+    },
+    "ResolvedSettings": {
+      "type": "object",
+      "properties": {
+        "fingerprint": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "resource_hashes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "secret_refs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "values",
+        "provenance",
+        "resource_hashes",
+        "secret_refs",
+        "fingerprint"
+      ]
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Approval",
+  "type": "object",
+  "properties": {
+    "accepted_warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "actor": {
+      "type": "string"
+    },
+    "approved_at": {
+      "type": "string"
+    },
+    "digest": {
+      "type": "string"
+    },
+    "item_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "plan_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "plan_id",
+    "revision",
+    "digest",
+    "item_ids",
+    "actor",
+    "approved_at",
+    "accepted_warnings"
+  ]
+}

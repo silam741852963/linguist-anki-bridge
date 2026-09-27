@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "browser.enabled",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "browser helper",
+      "description": "Optional controlled scraping fallback.",
+      "sensitive": false
+    },
+    {
+      "key": "browser.executable",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "executable"
+      },
+      "scope": "purpose",
+      "consumer": "browser helper",
+      "description": "Explicit supported installed browser binary.",
+      "sensitive": false
+    },
+    {
+      "key": "browser.timeout_seconds",
+      "type": "integer",
+      "default": 30,
+      "constraints": {
+        "min": 1,
+        "max": 180
+      },
+      "scope": "purpose",
+      "consumer": "browser helper",
+      "description": "Per-navigation deadline.",
+      "sensitive": false
+    },
+    {
+      "key": "browser.max_pages",
+      "type": "integer",
+      "default": 3,
+      "constraints": {
+        "min": 1,
+        "max": 10
+      },
+      "scope": "purpose",
+      "consumer": "browser helper",
+      "description": "Bound pagination.",
+      "sensitive": false
+    }
+  ]
+}

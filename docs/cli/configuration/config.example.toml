@@ -1,0 +1,427 @@
+# Final baseline TOML v2: complete concrete global defaults.
+# config init writes minimal version-only config, preserving builtin purpose presets.
+# Copying every global default here explicitly overrides purpose presets at base level.
+# Optional nulls are omitted; select purpose overrides deliberately.
+
+# Remote allowlisted reads supported; baseline managed writes require same-host loopback bridge.
+anki.endpoint = "http://127.0.0.1:8765"
+
+# Name of environment variable containing API key; never the key.
+# anki.api_key_env = "<explicit value when needed>"
+
+# Expected Anki profile name, checked but not a strong collection identity.
+# anki.expected_profile = "<explicit value when needed>"
+
+# Timeout enters reconciliation when a mutation was sent.
+anki.request_timeout_seconds = 30
+
+# Bound read payload.
+anki.read_batch_size = 100
+
+# Minimum gap between note mutations.
+anki.commit_interval_seconds = 0.25
+
+# Mandatory verified companion protocol for all managed collection writes.
+anki.native_adapter = "lab-native-v1"
+
+# New audio source; preserve available source recording.
+audio.provider = "preserve"
+
+# Explicit voice for synthesis.
+# audio.voice = "<explicit value when needed>"
+
+# Explicit custom TTS service endpoint.
+# audio.endpoint = "<explicit value when needed>"
+
+# Environment variable credential name.
+# audio.api_key_env = "<explicit value when needed>"
+
+# Piper executable; argument array only.
+# audio.executable = "<explicit value when needed>"
+
+# Pinned voice resource with license evidence.
+# audio.voice_resource = "<explicit value when needed>"
+
+# Supported provider speech-rate option.
+audio.speed = 1.0
+
+# Synthesis/download deadline.
+audio.timeout_seconds = 60
+
+# Schema migration escalates coverage regardless of preference.
+backup.scope = "affected"
+
+# Zero creates a fresh checkpoint; unchanged manifests still required.
+backup.reuse_max_age_seconds = 0
+
+# Package verification deadline.
+backup.verify_timeout_seconds = 120
+
+# Optional controlled scraping fallback.
+browser.enabled = false
+
+# Explicit supported installed browser binary.
+# browser.executable = "<explicit value when needed>"
+
+# Per-navigation deadline.
+browser.timeout_seconds = 30
+
+# Bound pagination.
+browser.max_pages = 3
+
+# Offline overrides external refresh.
+cache.policy = "prefer_fresh"
+
+# Provider evidence expiration; pinned accepted plan assets never expire.
+cache.ttl_hours = 168
+
+# Target cache budget; reachable evidence cannot be pruned.
+cache.max_size_mb = 2048
+
+# Unreferenced cache only.
+cache.unreferenced_retention_days = 30
+
+# Classifier score threshold.
+classification.decision_threshold = 0.5
+
+# Near-threshold score requires review.
+classification.confirmation_margin = 0.12
+
+# Optional additional evidence, never silently erases ambiguity.
+classification.vision_adjudication = false
+
+# Model score is uncalibrated; evidence conflicts still review.
+classification.vision_accept_confidence = 0.95
+
+# Target TOML format version; distinct from Python YAML/native JSON versions.
+config.version = 2
+
+# Explicit named settings profile, never an Anki profile.
+# config.default_profile = "<explicit value when needed>"
+
+# Auto routes by supported target language; never Japanese fallback.
+dictionary.provider = "auto"
+
+# Only custom provider; validated placeholders/host.
+# dictionary.url_template = "<explicit value when needed>"
+
+# Versioned extraction schema resource.
+# dictionary.schema_path = "<explicit value when needed>"
+
+# Explicit optional browser dependency.
+dictionary.browser_fallback = false
+
+# Identify client; site limits/terms still apply.
+dictionary.user_agent = "LinguistAnkiBridge/CLI"
+
+# Optional lookup normalization, never source archive mutation.
+filters.remove_parentheses = false
+
+# Optional reviewed lookup cleanup.
+filters.clean_word_only = false
+
+# NFC semantic identity only; raw fields preserved.
+filters.normalize_unicode = true
+
+# No policy physically deletes source media.
+images.existing_policy = "preserve"
+
+# Search candidates; rights/relevance review before acceptance.
+images.search_when_missing = true
+
+# Provider attribution retained.
+images.provider = "wikimedia"
+
+# Required for custom provider.
+# images.custom_endpoint = "<explicit value when needed>"
+
+# Extra query text.
+images.query_suffix = ""
+
+# Bound search result set.
+images.candidate_limit = 5
+
+# Input body limit.
+input.max_file_mb = 20
+
+# Per-record limit.
+input.max_record_chars = 100000
+
+# Parallel read/preparation workers; Anki writer always one.
+jobs.prepare_workers = 2
+
+# Count only retry-eligible classified failures.
+jobs.max_item_attempts = 3
+
+# Shared identity/schema/recovery faults always halt affected group.
+jobs.on_item_error = "continue"
+
+# Lease expires only with worker-liveness check.
+jobs.lease_seconds = 60
+
+# Must be less than lease/3.
+jobs.heartbeat_seconds = 10
+
+# Control polling; cannot skip durable step completion.
+jobs.pause_poll_ms = 250
+
+# Applicable Japanese kanji only.
+kanji.enabled = true
+
+# Language used for optional kanji explanation.
+kanji.explanation_language = "en"
+
+# Validated URL template.
+kanji.url_template = "https://jisho.org/search/{char}%23kanji"
+
+# Pinned extraction schema.
+kanji.schema = "builtin:jisho-kanji-v2"
+
+# Generation supplement target; not an unconditional readiness minimum; preserve source examples.
+learning.examples_min = 3
+
+# Limits new examples, never discards archival source examples.
+learning.generated_examples_max = 5
+
+# Supported BCP47 explanation language; separate from target.
+learning.explanation_language = "en"
+
+# Default for new notes; retained tasks unaffected.
+learning.vocabulary.production = false
+
+# Default for new notes; valid cue needed.
+learning.vocabulary.spelling = false
+
+# Default for new notes; exercise validation needed.
+learning.grammar.application = false
+
+# Local Ollama default.
+llm.endpoint = "http://127.0.0.1:11434"
+
+# Selected baseline candidate; require installed capability/digest, never pull or silently substitute.
+llm.model = "gemma4:12b"
+
+# Explicit installed model with vision capability.
+# llm.vision_model = "<explicit value when needed>"
+
+# Credential environment reference.
+# llm.api_key_env = "<explicit value when needed>"
+
+# Generation deadline.
+llm.timeout_seconds = 180
+
+# Provider must advertise support; preserve resolved parameter.
+llm.temperature = 0.0
+
+# Validate model limits; no silent truncation.
+llm.context_tokens = 8192
+
+# Must fit context with input.
+llm.max_output_tokens = 2048
+
+# Best effort reproducibility, not a deterministic guarantee.
+llm.seed = 0
+
+# Validated provider duration.
+llm.keep_alive = "5m"
+
+# Versioned builtin or pinned file path; trusted user instruction resource.
+llm.prompts.vocabulary = "builtin:vocabulary-v2"
+
+# Versioned builtin or pinned file path; trusted user instruction resource.
+llm.prompts.grammar = "builtin:grammar-v2"
+
+# Versioned builtin or pinned file path; trusted user instruction resource.
+llm.prompts.kanji = "builtin:kanji-v2"
+
+# Structural output repairs inside the shared read attempt budget; no factual fabrication.
+llm.repair_attempts = 2
+
+# Enable requested generated annotations; false uses source/dictionary/authored material only.
+llm.enabled = true
+
+# Default private payload redaction at every level.
+logging.level = "info"
+
+# Private local structured diagnostic file.
+logging.file_enabled = true
+
+# Rotation size.
+logging.max_file_mb = 20
+
+# Diagnostic rotation count, not recovery-history retention.
+logging.retained_files = 5
+
+# Explicit local debugging opt-in; never emits secrets.
+logging.include_private_payloads = false
+
+# Decoded media bytes limit.
+media.max_asset_mb = 10
+
+# Decoded MIME whitelist.
+media.allowed_image_types = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+
+# Decoded MIME whitelist.
+media.allowed_audio_types = ["audio/mpeg", "audio/ogg", "audio/wav"]
+
+# Block external traffic/downloads; explicitly allowed loopback services remain usable.
+network.offline = false
+
+# Opt-in hosts for non-loopback Anki/Ollama/custom services.
+network.allowed_remote_service_hosts = []
+
+# Proxy URL environment variable reference; proxy obeys destination policy.
+# network.proxy_env = "<explicit value when needed>"
+
+# Connection deadline.
+network.connect_timeout_seconds = 5
+
+# Default service request deadline.
+network.request_timeout_seconds = 30
+
+# Encoded response body limit.
+network.max_response_mb = 20
+
+# Every redirected destination is revalidated.
+network.max_redirects = 3
+
+# Optional engines require installed pinned resources.
+ocr.engine = "tesseract"
+
+# Purpose mappings should narrow packs; absent pack blocks required OCR.
+ocr.languages = ["jpn", "eng", "vie"]
+
+# Derivative only; preserves source bytes.
+ocr.preprocess = true
+
+# Child process deadline.
+ocr.timeout_seconds = 60
+
+# Validate mode supported by installed engine.
+ocr.page_segmentation_mode = 3
+
+# Installed training data must support selected mode.
+ocr.engine_mode = 1
+
+# Normalized adapter score triggers review, not proof.
+ocr.minimum_confidence = 0.7
+
+# Decode bomb protection.
+ocr.max_pixels = 40000000
+
+# Bound segmentation complexity.
+ocr.max_regions = 100
+
+# Resolved executable path/hash; no shell command string.
+ocr.executable = "tesseract"
+
+# Optional pinned language/engine resource directory.
+# ocr.resource_path = "<explicit value when needed>"
+
+# Machine output is versioned.
+output.format = "text"
+
+# Auto disabled on pipes/NO_COLOR.
+output.color = "auto"
+
+# Progress only on stderr; JSON stdout stays clean.
+output.progress = true
+
+# Hide routine progress, retain errors.
+output.quiet = false
+
+# Bounded pagination; counts remain exact.
+output.page_size = 100
+
+# Initial CLI message locale.
+output.language = "en"
+
+# No blind mutation retry.
+retry.read_attempts = 3
+
+# First transient-read delay.
+retry.initial_backoff_seconds = 0.6
+
+# Must be >= initial backoff.
+retry.max_backoff_seconds = 15
+
+# Randomized bounded backoff.
+retry.jitter_fraction = 0.2
+
+# Deterministic frozen order.
+selection.order = "note_id"
+
+# Default selector safety bound; larger explicit limit is validated.
+selection.max_notes = 1000
+
+# Semantic duplicate candidate scope.
+selection.duplicate_scope = "collection"
+
+# Skip only exact proven duplicate with reported outcome.
+selection.duplicate_policy = "review"
+
+# Provider rate limit.
+services.dictionary.min_interval_seconds = 1.0
+
+# Shared semaphore per endpoint.
+services.dictionary.concurrency = 1
+
+# Provider rate limit.
+services.ollama.min_interval_seconds = 0.25
+
+# Shared semaphore per endpoint.
+services.ollama.concurrency = 1
+
+# Provider rate limit.
+services.kanji.min_interval_seconds = 1.0
+
+# Shared semaphore per endpoint.
+services.kanji.concurrency = 1
+
+# Provider rate limit.
+services.image.min_interval_seconds = 1.0
+
+# Shared semaphore per endpoint.
+services.image.concurrency = 1
+
+# Provider rate limit.
+services.tts.min_interval_seconds = 0.5
+
+# Shared semaphore per endpoint.
+services.tts.concurrency = 1
+
+# Plans, journals, snapshots, SQLite state.
+storage.state_dir = "${XDG_STATE_HOME}/linguist-anki-bridge"
+
+# Disposable provider cache.
+storage.cache_dir = "${XDG_CACHE_HOME}/linguist-anki-bridge"
+
+# Verified package files.
+storage.backup_dir = "${XDG_STATE_HOME}/linguist-anki-bridge/backups"
+
+# Bounded temporary derivatives.
+storage.temp_dir = "${XDG_CACHE_HOME}/linguist-anki-bridge/tmp"
+
+# Installed pinned resources.
+storage.resource_dir = "${XDG_DATA_HOME}/linguist-anki-bridge/resources"
+
+# Preflight minimum free space, not durability waiver.
+storage.free_space_reserve_mb = 512
+
+# Bound lock contention.
+storage.sqlite_busy_timeout_ms = 5000
+
+# Explicit executable/argument vector; empty uses VISUAL/EDITOR only in requested --editor mode.
+editing.editor_argv = []
+
+# Manifest-bounded explicit resource/model installation size cap.
+resources.max_download_mb = 16384
+
+# Total extracted resource size cap; paths/symlinks/expansion checked.
+resources.max_unpacked_mb = 32768
+
+# Per-subprocess memory limit on supported Linux helper processes; not external Ollama.
+helpers.memory_limit_mb = 2048
+
+# Bound helper stdout/protocol output; excess is typed error, never truncate valid evidence.
+helpers.max_output_mb = 20

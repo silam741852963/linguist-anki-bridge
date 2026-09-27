@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CollectionBinding",
+  "type": "object",
+  "properties": {
+    "bridge_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "capability_digest": {
+      "type": "string"
+    },
+    "endpoint": {
+      "type": "string"
+    },
+    "lineage_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "path_fingerprint": {
+      "type": "string"
+    },
+    "profile_fingerprint": {
+      "type": "string"
+    },
+    "session_epoch": {
+      "type": "string",
+      "format": "uuid"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "endpoint",
+    "profile_fingerprint",
+    "path_fingerprint",
+    "bridge_id",
+    "lineage_id",
+    "session_epoch",
+    "capability_digest"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "selection.order",
+      "type": "enum",
+      "default": "note_id",
+      "constraints": {
+        "values": [
+          "note_id",
+          "input"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "ALG-CAPTURE",
+      "description": "Deterministic frozen order.",
+      "sensitive": false
+    },
+    {
+      "key": "selection.max_notes",
+      "type": "integer",
+      "default": 1000,
+      "constraints": {
+        "min": 1,
+        "max": 100000
+      },
+      "scope": "purpose",
+      "consumer": "ALG-CAPTURE",
+      "description": "Default selector safety bound; larger explicit limit is validated.",
+      "sensitive": false
+    },
+    {
+      "key": "selection.duplicate_scope",
+      "type": "enum",
+      "default": "collection",
+      "constraints": {
+        "values": [
+          "collection",
+          "target_deck"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "ALG-CAPTURE",
+      "description": "Semantic duplicate candidate scope.",
+      "sensitive": false
+    },
+    {
+      "key": "selection.duplicate_policy",
+      "type": "enum",
+      "default": "review",
+      "constraints": {
+        "values": [
+          "review",
+          "skip_exact"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "ALG-CAPTURE",
+      "description": "Skip only exact proven duplicate with reported outcome.",
+      "sensitive": false
+    }
+  ]
+}

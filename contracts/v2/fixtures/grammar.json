@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "id": "fd22c2d6-669c-4a80-a5a7-f41e7cb7d6d8",
+  "target_language": "ja",
+  "explanation_language": "vi",
+  "content": {"kind":"grammar","body":{"pattern":"〜ても","meaning":"Ngay cả khi","formation":"Động từ thể て + も","use_key":"concession","recognition_prompt":"Mẫu này thể hiện quan hệ gì?","examples":[{"sentence":"雨が降っても行きます。","translation":"Dù trời mưa tôi vẫn đi.","provenance":"user"}]}},
+  "requested_tasks": ["recognition"]
+}

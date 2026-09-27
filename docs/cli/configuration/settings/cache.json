@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "cache.policy",
+      "type": "enum",
+      "default": "prefer_fresh",
+      "constraints": {
+        "values": [
+          "prefer_fresh",
+          "prefer_cache",
+          "cache_only"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Offline overrides external refresh.",
+      "sensitive": false
+    },
+    {
+      "key": "cache.ttl_hours",
+      "type": "integer",
+      "default": 168,
+      "constraints": {
+        "min": 0,
+        "max": 8760
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Provider evidence expiration; pinned accepted plan assets never expire.",
+      "sensitive": false
+    },
+    {
+      "key": "cache.max_size_mb",
+      "type": "integer",
+      "default": 2048,
+      "constraints": {
+        "min": 64,
+        "max": 1048576
+      },
+      "scope": "global",
+      "consumer": "ALG-GC",
+      "description": "Target cache budget; reachable evidence cannot be pruned.",
+      "sensitive": false
+    },
+    {
+      "key": "cache.unreferenced_retention_days",
+      "type": "integer",
+      "default": 30,
+      "constraints": {
+        "min": 0,
+        "max": 3650
+      },
+      "scope": "global",
+      "consumer": "ALG-GC",
+      "description": "Unreferenced cache only.",
+      "sensitive": false
+    }
+  ]
+}

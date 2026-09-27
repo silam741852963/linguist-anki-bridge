@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResolutionRequest",
+  "type": "object",
+  "properties": {
+    "actor": {
+      "type": "string"
+    },
+    "base_digest": {
+      "type": "string"
+    },
+    "base_revision": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "choice": {
+      "$ref": "#/$defs/ReviewChoice"
+    },
+    "document_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "input_digest": {
+      "type": "string"
+    },
+    "issue_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "base_revision",
+    "base_digest",
+    "document_id",
+    "issue_id",
+    "input_digest",
+    "actor",
+    "choice"
+  ],
+  "$defs": {
+    "AnkiId": {
+      "type": "string"
+    },
+    "ReviewChoice": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "sense"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "anchor"
+            },
+            "value": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "segmentation"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "duplicate"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "note_id": {
+                  "$ref": "#/$defs/AnkiId"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "note_id",
+                "action"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "media"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "cue"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "task": {
+                  "$ref": "#/$defs/Task"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "task",
+                "text"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "content_verified"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "evidence_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "evidence_ids"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        }
+      ]
+    },
+    "Task": {
+      "type": "string",
+      "enum": [
+        "comprehension",
+        "production",
+        "spelling",
+        "recognition",
+        "application"
+      ]
+    }
+  }
+}

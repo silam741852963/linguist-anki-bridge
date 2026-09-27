@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "storage.state_dir",
+      "type": "string",
+      "default": "${XDG_STATE_HOME}/linguist-anki-bridge",
+      "constraints": {
+        "format": "path"
+      },
+      "scope": "global",
+      "consumer": "storage",
+      "description": "Plans, journals, snapshots, SQLite state.",
+      "sensitive": false
+    },
+    {
+      "key": "storage.cache_dir",
+      "type": "string",
+      "default": "${XDG_CACHE_HOME}/linguist-anki-bridge",
+      "constraints": {
+        "format": "path"
+      },
+      "scope": "global",
+      "consumer": "storage",
+      "description": "Disposable provider cache.",
+      "sensitive": false
+    },
+    {
+      "key": "storage.backup_dir",
+      "type": "string",
+      "default": "${XDG_STATE_HOME}/linguist-anki-bridge/backups",
+      "constraints": {
+        "format": "path"
+      },
+      "scope": "global",
+      "consumer": "storage",
+      "description": "Verified package files.",
+      "sensitive": false
+    },
+    {
+      "key": "storage.temp_dir",
+      "type": "string",
+      "default": "${XDG_CACHE_HOME}/linguist-anki-bridge/tmp",
+      "constraints": {
+        "format": "path"
+      },
+      "scope": "global",
+      "consumer": "storage",
+      "description": "Bounded temporary derivatives.",
+      "sensitive": false
+    },
+    {
+      "key": "storage.resource_dir",
+      "type": "string",
+      "default": "${XDG_DATA_HOME}/linguist-anki-bridge/resources",
+      "constraints": {
+        "format": "path"
+      },
+      "scope": "global",
+      "consumer": "storage",
+      "description": "Installed pinned resources.",
+      "sensitive": false
+    },
+    {
+      "key": "storage.free_space_reserve_mb",
+      "type": "integer",
+      "default": 512,
+      "constraints": {
+        "min": 64,
+        "max": 1048576
+      },
+      "scope": "global",
+      "consumer": "ALG-APPLY/backup",
+      "description": "Preflight minimum free space, not durability waiver.",
+      "sensitive": false
+    },
+    {
+      "key": "storage.sqlite_busy_timeout_ms",
+      "type": "integer",
+      "default": 5000,
+      "constraints": {
+        "min": 100,
+        "max": 60000
+      },
+      "scope": "global",
+      "consumer": "storage",
+      "description": "Bound lock contention.",
+      "sensitive": false
+    }
+  ]
+}

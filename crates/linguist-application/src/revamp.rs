@@ -1,0 +1,207 @@
+//! Conservative source-to-document staging; source ownership/history still requires native review.
+use crate::{mapping::SourceKind, source_archive::RevampCapture};
+use linguist_config::Effective;
+use linguist_core::{
+    LearningDocument, Provenance, canonical,
+    records::Evidence,
+    validation::{self, Issue, Severity},
+};
+use serde_json::json;
+use std::collections::BTreeMap;
+fn issue(code: &str, field: Option<&str>, source: uuid::Uuid) -> Issue {
+    let mut result = Issue::new(
+        code,
+        Severity::Review,
+        field,
+        "Source interpretation requires review before revamp readiness.",
+    );
+    result.stage = "capture".into();
+    result.source_refs = vec![source.to_string()];
+    result
+}
+/// Plain scalar roles become source-backed candidates. Rich/combined fields remain archived only.
+/// No examples are split, task history inferred, optional task disabled or source field discarded.
+pub fn stage_document(
+    capture: &RevampCapture,
+    settings: &Effective,
+    purpose: &str,
+) -> Result<LearningDocument, String> {
+    for (digest, bytes) in &capture.captured.assets {
+        if canonical::asset_digest(bytes) != *digest {
+            return Err("REVAMP_CAPTURE_ASSET_CONFLICT".into());
+        }
+    }
+    let source = &capture.captured.source;
+    let archive = &capture.captured.archive;
+    if archive.source_id != source.id
+        || archive.digest != source.digest
+        || archive.original_fields != source.fields
+    {
+        return Err("REVAMP_CAPTURE_ARCHIVE_CONFLICT".into());
+    }
+    let manifest: serde_json::Value = canonical::parse(
+        capture
+            .captured
+            .assets
+            .get(&source.digest)
+            .ok_or("REVAMP_CAPTURE_MANIFEST_MISSING")?,
+    )
+    .map_err(|_| "REVAMP_CAPTURE_MANIFEST_INVALID")?;
+    let payload = |name: &str| -> Result<&[u8], String> {
+        let digest = manifest["payloads"][name]
+            .as_str()
+            .ok_or("REVAMP_CAPTURE_MANIFEST_INVALID")?;
+        if !archive.asset_digests.iter().any(|entry| entry == digest) {
+            return Err("REVAMP_CAPTURE_ARCHIVE_CONFLICT".into());
+        }
+        Ok(capture
+            .captured
+            .assets
+            .get(digest)
+            .ok_or("REVAMP_CAPTURE_ASSET_MISSING")?
+            .as_slice())
+    };
+    let rebuilt = crate::source_archive::archive_read_capture(
+        payload("note")?,
+        payload("model")?,
+        payload("cards")?,
+        100 * 1024 * 1024,
+    )?;
+    if rebuilt.source.fields != source.fields
+        || rebuilt.source.tags != source.tags
+        || rebuilt.source.model_manifest != source.model_manifest
+        || rebuilt.source.location != source.location
+        || rebuilt.source.media_refs != source.media_refs
+    {
+        return Err("REVAMP_CAPTURE_SOURCE_CONFLICT".into());
+    }
+    let model: serde_json::Value = canonical::parse(
+        capture
+            .captured
+            .assets
+            .get(&capture.captured.source.model_manifest)
+            .ok_or("REVAMP_CAPTURE_MODEL_MISSING")?,
+    )
+    .map_err(|_| "REVAMP_CAPTURE_MODEL_INVALID")?;
+    let model_name = model["model"]["name"]
+        .as_str()
+        .ok_or("REVAMP_CAPTURE_MODEL_INVALID")?;
+    let mapping = crate::mapping::map_purpose_fields(
+        settings,
+        purpose,
+        model_name,
+        &capture.captured.source.fields,
+    )?;
+    if mapping.mapping_digest != capture.mapping.mapping_digest
+        || mapping.source_digest != capture.mapping.source_digest
+    {
+        return Err("REVAMP_MAPPING_CONFLICT".into());
+    }
+    let target = settings
+        .values
+        .get(&format!("purposes.{purpose}.target_language"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or("REVAMP_TARGET_LANGUAGE_REQUIRED")?;
+    let explanation = settings.values["learning.explanation_language"]
+        .as_str()
+        .ok_or("REVAMP_EXPLANATION_LANGUAGE_REQUIRED")?;
+    let source_id = capture.captured.source.id;
+    let mut issues = vec![issue("SOURCE_NATIVE_HISTORY_REVIEW", None, source_id)];
+    let mut values = BTreeMap::new();
+    for (role, field) in &mapping.roles {
+        if field.raw_value.trim().is_empty() {
+            continue;
+        }
+        if mapping.shared_fields.contains_key(&field.source_field) {
+            issues.push(issue("SOURCE_COMBINED_FIELD_REVIEW", Some(role), source_id));
+            continue;
+        }
+        if [
+            "picture",
+            "audio",
+            "examples",
+            "enable_production",
+            "enable_spelling",
+            "enable_application",
+        ]
+        .contains(&role.as_str())
+        {
+            issues.push(issue(
+                "SOURCE_STRUCTURED_ROLE_REVIEW",
+                Some(role),
+                source_id,
+            ));
+            continue;
+        }
+        if role == "language" || role == "explanation_language" {
+            let expected = if role == "language" {
+                target
+            } else {
+                explanation
+            };
+            if !field.raw_value.trim().eq_ignore_ascii_case(expected) {
+                issues.push(issue("SOURCE_LANGUAGE_CONFLICT", Some(role), source_id));
+            }
+            continue;
+        }
+        if field.raw_value.contains('<')
+            || field.raw_value.contains("[sound:")
+            || field.raw_value.contains("{{")
+        {
+            issues.push(issue("SOURCE_RICH_FIELD_REVIEW", Some(role), source_id));
+            continue;
+        }
+        values.insert(role.clone(), field.raw_value.trim().to_owned());
+    }
+    let text = |role: &str| values.get(role).cloned().unwrap_or_default();
+    let content = match mapping.kind {
+        SourceKind::Vocabulary => {
+            json!({"kind":"vocabulary","body":{"expression":text("expression"),"reading":text("reading"),"pronunciation":text("pronunciation"),"meaning":text("meaning"),"sense_key":text("sense_key"),"usage":text("usage"),"kanji":text("kanji"),"production_prompt":text("production_prompt"),"spelling_prompt":text("spelling_prompt"),"examples":[],"dictionary":[]}})
+        }
+        SourceKind::Grammar => {
+            json!({"kind":"grammar","body":{"pattern":text("pattern"),"meaning":text("meaning"),"formation":text("formation"),"use_key":text("use_key"),"usage":text("usage"),"recognition_prompt":text("recognition_prompt"),"exercise_prompt":text("exercise_prompt"),"exercise_answer":text("exercise_answer"),"examples":[]}})
+        }
+    };
+    let task = match mapping.kind {
+        SourceKind::Vocabulary => "comprehension",
+        SourceKind::Grammar => "recognition",
+    };
+    let bytes=canonical::bytes(&json!({"schema_version":2,"id":uuid::Uuid::new_v4(),"target_language":target,"explanation_language":explanation,"content":content,"requested_tasks":[task],"tags":capture.captured.source.tags,"personal_notes":text("personal_notes"),"source_summary":text("source")})).map_err(|e|e.to_string())?;
+    let mut doc = LearningDocument::from_json(&bytes).map_err(|e| e.to_string())?;
+    doc.sources.push(capture.captured.source.clone());
+    doc.archives.push(capture.captured.archive.clone());
+    for (field, claim) in values {
+        let language = if [
+            "expression",
+            "reading",
+            "pronunciation",
+            "pattern",
+            "kanji",
+            "production_prompt",
+            "spelling_prompt",
+            "recognition_prompt",
+            "exercise_prompt",
+            "exercise_answer",
+        ]
+        .contains(&field.as_str())
+        {
+            doc.target_language.clone()
+        } else {
+            doc.explanation_language.clone()
+        };
+        doc.evidence.push(Evidence {
+            id: uuid::Uuid::new_v4(),
+            field,
+            provenance: Provenance::Source,
+            source_id: Some(source_id),
+            region_id: None,
+            language,
+            claim,
+            source_url: None,
+            ambiguous: false,
+        });
+    }
+    doc.issues = issues;
+    doc.issues = validation::validate(&doc);
+    Ok(doc)
+}

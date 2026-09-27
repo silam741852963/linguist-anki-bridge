@@ -1,0 +1,10 @@
+# Write and recovery algorithm
+
+## ALG-RECONCILE — unknown outcome/restart
+
+1. Acquire app/native lease and load existing journal/snapshot/settings/server receipt; do not create a new operation ID. Changed collection epoch requires explicit --rebind decision; no automatic lineage replacement. Validate collection binding and all already-observed intermediate states.
+2. Read current affected note/model/media/card state. Existing update: compare pre-state, expected step post-state and full desired final state. Full match can finalize receipt; pre-state allows a safe retry only after proving no relevant effect occurred; partial match follows remaining journal steps.
+3. Creation: search exact operation tag, then require exact model/fields/assets/target binding. One exact candidate adopts its note ID; zero marker candidates alone never proves absence (a user may have removed the tag). Retry uses the same UUID/digest against the native durable dedupe ledger: queued/running returns its state, verified returns receipt, unknown requires reconciliation. A pending/unknown row is never redispatched. An absent sidecar entry with trusted lineage can accept the same UUID safely because delayed duplicates dedupe; without trustworthy lineage, zero candidates remains needs_recovery. Explicit operator resolution must inspect newly created candidate notes and bind a decision to current evidence; multiple or mismatched candidates block for review. Never deduplicate merely by expression.
+4. Shared model/media creation requires exact manifest/hash verification. Unknown backup export checks deterministic receipt path/checksum/coverage. Unknown deletion verifies original note IDs absent; never substitutes another note.
+5. Unexpected user edits or ambiguous identity produce needs_recovery with observed differences and allowed choices: adopt verified result, continue known safe step, restore, or export evidence for manual resolution. Record any review choice with observed-state digest.
+6. Execute remaining effects through the same step protocol. Finalize only after read-back. Recovery inspection is read-only; reconciliation that can write requires `--apply`.

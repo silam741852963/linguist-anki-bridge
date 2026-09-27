@@ -1,203 +1,68 @@
-//! Jisho transport and parsing, with browser automation held behind a port.
-
+//! Dictionary responses are evidence, never instructions or an automatic sense selection.
+use linguist_core::{DictionaryEntry, Language, Sense, canonical};
 use serde::Deserialize;
-use std::{future::Future, pin::Pin, time::Duration};
-
-pub mod cambridge;
-pub mod custom;
-pub mod dictcc;
-pub mod kanji;
-pub mod moedict;
-
-pub type BrowserFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<String, DictionaryError>> + Send + 'a>>;
-
-/// Browser implementation belongs at the composition edge (e.g. Qt WebEngine),
-/// never in the provider parser or application model.
-pub trait BrowserFallback: Send + Sync {
-    fn search<'a>(&'a self, query: &'a str) -> BrowserFuture<'a>;
+use serde_json::Value;
+use std::collections::BTreeMap;
+#[derive(Debug, PartialEq, Eq)]
+pub enum Error {
+    InvalidLimits,
+    UnsupportedLanguage,
+    InvalidQuery,
+    BodyLimit,
+    Schema,
+    ProviderStatus,
+    EntryLimit,
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DictionaryEntry {
-    pub word: String,
-    pub reading: String,
-    pub forms: Vec<WrittenForm>,
-    pub senses: Vec<DictionarySense>,
-    pub common: bool,
-    pub jlpt: Vec<String>,
-    pub tags: Vec<String>,
-    pub exact: bool,
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WrittenForm {
-    pub word: String,
-    pub reading: String,
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DictionarySense {
-    pub definitions: Vec<String>,
-    pub parts_of_speech: Vec<String>,
-    pub tags: Vec<String>,
-    pub see_also: Vec<String>,
-    pub antonyms: Vec<String>,
-    pub info: Vec<String>,
-    pub restrictions: Vec<String>,
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RetryClass {
-    Retryable,
-    Permanent,
-}
-#[derive(Debug)]
-pub enum DictionaryError {
-    Url(String),
-    Transport(String),
-    Http(u16),
-    Json(String),
-    EmptyResult,
-}
-impl DictionaryError {
-    pub fn retry_class(&self) -> RetryClass {
-        match self {
-            Self::Transport(_) | Self::Http(408 | 425 | 429 | 500..=599) => RetryClass::Retryable,
-            _ => RetryClass::Permanent,
-        }
-    }
-}
-impl std::fmt::Display for DictionaryError {
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Url(e) | Self::Transport(e) | Self::Json(e) => f.write_str(e),
-            Self::Http(s) => write!(f, "dictionary provider HTTP {s}"),
-            Self::EmptyResult => f.write_str("Jisho returned no dictionary entries"),
-        }
+        write!(f, "DICTIONARY_{self:?}")
     }
 }
-impl std::error::Error for DictionaryError {}
-
-#[derive(Clone, Debug)]
-pub struct JishoClient {
-    client: reqwest::Client,
-    base: reqwest::Url,
-    attempts: u8,
-    backoff: Duration,
+impl std::error::Error for Error {}
+#[derive(Debug)]
+pub struct DictionaryPage {
+    pub query: String,
+    pub request_url: String,
+    pub raw_bytes: Vec<u8>,
+    pub raw_digest: String,
+    pub entries: Vec<DictionaryEntry>,
+    pub exact_matches: Vec<usize>,
 }
-impl JishoClient {
-    pub fn new() -> Result<Self, DictionaryError> {
-        Self::with_config("https://jisho.org/", 3, Duration::from_millis(600))
-    }
-    pub fn with_config(
-        base: &str,
-        attempts: u8,
-        backoff: Duration,
-    ) -> Result<Self, DictionaryError> {
-        let base = reqwest::Url::parse(base).map_err(|e| DictionaryError::Url(e.to_string()))?;
-        if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
-            return Err(DictionaryError::Url(
-                "Jisho URL must be http(s) with a host".into(),
-            ));
-        }
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .user_agent("LinguistAnkiBridge/0.1")
-            .build()
-            .map_err(|e| DictionaryError::Transport(e.to_string()))?;
-        Ok(Self {
-            client,
-            base,
-            attempts: attempts.clamp(1, 5),
-            backoff,
-        })
-    }
-    pub async fn search(
-        &self,
-        query: &str,
-        browser: Option<&dyn BrowserFallback>,
-    ) -> Result<Vec<DictionaryEntry>, DictionaryError> {
-        if query.trim().is_empty() {
-            return Err(DictionaryError::EmptyResult);
-        }
-        let mut last = None;
-        for attempt in 1..=self.attempts {
-            match self.search_once(query).await {
-                Ok(entries) if !entries.is_empty() => return Ok(entries),
-                Ok(_) => last = Some(DictionaryError::EmptyResult),
-                Err(error) if error.retry_class() == RetryClass::Retryable => last = Some(error),
-                Err(error) => return Err(error),
-            }
-            if attempt < self.attempts {
-                tokio::time::sleep(self.backoff.saturating_mul(u32::from(attempt))).await;
-            }
-        }
-        if let Some(browser) = browser {
-            return parse_jisho(query, &browser.search(query).await?);
-        }
-        Err(last.unwrap_or(DictionaryError::EmptyResult))
-    }
-    async fn search_once(&self, query: &str) -> Result<Vec<DictionaryEntry>, DictionaryError> {
-        let mut url = self
-            .base
-            .join("api/v1/search/words")
-            .map_err(|e| DictionaryError::Url(e.to_string()))?;
-        url.query_pairs_mut().append_pair("keyword", query);
-        let response = self
-            .client
-            .get(url)
-            .header(reqwest::header::ACCEPT, "application/json")
-            .send()
-            .await
-            .map_err(|e| DictionaryError::Transport(e.to_string()))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|e| DictionaryError::Transport(e.to_string()))?;
-        if !status.is_success() {
-            return Err(DictionaryError::Http(status.as_u16()));
-        }
-        parse_jisho(query, &body)
-    }
-}
-
-pub fn jisho_cache_key(query: &str) -> String {
-    let normalized = query.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut hash = 0xcbf29ce484222325_u64;
-    for byte in normalized.bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    format!("jisho-v1-{hash:016x}")
-}
-
 #[derive(Deserialize)]
 struct Response {
-    #[serde(default)]
-    data: Vec<Raw>,
+    meta: Meta,
+    data: Vec<RawEntry>,
 }
 #[derive(Deserialize)]
-struct Raw {
+struct Meta {
+    status: u16,
+}
+#[derive(Deserialize)]
+struct RawEntry {
     #[serde(default)]
-    japanese: Vec<Japanese>,
-    #[serde(default)]
-    senses: Vec<Sense>,
+    slug: Option<String>,
+    japanese: Vec<Form>,
+    senses: Vec<RawSense>,
     #[serde(default)]
     is_common: bool,
     #[serde(default)]
     jlpt: Vec<String>,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(flatten)]
+    extensions: BTreeMap<String, Value>,
 }
-#[derive(Deserialize)]
-struct Japanese {
+#[derive(Deserialize, serde::Serialize)]
+struct Form {
     #[serde(default)]
-    word: String,
+    word: Option<String>,
     #[serde(default)]
-    reading: String,
+    reading: Option<String>,
+    #[serde(flatten)]
+    extensions: BTreeMap<String, Value>,
 }
-#[derive(Deserialize)]
-struct Sense {
-    #[serde(default)]
+#[derive(Deserialize, serde::Serialize)]
+struct RawSense {
     english_definitions: Vec<String>,
     #[serde(default)]
     parts_of_speech: Vec<String>,
@@ -211,103 +76,146 @@ struct Sense {
     info: Vec<String>,
     #[serde(default)]
     restrictions: Vec<String>,
+    #[serde(flatten)]
+    extensions: BTreeMap<String, Value>,
 }
-pub fn parse_jisho(query: &str, body: &str) -> Result<Vec<DictionaryEntry>, DictionaryError> {
-    let response: Response =
-        serde_json::from_str(body).map_err(|e| DictionaryError::Json(e.to_string()))?;
-    let mut entries = response
-        .data
-        .into_iter()
-        .filter_map(|raw| {
-            let forms = raw
-                .japanese
-                .into_iter()
-                .filter(|f| !f.word.is_empty() || !f.reading.is_empty())
-                .map(|f| WrittenForm {
-                    word: f.word,
-                    reading: f.reading,
-                })
-                .collect::<Vec<_>>();
-            let primary = forms.first()?;
-            let word = if primary.word.is_empty() {
-                primary.reading.clone()
-            } else {
-                primary.word.clone()
-            };
-            let reading = primary.reading.clone();
-            let senses = raw
-                .senses
-                .into_iter()
-                .filter(|s| !s.english_definitions.is_empty())
-                .map(|s| DictionarySense {
-                    definitions: s.english_definitions,
-                    parts_of_speech: s
-                        .parts_of_speech
-                        .into_iter()
-                        .filter(|v| !v.to_lowercase().contains("wikipedia definition"))
-                        .collect(),
-                    tags: s.tags,
-                    see_also: s.see_also,
-                    antonyms: s.antonyms,
-                    info: s.info,
-                    restrictions: s.restrictions,
-                })
-                .collect::<Vec<_>>();
-            (!senses.is_empty()).then(|| DictionaryEntry {
-                exact: forms.iter().any(|f| f.word == query || f.reading == query),
-                word,
-                reading,
-                forms,
-                senses,
-                common: raw.is_common,
-                jlpt: raw
-                    .jlpt
-                    .into_iter()
-                    .map(|v| v.to_uppercase().replace("JLPT-", "JLPT "))
-                    .collect(),
-                tags: raw.tags.into_iter().map(display_jisho_tag).collect(),
-            })
-        })
-        .collect::<Vec<_>>();
-    entries.sort_by_key(|entry| !entry.exact);
-    Ok(entries)
-}
-fn display_jisho_tag(tag: String) -> String {
-    if let Some(level) = tag
-        .strip_prefix("wanikani")
-        .filter(|n| n.chars().all(char::is_numeric))
+/// All entries are preserved in provider order. Exact matches are indexes, not selections.
+pub fn parse_jisho(
+    query: &str,
+    target: &Language,
+    bytes: &[u8],
+    max_bytes: u64,
+    max_entries: usize,
+) -> Result<JishoPage, Error> {
+    if max_bytes == 0 || max_bytes > 100 * 1024 * 1024 || !(1..=1000).contains(&max_entries) {
+        return Err(Error::InvalidLimits);
+    }
+    if target.as_str().split('-').next() != Some("ja") {
+        return Err(Error::UnsupportedLanguage);
+    }
+    if query.trim().is_empty()
+        || query.chars().count() > 100000
+        || query.chars().any(char::is_control)
     {
-        format!("Wanikani level {level}")
-    } else {
-        tag.replace('_', " ")
+        return Err(Error::InvalidQuery);
     }
+    if bytes.len() as u64 > max_bytes {
+        return Err(Error::BodyLimit);
+    }
+    // The shared parser rejects duplicate keys and unsafe numeric payloads, including extensions.
+    let response: Response = canonical::parse(bytes).map_err(|_| Error::Schema)?;
+    if response.meta.status != 200 {
+        return Err(Error::ProviderStatus);
+    }
+    if response.data.len() > max_entries {
+        return Err(Error::EntryLimit);
+    }
+    let mut request_url =
+        url::Url::parse("https://jisho.org/api/v1/search/words").map_err(|_| Error::Schema)?;
+    request_url.query_pairs_mut().append_pair("keyword", query);
+    let mut entries = Vec::new();
+    let mut exact_matches = Vec::new();
+    for raw in response.data {
+        if raw.japanese.is_empty() || raw.senses.is_empty() {
+            return Err(Error::Schema);
+        }
+        let mut forms = Vec::new();
+        let mut readings = Vec::new();
+        for form in &raw.japanese {
+            let word = form.word.as_deref().unwrap_or("");
+            let reading = form.reading.as_deref().unwrap_or("");
+            if word.trim().is_empty() && reading.trim().is_empty() {
+                return Err(Error::Schema);
+            }
+            if !word.is_empty() {
+                forms.push(word.to_owned());
+            }
+            if !reading.is_empty() {
+                readings.push(reading.to_owned());
+            }
+        }
+        if forms.iter().chain(&readings).any(|form| form == query) {
+            exact_matches.push(entries.len());
+        }
+        let mut metadata = BTreeMap::from([
+            ("definition_language".into(), vec!["en".into()]),
+            ("is_common".into(), vec![raw.is_common.to_string()]),
+            ("jlpt".into(), raw.jlpt),
+            ("tags".into(), raw.tags),
+            (
+                "written_form_pairs_json".into(),
+                vec![serde_json::to_string(&raw.japanese).map_err(|_| Error::Schema)?],
+            ),
+            (
+                "provider_extensions_json".into(),
+                vec![serde_json::to_string(&raw.extensions).map_err(|_| Error::Schema)?],
+            ),
+        ]);
+        let slug = raw
+            .slug
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| forms.first().or_else(|| readings.first()).unwrap());
+        let mut source = url::Url::parse("https://jisho.org/word/").map_err(|_| Error::Schema)?;
+        source
+            .path_segments_mut()
+            .map_err(|_| Error::Schema)?
+            .pop_if_empty()
+            .push(slug);
+        let mut senses = Vec::new();
+        let mut related_entries = Vec::new();
+        for sense in raw.senses {
+            if sense.english_definitions.is_empty()
+                || sense
+                    .english_definitions
+                    .iter()
+                    .any(|s| s.trim().is_empty())
+            {
+                return Err(Error::Schema);
+            }
+            let key =
+                canonical::digest("jisho-sense", &(slug, &sense)).map_err(|_| Error::Schema)?;
+            // Keep restrictions/relationships/info attached to their sense, including unknown extensions.
+            metadata.insert(
+                format!("sense:{key}:raw_json"),
+                vec![serde_json::to_string(&sense).map_err(|_| Error::Schema)?],
+            );
+            related_entries.extend(sense.see_also.iter().cloned());
+            related_entries.extend(sense.antonyms.iter().cloned());
+            let labels = sense
+                .parts_of_speech
+                .into_iter()
+                .chain(sense.tags)
+                .collect();
+            senses.push(Sense {
+                key,
+                definitions: sense.english_definitions,
+                labels,
+                examples: vec![],
+            });
+        }
+        entries.push(DictionaryEntry {
+            provider: "jisho-api-v1".into(),
+            source_url: source.into(),
+            language: target.clone(),
+            forms,
+            readings,
+            senses,
+            metadata,
+            related_entries,
+        });
+    }
+    Ok(JishoPage {
+        query: query.into(),
+        request_url: request_url.into(),
+        raw_bytes: bytes.to_vec(),
+        raw_digest: canonical::asset_digest(bytes),
+        entries,
+        exact_matches,
+    })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn exact_entry_precedes_related() {
-        let entries=parse_jisho("食べる",r#"{"data":[{"japanese":[{"word":"食べ物","reading":"たべもの"}],"senses":[{"english_definitions":["food"]}]},{"japanese":[{"word":"食べる","reading":"たべる"}],"is_common":true,"jlpt":["jlpt-n5"],"tags":["wanikani10"],"senses":[{"english_definitions":["to eat"],"parts_of_speech":["Wikipedia definition","verb"]}]}]}"#).unwrap();
-        assert_eq!(entries[0].word, "食べる");
-        assert_eq!(entries[0].senses[0].parts_of_speech, ["verb"]);
-        assert_eq!(entries[0].tags, ["Wanikani level 10"]);
-    }
-    #[test]
-    fn status_classifies_retry() {
-        assert_eq!(
-            DictionaryError::Http(429).retry_class(),
-            RetryClass::Retryable
-        );
-        assert_eq!(
-            DictionaryError::Http(404).retry_class(),
-            RetryClass::Permanent
-        );
-    }
+pub mod transport;
 
-    #[test]
-    fn cache_key_normalizes_query_whitespace() {
-        assert_eq!(jisho_cache_key("  食べる  "), jisho_cache_key("食べる"));
-        assert_ne!(jisho_cache_key("食べる"), jisho_cache_key("食べ物"));
-    }
-}
+pub type JishoPage = DictionaryPage;
+pub mod wiktionary;

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "media.max_asset_mb",
+      "type": "integer",
+      "default": 10,
+      "constraints": {
+        "min": 1,
+        "max": 100
+      },
+      "scope": "global",
+      "consumer": "media adapter",
+      "description": "Decoded media bytes limit.",
+      "sensitive": false
+    },
+    {
+      "key": "media.allowed_image_types",
+      "type": "string[]",
+      "default": [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif"
+      ],
+      "constraints": {
+        "items_format": "nonempty",
+        "unique": true
+      },
+      "scope": "global",
+      "consumer": "media adapter",
+      "description": "Decoded MIME whitelist.",
+      "sensitive": false
+    },
+    {
+      "key": "media.allowed_audio_types",
+      "type": "string[]",
+      "default": [
+        "audio/mpeg",
+        "audio/ogg",
+        "audio/wav"
+      ],
+      "constraints": {
+        "items_format": "nonempty",
+        "unique": true
+      },
+      "scope": "global",
+      "consumer": "media adapter",
+      "description": "Decoded MIME whitelist.",
+      "sensitive": false
+    }
+  ]
+}

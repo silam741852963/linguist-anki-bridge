@@ -1,0 +1,16 @@
+[package]
+name = "linguist-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+linguist-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+rusqlite.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "ocr.engine",
+      "type": "enum",
+      "default": "tesseract",
+      "constraints": {
+        "values": [
+          "tesseract",
+          "ollama",
+          "paddleocr"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Optional engines require installed pinned resources.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.languages",
+      "type": "string[]",
+      "default": [
+        "jpn",
+        "eng",
+        "vie"
+      ],
+      "constraints": {
+        "items_format": "nonempty",
+        "unique": true
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Purpose mappings should narrow packs; absent pack blocks required OCR.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.preprocess",
+      "type": "boolean",
+      "default": true,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Derivative only; preserves source bytes.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.timeout_seconds",
+      "type": "integer",
+      "default": 60,
+      "constraints": {
+        "min": 1,
+        "max": 600
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Child process deadline.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.page_segmentation_mode",
+      "type": "integer",
+      "default": 3,
+      "constraints": {
+        "min": 0,
+        "max": 13
+      },
+      "scope": "purpose",
+      "consumer": "Tesseract",
+      "description": "Validate mode supported by installed engine.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.engine_mode",
+      "type": "integer",
+      "default": 1,
+      "constraints": {
+        "min": 0,
+        "max": 3
+      },
+      "scope": "purpose",
+      "consumer": "Tesseract",
+      "description": "Installed training data must support selected mode.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.minimum_confidence",
+      "type": "number",
+      "default": 0.7,
+      "constraints": {
+        "min": 0,
+        "max": 1
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Normalized adapter score triggers review, not proof.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.max_pixels",
+      "type": "integer",
+      "default": 40000000,
+      "constraints": {
+        "min": 1000000,
+        "max": 100000000
+      },
+      "scope": "global",
+      "consumer": "ALG-OCR",
+      "description": "Decode bomb protection.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.max_regions",
+      "type": "integer",
+      "default": 100,
+      "constraints": {
+        "min": 1,
+        "max": 1000
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Bound segmentation complexity.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.executable",
+      "type": "string",
+      "default": "tesseract",
+      "constraints": {
+        "format": "executable"
+      },
+      "scope": "purpose",
+      "consumer": "Tesseract",
+      "description": "Resolved executable path/hash; no shell command string.",
+      "sensitive": false
+    },
+    {
+      "key": "ocr.resource_path",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "path"
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Optional pinned language/engine resource directory.",
+      "sensitive": false
+    }
+  ]
+}

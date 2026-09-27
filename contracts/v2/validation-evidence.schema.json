@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ValidationEvidence",
+  "type": "object",
+  "properties": {
+    "apply_eligible": {
+      "type": "boolean"
+    },
+    "content_ready": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ItemValidation"
+      }
+    },
+    "live_checked": {
+      "type": "boolean"
+    },
+    "plan_digest": {
+      "type": "string"
+    },
+    "plan_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "plan_id",
+    "revision",
+    "plan_digest",
+    "content_ready",
+    "items",
+    "live_checked",
+    "apply_eligible"
+  ],
+  "$defs": {
+    "Issue": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stage": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "code",
+        "severity",
+        "stage",
+        "source_refs",
+        "message"
+      ]
+    },
+    "ItemValidation": {
+      "type": "object",
+      "properties": {
+        "content_ready": {
+          "type": "boolean"
+        },
+        "document_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          }
+        },
+        "semantic_digest": {
+          "type": "string"
+        },
+        "staged_render_matches": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "semantic_digest",
+        "content_ready",
+        "staged_render_matches",
+        "issues"
+      ]
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "warning",
+        "error",
+        "review"
+      ]
+    }
+  }
+}

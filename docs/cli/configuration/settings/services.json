@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "services.dictionary.min_interval_seconds",
+      "type": "number",
+      "default": 1.0,
+      "constraints": {
+        "min": 0,
+        "max": 60
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Provider rate limit.",
+      "sensitive": false
+    },
+    {
+      "key": "services.dictionary.concurrency",
+      "type": "integer",
+      "default": 1,
+      "constraints": {
+        "min": 1,
+        "max": 8
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Shared semaphore per endpoint.",
+      "sensitive": false
+    },
+    {
+      "key": "services.ollama.min_interval_seconds",
+      "type": "number",
+      "default": 0.25,
+      "constraints": {
+        "min": 0,
+        "max": 60
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Provider rate limit.",
+      "sensitive": false
+    },
+    {
+      "key": "services.ollama.concurrency",
+      "type": "integer",
+      "default": 1,
+      "constraints": {
+        "min": 1,
+        "max": 8
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Shared semaphore per endpoint.",
+      "sensitive": false
+    },
+    {
+      "key": "services.kanji.min_interval_seconds",
+      "type": "number",
+      "default": 1.0,
+      "constraints": {
+        "min": 0,
+        "max": 60
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Provider rate limit.",
+      "sensitive": false
+    },
+    {
+      "key": "services.kanji.concurrency",
+      "type": "integer",
+      "default": 1,
+      "constraints": {
+        "min": 1,
+        "max": 8
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Shared semaphore per endpoint.",
+      "sensitive": false
+    },
+    {
+      "key": "services.image.min_interval_seconds",
+      "type": "number",
+      "default": 1.0,
+      "constraints": {
+        "min": 0,
+        "max": 60
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Provider rate limit.",
+      "sensitive": false
+    },
+    {
+      "key": "services.image.concurrency",
+      "type": "integer",
+      "default": 1,
+      "constraints": {
+        "min": 1,
+        "max": 8
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Shared semaphore per endpoint.",
+      "sensitive": false
+    },
+    {
+      "key": "services.tts.min_interval_seconds",
+      "type": "number",
+      "default": 0.5,
+      "constraints": {
+        "min": 0,
+        "max": 60
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Provider rate limit.",
+      "sensitive": false
+    },
+    {
+      "key": "services.tts.concurrency",
+      "type": "integer",
+      "default": 1,
+      "constraints": {
+        "min": 1,
+        "max": 8
+      },
+      "scope": "purpose",
+      "consumer": "ALG-PROVIDER",
+      "description": "Shared semaphore per endpoint.",
+      "sensitive": false
+    }
+  ]
+}

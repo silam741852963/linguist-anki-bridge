@@ -1,0 +1,1174 @@
+{
+  "schema_version": 1,
+  "records": {
+    "ALG-CONFIG": {
+      "path": "configuration/README.md",
+      "heading": "## ALG-CONFIG \u2014 resolve and freeze",
+      "title": "ALG-CONFIG \u2014 resolve and freeze",
+      "words": 420,
+      "requires": [
+        "contracts/invariants.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "ALG-RENDER": {
+      "path": "contracts/rendering.md",
+      "heading": "## ALG-RENDER \u2014 render and readiness rules",
+      "title": "ALG-RENDER \u2014 render and readiness rules",
+      "words": 457,
+      "requires": [
+        "contracts/invariants.md",
+        "decisions/storage-and-wire.md",
+        "pipelines/validation.md"
+      ]
+    },
+    "WP-01": {
+      "path": "implementation/wp-01.md",
+      "heading": "## WP-01 \u2014 explicit domain and resources",
+      "title": "WP-01 \u2014 explicit domain and resources",
+      "words": 105,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/storage-and-wire.md",
+        "decisions/release-gates.md",
+        "contracts/rendering.md",
+        "pipelines/validation.md"
+      ]
+    },
+    "WP-02": {
+      "path": "implementation/wp-02.md",
+      "heading": "## WP-02 \u2014 CLI/config shell",
+      "title": "WP-02 \u2014 CLI/config shell",
+      "words": 92,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/ux-and-operations.md",
+        "decisions/learning-and-providers.md"
+      ]
+    },
+    "WP-03": {
+      "path": "implementation/wp-03.md",
+      "heading": "## WP-03 \u2014 native bridge and safety gate",
+      "title": "WP-03 \u2014 native bridge and safety gate",
+      "words": 135,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "recovery/backup.md",
+        "recovery/identity.md",
+        "recovery/migration.md",
+        "recovery/models.md"
+      ]
+    },
+    "WP-04": {
+      "path": "implementation/wp-04.md",
+      "heading": "## WP-04 \u2014 durable store",
+      "title": "WP-04 \u2014 durable store",
+      "words": 101,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/storage-and-wire.md",
+        "recovery/retention.md",
+        "recovery/jobs.md"
+      ]
+    },
+    "WP-05": {
+      "path": "implementation/wp-05.md",
+      "heading": "## WP-05 \u2014 selectors and source capture",
+      "title": "WP-05 \u2014 selectors and source capture",
+      "words": 89,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/learning-and-providers.md",
+        "decisions/ux-and-operations.md",
+        "pipelines/capture.md",
+        "pipelines/ocr.md"
+      ]
+    },
+    "WP-06": {
+      "path": "implementation/wp-06.md",
+      "heading": "## WP-06 \u2014 provider boundary",
+      "title": "WP-06 \u2014 provider boundary",
+      "words": 102,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/learning-and-providers.md",
+        "decisions/release-gates.md",
+        "pipelines/ocr.md",
+        "pipelines/providers.md"
+      ]
+    },
+    "WP-07": {
+      "path": "implementation/wp-07.md",
+      "heading": "## WP-07 \u2014 vocabulary",
+      "title": "WP-07 \u2014 vocabulary",
+      "words": 73,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/learning-and-providers.md",
+        "pipelines/validation.md",
+        "pipelines/vocabulary.md",
+        "operations/preparation.md"
+      ]
+    },
+    "WP-08": {
+      "path": "implementation/wp-08.md",
+      "heading": "## WP-08 \u2014 grammar",
+      "title": "WP-08 \u2014 grammar",
+      "words": 80,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/learning-and-providers.md",
+        "pipelines/grammar.md",
+        "recovery/split.md",
+        "operations/preparation.md"
+      ]
+    },
+    "WP-09": {
+      "path": "implementation/wp-09.md",
+      "heading": "## WP-09 \u2014 review and approval",
+      "title": "WP-09 \u2014 review and approval",
+      "words": 85,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/storage-and-wire.md",
+        "decisions/learning-and-providers.md",
+        "decisions/ux-and-operations.md",
+        "operations/plans.md",
+        "operations/history.md"
+      ]
+    },
+    "WP-10": {
+      "path": "implementation/wp-10.md",
+      "heading": "## WP-10 \u2014 checkpoints/model actions",
+      "title": "WP-10 \u2014 checkpoints/model actions",
+      "words": 71,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/backup.md",
+        "recovery/models.md",
+        "operations/collection.md",
+        "operations/history.md"
+      ]
+    },
+    "WP-11": {
+      "path": "implementation/wp-11.md",
+      "heading": "## WP-11 \u2014 apply/reconcile",
+      "title": "WP-11 \u2014 apply/reconcile",
+      "words": 110,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/apply.md",
+        "recovery/migration.md",
+        "recovery/reconcile.md",
+        "operations/apply.md",
+        "operations/maintenance.md"
+      ]
+    },
+    "WP-12": {
+      "path": "implementation/wp-12.md",
+      "heading": "## WP-12 \u2014 restore/splits",
+      "title": "WP-12 \u2014 restore/splits",
+      "words": 93,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/storage-and-wire.md",
+        "recovery/restore.md",
+        "recovery/split.md",
+        "operations/jobs.md",
+        "operations/history.md"
+      ]
+    },
+    "WP-13": {
+      "path": "implementation/wp-13.md",
+      "heading": "## WP-13 \u2014 job executor",
+      "title": "WP-13 \u2014 job executor",
+      "words": 86,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/storage-and-wire.md",
+        "decisions/ux-and-operations.md",
+        "recovery/jobs.md",
+        "recovery/reconcile.md",
+        "operations/jobs.md"
+      ]
+    },
+    "WP-14": {
+      "path": "implementation/wp-14.md",
+      "heading": "## WP-14 \u2014 migration/pruning/setting closure",
+      "title": "WP-14 \u2014 migration/pruning/setting closure",
+      "words": 94,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/storage-and-wire.md",
+        "decisions/release-gates.md",
+        "configuration/README.md",
+        "recovery/retention.md",
+        "operations/configuration.md",
+        "operations/jobs.md",
+        "operations/maintenance.md"
+      ]
+    },
+    "WP-15": {
+      "path": "implementation/wp-15.md",
+      "heading": "## WP-15 \u2014 release/UX",
+      "title": "WP-15 \u2014 release/UX",
+      "words": 126,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/release-gates.md",
+        "decisions/learning-and-providers.md"
+      ]
+    },
+    "WP-16": {
+      "path": "implementation/wp-16.md",
+      "heading": "## WP-16 \u2014 final review and traceability",
+      "title": "WP-16 \u2014 final review and traceability",
+      "words": 94,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/release-gates.md"
+      ]
+    },
+    "OP-34": {
+      "path": "operations/apply.md",
+      "heading": "## OP-34 \u2014 `apply PLAN`",
+      "title": "OP-34 \u2014 `apply PLAN`",
+      "words": 77,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/apply.md",
+        "recovery/split.md"
+      ]
+    },
+    "OP-11": {
+      "path": "operations/collection.md",
+      "heading": "## OP-11 \u2014 `decks list`",
+      "title": "OP-11 \u2014 `decks list`",
+      "words": 61,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-12": {
+      "path": "operations/collection.md",
+      "heading": "## OP-12 \u2014 `decks show DECK`",
+      "title": "OP-12 \u2014 `decks show DECK`",
+      "words": 52,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-13": {
+      "path": "operations/collection.md",
+      "heading": "## OP-13 \u2014 `decks map PURPOSE`",
+      "title": "OP-13 \u2014 `decks map PURPOSE`",
+      "words": 121,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-14": {
+      "path": "operations/collection.md",
+      "heading": "## OP-14 \u2014 `decks unmap PURPOSE`",
+      "title": "OP-14 \u2014 `decks unmap PURPOSE`",
+      "words": 51,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-15": {
+      "path": "operations/collection.md",
+      "heading": "## OP-15 \u2014 `models list`",
+      "title": "OP-15 \u2014 `models list`",
+      "words": 45,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-16": {
+      "path": "operations/collection.md",
+      "heading": "## OP-16 \u2014 `models inspect MODEL`",
+      "title": "OP-16 \u2014 `models inspect MODEL`",
+      "words": 51,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-17": {
+      "path": "operations/collection.md",
+      "heading": "## OP-17 \u2014 `models install PURPOSE`",
+      "title": "OP-17 \u2014 `models install PURPOSE`",
+      "words": 70,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/models.md"
+      ]
+    },
+    "OP-18": {
+      "path": "operations/collection.md",
+      "heading": "## OP-18 \u2014 `notes list`",
+      "title": "OP-18 \u2014 `notes list`",
+      "words": 65,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-19": {
+      "path": "operations/collection.md",
+      "heading": "## OP-19 \u2014 `notes show NOTE_ID`",
+      "title": "OP-19 \u2014 `notes show NOTE_ID`",
+      "words": 105,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-20": {
+      "path": "operations/collection.md",
+      "heading": "## OP-20 \u2014 `notes count`",
+      "title": "OP-20 \u2014 `notes count`",
+      "words": 51,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-02": {
+      "path": "operations/configuration.md",
+      "heading": "## OP-02 \u2014 `config init`",
+      "title": "OP-02 \u2014 `config init`",
+      "words": 85,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md",
+        "configuration/README.md"
+      ]
+    },
+    "OP-03": {
+      "path": "operations/configuration.md",
+      "heading": "## OP-03 \u2014 `config show`",
+      "title": "OP-03 \u2014 `config show`",
+      "words": 61,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md",
+        "configuration/README.md"
+      ]
+    },
+    "OP-04": {
+      "path": "operations/configuration.md",
+      "heading": "## OP-04 \u2014 `config describe KEY`",
+      "title": "OP-04 \u2014 `config describe KEY`",
+      "words": 55,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-05": {
+      "path": "operations/configuration.md",
+      "heading": "## OP-05 \u2014 `config validate`",
+      "title": "OP-05 \u2014 `config validate`",
+      "words": 65,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md",
+        "configuration/README.md"
+      ]
+    },
+    "OP-06": {
+      "path": "operations/configuration.md",
+      "heading": "## OP-06 \u2014 `config set KEY VALUE`",
+      "title": "OP-06 \u2014 `config set KEY VALUE`",
+      "words": 68,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-07": {
+      "path": "operations/configuration.md",
+      "heading": "## OP-07 \u2014 `config unset KEY`",
+      "title": "OP-07 \u2014 `config unset KEY`",
+      "words": 62,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-08": {
+      "path": "operations/configuration.md",
+      "heading": "## OP-08 \u2014 `config reset`",
+      "title": "OP-08 \u2014 `config reset`",
+      "words": 69,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-09": {
+      "path": "operations/configuration.md",
+      "heading": "## OP-09 \u2014 `config import`",
+      "title": "OP-09 \u2014 `config import`",
+      "words": 81,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-10": {
+      "path": "operations/configuration.md",
+      "heading": "## OP-10 \u2014 `config migrate`",
+      "title": "OP-10 \u2014 `config migrate`",
+      "words": 63,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-01": {
+      "path": "operations/doctor.md",
+      "heading": "## OP-01 \u2014 `doctor`",
+      "title": "OP-01 \u2014 `doctor`",
+      "words": 215,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md",
+        "configuration/README.md"
+      ]
+    },
+    "OP-48": {
+      "path": "operations/history.md",
+      "heading": "## OP-48 \u2014 `snapshots list`",
+      "title": "OP-48 \u2014 `snapshots list`",
+      "words": 38,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-49": {
+      "path": "operations/history.md",
+      "heading": "## OP-49 \u2014 `snapshots show SNAPSHOT`",
+      "title": "OP-49 \u2014 `snapshots show SNAPSHOT`",
+      "words": 47,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-50": {
+      "path": "operations/history.md",
+      "heading": "## OP-50 \u2014 `snapshots restore SNAPSHOT`",
+      "title": "OP-50 \u2014 `snapshots restore SNAPSHOT`",
+      "words": 71,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/restore.md"
+      ]
+    },
+    "OP-51": {
+      "path": "operations/history.md",
+      "heading": "## OP-51 \u2014 `snapshots export SNAPSHOT`",
+      "title": "OP-51 \u2014 `snapshots export SNAPSHOT`",
+      "words": 55,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-52": {
+      "path": "operations/history.md",
+      "heading": "## OP-52 \u2014 `backup create`",
+      "title": "OP-52 \u2014 `backup create`",
+      "words": 61,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/backup.md"
+      ]
+    },
+    "OP-53": {
+      "path": "operations/history.md",
+      "heading": "## OP-53 \u2014 `backup list`",
+      "title": "OP-53 \u2014 `backup list`",
+      "words": 37,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-54": {
+      "path": "operations/history.md",
+      "heading": "## OP-54 \u2014 `backup verify BACKUP`",
+      "title": "OP-54 \u2014 `backup verify BACKUP`",
+      "words": 74,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-35": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-35 \u2014 `jobs create`",
+      "title": "OP-35 \u2014 `jobs create`",
+      "words": 67,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-36": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-36 \u2014 `jobs list`",
+      "title": "OP-36 \u2014 `jobs list`",
+      "words": 43,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-37": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-37 \u2014 `jobs show JOB`",
+      "title": "OP-37 \u2014 `jobs show JOB`",
+      "words": 47,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-38": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-38 \u2014 `jobs items JOB`",
+      "title": "OP-38 \u2014 `jobs items JOB`",
+      "words": 48,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-39": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-39 \u2014 `jobs run JOB`",
+      "title": "OP-39 \u2014 `jobs run JOB`",
+      "words": 78,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/jobs.md"
+      ]
+    },
+    "OP-40": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-40 \u2014 `jobs pause JOB`",
+      "title": "OP-40 \u2014 `jobs pause JOB`",
+      "words": 62,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-41": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-41 \u2014 `jobs resume JOB`",
+      "title": "OP-41 \u2014 `jobs resume JOB`",
+      "words": 67,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/jobs.md"
+      ]
+    },
+    "OP-42": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-42 \u2014 `jobs retry JOB`",
+      "title": "OP-42 \u2014 `jobs retry JOB`",
+      "words": 73,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-43": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-43 \u2014 `jobs cancel JOB`",
+      "title": "OP-43 \u2014 `jobs cancel JOB`",
+      "words": 59,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-44": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-44 \u2014 `jobs rollback JOB`",
+      "title": "OP-44 \u2014 `jobs rollback JOB`",
+      "words": 64,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/restore.md"
+      ]
+    },
+    "OP-45": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-45 \u2014 `jobs delete JOB`",
+      "title": "OP-45 \u2014 `jobs delete JOB`",
+      "words": 56,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-46": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-46 \u2014 `jobs audit JOB`",
+      "title": "OP-46 \u2014 `jobs audit JOB`",
+      "words": 59,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-47": {
+      "path": "operations/jobs.md",
+      "heading": "## OP-47 \u2014 `jobs migrate`",
+      "title": "OP-47 \u2014 `jobs migrate`",
+      "words": 66,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-55": {
+      "path": "operations/maintenance.md",
+      "heading": "## OP-55 \u2014 `cache status`",
+      "title": "OP-55 \u2014 `cache status`",
+      "words": 38,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-56": {
+      "path": "operations/maintenance.md",
+      "heading": "## OP-56 \u2014 `cache prune`",
+      "title": "OP-56 \u2014 `cache prune`",
+      "words": 56,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/retention.md"
+      ]
+    },
+    "OP-57": {
+      "path": "operations/maintenance.md",
+      "heading": "## OP-57 \u2014 `resources list`",
+      "title": "OP-57 \u2014 `resources list`",
+      "words": 52,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-58": {
+      "path": "operations/maintenance.md",
+      "heading": "## OP-58 \u2014 `resources install RESOURCE`",
+      "title": "OP-58 \u2014 `resources install RESOURCE`",
+      "words": 86,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/release-gates.md"
+      ]
+    },
+    "OP-59": {
+      "path": "operations/maintenance.md",
+      "heading": "## OP-59 \u2014 `recover inspect`",
+      "title": "OP-59 \u2014 `recover inspect`",
+      "words": 62,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-60": {
+      "path": "operations/maintenance.md",
+      "heading": "## OP-60 \u2014 `recover reconcile OPERATION`",
+      "title": "OP-60 \u2014 `recover reconcile OPERATION`",
+      "words": 76,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "decisions/ux-and-operations.md",
+        "recovery/reconcile.md"
+      ]
+    },
+    "OP-61": {
+      "path": "operations/maintenance.md",
+      "heading": "## OP-61 \u2014 `completions SHELL`",
+      "title": "OP-61 \u2014 `completions SHELL`",
+      "words": 54,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-25": {
+      "path": "operations/plans.md",
+      "heading": "## OP-25 \u2014 `plans list`",
+      "title": "OP-25 \u2014 `plans list`",
+      "words": 42,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-26": {
+      "path": "operations/plans.md",
+      "heading": "## OP-26 \u2014 `plans show PLAN`",
+      "title": "OP-26 \u2014 `plans show PLAN`",
+      "words": 55,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-27": {
+      "path": "operations/plans.md",
+      "heading": "## OP-27 \u2014 `plans diff PLAN`",
+      "title": "OP-27 \u2014 `plans diff PLAN`",
+      "words": 68,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-28": {
+      "path": "operations/plans.md",
+      "heading": "## OP-28 \u2014 `plans edit PLAN`",
+      "title": "OP-28 \u2014 `plans edit PLAN`",
+      "words": 105,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-29": {
+      "path": "operations/plans.md",
+      "heading": "## OP-29 \u2014 `plans resolve PLAN ISSUE`",
+      "title": "OP-29 \u2014 `plans resolve PLAN ISSUE`",
+      "words": 63,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-30": {
+      "path": "operations/plans.md",
+      "heading": "## OP-30 \u2014 `plans regenerate PLAN`",
+      "title": "OP-30 \u2014 `plans regenerate PLAN`",
+      "words": 71,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-31": {
+      "path": "operations/plans.md",
+      "heading": "## OP-31 \u2014 `plans validate PLAN`",
+      "title": "OP-31 \u2014 `plans validate PLAN`",
+      "words": 64,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md",
+        "contracts/rendering.md",
+        "pipelines/validation.md"
+      ]
+    },
+    "OP-32": {
+      "path": "operations/plans.md",
+      "heading": "## OP-32 \u2014 `plans export PLAN`",
+      "title": "OP-32 \u2014 `plans export PLAN`",
+      "words": 75,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-33": {
+      "path": "operations/plans.md",
+      "heading": "## OP-33 \u2014 `plans approve PLAN`",
+      "title": "OP-33 \u2014 `plans approve PLAN`",
+      "words": 61,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/ux-and-operations.md"
+      ]
+    },
+    "OP-21": {
+      "path": "operations/preparation.md",
+      "heading": "## OP-21 \u2014 `vocab add`",
+      "title": "OP-21 \u2014 `vocab add`",
+      "words": 89,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/learning-and-providers.md",
+        "pipelines/capture.md",
+        "pipelines/vocabulary.md"
+      ]
+    },
+    "OP-22": {
+      "path": "operations/preparation.md",
+      "heading": "## OP-22 \u2014 `vocab revamp`",
+      "title": "OP-22 \u2014 `vocab revamp`",
+      "words": 89,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/learning-and-providers.md",
+        "pipelines/capture.md",
+        "pipelines/vocabulary.md"
+      ]
+    },
+    "OP-23": {
+      "path": "operations/preparation.md",
+      "heading": "## OP-23 \u2014 `grammar add`",
+      "title": "OP-23 \u2014 `grammar add`",
+      "words": 89,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/learning-and-providers.md",
+        "pipelines/capture.md",
+        "pipelines/grammar.md"
+      ]
+    },
+    "OP-24": {
+      "path": "operations/preparation.md",
+      "heading": "## OP-24 \u2014 `grammar revamp`",
+      "title": "OP-24 \u2014 `grammar revamp`",
+      "words": 89,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "decisions/learning-and-providers.md",
+        "pipelines/capture.md",
+        "pipelines/grammar.md"
+      ]
+    },
+    "ALG-CAPTURE": {
+      "path": "pipelines/capture.md",
+      "heading": "## ALG-CAPTURE \u2014 resolve inputs and preserve evidence",
+      "title": "ALG-CAPTURE \u2014 resolve inputs and preserve evidence",
+      "words": 243,
+      "requires": [
+        "contracts/invariants.md",
+        "decisions/learning-and-providers.md",
+        "configuration/README.md"
+      ]
+    },
+    "ALG-GRAMMAR": {
+      "path": "pipelines/grammar.md",
+      "heading": "## ALG-GRAMMAR \u2014 add or revamp grammar",
+      "title": "ALG-GRAMMAR \u2014 add or revamp grammar",
+      "words": 236,
+      "requires": [
+        "contracts/invariants.md",
+        "decisions/learning-and-providers.md",
+        "recovery/split.md"
+      ]
+    },
+    "ALG-OCR": {
+      "path": "pipelines/ocr.md",
+      "heading": "## ALG-OCR \u2014 extract before generation",
+      "title": "ALG-OCR \u2014 extract before generation",
+      "words": 159,
+      "requires": [
+        "contracts/invariants.md",
+        "decisions/learning-and-providers.md"
+      ]
+    },
+    "ALG-PROVIDER": {
+      "path": "pipelines/providers.md",
+      "heading": "## ALG-PROVIDER \u2014 external service boundary",
+      "title": "ALG-PROVIDER \u2014 external service boundary",
+      "words": 134,
+      "requires": [
+        "contracts/invariants.md",
+        "decisions/learning-and-providers.md"
+      ]
+    },
+    "ALG-VALIDATE": {
+      "path": "pipelines/validation.md",
+      "heading": "## ALG-VALIDATE \u2014 readiness",
+      "title": "ALG-VALIDATE \u2014 readiness",
+      "words": 199,
+      "requires": [
+        "contracts/invariants.md",
+        "decisions/learning-and-providers.md"
+      ]
+    },
+    "ALG-VOCAB": {
+      "path": "pipelines/vocabulary.md",
+      "heading": "## ALG-VOCAB \u2014 add or revamp vocabulary",
+      "title": "ALG-VOCAB \u2014 add or revamp vocabulary",
+      "words": 258,
+      "requires": [
+        "contracts/invariants.md",
+        "decisions/learning-and-providers.md",
+        "pipelines/capture.md",
+        "pipelines/ocr.md",
+        "contracts/rendering.md",
+        "pipelines/validation.md"
+      ]
+    },
+    "ALG-APPLY": {
+      "path": "recovery/apply.md",
+      "heading": "## ALG-APPLY \u2014 one item",
+      "title": "ALG-APPLY \u2014 one item",
+      "words": 313,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "recovery/backup.md",
+        "recovery/migration.md",
+        "recovery/reconcile.md"
+      ]
+    },
+    "ALG-BACKUP": {
+      "path": "recovery/backup.md",
+      "heading": "## ALG-BACKUP \u2014 verified checkpoint",
+      "title": "ALG-BACKUP \u2014 verified checkpoint",
+      "words": 172,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md"
+      ]
+    },
+    "ALG-IDENTITY": {
+      "path": "recovery/identity.md",
+      "heading": "## ALG-IDENTITY \u2014 collection binding and source conflict",
+      "title": "ALG-IDENTITY \u2014 collection binding and source conflict",
+      "words": 137,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md"
+      ]
+    },
+    "ALG-JOB": {
+      "path": "recovery/jobs.md",
+      "heading": "## ALG-JOB \u2014 bounded batch execution",
+      "title": "ALG-JOB \u2014 bounded batch execution",
+      "words": 171,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md"
+      ]
+    },
+    "ALG-MIGRATE": {
+      "path": "recovery/migration.md",
+      "heading": "## ALG-MIGRATE \u2014 preserve cards",
+      "title": "ALG-MIGRATE \u2014 preserve cards",
+      "words": 152,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md"
+      ]
+    },
+    "ALG-MODEL": {
+      "path": "recovery/models.md",
+      "heading": "## ALG-MODEL \u2014 model installation/change",
+      "title": "ALG-MODEL \u2014 model installation/change",
+      "words": 99,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md"
+      ]
+    },
+    "ALG-RECONCILE": {
+      "path": "recovery/reconcile.md",
+      "heading": "## ALG-RECONCILE \u2014 unknown outcome/restart",
+      "title": "ALG-RECONCILE \u2014 unknown outcome/restart",
+      "words": 277,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md"
+      ]
+    },
+    "ALG-RESTORE": {
+      "path": "recovery/restore.md",
+      "heading": "## ALG-RESTORE \u2014 selective recovery",
+      "title": "ALG-RESTORE \u2014 selective recovery",
+      "words": 258,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md"
+      ]
+    },
+    "ALG-GC": {
+      "path": "recovery/retention.md",
+      "heading": "## ALG-GC \u2014 storage pruning",
+      "title": "ALG-GC \u2014 storage pruning",
+      "words": 89,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/storage-and-wire.md"
+      ]
+    },
+    "ALG-SPLIT": {
+      "path": "recovery/split.md",
+      "heading": "## ALG-SPLIT \u2014 grammar group",
+      "title": "ALG-SPLIT \u2014 grammar group",
+      "words": 105,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "decisions/native-bridge.md",
+        "recovery/restore.md"
+      ]
+    }
+  }
+}

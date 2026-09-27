@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "classification.decision_threshold",
+      "type": "number",
+      "default": 0.5,
+      "constraints": {
+        "min": 0,
+        "max": 1
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Classifier score threshold.",
+      "sensitive": false
+    },
+    {
+      "key": "classification.confirmation_margin",
+      "type": "number",
+      "default": 0.12,
+      "constraints": {
+        "min": 0,
+        "max": 0.5
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Near-threshold score requires review.",
+      "sensitive": false
+    },
+    {
+      "key": "classification.vision_adjudication",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Optional additional evidence, never silently erases ambiguity.",
+      "sensitive": false
+    },
+    {
+      "key": "classification.vision_accept_confidence",
+      "type": "number",
+      "default": 0.95,
+      "constraints": {
+        "min": 0,
+        "max": 1
+      },
+      "scope": "purpose",
+      "consumer": "ALG-OCR",
+      "description": "Model score is uncalibrated; evidence conflicts still review.",
+      "sensitive": false
+    }
+  ]
+}

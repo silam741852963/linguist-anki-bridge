@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RenderedNote",
+  "type": "object",
+  "properties": {
+    "digest": {
+      "type": "string"
+    },
+    "document_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "media_digests": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "model": {
+      "$ref": "#/$defs/ManagedModel"
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Task"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "document_id",
+    "model",
+    "fields",
+    "tasks",
+    "media_digests",
+    "digest"
+  ],
+  "$defs": {
+    "ManagedModel": {
+      "type": "object",
+      "properties": {
+        "css": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "templates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Template"
+          }
+        },
+        "version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "fields",
+        "templates",
+        "css"
+      ]
+    },
+    "Task": {
+      "type": "string",
+      "enum": [
+        "comprehension",
+        "production",
+        "spelling",
+        "recognition",
+        "application"
+      ]
+    },
+    "Template": {
+      "type": "object",
+      "properties": {
+        "back": {
+          "type": "string"
+        },
+        "front": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "ordinal",
+        "front",
+        "back"
+      ]
+    }
+  }
+}

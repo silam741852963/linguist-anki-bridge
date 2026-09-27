@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "network.offline",
+      "type": "boolean",
+      "default": false,
+      "constraints": {},
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Block external traffic/downloads; explicitly allowed loopback services remain usable.",
+      "sensitive": false
+    },
+    {
+      "key": "network.allowed_remote_service_hosts",
+      "type": "string[]",
+      "default": [],
+      "constraints": {
+        "items_format": "host",
+        "unique": true
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Opt-in hosts for non-loopback Anki/Ollama/custom services.",
+      "sensitive": false
+    },
+    {
+      "key": "network.proxy_env",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "env_name"
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Proxy URL environment variable reference; proxy obeys destination policy.",
+      "sensitive": false
+    },
+    {
+      "key": "network.connect_timeout_seconds",
+      "type": "integer",
+      "default": 5,
+      "constraints": {
+        "min": 1,
+        "max": 120
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Connection deadline.",
+      "sensitive": false
+    },
+    {
+      "key": "network.request_timeout_seconds",
+      "type": "integer",
+      "default": 30,
+      "constraints": {
+        "min": 1,
+        "max": 600
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Default service request deadline.",
+      "sensitive": false
+    },
+    {
+      "key": "network.max_response_mb",
+      "type": "integer",
+      "default": 20,
+      "constraints": {
+        "min": 1,
+        "max": 100
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Encoded response body limit.",
+      "sensitive": false
+    },
+    {
+      "key": "network.max_redirects",
+      "type": "integer",
+      "default": 3,
+      "constraints": {
+        "min": 0,
+        "max": 10
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Every redirected destination is revalidated.",
+      "sensitive": false
+    }
+  ]
+}

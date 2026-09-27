@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "config.version",
+      "type": "integer",
+      "default": 2,
+      "constraints": {
+        "min": 2,
+        "max": 2
+      },
+      "scope": "global",
+      "consumer": "ALG-CONFIG",
+      "description": "Target TOML format version; distinct from Python YAML/native JSON versions.",
+      "sensitive": false
+    },
+    {
+      "key": "config.default_profile",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "global",
+      "consumer": "ALG-CONFIG",
+      "description": "Explicit named settings profile, never an Anki profile.",
+      "sensitive": false
+    }
+  ]
+}

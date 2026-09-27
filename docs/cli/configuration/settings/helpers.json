@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "helpers.memory_limit_mb",
+      "type": "integer",
+      "default": 2048,
+      "constraints": {
+        "min": 64,
+        "max": 65536
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Per-subprocess memory limit on supported Linux helper processes; not external Ollama.",
+      "sensitive": false
+    },
+    {
+      "key": "helpers.max_output_mb",
+      "type": "integer",
+      "default": 20,
+      "constraints": {
+        "min": 1,
+        "max": 100
+      },
+      "scope": "global",
+      "consumer": "ALG-PROVIDER",
+      "description": "Bound helper stdout/protocol output; excess is typed error, never truncate valid evidence.",
+      "sensitive": false
+    }
+  ]
+}

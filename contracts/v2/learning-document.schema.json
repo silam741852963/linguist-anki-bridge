@@ -1,0 +1,1018 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LearningDocument",
+  "type": "object",
+  "properties": {
+    "archives": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SourceArchive"
+      }
+    },
+    "content": {
+      "$ref": "#/$defs/LearningContent"
+    },
+    "context": {
+      "type": "string",
+      "default": ""
+    },
+    "edits": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/FieldIntent"
+      },
+      "default": {}
+    },
+    "evidence": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      }
+    },
+    "explanation_language": {
+      "$ref": "#/$defs/Language"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "issues": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Issue"
+      }
+    },
+    "media": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/MediaAsset"
+      }
+    },
+    "personal_notes": {
+      "type": "string",
+      "default": ""
+    },
+    "regions": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SourceRegion"
+      }
+    },
+    "requested_tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Task"
+      }
+    },
+    "reviews": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ReviewDecision"
+      }
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 2,
+      "minimum": 2
+    },
+    "source_summary": {
+      "type": "string",
+      "default": ""
+    },
+    "sources": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SourceRecord"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
+    "target_language": {
+      "$ref": "#/$defs/Language"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "target_language",
+    "explanation_language",
+    "content",
+    "requested_tasks"
+  ],
+  "$defs": {
+    "AnkiId": {
+      "type": "string"
+    },
+    "CardState": {
+      "type": "object",
+      "properties": {
+        "deck_id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "history_digest": {
+          "type": "string"
+        },
+        "home_deck_id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "scheduler": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "task",
+        "deck_id",
+        "home_deck_id",
+        "scheduler",
+        "history_digest"
+      ]
+    },
+    "DictionaryEntry": {
+      "type": "object",
+      "properties": {
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "language": {
+          "$ref": "#/$defs/Language"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default": {}
+        },
+        "provider": {
+          "type": "string"
+        },
+        "readings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "related_entries": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "senses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Sense"
+          }
+        },
+        "source_url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "source_url",
+        "language",
+        "forms",
+        "readings",
+        "senses"
+      ]
+    },
+    "Evidence": {
+      "type": "object",
+      "properties": {
+        "ambiguous": {
+          "type": "boolean"
+        },
+        "claim": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "language": {
+          "$ref": "#/$defs/Language"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "region_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "source_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "source_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "field",
+        "provenance",
+        "language",
+        "claim",
+        "ambiguous"
+      ]
+    },
+    "Example": {
+      "type": "object",
+      "properties": {
+        "evidence_ids": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "sentence": {
+          "type": "string"
+        },
+        "translation": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sentence",
+        "translation",
+        "provenance"
+      ]
+    },
+    "FieldIntent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "const": "keep"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "intent"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "intent",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "const": "clear"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "intent"
+          ]
+        }
+      ]
+    },
+    "Grammar": {
+      "type": "object",
+      "properties": {
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Example"
+          }
+        },
+        "exercise_answer": {
+          "type": "string",
+          "default": ""
+        },
+        "exercise_prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "formation": {
+          "type": "string"
+        },
+        "meaning": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "recognition_prompt": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "string",
+          "default": ""
+        },
+        "use_key": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pattern",
+        "use_key",
+        "meaning",
+        "formation",
+        "recognition_prompt",
+        "examples"
+      ]
+    },
+    "Issue": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stage": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "code",
+        "severity",
+        "stage",
+        "source_refs",
+        "message"
+      ]
+    },
+    "Language": {
+      "type": "string"
+    },
+    "LearningContent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "body": {
+              "$ref": "#/$defs/Vocabulary"
+            },
+            "kind": {
+              "type": "string",
+              "const": "vocabulary"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "body"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "body": {
+              "$ref": "#/$defs/Grammar"
+            },
+            "kind": {
+              "type": "string",
+              "const": "grammar"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "body"
+          ]
+        }
+      ]
+    },
+    "MediaAsset": {
+      "type": "object",
+      "properties": {
+        "attribution": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "license": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mime": {
+          "type": "string"
+        },
+        "original_filename": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner": {
+          "$ref": "#/$defs/MediaOwner"
+        },
+        "role": {
+          "$ref": "#/$defs/MediaRole"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "source_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "filename",
+        "size_bytes",
+        "mime",
+        "owner",
+        "role",
+        "attribution"
+      ]
+    },
+    "MediaOwner": {
+      "type": "string",
+      "enum": [
+        "source",
+        "app",
+        "external"
+      ]
+    },
+    "MediaRole": {
+      "type": "string",
+      "enum": [
+        "picture",
+        "audio",
+        "archive"
+      ]
+    },
+    "Provenance": {
+      "type": "string",
+      "enum": [
+        "source",
+        "dictionary",
+        "ocr",
+        "generated",
+        "user"
+      ]
+    },
+    "ReviewChoice": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "sense"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "anchor"
+            },
+            "value": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "segmentation"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "duplicate"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "note_id": {
+                  "$ref": "#/$defs/AnkiId"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "note_id",
+                "action"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "media"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "cue"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "task": {
+                  "$ref": "#/$defs/Task"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "task",
+                "text"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "content_verified"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "evidence_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "evidence_ids"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        }
+      ]
+    },
+    "ReviewDecision": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "choice": {
+          "$ref": "#/$defs/ReviewChoice"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "input_digest": {
+          "type": "string"
+        },
+        "issue_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "issue_id",
+        "input_digest",
+        "actor",
+        "created_at",
+        "choice"
+      ]
+    },
+    "Sense": {
+      "type": "object",
+      "properties": {
+        "definitions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "examples": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Example"
+          }
+        },
+        "key": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "definitions"
+      ]
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "warning",
+        "error",
+        "review"
+      ]
+    },
+    "SourceArchive": {
+      "type": "object",
+      "properties": {
+        "asset_digests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "digest": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "original_fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "source_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_id",
+        "digest",
+        "original_fields",
+        "asset_digests"
+      ]
+    },
+    "SourceRecord": {
+      "type": "object",
+      "properties": {
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardState"
+          }
+        },
+        "digest": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "media_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "model_manifest": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "location",
+        "digest",
+        "fields",
+        "model_manifest",
+        "tags",
+        "cards",
+        "media_refs"
+      ]
+    },
+    "SourceRegion": {
+      "type": "object",
+      "properties": {
+        "bounds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "image_digest": {
+          "type": "string"
+        },
+        "language": {
+          "$ref": "#/$defs/Language"
+        },
+        "reading_order": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "settings_digest": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_id",
+        "image_digest",
+        "bounds",
+        "reading_order",
+        "engine",
+        "settings_digest",
+        "text",
+        "language"
+      ]
+    },
+    "Task": {
+      "type": "string",
+      "enum": [
+        "comprehension",
+        "production",
+        "spelling",
+        "recognition",
+        "application"
+      ]
+    },
+    "Vocabulary": {
+      "type": "object",
+      "properties": {
+        "dictionary": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DictionaryEntry"
+          }
+        },
+        "examples": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Example"
+          }
+        },
+        "expression": {
+          "type": "string"
+        },
+        "kanji": {
+          "type": "string",
+          "default": ""
+        },
+        "meaning": {
+          "type": "string"
+        },
+        "production_prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "pronunciation": {
+          "type": "string",
+          "default": ""
+        },
+        "reading": {
+          "type": "string",
+          "default": ""
+        },
+        "sense_key": {
+          "type": "string"
+        },
+        "spelling_prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "usage": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "expression",
+        "meaning",
+        "sense_key"
+      ]
+    }
+  }
+}

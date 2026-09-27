@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "profiles.<name>.overrides",
+      "type": "override_map",
+      "default": {},
+      "constraints": {
+        "keys": "registered purpose-scope keys only",
+        "unknown_keys": "reject"
+      },
+      "scope": "profile",
+      "consumer": "ALG-CONFIG",
+      "description": "Named overrides reuse typed entries; no extra arbitrary settings.",
+      "sensitive": false
+    }
+  ]
+}

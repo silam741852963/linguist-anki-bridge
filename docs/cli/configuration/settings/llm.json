@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "llm.endpoint",
+      "type": "string",
+      "default": "http://127.0.0.1:11434",
+      "constraints": {
+        "format": "url"
+      },
+      "scope": "purpose",
+      "consumer": "Ollama adapter",
+      "description": "Local Ollama default.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.model",
+      "type": "string|null",
+      "default": "gemma4:12b",
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Selected baseline candidate; require installed capability/digest, never pull or silently substitute.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.vision_model",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "purpose",
+      "consumer": "vision",
+      "description": "Explicit installed model with vision capability.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.api_key_env",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "env_name"
+      },
+      "scope": "purpose",
+      "consumer": "Ollama adapter",
+      "description": "Credential environment reference.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.timeout_seconds",
+      "type": "integer",
+      "default": 180,
+      "constraints": {
+        "min": 10,
+        "max": 1800
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Generation deadline.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.temperature",
+      "type": "number",
+      "default": 0.0,
+      "constraints": {
+        "min": 0,
+        "max": 2
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Provider must advertise support; preserve resolved parameter.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.context_tokens",
+      "type": "integer",
+      "default": 8192,
+      "constraints": {
+        "min": 512,
+        "max": 131072
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Validate model limits; no silent truncation.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.max_output_tokens",
+      "type": "integer",
+      "default": 2048,
+      "constraints": {
+        "min": 128,
+        "max": 32768
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Must fit context with input.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.seed",
+      "type": "integer",
+      "default": 0,
+      "constraints": {
+        "min": 0,
+        "max": 2147483647
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Best effort reproducibility, not a deterministic guarantee.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.keep_alive",
+      "type": "string",
+      "default": "5m",
+      "constraints": {
+        "format": "duration"
+      },
+      "scope": "purpose",
+      "consumer": "Ollama adapter",
+      "description": "Validated provider duration.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.prompts.vocabulary",
+      "type": "string",
+      "default": "builtin:vocabulary-v2",
+      "constraints": {
+        "format": "resource_ref"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.prompts.grammar",
+      "type": "string",
+      "default": "builtin:grammar-v2",
+      "constraints": {
+        "format": "resource_ref"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.prompts.kanji",
+      "type": "string",
+      "default": "builtin:kanji-v2",
+      "constraints": {
+        "format": "resource_ref"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.repair_attempts",
+      "type": "integer",
+      "default": 2,
+      "constraints": {
+        "min": 0,
+        "max": 3
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Structural output repairs inside the shared read attempt budget; no factual fabrication.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.enabled",
+      "type": "boolean",
+      "default": true,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Enable requested generated annotations; false uses source/dictionary/authored material only.",
+      "sensitive": false
+    }
+  ]
+}

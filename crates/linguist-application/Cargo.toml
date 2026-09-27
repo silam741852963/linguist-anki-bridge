@@ -2,15 +2,23 @@
 name = "linguist-application"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
-base64.workspace = true
-chrono.workspace = true
 linguist-core.workspace = true
+linguist-anki.workspace = true
+linguist-config.workspace = true
+linguist-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-[dev-dependencies]
-tokio.workspace = true
+schemars.workspace = true
+uuid.workspace = true
+base64.workspace = true
+sha2.workspace = true
+linguist-dictionary.workspace = true
+scraper.workspace = true
+percent-encoding.workspace = true
+reqwest.workspace = true
+url.workspace = true
+httpdate.workspace = true
