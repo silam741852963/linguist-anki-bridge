@@ -1126,3 +1126,90 @@ fn dictionary_enrichment_retains_source_revision_and_requires_sense_review() {
     drop(reopened);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn mapped_enable_fields_retain_task_candidates_without_claiming_native_mapping() {
+    let (capture, settings) = setup(
+        "english_vocab",
+        &[("Word", "cat"), ("Production", "1"), ("Spelling", "0")],
+        &[
+            ("expression", "Word"),
+            ("enable_production", "Production"),
+            ("enable_spelling", "Spelling"),
+        ],
+    );
+    let document = stage_document(&capture, &settings, "english_vocab").unwrap();
+    // Nonempty markers remain candidates; "0" is not silently treated as disabled.
+    assert_eq!(
+        document.requested_tasks,
+        vec![Task::Comprehension, Task::Production, Task::Spelling]
+    );
+    assert_eq!(document.sources[0], capture.captured.source);
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|i| i.code == "SOURCE_TASK_MAPPING_REVIEW"
+                && i.field.as_deref() == Some("enable_spelling"))
+    );
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|i| i.code == "SOURCE_NATIVE_HISTORY_REVIEW")
+    );
+    assert!(
+        document
+            .evidence
+            .iter()
+            .any(|e| e.field == "enable_spelling"
+                && e.claim == "0"
+                && e.provenance == Provenance::Source)
+    );
+    assert!(linguist_core::render::render(&document, &capture.captured.source.fields).is_err());
+    for field in ["production_prompt", "spelling_prompt"] {
+        assert!(
+            document
+                .issues
+                .iter()
+                .any(|issue| issue.code == "MISSING_CUE" && issue.field.as_deref() == Some(field))
+        );
+    }
+    let (capture, settings) = setup(
+        "english_grammar",
+        &[
+            ("Pattern", "used to"),
+            ("Application", "yes"),
+            ("Cue", "Complete: I ___ walk there."),
+            ("Answer", "used to"),
+        ],
+        &[
+            ("pattern", "Pattern"),
+            ("enable_application", "Application"),
+            ("exercise_prompt", "Cue"),
+            ("exercise_answer", "Answer"),
+        ],
+    );
+    let document = stage_document(&capture, &settings, "english_grammar").unwrap();
+    assert_eq!(
+        document.requested_tasks,
+        vec![Task::Recognition, Task::Application]
+    );
+    let LearningContent::Grammar(grammar) = &document.content else {
+        panic!()
+    };
+    assert_eq!(grammar.exercise_prompt, "Complete: I ___ walk there.");
+    assert_eq!(grammar.exercise_answer, "used to");
+    let (capture, settings) = setup(
+        "english_vocab",
+        &[("Word", "cat"), ("Production", ""), ("Spelling", "   ")],
+        &[
+            ("expression", "Word"),
+            ("enable_production", "Production"),
+            ("enable_spelling", "Spelling"),
+        ],
+    );
+    let document = stage_document(&capture, &settings, "english_vocab").unwrap();
+    assert_eq!(document.requested_tasks, vec![Task::Comprehension]);
+    assert_eq!(document.archives[0].original_fields["Spelling"], "   ");
+}

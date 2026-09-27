@@ -33,6 +33,18 @@ review; even another valid reading needs a new decision. Tests cover ambiguous
 readings, unrelated forms, invented/empty readings, typed JSON round-trip, durable
 child publication and preserved parents. Schemas include the additive decision.
 
+Revamp drafts now retain Production, Spelling and Application task candidates
+when their explicitly mapped enable fields contain nonblank source values.
+Markers such as `0` remain visible candidates rather than being silently treated
+as Boolean false. Raw enable fields receive source evidence and
+`SOURCE_TASK_MAPPING_REVIEW`; the native history issue remains unresolved.
+Blank fields add no candidate. Shared/combined fields remain unresolved rather
+than being guessed. Source cues/answers are retained, and missing cues remain
+validation errors instead of removing tasks to render. Tests cover vocabulary and
+grammar candidates, markers, blank fields, source preservation and cue failures.
+This does not certify native card membership, ordinals or history preservation;
+verified native task mapping and its typed review are still pending.
+
 ## Available foundation
 
 - Root Rust workspace: `linguist-core`, `linguist-config`, `linguist-store`, `linguist-anki`, `linguist-application`, `linguist-dictionary` and `linguist-cli`; no Qt/Python runtime dependency.

@@ -164,6 +164,7 @@ pub fn stage_document(
     let mut issues = vec![issue("SOURCE_NATIVE_HISTORY_REVIEW", None, source_id)];
     let mut values = BTreeMap::new();
     let mut example_candidates = Vec::new();
+    let mut task_candidates = Vec::new();
     for (role, field) in &mapping.roles {
         if field.raw_value.trim().is_empty() {
             continue;
@@ -185,15 +186,21 @@ pub fn stage_document(
             }
             continue;
         }
-        if [
-            "picture",
-            "audio",
-            "enable_production",
-            "enable_spelling",
-            "enable_application",
-        ]
-        .contains(&role.as_str())
-        {
+        let task = match role.as_str() {
+            "enable_production" => Some("production"),
+            "enable_spelling" => Some("spelling"),
+            "enable_application" => Some("application"),
+            _ => None,
+        };
+        if let Some(task) = task {
+            // A mapped nonempty enable field is a task candidate, not proof of
+            // a native template/card relationship. Never discard it to render.
+            task_candidates.push(task);
+            values.insert(role.clone(), field.raw_value.clone());
+            issues.push(issue("SOURCE_TASK_MAPPING_REVIEW", Some(role), source_id));
+            continue;
+        }
+        if ["picture", "audio"].contains(&role.as_str()) {
             issues.push(issue(
                 "SOURCE_STRUCTURED_ROLE_REVIEW",
                 Some(role),
@@ -240,7 +247,9 @@ pub fn stage_document(
         SourceKind::Vocabulary => "comprehension",
         SourceKind::Grammar => "recognition",
     };
-    let bytes=canonical::bytes(&json!({"schema_version":2,"id":uuid::Uuid::new_v4(),"target_language":target,"explanation_language":explanation,"content":content,"requested_tasks":[task],"tags":capture.captured.source.tags,"personal_notes":text("personal_notes"),"source_summary":text("source")})).map_err(|e|e.to_string())?;
+    let mut tasks = vec![task];
+    tasks.extend(task_candidates);
+    let bytes=canonical::bytes(&json!({"schema_version":2,"id":uuid::Uuid::new_v4(),"target_language":target,"explanation_language":explanation,"content":content,"requested_tasks":tasks,"tags":capture.captured.source.tags,"personal_notes":text("personal_notes"),"source_summary":text("source")})).map_err(|e|e.to_string())?;
     let mut doc = LearningDocument::from_json(&bytes).map_err(|e| e.to_string())?;
     doc.sources.push(capture.captured.source.clone());
     doc.archives.push(capture.captured.archive.clone());
