@@ -14,6 +14,57 @@ pub struct ImageInspection {
     pub decoder: &'static str,
 }
 
+/// Stable failure categories are safe to persist without decoder-supplied file text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "code", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ImageInspectionError {
+    InvalidSettings { message: String },
+    ImageInputLimit,
+    ImageFormatUnsupported,
+    ImageFormatDisallowed,
+    ImageDecodedLimit,
+    ImageDecoderResourceLimit,
+    ImageDecodeFailed,
+    ImageDecoderUnsupported,
+    ImageNoDecodedBuffers,
+}
+impl ImageInspectionError {
+    pub fn guidance(&self) -> &'static str {
+        match self {
+            Self::InvalidSettings { .. } => {
+                "Correct the media configuration before preparing again."
+            }
+            Self::ImageInputLimit | Self::ImageDecodedLimit | Self::ImageDecoderResourceLimit => {
+                "Inspect the original asset and its dimensions or animation length. Prepare a smaller replacement, or deliberately adjust media.max_asset_mb before creating a new plan."
+            }
+            Self::ImageFormatDisallowed => {
+                "Review media.allowed_image_types. Use an allowed replacement, or explicitly update that setting before creating a new plan."
+            }
+            Self::ImageFormatUnsupported | Self::ImageDecoderUnsupported => {
+                "Inspect the original file. Audio decoding and unsupported image formats need separate validation; provide a supported JPEG, PNG, GIF or WebP replacement for an image role."
+            }
+            Self::ImageDecodeFailed | Self::ImageNoDecodedBuffers => {
+                "Check the original file for corruption or truncation and obtain a valid replacement. A filename extension does not establish a valid image."
+            }
+        }
+    }
+}
+impl std::fmt::Display for ImageInspectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidSettings { message } => write!(f, "IMAGE_INVALID_SETTINGS:{message}"),
+            _ => write!(
+                f,
+                "{}",
+                serde_json::to_value(self).map_err(|_| std::fmt::Error)?["code"]
+                    .as_str()
+                    .ok_or(std::fmt::Error)?
+            ),
+        }
+    }
+}
+impl std::error::Error for ImageInspectionError {}
+
 /// Validate settings separately so invalid configuration cannot become a review issue.
 pub fn validate_settings(settings: &linguist_config::Effective) -> Result<(), String> {
     for key in ["media.max_asset_mb", "media.allowed_image_types"] {
@@ -30,19 +81,21 @@ pub fn validate_settings(settings: &linguist_config::Effective) -> Result<(), St
 pub fn inspect_image(
     bytes: &[u8],
     settings: &linguist_config::Effective,
-) -> Result<ImageInspection, String> {
-    validate_settings(settings)?;
+) -> Result<ImageInspection, ImageInspectionError> {
+    validate_settings(settings)
+        .map_err(|message| ImageInspectionError::InvalidSettings { message })?;
     let cap = settings.values["media.max_asset_mb"].as_u64().unwrap() * 1024 * 1024;
     if bytes.is_empty() || bytes.len() as u64 > cap {
-        return Err("IMAGE_INPUT_LIMIT".into());
+        return Err(ImageInspectionError::ImageInputLimit);
     }
-    let format = image::guess_format(bytes).map_err(|_| "IMAGE_FORMAT_UNSUPPORTED")?;
+    let format =
+        image::guess_format(bytes).map_err(|_| ImageInspectionError::ImageFormatUnsupported)?;
     let mime = match format {
         ImageFormat::Jpeg => "image/jpeg",
         ImageFormat::Png => "image/png",
         ImageFormat::Gif => "image/gif",
         ImageFormat::WebP => "image/webp",
-        _ => return Err("IMAGE_FORMAT_UNSUPPORTED".into()),
+        _ => return Err(ImageInspectionError::ImageFormatUnsupported),
     };
     if !settings.values["media.allowed_image_types"]
         .as_array()
@@ -50,7 +103,7 @@ pub fn inspect_image(
         .iter()
         .any(|value| value.as_str() == Some(mime))
     {
-        return Err("IMAGE_FORMAT_DISALLOWED".into());
+        return Err(ImageInspectionError::ImageFormatDisallowed);
     }
     let mut limits = Limits::default();
     limits.max_alloc = Some(cap);
@@ -68,13 +121,13 @@ pub fn inspect_image(
         decoded_units: 0,
         decoder: "image/0.25.10",
     };
-    let mut add = |size: u64| -> Result<(), String> {
+    let mut add = |size: u64| -> Result<(), ImageInspectionError> {
         result.decoded_bytes = result
             .decoded_bytes
             .checked_add(size)
-            .ok_or("IMAGE_DECODED_LIMIT")?;
+            .ok_or(ImageInspectionError::ImageDecodedLimit)?;
         if result.decoded_bytes > cap {
-            return Err("IMAGE_DECODED_LIMIT".into());
+            return Err(ImageInspectionError::ImageDecodedLimit);
         }
         result.decoded_units += 1;
         Ok(())
@@ -83,9 +136,9 @@ pub fn inspect_image(
     let canvas = u64::from(width)
         .checked_mul(u64::from(height))
         .and_then(|n| n.checked_mul(4))
-        .ok_or("IMAGE_DECODED_LIMIT")?;
+        .ok_or(ImageInspectionError::ImageDecodedLimit)?;
     if decoder.total_bytes() > cap || canvas > cap || width == 0 || height == 0 {
-        return Err("IMAGE_DECODED_LIMIT".into());
+        return Err(ImageInspectionError::ImageDecodedLimit);
     }
     match format {
         ImageFormat::Gif => {
@@ -132,11 +185,15 @@ pub fn inspect_image(
         }
     }
     if result.decoded_units == 0 {
-        return Err("IMAGE_NO_DECODED_BUFFERS".into());
+        return Err(ImageInspectionError::ImageNoDecodedBuffers);
     }
     Ok(result)
 }
 
-fn decode_error(error: image::ImageError) -> String {
-    format!("IMAGE_DECODE_FAILED:{error}")
+fn decode_error(error: image::ImageError) -> ImageInspectionError {
+    match error {
+        image::ImageError::Limits(_) => ImageInspectionError::ImageDecoderResourceLimit,
+        image::ImageError::Unsupported(_) => ImageInspectionError::ImageDecoderUnsupported,
+        _ => ImageInspectionError::ImageDecodeFailed,
+    }
 }

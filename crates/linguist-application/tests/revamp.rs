@@ -100,6 +100,25 @@ fn decoded_source_image_has_digest_linked_evidence_but_remains_archive_only() {
         .insert("media.allowed_image_types".into(), json!(["image/jpeg"]));
     let document = stage_document(&capture, &settings, "english_vocab").unwrap();
     assert_eq!(document.media[0].mime, "application/octet-stream");
+    let evidence = document
+        .evidence
+        .iter()
+        .find(|e| e.field == "media_format")
+        .unwrap();
+    assert!(evidence.ambiguous);
+    let receipt: serde_json::Value = serde_json::from_str(&evidence.claim).unwrap();
+    assert_eq!(receipt["asset_digest"], digest);
+    assert_eq!(receipt["failure"]["code"], "IMAGE_FORMAT_DISALLOWED");
+    assert!(receipt.get("inspection").is_none());
+    assert!(
+        document
+            .issues
+            .iter()
+            .find(|i| i.code == "SOURCE_MEDIA_FORMAT_REVIEW")
+            .unwrap()
+            .message
+            .contains("media.allowed_image_types")
+    );
     assert!(
         document
             .issues

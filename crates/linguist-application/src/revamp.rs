@@ -318,12 +318,35 @@ pub fn stage_document(
                                 });
                                 inspection.mime
                             }
-                            Err(_) => {
-                                issues.push(issue(
+                            Err(failure) => {
+                                // Failed inspection is recoverable evidence, not a success receipt.
+                                doc.evidence.push(Evidence {
+                                    id: uuid::Uuid::new_v4(),
+                                    field: "media_format".into(),
+                                    provenance: Provenance::Source,
+                                    source_id: Some(source_id),
+                                    region_id: None,
+                                    language: doc.target_language.clone(),
+                                    claim: serde_json::to_string(&json!({
+                                        "asset_digest": digest,
+                                        "filename": entry.filename,
+                                        "failure": failure,
+                                        "decoder": "image/0.25.10",
+                                        "scope": "raster inspection failed; original bytes retained; no verified MIME or rendering role"
+                                    })).map_err(|_| "REVAMP_MEDIA_INSPECTION_ENCODING")?,
+                                    source_url: None,
+                                    ambiguous: true,
+                                });
+                                let mut review = issue(
                                     "SOURCE_MEDIA_FORMAT_REVIEW",
                                     Some(&entry.filename),
                                     source_id,
-                                ));
+                                );
+                                review.message = format!(
+                                    "{failure}. {} Original bytes remain archived; no rendering role is authorized.",
+                                    failure.guidance()
+                                );
+                                issues.push(review);
                                 "application/octet-stream".into()
                             }
                         };

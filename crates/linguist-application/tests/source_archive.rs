@@ -271,6 +271,22 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     let store = linguist_store::Store::read_only(&root).unwrap();
     let plan = store.revision(prepared.plan_id, 1).unwrap();
     assert_eq!(plan.documents[0].media, document.media);
+    let failure = plan.documents[0]
+        .evidence
+        .iter()
+        .find(|e| e.field == "media_format")
+        .unwrap();
+    assert!(failure.ambiguous);
+    let receipt: Value = serde_json::from_str(&failure.claim).unwrap();
+    assert_eq!(receipt["asset_digest"], media_digest);
+    assert_eq!(receipt["failure"]["code"], "IMAGE_FORMAT_UNSUPPORTED");
+    assert!(receipt.get("inspection").is_none());
+    let review = plan.documents[0]
+        .issues
+        .iter()
+        .find(|i| i.code == "SOURCE_MEDIA_FORMAT_REVIEW")
+        .unwrap();
+    assert!(review.message.contains("Original bytes remain archived"));
     assert_eq!(store.asset(&media_digest, 100000).unwrap(), [1, 2, 3]);
     for hash in &draft.captured.archive.asset_digests {
         assert_eq!(
