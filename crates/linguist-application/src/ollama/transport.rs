@@ -2,9 +2,12 @@
 use super::{
     Completion, ModelEvidence, identity, parse_completion, response, selected, verify_local_model,
 };
-use crate::generation::{GenerationRequest, build_request};
+use crate::generation::{GeneratedDraft, GenerationRequest, build_request, merge_ollama_response};
 use linguist_config::Effective;
-use linguist_core::{LearningDocument, canonical};
+use linguist_core::{
+    LearningDocument, canonical,
+    validation::{Issue, Severity},
+};
 use serde_json::json;
 use std::{
     collections::BTreeMap,
@@ -61,6 +64,74 @@ pub struct Candidate {
 }
 
 impl Client {
+    /// Run inference, validate the supplement and return a complete asset-first draft.
+    /// The engine verification error deliberately keeps development candidates unready.
+    pub fn generate_draft(&self, document: &LearningDocument) -> Result<GeneratedDraft, String> {
+        let candidate = self.generate_candidate(document)?;
+        let mut draft = merge_ollama_response(
+            document,
+            &self.settings,
+            &candidate.request,
+            &candidate.completion.raw,
+            &candidate.evidence.identity,
+        )?;
+        let source = draft
+            .document
+            .sources
+            .last_mut()
+            .ok_or("GENERATION_ARCHIVE_MISSING")?;
+        source.fields.insert(
+            "wire_request".into(),
+            String::from_utf8(candidate.request_bytes.clone())
+                .map_err(|_| "GENERATION_ENCODING")?,
+        );
+        source.fields.insert(
+            "model_evidence_before".into(),
+            String::from_utf8(
+                canonical::bytes(&candidate.evidence).map_err(|_| "GENERATION_ENCODING")?,
+            )
+            .map_err(|_| "GENERATION_ENCODING")?,
+        );
+        source.fields.insert(
+            "model_evidence_after".into(),
+            String::from_utf8(
+                canonical::bytes(&candidate.evidence_after).map_err(|_| "GENERATION_ENCODING")?,
+            )
+            .map_err(|_| "GENERATION_ENCODING")?,
+        );
+        draft.assets.insert(
+            canonical::asset_digest(&candidate.request_bytes),
+            candidate.request_bytes,
+        );
+        draft.assets.extend(candidate.evidence.assets);
+        draft.assets.extend(candidate.evidence_after.assets);
+        let manifest = canonical::bytes(&source.fields).map_err(|_| "GENERATION_ENCODING")?;
+        if manifest.len() > 100 * 1024 * 1024 {
+            return Err("GENERATION_ARCHIVE_LIMIT".into());
+        }
+        let digest = canonical::asset_digest(&manifest);
+        draft.assets.insert(digest.clone(), manifest);
+        source.digest = digest.clone();
+        let archive = draft
+            .document
+            .archives
+            .last_mut()
+            .filter(|archive| archive.source_id == source.id)
+            .ok_or("GENERATION_ARCHIVE_MISSING")?;
+        archive.digest = digest;
+        archive.original_fields = source.fields.clone();
+        archive.asset_digests = draft.assets.keys().cloned().collect();
+        let mut issue = Issue::new(
+            "GENERATION_ENGINE_UNVERIFIED",
+            Severity::Error,
+            None,
+            "Installed engine parameter support and full prompt preservation require compatibility verification.",
+        );
+        issue.stage = "generation".into();
+        issue.source_refs = vec![source.id.to_string()];
+        draft.document.issues.push(issue);
+        Ok(draft)
+    }
     pub fn from_settings(
         settings: &Effective,
         environment: &BTreeMap<String, String>,

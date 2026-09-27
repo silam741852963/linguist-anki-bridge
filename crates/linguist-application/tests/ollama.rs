@@ -645,6 +645,129 @@ fn candidate_metadata_retries_share_budget_and_inference_cooldown_survives_failu
     assert_eq!(server.worker.join().unwrap().len(), 4);
 }
 #[test]
+fn inference_draft_archives_wire_and_model_evidence_and_recovers_after_restart() {
+    use linguist_core::{LearningContent, records::*, validation};
+    let mut output = completion_response();
+    output["message"]["content"] = json!(
+        r#"{"kind":"vocabulary","body":{"usage":"Candidate usage.","examples":[],"production_prompt":"","spelling_prompt":""}}"#
+    );
+    let response = reply(output);
+    let raw = response.2.as_bytes().to_vec();
+    let server = FixtureServer::new(vec![
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+        response,
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+    ]);
+    let mut document = generation_document();
+    if let LearningContent::Vocabulary(v) = &mut document.content {
+        v.usage.clear();
+    }
+    let original = document.clone();
+    let draft = server.client().generate_draft(&document).unwrap();
+    assert_eq!(document, original);
+    assert!(!validation::ready(&draft.document));
+    assert!(
+        validation::validate(&draft.document)
+            .iter()
+            .any(|issue| issue.code == "GENERATION_ENGINE_UNVERIFIED"
+                && issue.severity == validation::Severity::Error)
+    );
+    let source = draft.document.sources.last().unwrap();
+    let archive = draft.document.archives.last().unwrap();
+    assert_eq!(archive.original_fields, source.fields);
+    assert_eq!(
+        source.digest,
+        canonical::asset_digest(&canonical::bytes(&source.fields).unwrap())
+    );
+    assert_eq!(source.fields["provider_response"].as_bytes(), raw);
+    for field in ["model_evidence_before", "model_evidence_after"] {
+        let proof: Value = serde_json::from_str(&source.fields[field]).unwrap();
+        assert_eq!(proof["generation_ready"], false);
+        for hash in ["tags_before_digest", "show_digest", "tags_after_digest"] {
+            let hash = proof[hash].as_str().unwrap();
+            assert!(archive.asset_digests.contains(&hash.to_owned()));
+            assert_eq!(canonical::asset_digest(&draft.assets[hash]), hash);
+        }
+    }
+    let requests = server.worker.join().unwrap();
+    assert_eq!(
+        canonical::parse::<Value>(source.fields["wire_request"].as_bytes()).unwrap(),
+        requests[3].1
+    );
+    let root = std::env::temp_dir().join(format!("lab-inference-draft-{}", uuid::Uuid::new_v4()));
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    for (digest, bytes) in &draft.assets {
+        assert_eq!(*digest, store.publish_asset(bytes, 1000000).unwrap());
+    }
+    let config = settings();
+    let plan = PlanRevision {
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: ResolvedSettings {
+            version: 2,
+            values: config.values,
+            provenance: config.provenance,
+            resource_hashes: Default::default(),
+            secret_refs: Default::default(),
+            fingerprint: config.fingerprint,
+        },
+        binding: None,
+        source_digest: original.semantic_digest().unwrap(),
+        documents: vec![draft.document],
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    store.publish_revision(&plan).unwrap();
+    drop(store);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let loaded = store.revision(plan.id, 1).unwrap();
+    assert_eq!(loaded.documents, plan.documents);
+    assert!(!validation::ready(&loaded.documents[0]));
+    for (digest, bytes) in draft.assets {
+        assert_eq!(store.asset(&digest, 1000000).unwrap(), bytes);
+    }
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn inference_draft_rejects_schema_invalid_and_protected_field_output() {
+    for (content, expected) in [
+        ("malformed", "GENERATION_OUTPUT_SCHEMA_INVALID"),
+        (
+            r#"{"kind":"vocabulary","body":{"usage":"Changed authored usage","examples":[],"production_prompt":"","spelling_prompt":""}}"#,
+            "GENERATION_FIELD_NOT_ALLOWED",
+        ),
+    ] {
+        let mut output = completion_response();
+        output["message"]["content"] = json!(content);
+        let mut document = generation_document();
+        if let linguist_core::LearningContent::Vocabulary(v) = &mut document.content {
+            v.usage = "Authored usage must be preserved.".into();
+        }
+        let server = FixtureServer::new(vec![
+            reply(inventory()),
+            reply(show()),
+            reply(inventory()),
+            reply(output),
+            reply(inventory()),
+            reply(show()),
+            reply(inventory()),
+        ]);
+        assert_eq!(
+            server.client().generate_draft(&document).err().unwrap(),
+            expected
+        );
+        assert_eq!(server.worker.join().unwrap().len(), 7);
+    }
+}
+#[test]
 fn complete_text_response_retains_exact_raw_bytes_without_claiming_input_fit() {
     let raw = serde_json::to_vec_pretty(&completion_response()).unwrap();
     let parsed = parse_completion(&raw, &settings()).unwrap();
