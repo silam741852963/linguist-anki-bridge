@@ -22,7 +22,9 @@ Its source-pin matrix/startup activation and real Anki integration remain pendin
 Explicit installation identity initialization is implemented with private files,
 create-new publication and restart/concurrent-initializer tests. It is not
 called by startup yet and does not establish collection identity.
-Durable operation sidecar, session hooks,
+A main-thread session tracker is tested with explicit lifecycle events and file/
+backend replacement observations; actual Anki lifecycle hooks remain pending.
+Durable operation sidecar,
 serialized inspection, authenticated controls, mutations, packaging and native
 recovery tests remain pending. Do not install this scaffold as a functioning
 bridge; no installable artifact is produced yet.
