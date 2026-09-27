@@ -4,6 +4,58 @@ use serde::Serialize;
 use std::io::Cursor;
 
 #[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum SourceMediaInspection {
+    Image(ImageInspection),
+    Audio(crate::audio::AudioInspection),
+}
+impl SourceMediaInspection {
+    pub fn mime(&self) -> &str {
+        match self {
+            Self::Image(i) => &i.mime,
+            Self::Audio(i) => &i.mime,
+        }
+    }
+    pub fn requires_audio_completeness_review(&self) -> bool {
+        matches!(self, Self::Audio(i) if !i.container_extent_verified)
+    }
+}
+#[derive(Debug, Serialize)]
+pub struct SourceMediaFailure {
+    pub code: String,
+    pub guidance: String,
+}
+impl std::fmt::Display for SourceMediaFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.code)
+    }
+}
+impl SourceMediaFailure {
+    pub fn guidance(&self) -> &str {
+        &self.guidance
+    }
+}
+/// Only an unrecognized image format falls through to audio probing. A rejected
+/// image cannot bypass its allowlist or decode limits by trying another decoder.
+pub fn inspect_source_media(
+    bytes: &[u8],
+    settings: &linguist_config::Effective,
+) -> Result<SourceMediaInspection, SourceMediaFailure> {
+    match inspect_image(bytes, settings) {
+        Ok(i) => Ok(SourceMediaInspection::Image(i)),
+        Err(ImageInspectionError::ImageFormatUnsupported) => match crate::audio::inspect_audio(bytes, settings) {
+            Ok(i) => Ok(SourceMediaInspection::Audio(i)),
+            Err(crate::audio::AudioInspectionError::AudioFormatUnsupported) => Err(SourceMediaFailure {
+                code: "MEDIA_FORMAT_UNSUPPORTED".into(),
+                guidance: "Inspect the original file and provide supported image or audio content. A filename extension cannot establish format.".into(),
+            }),
+            Err(failure) => Err(SourceMediaFailure { code: failure.to_string(), guidance: failure.guidance().into() }),
+        },
+        Err(failure) => Err(SourceMediaFailure { code: failure.to_string(), guidance: failure.guidance().into() }),
+    }
+}
+
+#[derive(Debug, Serialize)]
 pub struct ImageInspection {
     pub mime: String,
     pub width: u32,

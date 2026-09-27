@@ -25,3 +25,4 @@ httpdate.workspace = true
 ammonia.workspace = true
 html-escape.workspace = true
 image.workspace = true
+symphonia.workspace = true

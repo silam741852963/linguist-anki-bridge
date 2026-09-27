@@ -279,7 +279,7 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     assert!(failure.ambiguous);
     let receipt: Value = serde_json::from_str(&failure.claim).unwrap();
     assert_eq!(receipt["asset_digest"], media_digest);
-    assert_eq!(receipt["failure"]["code"], "IMAGE_FORMAT_UNSUPPORTED");
+    assert_eq!(receipt["failure"]["code"], "MEDIA_FORMAT_UNSUPPORTED");
     assert!(receipt.get("inspection").is_none());
     let review = plan.documents[0]
         .issues

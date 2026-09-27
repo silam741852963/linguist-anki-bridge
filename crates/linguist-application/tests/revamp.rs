@@ -55,6 +55,56 @@ fn setup_id(
     (RevampCapture { captured, mapping }, settings)
 }
 #[test]
+fn source_audio_receipt_and_completeness_review_survive_restart() {
+    let (mut capture, mut settings) = setup(
+        "english_vocab",
+        &[("Word", "cat"), ("Media", "[sound:misnamed.png]")],
+        &[("expression", "Word")],
+    );
+    let bytes = include_bytes!("fixtures/audio/tone.ogg").to_vec();
+    let digest = linguist_core::canonical::asset_digest(&bytes);
+    linguist_application::source_archive::media::attach_original_media(
+        &mut capture.captured,
+        BTreeMap::from([("misnamed.png".into(), Some(bytes.clone()))]),
+        10 * 1024 * 1024,
+        10 * 1024 * 1024,
+    )
+    .unwrap();
+    let root = std::env::temp_dir().join(format!("lab-source-audio-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-audio-test".into())]);
+    let prepared =
+        publish_capture_draft(&capture, &settings, "english_vocab", &environment).unwrap();
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let doc = &plan.documents[0];
+    assert_eq!(doc.media[0].mime, "audio/ogg");
+    assert_eq!(
+        doc.media[0].role,
+        linguist_core::records::MediaRole::Archive
+    );
+    assert!(
+        doc.issues
+            .iter()
+            .any(|i| i.code == "SOURCE_AUDIO_COMPLETENESS_REVIEW")
+    );
+    let evidence = doc
+        .evidence
+        .iter()
+        .find(|e| e.field == "media_format")
+        .unwrap();
+    let receipt: serde_json::Value = serde_json::from_str(&evidence.claim).unwrap();
+    assert_eq!(receipt["asset_digest"], digest);
+    assert_eq!(receipt["inspection"]["container_extent_verified"], false);
+    assert_eq!(receipt["inspection"]["stream_end_observed"], true);
+    assert_eq!(store.asset(&digest, 100000).unwrap(), bytes);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn decoded_source_image_has_digest_linked_evidence_but_remains_archive_only() {
     let (mut capture, mut settings) = setup(
         "english_vocab",

@@ -518,6 +518,7 @@ pub fn prepare_with_dictionary(
     })
 }
 
+pub mod audio;
 pub mod capture;
 pub mod export;
 pub mod generation;

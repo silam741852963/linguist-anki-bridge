@@ -246,6 +246,7 @@ pub fn stage_document(
     doc.archives.push(capture.captured.archive.clone());
     if let Some(media) = manifest.get("media") {
         crate::media::validate_settings(settings)?;
+        crate::audio::validate_settings(settings)?;
         let receipts: Vec<crate::source_archive::media::MediaReceipt> =
             serde_json::from_value(media.clone()).map_err(|_| "REVAMP_MEDIA_MANIFEST_INVALID")?;
         if manifest["media_content_verified"] != false
@@ -297,9 +298,18 @@ pub fn stage_document(
                             source_id,
                         ));
                     } else {
-                        let inspection = crate::media::inspect_image(bytes, settings);
+                        let inspection = crate::media::inspect_source_media(bytes, settings);
                         let mime = match inspection {
                             Ok(inspection) => {
+                                if inspection.requires_audio_completeness_review() {
+                                    let mut review = issue(
+                                        "SOURCE_AUDIO_COMPLETENESS_REVIEW",
+                                        Some(&entry.filename),
+                                        source_id,
+                                    );
+                                    review.message = "Audio packets decoded, but complete container extent is unverified. Inspect the original recording for truncation before assigning a rendering role.".into();
+                                    issues.push(review);
+                                }
                                 doc.evidence.push(Evidence {
                                     id: uuid::Uuid::new_v4(),
                                     field: "media_format".into(),
@@ -311,12 +321,12 @@ pub fn stage_document(
                                         "asset_digest": digest,
                                         "filename": entry.filename,
                                         "inspection": inspection,
-                                        "scope": "decoded raster buffers; no authorship, rendering-role, hard memory or deadline certification"
+                                        "scope": "decoded media buffers; container extent is separately reported for audio; no authorship, rendering-role, hard memory or deadline certification"
                                     })).map_err(|_| "REVAMP_MEDIA_INSPECTION_ENCODING")?,
                                     source_url: None,
                                     ambiguous: false,
                                 });
-                                inspection.mime
+                                inspection.mime().to_owned()
                             }
                             Err(failure) => {
                                 // Failed inspection is recoverable evidence, not a success receipt.
@@ -331,8 +341,8 @@ pub fn stage_document(
                                         "asset_digest": digest,
                                         "filename": entry.filename,
                                         "failure": failure,
-                                        "decoder": "image/0.25.10",
-                                        "scope": "raster inspection failed; original bytes retained; no verified MIME or rendering role"
+                                        "available_decoders": ["image/0.25.10", "symphonia/0.6.1"],
+                                        "scope": "media inspection failed; original bytes retained; no verified MIME or rendering role"
                                     })).map_err(|_| "REVAMP_MEDIA_INSPECTION_ENCODING")?,
                                     source_url: None,
                                     ambiguous: true,
