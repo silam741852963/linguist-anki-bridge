@@ -1,6 +1,10 @@
-//! Bounded local metadata reads. No pull, load, generate or arbitrary-action API.
-use super::{ModelEvidence, identity, response, selected, verify_local_model};
+//! Bounded local metadata and candidate-generation transport. No pull or arbitrary-action API.
+use super::{
+    Completion, ModelEvidence, identity, parse_completion, response, selected, verify_local_model,
+};
+use crate::generation::{GenerationRequest, build_request};
 use linguist_config::Effective;
+use linguist_core::{LearningDocument, canonical};
 use serde_json::json;
 use std::{
     collections::BTreeMap,
@@ -45,6 +49,17 @@ enum ReadAction {
     Tags,
     Show,
 }
+/// Candidate only: engine compatibility/input preservation have not been certified.
+/// Callers must archive these bytes and perform supplement validation/review.
+#[derive(Debug)]
+pub struct Candidate {
+    pub request: GenerationRequest,
+    pub request_bytes: Vec<u8>,
+    pub evidence: ModelEvidence,
+    pub evidence_after: ModelEvidence,
+    pub completion: Completion,
+}
+
 impl Client {
     pub fn from_settings(
         settings: &Effective,
@@ -58,6 +73,9 @@ impl Client {
             "llm.context_tokens",
             "llm.max_output_tokens",
             "llm.timeout_seconds",
+            "llm.temperature",
+            "llm.seed",
+            "llm.keep_alive",
             "network.offline",
             "network.proxy_env",
             "network.connect_timeout_seconds",
@@ -157,17 +175,160 @@ impl Client {
             shared,
         })
     }
+    /// Development boundary, deliberately not wired into CLI preparation until
+    /// engine-specific parameter/no-truncation compatibility evidence is available.
+    /// Inference is sent once; ambiguous transport errors never trigger blind retry.
+    pub fn generate_candidate(&self, document: &LearningDocument) -> Result<Candidate, String> {
+        let request = build_request(document, &self.settings)?;
+        let body = json!({
+            "model": self.settings.values["llm.model"],
+            "messages": [
+                {"role":"system", "content":request.system_prompt},
+                {"role":"user", "content":request.user_json}
+            ],
+            "format":request.output_schema,
+            "stream":false,
+            "truncate":false,
+            "shift":false,
+            "keep_alive":self.settings.values["llm.keep_alive"],
+            "options": {
+                "num_ctx":self.settings.values["llm.context_tokens"],
+                "num_predict":self.settings.values["llm.max_output_tokens"],
+                "temperature":self.settings.values["llm.temperature"],
+                "seed":self.settings.values["llm.seed"]
+            }
+        });
+        let request_bytes = canonical::bytes(&body).map_err(|_| "OLLAMA_REQUEST_INVALID")?;
+        // Transport ceiling, not a tokenizer estimate or a claim of context fit.
+        if request_bytes.len() > 100 * 1024 * 1024 {
+            return Err("OLLAMA_REQUEST_LIMIT".into());
+        }
+        let deadline = self.deadline()?;
+        let mut gate = self.lock(deadline)?;
+        let mut retries = self.settings.values["retry.read_attempts"]
+            .as_u64()
+            .unwrap()
+            - 1;
+        let evidence = self.inspect(deadline, &mut retries, &mut gate)?;
+        self.throttle(deadline, &gate)?;
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or("OLLAMA_DEADLINE")?;
+        *gate = Some(Dispatch {
+            started: Instant::now(),
+            interval: self.interval(),
+            server_delay: None,
+        });
+        let mut reply = self
+            .http
+            .post(
+                self.endpoint
+                    .join("api/chat")
+                    .map_err(|_| "OLLAMA_ENDPOINT_INVALID")?,
+            )
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(request_bytes.clone())
+            .timeout(
+                remaining.min(Duration::from_secs(
+                    self.settings.values["network.request_timeout_seconds"]
+                        .as_u64()
+                        .unwrap(),
+                )),
+            )
+            .send()
+            .map_err(|_| "OLLAMA_INFERENCE_OUTCOME_UNKNOWN")?;
+        let status = reply.status();
+        if status.is_redirection() {
+            return Err("OLLAMA_REDIRECT_REJECTED".into());
+        }
+        if !status.is_success() {
+            if matches!(status.as_u16(), 408 | 425 | 429 | 500..=599) {
+                let cooldown = delay(reply.headers())?;
+                if let Some(dispatch) = &mut *gate {
+                    dispatch.server_delay = Some((Instant::now(), cooldown));
+                }
+            }
+            return Err(format!("OLLAMA_INFERENCE_HTTP_FAILED: {}", status.as_u16()));
+        }
+        let limit = self.settings.values["network.max_response_mb"]
+            .as_u64()
+            .unwrap()
+            * 1024
+            * 1024;
+        if reply.content_length().is_some_and(|size| size > limit) {
+            return Err("OLLAMA_RESPONSE_LIMIT".into());
+        }
+        let mime = reply
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .ok_or("OLLAMA_CONTENT_TYPE_INVALID")?;
+        if mime.split(';').next().unwrap().trim() != "application/json" {
+            return Err("OLLAMA_CONTENT_TYPE_INVALID".into());
+        }
+        let mut raw = Vec::new();
+        reply
+            .by_ref()
+            .take(limit + 1)
+            .read_to_end(&mut raw)
+            .map_err(|_| "OLLAMA_INFERENCE_OUTCOME_UNKNOWN")?;
+        if Instant::now() >= deadline {
+            return Err("OLLAMA_DEADLINE".into());
+        }
+        let completion = parse_completion(&raw, &self.settings)?;
+        // Reserve the configured full output cap, not just the observed completion.
+        if completion
+            .prompt_tokens
+            .checked_add(
+                self.settings.values["llm.max_output_tokens"]
+                    .as_u64()
+                    .unwrap(),
+            )
+            .is_none_or(|total| {
+                total > self.settings.values["llm.context_tokens"].as_u64().unwrap()
+            })
+        {
+            return Err("OLLAMA_COMPLETION_TOKEN_LIMIT".into());
+        }
+        let after = self.inspect(deadline, &mut retries, &mut gate)?;
+        if after.identity.digest != evidence.identity.digest
+            || after.show_digest != evidence.show_digest
+        {
+            return Err("OLLAMA_MODEL_MANIFEST_CONFLICT".into());
+        }
+        Ok(Candidate {
+            request,
+            request_bytes,
+            evidence,
+            evidence_after: after,
+            completion,
+        })
+    }
     pub fn model_evidence(&self) -> Result<ModelEvidence, String> {
-        let deadline = Instant::now()
+        let deadline = self.deadline()?;
+        let mut gate = self.lock(deadline)?;
+        let mut retries = self.settings.values["retry.read_attempts"]
+            .as_u64()
+            .unwrap()
+            - 1;
+        self.inspect(deadline, &mut retries, &mut gate)
+    }
+    fn deadline(&self) -> Result<Instant, String> {
+        Instant::now()
             .checked_add(Duration::from_secs(
                 self.settings.values["llm.timeout_seconds"]
                     .as_u64()
                     .unwrap(),
             ))
-            .ok_or("OLLAMA_DEADLINE")?;
-        let mut gate = loop {
+            .ok_or_else(|| "OLLAMA_DEADLINE".into())
+    }
+    fn lock(
+        &self,
+        deadline: Instant,
+    ) -> Result<std::sync::MutexGuard<'_, Option<Dispatch>>, String> {
+        loop {
             match self.shared.try_lock() {
-                Ok(gate) => break gate,
+                Ok(gate) => return Ok(gate),
                 Err(std::sync::TryLockError::Poisoned(_)) => {
                     return Err("OLLAMA_GATE_UNAVAILABLE".into());
                 }
@@ -175,13 +336,16 @@ impl Client {
                     wait(Duration::from_millis(10), deadline)?
                 }
             }
-        };
+        }
+    }
+    fn inspect(
+        &self,
+        deadline: Instant,
+        retries: &mut u64,
+        gate: &mut Option<Dispatch>,
+    ) -> Result<ModelEvidence, String> {
         // Initial reads are necessary; all additional attempts share this one retry budget.
-        let mut retries = self.settings.values["retry.read_attempts"]
-            .as_u64()
-            .unwrap()
-            - 1;
-        let before = self.read(ReadAction::Tags, deadline, &mut retries, &mut gate)?;
+        let before = self.read(ReadAction::Tags, deadline, retries, gate)?;
         let limit = self.settings.values["network.max_response_mb"]
             .as_u64()
             .unwrap()
@@ -192,14 +356,37 @@ impl Client {
             .as_str()
             .ok_or("OLLAMA_MODEL_UNAVAILABLE")?;
         identity(selected(&parsed, name)?)?; // Never show a remote-forwarded or absent model.
-        let show = self.read(ReadAction::Show, deadline, &mut retries, &mut gate)?;
+        let show = self.read(ReadAction::Show, deadline, retries, gate)?;
         response(&show, limit)?;
-        let after = self.read(ReadAction::Tags, deadline, &mut retries, &mut gate)?;
+        let after = self.read(ReadAction::Tags, deadline, retries, gate)?;
         let evidence = verify_local_model(&before, &show, &after, &self.settings)?;
         if Instant::now() >= deadline {
             return Err("OLLAMA_DEADLINE".into());
         }
         Ok(evidence)
+    }
+    fn interval(&self) -> Duration {
+        Duration::from_secs_f64(
+            self.settings.values["services.ollama.min_interval_seconds"]
+                .as_f64()
+                .unwrap(),
+        )
+    }
+    fn throttle(&self, deadline: Instant, last: &Option<Dispatch>) -> Result<(), String> {
+        if let Some(previous) = *last {
+            let cooldown = previous
+                .server_delay
+                .map(|(start, duration)| duration.saturating_sub(start.elapsed()))
+                .unwrap_or(Duration::ZERO);
+            wait(
+                self.interval()
+                    .max(previous.interval)
+                    .saturating_sub(previous.started.elapsed())
+                    .max(cooldown),
+                deadline,
+            )?;
+        }
+        Ok(())
     }
     fn read(
         &self,
