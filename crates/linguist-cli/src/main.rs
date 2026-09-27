@@ -87,10 +87,10 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum PrepareCommand {
-    /// Capture explicit existing notes into one review-required source draft; never applies.
+    /// Capture selected existing notes into one review-required source draft; never applies.
     Revamp {
-        #[arg(long = "note-id", required = true)]
-        note_ids: Vec<String>,
+        #[command(flatten)]
+        selector: NoteSelector,
     },
     /// Prepare one version-2 structured JSON record, from a file or piped stdin.
     Add {
@@ -378,10 +378,10 @@ fn run(cli: Cli) -> Result<u8, String> {
             Ok(if result.ready { 0 } else { 4 })
         }
         Command::Vocab {
-            command: PrepareCommand::Revamp { note_ids },
+            command: PrepareCommand::Revamp { selector },
         }
         | Command::Grammar {
-            command: PrepareCommand::Revamp { note_ids },
+            command: PrepareCommand::Revamp { selector },
         } => {
             let purpose = cli
                 .purpose
@@ -395,17 +395,25 @@ fn run(cli: Cli) -> Result<u8, String> {
             if !correct_kind {
                 return Err("REVAMP_PURPOSE_KIND_INVALID".into());
             }
-            for id in &note_ids {
-                linguist_anki::wire_id(&serde_json::json!(id))?;
-            }
+            note_query(&selector, None, &settings)?;
+            let selector = if !selector.note_ids.is_empty() {
+                linguist_application::revamp::SourceSelector::NoteIds(selector.note_ids)
+            } else if let Some(query) = selector.query {
+                linguist_application::revamp::SourceSelector::Query(query)
+            } else {
+                linguist_application::revamp::SourceSelector::Deck(
+                    selector.deck.ok_or("NOTE_SELECTOR_REQUIRED")?,
+                )
+            };
             let client = anki_client(&settings)?;
-            let results = linguist_application::revamp::prepare_source_revamps(
+            let results = linguist_application::revamp::prepare_source_selection(
                 &client,
                 &settings,
                 purpose,
-                &note_ids,
+                selector,
                 &std::env::vars().collect(),
             )?;
+            let empty = results.is_empty();
             let result = if results.len() == 1 {
                 serde_json::to_value(&results[0]).map_err(|e| e.to_string())?
             } else {
@@ -414,7 +422,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             emit(
                 &serde_json::json!({"preparation_stage":"source_draft","result":result,"enrichment_completed":false,"collection_writes_enabled":false}),
             )?;
-            Ok(4)
+            Ok(if empty { 0 } else { 4 })
         }
         Command::Recover {
             command:

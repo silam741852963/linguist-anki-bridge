@@ -355,6 +355,54 @@ fn aggregate_capture_archive_limit_fails_before_state_creation() {
 }
 
 #[test]
+fn invalid_query_and_purpose_fail_before_search_or_state_creation() {
+    let (_, mut settings) = setup(
+        "english_vocab",
+        &[("Word", "cat")],
+        &[("expression", "Word")],
+    );
+    let root =
+        std::env::temp_dir().join(format!("lab-revamp-query-reject-{}", uuid::Uuid::new_v4()));
+    for (key, value) in [
+        ("llm.enabled", json!(false)),
+        ("dictionary.provider", json!("authored")),
+        ("images.search_when_missing", json!(false)),
+        ("anki.endpoint", json!("http://127.0.0.1:1")),
+        ("storage.state_dir", json!(root)),
+    ] {
+        settings.values.insert(key.into(), value);
+    }
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-revamp-home".into())]);
+    let client = linguist_anki::Client::from_settings(&settings, &environment).unwrap();
+    for (query, purpose, expected) in [
+        (" ".to_owned(), "english_vocab", "REVAMP_QUERY_EMPTY"),
+        (
+            "x".repeat(settings.values["input.max_record_chars"].as_u64().unwrap() as usize + 1),
+            "english_vocab",
+            "REVAMP_QUERY_LIMIT",
+        ),
+        (
+            "tag:source".to_owned(),
+            "unsupported",
+            "SOURCE_MAPPING_PURPOSE_UNSUPPORTED",
+        ),
+    ] {
+        assert_eq!(
+            prepare_source_selection(
+                &client,
+                &settings,
+                purpose,
+                SourceSelector::Query(query),
+                &environment
+            )
+            .unwrap_err(),
+            expected
+        );
+        assert!(!root.exists());
+    }
+}
+
+#[test]
 fn html_candidates_preserve_text_boundaries_and_entities_without_scripts_or_source_rewrites() {
     let raw = "<script>invented answer</script><div>first &amp; second<br>line</div><p>next</p><img src='picture.png'>";
     let (capture, settings) = setup(

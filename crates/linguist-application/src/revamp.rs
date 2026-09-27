@@ -444,6 +444,57 @@ pub fn prepare_source_revamps(
     note_ids: &[String],
     environment: &BTreeMap<String, String>,
 ) -> Result<Vec<crate::Prepared>, String> {
+    validate_source_revamp(settings, purpose, environment)?;
+    prepare_ids(client, settings, purpose, note_ids, environment)
+}
+
+pub enum SourceSelector {
+    NoteIds(Vec<String>),
+    Query(String),
+    Deck(String),
+}
+
+/// Resolve an existing-note selection once; empty search creates no local state.
+pub fn prepare_source_selection(
+    client: &linguist_anki::Client,
+    settings: &Effective,
+    purpose: &str,
+    selector: SourceSelector,
+    environment: &BTreeMap<String, String>,
+) -> Result<Vec<crate::Prepared>, String> {
+    validate_source_revamp(settings, purpose, environment)?;
+    let query = match selector {
+        SourceSelector::NoteIds(ids) => {
+            return prepare_ids(client, settings, purpose, &ids, environment);
+        }
+        SourceSelector::Query(query) => query,
+        SourceSelector::Deck(deck) => linguist_anki::deck_query(&deck)?,
+    };
+    if query.trim().is_empty() {
+        return Err("REVAMP_QUERY_EMPTY".into());
+    }
+    if query.chars().count() as u64 > settings.values["input.max_record_chars"].as_u64().unwrap() {
+        return Err("REVAMP_QUERY_LIMIT".into());
+    }
+    let ids = client.find_notes(&query)?;
+    client.check_profile()?;
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    prepare_ids(client, settings, purpose, &ids, environment)
+}
+
+fn validate_source_revamp(
+    settings: &Effective,
+    purpose: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    if !matches!(
+        purpose,
+        "japanese_vocab" | "english_vocab" | "japanese_grammar" | "english_grammar"
+    ) {
+        return Err("SOURCE_MAPPING_PURPOSE_UNSUPPORTED".into());
+    }
     crate::authored_capabilities(settings)?;
     if settings.values["dictionary.provider"] != "authored" {
         return Err("CAPABILITY_UNAVAILABLE: revamp dictionary integration is pending; select dictionary.provider=authored for a source draft".into());
@@ -453,12 +504,27 @@ pub fn prepare_source_revamps(
     }
     crate::freeze_settings(settings, environment)?;
     let registry = linguist_config::Registry::builtin();
-    for key in ["selection.order", "selection.max_notes"] {
+    for key in [
+        "selection.order",
+        "selection.max_notes",
+        "input.max_file_mb",
+        "input.max_record_chars",
+    ] {
         registry.validate_value(
             key,
             settings.values.get(key).ok_or("REVAMP_SETTING_MISSING")?,
         )?;
     }
+    Ok(())
+}
+
+fn prepare_ids(
+    client: &linguist_anki::Client,
+    settings: &Effective,
+    purpose: &str,
+    note_ids: &[String],
+    environment: &BTreeMap<String, String>,
+) -> Result<Vec<crate::Prepared>, String> {
     if note_ids.is_empty()
         || note_ids.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap()
     {

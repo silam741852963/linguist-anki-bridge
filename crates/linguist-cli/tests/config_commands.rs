@@ -178,6 +178,27 @@ fn note_selector_conflicts_and_invalid_ids_fail_before_anki_requests() {
         vec!["notes", "list"],
         vec!["notes", "show", "0123"],
         vec!["notes", "list", "--query", "x", "--limit", "0"],
+        vec!["--purpose", "english_vocab", "vocab", "revamp"],
+        vec![
+            "--purpose",
+            "english_vocab",
+            "vocab",
+            "revamp",
+            "--note-id",
+            "123",
+            "--query",
+            "x",
+        ],
+        vec![
+            "--purpose",
+            "japanese_grammar",
+            "grammar",
+            "revamp",
+            "--deck",
+            "A",
+            "--query",
+            "x",
+        ],
     ] {
         let out = cli().args(args).output().unwrap();
         assert_eq!(out.status.code(), Some(2), "{:?}", out);
@@ -939,13 +960,14 @@ fn ollama_doctor_conflicting_modes_and_missing_model_fail_before_service_probes(
 #[test]
 fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
     use std::io::{BufRead, Read, Write};
-    for (command, purpose, mapping, order, count) in [
+    for (command, purpose, mapping, order, count, mode) in [
         (
             "vocab",
             "english_vocab",
             r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
             "note_id",
             1,
+            "ids",
         ),
         (
             "grammar",
@@ -953,6 +975,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             r#"{"pattern":"Pattern","meaning":"Meaning","formation":"Formation","use_key":"Key"}"#,
             "note_id",
             1,
+            "ids",
         ),
         (
             "vocab",
@@ -960,6 +983,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
             "note_id",
             2,
+            "ids",
         ),
         (
             "grammar",
@@ -967,6 +991,31 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             r#"{"pattern":"Pattern","meaning":"Meaning","formation":"Formation","use_key":"Key"}"#,
             "input",
             2,
+            "ids",
+        ),
+        (
+            "vocab",
+            "english_vocab",
+            r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
+            "note_id",
+            2,
+            "query",
+        ),
+        (
+            "grammar",
+            "japanese_grammar",
+            r#"{"pattern":"Pattern","meaning":"Meaning","formation":"Formation","use_key":"Key"}"#,
+            "note_id",
+            2,
+            "deck",
+        ),
+        (
+            "vocab",
+            "english_vocab",
+            r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
+            "note_id",
+            0,
+            "query",
         ),
     ] {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -974,7 +1023,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
             let mut actions = Vec::new();
-            for _ in 0..28 * count {
+            for _ in 0..28 * count + if mode == "ids" { 0 } else { 3 } {
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
                 let mut stream = loop {
                     match listener.accept() {
@@ -1012,6 +1061,19 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                 let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
                 let action = request["action"].as_str().unwrap();
                 let value = match action {
+                    "findNotes" => {
+                        let expected = if mode == "query" {
+                            "tag:source".to_owned()
+                        } else {
+                            linguist_anki::deck_query("Legacy \"cards\"").unwrap()
+                        };
+                        assert_eq!(request["params"]["query"], expected);
+                        if count == 0 {
+                            serde_json::json!([])
+                        } else {
+                            serde_json::json!([124, 123, 124])
+                        }
+                    }
                     "getActiveProfile" => serde_json::json!("Fixture"),
                     "modelNamesAndIds" => serde_json::json!({"Legacy":12}),
                     "notesInfo" => {
@@ -1061,18 +1123,35 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             .arg("--set")
             .arg(format!("selection.order={order}"))
             .args([command, "revamp"])
-            .args(if count == 1 {
+            .args(if mode == "query" {
+                vec!["--query", "tag:source"]
+            } else if mode == "deck" {
+                vec!["--deck", "Legacy \"cards\""]
+            } else if count == 1 {
                 vec!["--note-id", "123"]
             } else {
                 vec!["--note-id", "124", "--note-id", "123"]
             })
             .output()
             .unwrap();
-        assert_eq!(server.join().unwrap().len(), 28 * count);
-        assert_eq!(out.status.code(), Some(4), "{out:?}");
+        assert_eq!(
+            server.join().unwrap().len(),
+            28 * count + if mode == "ids" { 0 } else { 3 }
+        );
+        assert_eq!(
+            out.status.code(),
+            Some(if count == 0 { 0 } else { 4 }),
+            "{out:?}"
+        );
         assert!(out.stderr.is_empty());
         let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         assert_eq!(result["preparation_stage"], "source_draft");
+        if count == 0 {
+            assert_eq!(result["result"]["items"], serde_json::json!([]));
+            assert_eq!(result["result"]["item_count"], 0);
+            assert!(!root.exists());
+            continue;
+        }
         let item = if count == 1 {
             &result["result"]
         } else {
