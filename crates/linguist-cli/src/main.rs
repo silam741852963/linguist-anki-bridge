@@ -91,6 +91,9 @@ enum PrepareCommand {
     Revamp {
         #[command(flatten)]
         selector: NoteSelector,
+        /// Prepare the first N query/deck matches in frozen order.
+        #[arg(long, conflicts_with = "note_ids", requires = "NoteSelector", value_parser = clap::value_parser!(u64).range(1..=100000))]
+        limit: Option<u64>,
     },
     /// Prepare one version-2 structured JSON record, from a file or piped stdin.
     Add {
@@ -378,10 +381,10 @@ fn run(cli: Cli) -> Result<u8, String> {
             Ok(if result.ready { 0 } else { 4 })
         }
         Command::Vocab {
-            command: PrepareCommand::Revamp { selector },
+            command: PrepareCommand::Revamp { selector, limit },
         }
         | Command::Grammar {
-            command: PrepareCommand::Revamp { selector },
+            command: PrepareCommand::Revamp { selector, limit },
         } => {
             let purpose = cli
                 .purpose
@@ -406,12 +409,13 @@ fn run(cli: Cli) -> Result<u8, String> {
                 )
             };
             let client = anki_client(&settings)?;
-            let results = linguist_application::revamp::prepare_source_selection(
+            let results = linguist_application::revamp::prepare_source_selection_limited(
                 &client,
                 &settings,
                 purpose,
                 selector,
                 &std::env::vars().collect(),
+                limit,
             )?;
             let empty = results.is_empty();
             let result = if results.len() == 1 {

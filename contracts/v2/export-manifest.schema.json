@@ -1193,6 +1193,14 @@
     "SelectionReceipt": {
       "type": "object",
       "properties": {
+        "command_limit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
         "matched_note_ids": {
           "type": "array",
           "items": {

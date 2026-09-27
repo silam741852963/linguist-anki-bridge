@@ -961,7 +961,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-24 \u2014 `grammar revamp`",
       "title": "OP-24 \u2014 `grammar revamp`",
-      "words": 370,
+      "words": 441,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

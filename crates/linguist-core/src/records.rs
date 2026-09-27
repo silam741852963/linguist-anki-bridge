@@ -202,6 +202,8 @@ pub struct SelectionReceipt {
     pub selected_note_ids: Vec<String>,
     pub order: String,
     pub max_notes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_limit: Option<u64>,
 }
 impl PlanRevision {
     pub fn approval_digest(&self) -> Result<String, crate::canonical::ContractError> {
@@ -247,7 +249,11 @@ impl SelectionReceipt {
             )
             || !(1..=100000).contains(&self.max_notes)
             || self.matched_note_ids.is_empty()
-            || self.matched_note_ids.len() as u64 > self.max_notes
+            || self.matched_note_ids.len() > 100000
+            || self
+                .command_limit
+                .is_some_and(|limit| !(1..=100000).contains(&limit))
+            || (self.command_limit.is_none() && self.matched_note_ids.len() as u64 > self.max_notes)
             || plan
                 .settings
                 .values
@@ -279,6 +285,12 @@ impl SelectionReceipt {
             "input" => (),
             "note_id" => expected.sort_by_key(|id| id.parse::<u64>().unwrap()),
             _ => return Err(fail()),
+        }
+        if let Some(limit) = self.command_limit {
+            if matches!(self.selector, SelectionInput::NoteIds(_)) {
+                return Err(fail());
+            }
+            expected.truncate(limit as usize);
         }
         if expected != self.selected_note_ids {
             return Err(fail());

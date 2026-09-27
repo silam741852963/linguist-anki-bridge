@@ -178,6 +178,36 @@ fn note_selector_conflicts_and_invalid_ids_fail_before_anki_requests() {
         vec!["notes", "list"],
         vec!["notes", "show", "0123"],
         vec!["notes", "list", "--query", "x", "--limit", "0"],
+        vec![
+            "--purpose",
+            "english_vocab",
+            "vocab",
+            "revamp",
+            "--query",
+            "x",
+            "--limit",
+            "0",
+        ],
+        vec![
+            "--purpose",
+            "english_vocab",
+            "vocab",
+            "revamp",
+            "--query",
+            "x",
+            "--limit",
+            "100001",
+        ],
+        vec![
+            "--purpose",
+            "english_vocab",
+            "vocab",
+            "revamp",
+            "--note-id",
+            "123",
+            "--limit",
+            "1",
+        ],
         vec!["--purpose", "english_vocab", "vocab", "revamp"],
         vec![
             "--purpose",
@@ -1019,6 +1049,30 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             0,
             "query",
         ),
+        (
+            "vocab",
+            "english_vocab",
+            r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
+            "note_id",
+            1,
+            "query_limit",
+        ),
+        (
+            "vocab",
+            "english_vocab",
+            r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
+            "note_id",
+            2,
+            "query_large",
+        ),
+        (
+            "grammar",
+            "japanese_grammar",
+            r#"{"pattern":"Pattern","meaning":"Meaning","formation":"Formation","use_key":"Key"}"#,
+            "note_id",
+            1,
+            "deck_limit",
+        ),
     ] {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -1064,7 +1118,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                 let action = request["action"].as_str().unwrap();
                 let value = match action {
                     "findNotes" => {
-                        let expected = if mode == "query" {
+                        let expected = if mode.starts_with("query") {
                             "tag:source".to_owned()
                         } else {
                             linguist_anki::deck_query("Legacy \"cards\"").unwrap()
@@ -1124,15 +1178,28 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             .arg(format!("purposes.{purpose}.fields={mapping}"))
             .arg("--set")
             .arg(format!("selection.order={order}"))
+            .arg("--set")
+            .arg(if mode == "query_large" {
+                "selection.max_notes=1"
+            } else {
+                "selection.max_notes=1000"
+            })
             .args([command, "revamp"])
-            .args(if mode == "query" {
+            .args(if mode.starts_with("query") {
                 vec!["--query", "tag:source"]
-            } else if mode == "deck" {
+            } else if mode.starts_with("deck") {
                 vec!["--deck", "Legacy \"cards\""]
             } else if count == 1 {
                 vec!["--note-id", "123"]
             } else {
                 vec!["--note-id", "124", "--note-id", "123"]
+            })
+            .args(if mode == "query_limit" || mode == "deck_limit" {
+                vec!["--limit", "1"]
+            } else if mode == "query_large" {
+                vec!["--limit", "2"]
+            } else {
+                vec![]
             })
             .output()
             .unwrap();
@@ -1169,8 +1236,23 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
         assert_eq!(receipt.schema_version, 1);
         assert_eq!(receipt.purpose, purpose);
         assert_eq!(receipt.order, order);
-        assert_eq!(receipt.max_notes, 1000);
-        let matched = if count == 1 {
+        assert_eq!(
+            receipt.max_notes,
+            if mode == "query_large" { 1 } else { 1000 }
+        );
+        assert_eq!(
+            receipt.command_limit,
+            if mode == "query_limit" || mode == "deck_limit" {
+                Some(1)
+            } else if mode == "query_large" {
+                Some(2)
+            } else {
+                None
+            }
+        );
+        let matched = if mode.starts_with("query") || mode.starts_with("deck") {
+            vec!["123", "124"]
+        } else if count == 1 {
             vec!["123"]
         } else if mode == "ids" {
             vec!["124", "123"]
@@ -1190,10 +1272,14 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             (linguist_core::records::SelectionInput::NoteIds(ids), "ids") => {
                 assert_eq!(ids, &receipt.matched_note_ids)
             }
-            (linguist_core::records::SelectionInput::Query(query), "query") => {
+            (linguist_core::records::SelectionInput::Query(query), mode)
+                if mode.starts_with("query") =>
+            {
                 assert_eq!(query, "tag:source")
             }
-            (linguist_core::records::SelectionInput::Deck { name, query }, "deck") => {
+            (linguist_core::records::SelectionInput::Deck { name, query }, mode)
+                if mode.starts_with("deck") =>
+            {
                 assert_eq!(name, "Legacy \"cards\"");
                 assert_eq!(*query, linguist_anki::deck_query(name).unwrap());
             }
@@ -1210,7 +1296,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             forged.approval_digest().unwrap_err().to_string(),
             "PLAN_SELECTION_INVALID"
         );
-        if mode == "query" {
+        if mode.starts_with("query") {
             let mut changed = plan.clone();
             changed.selection.as_mut().unwrap().selector =
                 linguist_core::records::SelectionInput::Query("tag:other".into());

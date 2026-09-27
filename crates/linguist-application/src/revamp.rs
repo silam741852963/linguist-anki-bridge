@@ -349,7 +349,11 @@ fn publish_selected_captures(
             settings.values.get(key).ok_or("REVAMP_SETTING_MISSING")?,
         )?;
     }
-    if captures.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap() {
+    let note_limit = selection
+        .as_ref()
+        .and_then(|receipt| receipt.command_limit)
+        .unwrap_or(settings.values["selection.max_notes"].as_u64().unwrap());
+    if captures.len() as u64 > note_limit {
         return Err("REVAMP_SELECTION_LIMIT".into());
     }
     let limit = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
@@ -463,6 +467,7 @@ pub fn prepare_source_revamps(
         note_ids,
         environment,
         SelectionInput::NoteIds(note_ids.to_vec()),
+        None,
     )
 }
 
@@ -480,11 +485,27 @@ pub fn prepare_source_selection(
     selector: SourceSelector,
     environment: &BTreeMap<String, String>,
 ) -> Result<Vec<crate::Prepared>, String> {
+    prepare_source_selection_limited(client, settings, purpose, selector, environment, None)
+}
+pub fn prepare_source_selection_limited(
+    client: &linguist_anki::Client,
+    settings: &Effective,
+    purpose: &str,
+    selector: SourceSelector,
+    environment: &BTreeMap<String, String>,
+    limit: Option<u64>,
+) -> Result<Vec<crate::Prepared>, String> {
     validate_source_revamp(settings, purpose, environment)?;
+    if limit.is_some_and(|value| !(1..=100000).contains(&value)) {
+        return Err("REVAMP_SELECTION_LIMIT_INVALID".into());
+    }
     let (query, receipt_input) = match selector {
         SourceSelector::NoteIds(ids) => {
+            if limit.is_some() {
+                return Err("REVAMP_EXPLICIT_IDS_LIMIT_CONFLICT".into());
+            }
             let input = SelectionInput::NoteIds(ids.clone());
-            return prepare_ids(client, settings, purpose, &ids, environment, input);
+            return prepare_ids(client, settings, purpose, &ids, environment, input, None);
         }
         SourceSelector::Query(query) => (query.clone(), SelectionInput::Query(query)),
         SourceSelector::Deck(deck) => {
@@ -503,7 +524,15 @@ pub fn prepare_source_selection(
     if ids.is_empty() {
         return Ok(vec![]);
     }
-    prepare_ids(client, settings, purpose, &ids, environment, receipt_input)
+    prepare_ids(
+        client,
+        settings,
+        purpose,
+        &ids,
+        environment,
+        receipt_input,
+        limit,
+    )
 }
 
 fn validate_source_revamp(
@@ -547,9 +576,12 @@ fn prepare_ids(
     note_ids: &[String],
     environment: &BTreeMap<String, String>,
     selector: SelectionInput,
+    command_limit: Option<u64>,
 ) -> Result<Vec<crate::Prepared>, String> {
     if note_ids.is_empty()
-        || note_ids.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap()
+        || note_ids.len() > 100000
+        || (command_limit.is_none()
+            && note_ids.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap())
     {
         return Err("REVAMP_SELECTION_LIMIT".into());
     }
@@ -563,6 +595,9 @@ fn prepare_ids(
     }
     if settings.values["selection.order"] == "note_id" {
         selection.sort_by_key(|id| id.parse::<u64>().unwrap());
+    }
+    if let Some(limit) = command_limit {
+        selection.truncate(limit as usize);
     }
     let mut captures = Vec::new();
     let mut total = 0u64;
@@ -587,6 +622,7 @@ fn prepare_ids(
         selected_note_ids: selection,
         order: settings.values["selection.order"].as_str().unwrap().into(),
         max_notes: settings.values["selection.max_notes"].as_u64().unwrap(),
+        command_limit,
     };
     publish_selected_captures(&captures, settings, purpose, environment, Some(receipt))
 }

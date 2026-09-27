@@ -400,6 +400,31 @@ fn invalid_query_and_purpose_fail_before_search_or_state_creation() {
         );
         assert!(!root.exists());
     }
+    assert_eq!(
+        prepare_source_selection_limited(
+            &client,
+            &settings,
+            "english_vocab",
+            SourceSelector::NoteIds(vec!["123".into()]),
+            &environment,
+            Some(1)
+        )
+        .unwrap_err(),
+        "REVAMP_EXPLICIT_IDS_LIMIT_CONFLICT"
+    );
+    assert_eq!(
+        prepare_source_selection_limited(
+            &client,
+            &settings,
+            "english_vocab",
+            SourceSelector::Query("tag:source".into()),
+            &environment,
+            Some(0)
+        )
+        .unwrap_err(),
+        "REVAMP_SELECTION_LIMIT_INVALID"
+    );
+    assert!(!root.exists());
 }
 
 #[test]
