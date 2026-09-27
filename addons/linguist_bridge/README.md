@@ -19,7 +19,10 @@ cargo test --locked -p linguist-anki --test read_port native
 Python and Rust tests use the same capability fixture in `contracts/v2/fixtures/`.
 The pinned additive registration adapter is tested with isolated fake modules.
 Its source-pin matrix/startup activation and real Anki integration remain pending.
-Durable identity/sidecar, session hooks,
+Explicit installation identity initialization is implemented with private files,
+create-new publication and restart/concurrent-initializer tests. It is not
+called by startup yet and does not establish collection identity.
+Durable operation sidecar, session hooks,
 serialized inspection, authenticated controls, mutations, packaging and native
 recovery tests remain pending. Do not install this scaffold as a functioning
 bridge; no installable artifact is produced yet.
