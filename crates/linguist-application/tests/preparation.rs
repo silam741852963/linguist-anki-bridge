@@ -427,6 +427,22 @@ fn english_dictionary_preparation_resolves_sense_without_inventing_pronunciation
         panic!()
     };
     assert_eq!(vocab.meaning, "Consume food");
+
+    let reference = &resolved.revision.rendered[0].fields["Meaning"];
+    assert!(reference.starts_with("<p>Consume food</p>"));
+    for value in [
+        "Forms",
+        "eat",
+        "Wiktionary contributors",
+        "We eat food.",
+        "en.wiktionary.org",
+    ] {
+        assert!(
+            reference.contains(value),
+            "missing dictionary reference {value}"
+        );
+    }
+
     assert!(vocab.reading.is_empty() && vocab.pronunciation.is_empty());
     assert_eq!(vocab.examples.len(), 2);
     assert_eq!(

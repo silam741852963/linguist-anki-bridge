@@ -45,6 +45,16 @@ grammar candidates, markers, blank fields, source preservation and cue failures.
 This does not certify native card membership, ordinals or history preservation;
 verified native task mapping and its typed review are still pending.
 
+Dictionary card references now render entry forms/readings, provider/language,
+source URL as inert text, numbered senses/labels, dictionary examples, metadata,
+restrictions/relationships and related entries. Structured metadata appears in
+collapsible sections; malformed metadata remains escaped text. The concise
+selected answer stays ahead of the reference section. Provider text cannot
+introduce active HTML, images or links. Tests cover facts/order and malicious
+metadata, definitions, forms and URLs. Existing stored projections stay readable;
+validation detects projections rendered by the older format as stale and requires
+a newly rendered child before approval. No native template changes are made.
+
 ## Available foundation
 
 - Root Rust workspace: `linguist-core`, `linguist-config`, `linguist-store`, `linguist-anki`, `linguist-application`, `linguist-dictionary` and `linguist-cli`; no Qt/Python runtime dependency.
