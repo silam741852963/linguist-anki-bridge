@@ -153,9 +153,23 @@ Preparation queue commands are now available: `jobs create` accepts repeated exp
 
 WP-10 and WP-11–WP-16 are pending. There is no CLI generation executor, apply handler, checkpoint or restore executor. No collection writes can be issued by the new CLI. Release gate statuses stay `not_run`.
 
-Next: continue job controls, parallel preparation, interrupted-item recovery and enrichment; finish contract/fixture parity and remaining configuration consumers. Enable mutation adapters only after the specified disposable-collection safety evidence.
+Next: continue job controls, provider pacing, interrupted-item recovery and enrichment; finish contract/fixture parity and remaining configuration consumers. Enable mutation adapters only after the specified disposable-collection safety evidence.
 
 ## Verification
+
+Preparation capture now consumes the frozen `jobs.prepare_workers` count. Bounded
+groups dispatch in input order, each after its durable started checkpoint, and
+the coordinator records results as workers finish. Capture decoding/staging runs
+in workers while the coordinator renews its lease. Stop/shared failures prevent
+the next group but drain and preserve the current group's outcomes. Initial state
+scans use bounded pages and a verified newest-checkpoint lookup instead of loading
+the complete capture history or rereading the definition for every input. Tests
+hold HTTP replies until all configured workers reach a dispatch barrier, inspect
+started/pending states before replies, verify frozen concurrency and stop/continue
+behavior, observe durable lease renewal while every HTTP reply is withheld, and
+force the second note to become durable before the first while
+retaining original plan order. This bounds worker/result counts, not process RSS;
+hard decoder isolation, provider pacing and job controls remain pending.
 
 Preparation workers now use a checkpoint boundary that validates their job fencing
 token inside the same immediate transaction as the global-head CAS and event/asset
@@ -184,8 +198,8 @@ skipped, and eligible transport failures retry only on another invocation up to
 the frozen ceiling. Other failures halt with a sanitized review-required code.
 Tests cover frozen settings despite different current defaults, unreachable-Anki
 failure persistence, bounded retries, lease release across runs, and unsupported
-generation preflight without checkpoints. This is a single capture worker, not the
-complete preparation pipeline: parallel dispatch, controls, enrichment, recovery
+generation preflight without checkpoints. This remains an incomplete preparation
+pipeline: provider pacing, controls, enrichment, recovery
 reconciliation and partial-batch plan publication remain pending. Native writes remain disabled.
 
 Run `cargo test --locked --workspace`, `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, and `python3 docs/cli/validate.py`. Generate schemas with `cargo run --locked -p linguist-core --example schemas`; regeneration must be deterministic. Domain tests live in `crates/linguist-core/tests/domain.rs`. These checks establish local contract behavior; they do not establish native history preservation, useful backups or crash recovery.

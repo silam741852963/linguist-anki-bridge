@@ -22,3 +22,6 @@ linguist-anki.workspace = true
 
 linguist-application.workspace = true
 clap_complete.workspace = true
+
+[dev-dependencies]
+rusqlite.workspace = true

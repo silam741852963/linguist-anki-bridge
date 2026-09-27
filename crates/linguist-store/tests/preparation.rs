@@ -414,9 +414,14 @@ fn definitions_events_and_original_assets_survive_reopen_with_cas_conflicts() {
     );
     let id = definition.job.id;
     let item = definition.job.item_ids[0];
+    assert!(store.preparation_head(id).unwrap().is_none());
     let started = store
         .append_preparation_event(id, item, 1, PreparationStage::Started, None)
         .unwrap();
+    assert_eq!(
+        store.preparation_head(id).unwrap().unwrap().digest,
+        started.digest
+    );
     assert!(
         store
             .append_preparation_event(
@@ -474,6 +479,9 @@ fn definitions_events_and_original_assets_survive_reopen_with_cas_conflicts() {
     drop(store);
     let store = Store::read_only(&f.0).unwrap();
     assert_eq!(store.preparation_job(id).unwrap(), definition);
+    let head = store.preparation_head(id).unwrap().unwrap();
+    assert_eq!(head.event.sequence, 2);
+    assert_eq!(head.digest, captured.digest);
     let events = store.preparation_events(id, 0, 1).unwrap();
     assert_eq!(events[0].digest, started.digest);
     assert_eq!(

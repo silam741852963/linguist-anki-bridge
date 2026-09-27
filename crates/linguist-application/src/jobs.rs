@@ -2,7 +2,7 @@
 use linguist_core::records::*;
 use std::collections::BTreeMap;
 
-/// Run one bounded source-capture worker and publish a complete review-required draft.
+/// Run bounded source-capture workers and publish a complete review-required draft.
 pub fn run(
     root: &std::path::Path,
     job: uuid::Uuid,
@@ -40,129 +40,131 @@ pub fn run(
     let mut store = linguist_store::Store::open(root)?;
     let lease = store.acquire_lease(&linguist_store::lease::Resource::JobWorker(job), seconds)?;
     let result = (|| {
-        let mut head = None;
-        let mut sequence = 0;
-        loop {
-            let events = store.preparation_events(job, sequence, 1000)?;
-            if events.is_empty() {
-                break;
-            }
-            let last = events.last().unwrap();
-            sequence = last.event.sequence;
-            head = Some(last.digest.clone());
-        }
+        let mut head = store.preparation_head(job)?.map(|receipt| receipt.digest);
         let mut captured = 0u32;
         let mut failed = 0u32;
-        for index in 0..definition.job.item_ids.len() {
-            if store.preparation_items(job, index as u32, 1)?[0].state == "started" {
-                return Err("PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY".into());
+        let mut eligible = Vec::new();
+        // Load bounded pages once rather than rereading the whole definition per input.
+        // Check every interrupted dispatch before permitting any new source reads.
+        for offset in (0..definition.job.item_ids.len()).step_by(1000) {
+            store.renew_lease(&lease, seconds)?;
+            for item in store.preparation_items(job, offset as u32, 1000)? {
+                if item.state == "started" {
+                    return Err("PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY".into());
+                }
+                if item.state == "pending" || item.retry_eligible {
+                    eligible.push(item);
+                }
             }
         }
-        for index in 0..definition.job.item_ids.len() {
-            let item = store.preparation_items(job, index as u32, 1)?.remove(0);
-            if item.state == "captured" {
-                continue;
-            }
-            // An interrupted dispatch requires explicit recovery, never implicit replay.
-            if item.state == "started" {
-                return Err("PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY".into());
-            }
-            if item.state == "failed" && !item.retry_eligible {
-                continue;
-            }
-            store.renew_lease(&lease, seconds)?;
-            store.validate_lease(&lease)?;
-            let attempt = item.attempt + 1;
-            let started = store.append_preparation_event_with_lease(
-                job,
-                item.item_id,
-                attempt,
-                PreparationStage::Started,
-                head.as_deref(),
-                &lease,
-            )?;
-            head = Some(started.digest);
-            let id = &definition.selection.selected_note_ids[index];
-            let capture = std::thread::scope(|scope| {
-                let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-                let client = &client;
-                let settings = &settings;
-                let purpose = &definition.selection.purpose;
-                scope.spawn(move || {
-                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        crate::source_archive::capture_for_revamp(client, settings, purpose, id)
-                    }))
-                    .unwrap_or_else(|_| Err("SOURCE_CAPTURE_WORKER_PANIC".into()));
-                    let _ = sender.send(result);
-                });
-                loop {
-                    match receiver.recv_timeout(std::time::Duration::from_secs(heartbeat)) {
-                        Ok(result) => break result,
-                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                            store.renew_lease(&lease, seconds)?
+        let workers = settings.values["jobs.prepare_workers"].as_u64().unwrap() as usize;
+        for wave in eligible.chunks(workers) {
+            let stop = std::thread::scope(|scope| -> Result<bool, String> {
+                // Capacity covers the entire wave, so fencing errors cannot strand senders.
+                let (sender, receiver) = std::sync::mpsc::sync_channel(wave.len());
+                for item in wave {
+                    store.renew_lease(&lease, seconds)?;
+                    let attempt = item.attempt + 1;
+                    let started = store.append_preparation_event_with_lease(
+                        job,
+                        item.item_id,
+                        attempt,
+                        PreparationStage::Started,
+                        head.as_deref(),
+                        &lease,
+                    )?;
+                    head = Some(started.digest);
+                    let client = &client;
+                    let settings = &settings;
+                    let purpose = &definition.selection.purpose;
+                    let id = &definition.selection.selected_note_ids[item.index as usize];
+                    let sender = sender.clone();
+                    scope.spawn(move || {
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            let capture = crate::source_archive::capture_for_revamp(
+                                client, settings, purpose, id,
+                            )?;
+                            // Decode/stage in the worker so the coordinator can heartbeat.
+                            let document =
+                                crate::revamp::stage_document(&capture, settings, purpose)?;
+                            Ok::<_, String>((document, capture.captured.assets))
+                        }))
+                        .unwrap_or_else(|_| Err("SOURCE_CAPTURE_WORKER_PANIC".into()));
+                        let _ = sender.send((item.item_id, attempt, result));
+                    });
+                }
+                drop(sender);
+                let mut stop = false;
+                for _ in wave {
+                    let (item_id, attempt, prepared) = loop {
+                        match receiver.recv_timeout(std::time::Duration::from_secs(heartbeat)) {
+                            Ok(result) => break result,
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                                store.renew_lease(&lease, seconds)?
+                            }
+                            Err(_) => return Err("SOURCE_CAPTURE_WORKER_DISCONNECTED".into()),
                         }
-                        Err(_) => break Err("SOURCE_CAPTURE_WORKER_DISCONNECTED".into()),
-                    }
-                }
-            });
-            store.renew_lease(&lease, seconds)?;
-            store.validate_lease(&lease)?;
-            let prepared = capture.and_then(|capture| {
-                let document = crate::revamp::stage_document(
-                    &capture,
-                    &settings,
-                    &definition.selection.purpose,
-                )?;
-                for (digest, bytes) in &capture.captured.assets {
-                    if store.publish_asset(
-                        bytes,
-                        settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024,
-                    )? != *digest
-                    {
-                        return Err("SOURCE_CAPTURE_ASSET_DIGEST_CONFLICT".into());
-                    }
-                }
-                Ok(document)
-            });
-            let (stage, stop) = match prepared {
-                Ok(document) => {
-                    captured += 1;
-                    (
-                        PreparationStage::Captured {
-                            document: Box::new(document),
-                        },
-                        false,
-                    )
-                }
-                Err(error) => {
-                    failed += 1;
-                    let code = match error.as_str() {
-                        "ANKI_READ_TIMEOUT" => "SOURCE_READ_TIMEOUT",
-                        "ANKI_DEPENDENCY_UNAVAILABLE" => "SOURCE_READ_CONNECTION_FAILED",
-                        "ANKI_HTTP_FAILURE: 429" => "SOURCE_READ_RATE_LIMITED",
-                        "ANKI_HTTP_FAILURE: 503" => "SOURCE_READ_UNAVAILABLE",
-                        _ => "SOURCE_CAPTURE_REVIEW_REQUIRED",
                     };
-                    let retry_eligible = code != "SOURCE_CAPTURE_REVIEW_REQUIRED";
-                    (
-                        PreparationStage::Failed {
-                            code: code.into(),
-                            retry_eligible,
-                        },
-                        !retry_eligible || settings.values["jobs.on_item_error"] == "stop",
-                    )
+                    store.renew_lease(&lease, seconds)?;
+                    let prepared = prepared.and_then(|(document, assets)| {
+                        for (digest, bytes) in assets {
+                            if store.publish_asset(
+                                &bytes,
+                                settings.values["input.max_file_mb"].as_u64().unwrap()
+                                    * 1024
+                                    * 1024,
+                            )? != digest
+                            {
+                                return Err("SOURCE_CAPTURE_ASSET_DIGEST_CONFLICT".into());
+                            }
+                        }
+                        Ok(document)
+                    });
+                    let (stage, succeeded) = match prepared {
+                        Ok(document) => (
+                            PreparationStage::Captured {
+                                document: Box::new(document),
+                            },
+                            true,
+                        ),
+                        Err(error) => {
+                            let code = match error.as_str() {
+                                "ANKI_READ_TIMEOUT" => "SOURCE_READ_TIMEOUT",
+                                "ANKI_DEPENDENCY_UNAVAILABLE" => "SOURCE_READ_CONNECTION_FAILED",
+                                "ANKI_HTTP_FAILURE: 429" => "SOURCE_READ_RATE_LIMITED",
+                                "ANKI_HTTP_FAILURE: 503" => "SOURCE_READ_UNAVAILABLE",
+                                _ => "SOURCE_CAPTURE_REVIEW_REQUIRED",
+                            };
+                            let retry_eligible = code != "SOURCE_CAPTURE_REVIEW_REQUIRED";
+                            stop |=
+                                !retry_eligible || settings.values["jobs.on_item_error"] == "stop";
+                            (
+                                PreparationStage::Failed {
+                                    code: code.into(),
+                                    retry_eligible,
+                                },
+                                false,
+                            )
+                        }
+                    };
+                    let receipt = store.append_preparation_event_with_lease(
+                        job,
+                        item_id,
+                        attempt,
+                        stage,
+                        head.as_deref(),
+                        &lease,
+                    )?;
+                    head = Some(receipt.digest);
+                    if succeeded {
+                        captured += 1;
+                    } else {
+                        failed += 1;
+                    }
                 }
-            };
-            store.validate_lease(&lease)?;
-            let receipt = store.append_preparation_event_with_lease(
-                job,
-                item.item_id,
-                attempt,
-                stage,
-                head.as_deref(),
-                &lease,
-            )?;
-            head = Some(receipt.digest);
+                // Stop prevents the next wave; already-dispatched reads retain their outcomes.
+                Ok(stop)
+            })?;
             if stop {
                 break;
             }

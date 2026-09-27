@@ -48,22 +48,33 @@ Result/failure: Unknown effects distinguished from ordinary failed items. The sh
 
 ## OP-39 — `jobs run JOB`
 
-Current implementation: prepare-mode source capture and complete draft publication, one read worker at a time
-(within `jobs.prepare_workers`' upper bound). No apply flag or collection writes.
+Current implementation: prepare-mode source capture and complete draft publication,
+with concurrency controlled by frozen `jobs.prepare_workers`. No apply flag or collection writes.
 Read the immutable definition from existing state; reject a different frozen storage
 root, unsupported requested enrichment or invalid lease settings before acquiring a
 lease. Use frozen settings for the Anki client, capture limits and failure policy.
 Claim the job lease; scan checkpoint states and refuse any interrupted `started`
 item with `PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY` (exit 7), before dispatching
-any other pending item. Do not infer death from expiry.
+any other pending item. Do not infer death from expiry. Read the verified newest
+checkpoint directly and scan item states in bounded pages before constructing an
+eligible input list; do not materialize every historical captured document.
 Skip captured items and nonretryable/exhausted failures. Each eligible item gets a
 CAS `started` event before dispatch. Both started and result checkpoints recheck the matching job
 lease inside the same immediate SQLite transaction as their head comparison;
 wrong-resource, expired or released tokens cannot append progress. Renew during reads
-at the frozen heartbeat interval. After capture, revalidate ownership, stage the document, publish
+at the frozen heartbeat interval. Capture and decode/stage in read workers, then
+the coordinator revalidates ownership, publishes
 original assets and append a CAS `captured` event. Recognized transport failures
 receive stable retry codes; other failures require review and halt the run.
-`jobs.on_item_error=stop` also stops after transport failure. A later invocation may
+Dispatch eligible inputs in frozen order in groups of at most `jobs.prepare_workers`.
+Each started checkpoint precedes its worker's first read. Checkpoint results as
+workers finish; final plan order still follows the frozen selection. Drain the
+entire dispatched group before starting another one. The bounded result channel
+can hold one outcome per worker, so a coordinator failure cannot leave a sender
+blocked waiting for channel space. Lease/storage failures stop coordination and
+leave any unrecorded started outcomes for explicit recovery.
+`jobs.on_item_error=stop` also stops after transport failure, preventing the next
+group; already-dispatched workers retain their durable results. A later invocation may
 retry an eligible failure once, within the frozen attempt ceiling. No retry loop
 runs automatically within one invocation. Release the lease on ordinary completion
 or error; crashes retain their durable checkpoints and strong process identity.
@@ -84,7 +95,7 @@ invocation, checkpoint digest and optional plan receipt, `ready=false` and
 Aggregate item/error counts include earlier checkpoints, not just this invocation.
 Review-required drafts exit 4; persisted dependency failures exit 3 and other read
 execution failures exit 6. Exhausted failures never turn into exit 0 on a no-dispatch rerun.
-Parallel dispatch, pause/cancel, interrupted-item reconciliation, enrichment and
+Pause/cancel, interrupted-item reconciliation, provider pacing, enrichment and
 partial batch plan publication remain pending.
 
 Inputs: Optional --apply for apply mode; execution limits.

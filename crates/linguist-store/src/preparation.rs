@@ -636,6 +636,28 @@ impl Store {
         tx.commit().map_err(sql)?;
         Ok(PreparationReceipt { digest, event })
     }
+    /// Verify the newest checkpoint without materializing the full capture history.
+    pub fn preparation_head(&self, id: Uuid) -> Result<Option<PreparationReceipt>> {
+        self.preparation_job(id)?;
+        let sequence: Option<u32> = self
+            .connection
+            .query_row(
+                "SELECT MAX(sequence) FROM preparation_events WHERE job_id=?1",
+                [id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(sql)?;
+        match sequence {
+            None => Ok(None),
+            Some(0) => Err("PREPARATION_EVENT_CORRUPT".into()),
+            Some(sequence) => self
+                .preparation_events(id, sequence - 1, 1)?
+                .into_iter()
+                .next()
+                .map(Some)
+                .ok_or_else(|| "PREPARATION_EVENT_CORRUPT".into()),
+        }
+    }
     pub fn preparation_events(
         &self,
         id: Uuid,

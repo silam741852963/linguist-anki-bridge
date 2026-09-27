@@ -1084,6 +1084,7 @@ dependencies = [
  "linguist-config",
  "linguist-core",
  "linguist-store",
+ "rusqlite",
  "serde",
  "serde_json",
  "toml",

@@ -6,6 +6,191 @@ fn cli() -> Command {
     c
 }
 #[test]
+fn preparation_concurrency_is_frozen_bounded_and_stop_drains_dispatched_items() {
+    use std::io::{BufRead, Read, Write};
+    for (workers, policy, dispatched) in [(1, "stop", 1), (2, "stop", 2), (2, "continue", 5)] {
+        let root = std::env::temp_dir().join(format!("lab-parallel-cli-{}", uuid::Uuid::new_v4()));
+        let state = format!("storage.state_dir={}", root.display());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("anki.endpoint=http://{}", listener.local_addr().unwrap());
+        let created = cli()
+            .args([
+                "--purpose",
+                "english_vocab",
+                "--set",
+                &state,
+                "--set",
+                &endpoint,
+                "--set",
+                "llm.enabled=false",
+                "--set",
+                "dictionary.provider=authored",
+                "--set",
+                "images.search_when_missing=false",
+                "--set",
+                "audio.provider=disabled",
+                "--set",
+                &format!("jobs.prepare_workers={workers}"),
+                "--set",
+                &format!("jobs.on_item_error={policy}"),
+                "--set",
+                "jobs.lease_seconds=10",
+                "--set",
+                "jobs.heartbeat_seconds=1",
+                "jobs",
+                "create",
+                "--note-id",
+                "123",
+                "--note-id",
+                "124",
+                "--note-id",
+                "125",
+                "--note-id",
+                "126",
+                "--note-id",
+                "127",
+            ])
+            .output()
+            .unwrap();
+        assert!(created.status.success(), "{created:?}");
+        let created: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+        let id = created["job_id"].as_str().unwrap().to_owned();
+        let job = id.parse().unwrap();
+        let state_root = root.clone();
+        let server = std::thread::spawn(move || {
+            for offset in (0..dispatched).step_by(workers) {
+                let wave = workers.min(dispatched - offset);
+                let mut streams = Vec::new();
+                // Hold replies until all configured workers have dispatched a read.
+                // A serial implementation cannot satisfy this barrier for two workers.
+                for _ in 0..wave {
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                    let stream = loop {
+                        match listener.accept() {
+                            Ok((stream, _)) => break stream,
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                assert!(
+                                    std::time::Instant::now() < deadline,
+                                    "parallel dispatch barrier timed out"
+                                );
+                                std::thread::sleep(std::time::Duration::from_millis(5));
+                            }
+                            Err(e) => panic!("{e}"),
+                        }
+                    };
+                    stream
+                        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                        .unwrap();
+                    let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+                    let mut length = 0;
+                    loop {
+                        let mut line = String::new();
+                        reader.read_line(&mut line).unwrap();
+                        if line == "\r\n" {
+                            break;
+                        }
+                        if line.to_ascii_lowercase().starts_with("content-length:") {
+                            length = line
+                                .split_once(':')
+                                .unwrap()
+                                .1
+                                .trim()
+                                .parse::<usize>()
+                                .unwrap();
+                        }
+                    }
+                    let mut body = vec![0; length];
+                    reader.read_exact(&mut body).unwrap();
+                    let request: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                    assert_eq!(request["action"], "getActiveProfile");
+                    streams.push(stream);
+                }
+                let store = linguist_store::Store::read_only(&state_root).unwrap();
+                let items = store.preparation_items(job, 0, 10).unwrap();
+                assert_eq!(
+                    items.iter().filter(|item| item.state == "started").count(),
+                    wave
+                );
+                assert_eq!(
+                    items.iter().filter(|item| item.state == "failed").count(),
+                    offset
+                );
+                assert_eq!(
+                    items.iter().filter(|item| item.state == "pending").count(),
+                    5 - offset - wave
+                );
+                if workers == 2 && policy == "stop" {
+                    // Keep every worker awaiting HTTP and observe durable heartbeat renewal.
+                    let db = rusqlite::Connection::open_with_flags(
+                        state_root.join("state.sqlite3"),
+                        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                    )
+                    .unwrap();
+                    let resource = format!("job:{job}");
+                    let expiry = || {
+                        db.query_row(
+                            "SELECT expires_ms FROM leases WHERE resource=?1",
+                            [&resource],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .unwrap()
+                    };
+                    let initial = expiry();
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                    while expiry() <= initial {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "worker coordinator did not renew its lease during blocked reads"
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                }
+                for mut stream in streams {
+                    write!(stream, "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                }
+            }
+        });
+        // These current flags must not replace the frozen concurrency/error policy.
+        let run = cli()
+            .args([
+                "--set",
+                &state,
+                "--set",
+                "jobs.prepare_workers=16",
+                "--set",
+                "jobs.on_item_error=continue",
+                "jobs",
+                "run",
+                &id,
+            ])
+            .output()
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(run.status.code(), Some(3), "{run:?}");
+        let run: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+        assert_eq!(run["failed_this_run"], dispatched);
+        assert_eq!(run["plan_published"], false);
+        let store = linguist_store::Store::read_only(&root).unwrap();
+        let items = store.preparation_items(job, 0, 10).unwrap();
+        assert_eq!(
+            items.iter().filter(|item| item.state == "failed").count(),
+            dispatched
+        );
+        assert_eq!(
+            items.iter().filter(|item| item.state == "pending").count(),
+            5 - dispatched
+        );
+        assert_eq!(
+            store.preparation_events(job, 0, 100).unwrap().len(),
+            dispatched * 2
+        );
+        assert!(items.iter().all(|item| item.state != "started"));
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+#[test]
 fn preparation_worker_freezes_settings_and_bounds_retries() {
     let root = std::env::temp_dir().join(format!("lab-worker-cli-{}", uuid::Uuid::new_v4()));
     let state = format!("storage.state_dir={}", root.display());
@@ -1291,11 +1476,16 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             "deck_limit",
         ),
     ] {
+        let root = std::env::temp_dir().join(format!("lab-cli-revamp-{}", uuid::Uuid::new_v4()));
+        let state_root = root.clone();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
             let mut actions = Vec::new();
+            let mut held_first = None;
+            let mut first_was_held = false;
+            let mut second_card_reads = 0;
             for _ in 0..28 * count + if matches!(mode, "ids" | "job") { 0 } else { 3 } {
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
                 let mut stream = loop {
@@ -1365,17 +1555,43 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                     "modelStyling" => serde_json::json!({"css":"style"}),
                     "cardsInfo" => {
                         let id = request["params"]["cards"][0].as_u64().unwrap();
+                        if mode == "job" && id == 457 {
+                            second_card_reads += 1;
+                        }
                         serde_json::json!([{"cardId":id,"note":id-333,"reps":5,"due":10}])
                     }
                     _ => panic!("unexpected action {action}"),
                 };
                 actions.push(action.to_owned());
                 let body = serde_json::json!({"result":value,"error":null}).to_string();
-                write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+                if mode == "job"
+                    && action == "notesInfo"
+                    && request["params"]["notes"][0] == 123
+                    && !first_was_held
+                {
+                    first_was_held = true;
+                    held_first = Some((stream, body));
+                } else {
+                    write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+                }
+                if held_first.is_some() && second_card_reads == 2 && action == "getActiveProfile" {
+                    // Force the second item to commit before the first capture can continue.
+                    let store = linguist_store::Store::read_only(&state_root).unwrap();
+                    let job = store.list_preparation_jobs(None, 1).unwrap()[0].id;
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                    while store.preparation_items(job, 1, 1).unwrap()[0].state != "captured" {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "second capture never became durable"
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                    let (mut stream, body) = held_first.take().unwrap();
+                    write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+                }
             }
             actions
         });
-        let root = std::env::temp_dir().join(format!("lab-cli-revamp-{}", uuid::Uuid::new_v4()));
         let mut out = cli()
             .args([
                 "--purpose",
@@ -1461,6 +1677,9 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                     .all(|item| item.state == "captured" && item.attempt == 1)
             );
             assert_eq!(store.preparation_events(job, 0, 10).unwrap().len(), 4);
+            let events = store.preparation_events(job, 0, 10).unwrap();
+            assert_eq!(events[2].event.item_id, items[1].item_id);
+            assert_eq!(events[3].event.item_id, items[0].item_id);
             assert_eq!(store.list_revisions(10).unwrap().len(), 1);
             let plan = store.revision(job, 1).unwrap();
             assert_eq!(
