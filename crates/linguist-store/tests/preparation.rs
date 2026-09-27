@@ -955,3 +955,90 @@ fn migration_from_schema_five_backs_up_and_preserves_old_state() {
         "ok"
     );
 }
+
+#[test]
+fn interrupted_read_reconciliation_requires_fencing_and_keeps_attempt_limits() {
+    use linguist_store::lease::Resource;
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    let job = definition.job.id;
+    let item = definition.job.item_ids[0];
+    store.create_preparation_job(&definition).unwrap();
+    let started = store
+        .append_preparation_event(job, item, 1, PreparationStage::Started, None)
+        .unwrap();
+    assert!(
+        store
+            .append_preparation_event(
+                job,
+                item,
+                1,
+                PreparationStage::Interrupted {
+                    actor: "operator".into()
+                },
+                Some(&started.digest)
+            )
+            .unwrap_err()
+            .contains("LEASE_REQUIRED")
+    );
+    let lease = store.acquire_lease(&Resource::JobWorker(job), 60).unwrap();
+    let first = store
+        .append_preparation_event_with_lease(
+            job,
+            item,
+            1,
+            PreparationStage::Interrupted {
+                actor: "operator".into(),
+            },
+            Some(&started.digest),
+            &lease,
+        )
+        .unwrap();
+    let items = store.preparation_items(job, 0, 10).unwrap();
+    assert_eq!(items[0].state, "failed");
+    assert!(items[0].retry_eligible);
+    assert_eq!(items[0].attempt, 1);
+    assert_eq!(items[1].state, "pending");
+    let started = store
+        .append_preparation_event_with_lease(
+            job,
+            item,
+            2,
+            PreparationStage::Started,
+            Some(&first.digest),
+            &lease,
+        )
+        .unwrap();
+    let second = store
+        .append_preparation_event_with_lease(
+            job,
+            item,
+            2,
+            PreparationStage::Interrupted {
+                actor: "operator".into(),
+            },
+            Some(&started.digest),
+            &lease,
+        )
+        .unwrap();
+    assert!(!store.preparation_items(job, 0, 10).unwrap()[0].retry_eligible);
+    assert!(
+        store
+            .append_preparation_event_with_lease(
+                job,
+                item,
+                3,
+                PreparationStage::Started,
+                Some(&second.digest),
+                &lease
+            )
+            .is_err()
+    );
+    store.release_lease(&lease).unwrap();
+    let events = f.open().preparation_events(job, 0, 10).unwrap();
+    assert_eq!(events.len(), 4);
+    assert!(
+        matches!(&events[3].event.stage, PreparationStage::Interrupted { actor } if actor == "operator")
+    );
+}

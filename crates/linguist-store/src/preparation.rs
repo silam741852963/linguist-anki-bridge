@@ -41,6 +41,7 @@ pub enum PreparationStage {
     Started,
     Captured { document: Box<LearningDocument> },
     Failed { code: String, retry_eligible: bool },
+    Interrupted { actor: String },
 }
 fn retry_code(code: &str) -> bool {
     matches!(
@@ -374,6 +375,14 @@ impl Store {
                 summary.checkpoint_sequence = Some(sequence);
                 summary.checkpoint_digest = Some(digest);
                 match event.stage {
+                    PreparationStage::Interrupted { .. } => {
+                        summary.state = "failed".into();
+                        summary.error_code = Some("SOURCE_READ_INTERRUPTED".into());
+                        summary.retry_eligible = u64::from(event.attempt)
+                            < definition.job.settings.values["jobs.max_item_attempts"]
+                                .as_u64()
+                                .unwrap();
+                    }
                     PreparationStage::Started => summary.state = "started".into(),
                     PreparationStage::Captured { document } => {
                         self.verify_document_assets(std::slice::from_ref(document.as_ref()))?;
@@ -534,17 +543,30 @@ impl Store {
                     PreparationStage::Failed {
                         retry_eligible: true,
                         ..
-                    }
+                    } | PreparationStage::Interrupted { .. }
                 ) && u32::from(attempt) == u32::from(previous.attempt) + 1
             }
             (
                 Some(previous),
-                PreparationStage::Captured { .. } | PreparationStage::Failed { .. },
+                PreparationStage::Captured { .. }
+                | PreparationStage::Failed { .. }
+                | PreparationStage::Interrupted { .. },
             ) => previous.stage == PreparationStage::Started && previous.attempt == attempt,
             _ => false,
         };
         if !allowed || u64::from(attempt) > max_attempts {
             return Err("PREPARATION_TRANSITION_INVALID".into());
+        }
+        if let PreparationStage::Interrupted { actor } = &stage {
+            if worker.is_none() {
+                return Err("PREPARATION_RECOVERY_LEASE_REQUIRED".into());
+            }
+            if actor.trim().is_empty()
+                || actor.chars().count() > 200
+                || actor.chars().any(char::is_control)
+            {
+                return Err("PREPARATION_RECOVERY_ACTOR_INVALID".into());
+            }
         }
         let assets = if let PreparationStage::Captured { document } = &stage {
             let expected =

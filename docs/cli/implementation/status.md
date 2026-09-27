@@ -89,6 +89,27 @@ apply to repair content. Tests cover vocabulary and grammar, malformed repairs,
 rendered enable flags, preserved parents/restart and readiness without apply
 eligibility. Native task/history and generated/source fact reviews remain separate.
 
+Interrupted source-read recovery is now available as
+`jobs recover JOB [--after-index N] [--limit N]` (preview) or with
+`--actor NAME --execute`. It inspects a bounded item page (1–1000, configured
+page size by default) and returns a cursor; it makes no Anki requests. Execution
+acquires the strong job-worker lease, re-reads the page and appends fenced
+`interrupted` checkpoints for started items with the operator name and the same
+attempt count. These items become retry candidates only within the frozen attempt
+limit. `jobs run` performs any later dispatch separately. Captured/pending/failed
+items, plans, assets and pause/cancel controls are preserved. Repeating recovery
+without new started items appends nothing.
+
+Expiry alone does not permit takeover: live or unverified owners remain blocked;
+an absent expired owner can be fenced out. Checkpoint CAS/fencing is verified in
+the append transaction. Tests cover missing recovery fencing, bounded retries,
+preview/actor validation, expired-live rejection, simulated absent-owner recovery,
+stale token rejection and idempotent repetition. This is read-only preparation
+reconciliation, not recovery of unknown native mutation effects. No process-crash
+or power-loss certification is claimed. The new interruption event variant uses
+the current checkpoint schema; older binaries may reject it, so do not downgrade
+an active store after recording recovery.
+
 ## Available foundation
 
 - Root Rust workspace: `linguist-core`, `linguist-config`, `linguist-store`, `linguist-anki`, `linguist-application`, `linguist-dictionary` and `linguist-cli`; no Qt/Python runtime dependency.

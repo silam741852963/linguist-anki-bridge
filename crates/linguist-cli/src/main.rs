@@ -92,6 +92,18 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum JobCommand {
+    /// Preview interrupted source reads; --execute records recovery without retrying them.
+    Recover {
+        job: uuid::Uuid,
+        #[arg(long, default_value_t = 0)]
+        after_index: u32,
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: Option<u32>,
+        #[arg(long)]
+        actor: Option<String>,
+        #[arg(long)]
+        execute: bool,
+    },
     /// Inspect verified local checkpoint/control pages; never reads Anki.
     Audit {
         job: uuid::Uuid,
@@ -586,6 +598,26 @@ fn run(cli: Cli) -> Result<u8, String> {
                 )?;
                 return Ok(0);
             }
+            if let JobCommand::Recover {
+                job,
+                after_index,
+                limit,
+                actor,
+                execute,
+            } = command
+            {
+                let limit =
+                    limit.unwrap_or(settings.values["output.page_size"].as_u64().unwrap() as u32);
+                emit(&linguist_application::jobs::recover(
+                    &root,
+                    job,
+                    after_index,
+                    limit,
+                    actor.as_deref(),
+                    execute,
+                )?)?;
+                return Ok(0);
+            }
             let control = match &command {
                 JobCommand::Pause { job } => Some((
                     *job,
@@ -683,6 +715,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                     )?;
                 }
                 JobCommand::Create { .. }
+                | JobCommand::Recover { .. }
                 | JobCommand::Run { .. }
                 | JobCommand::Pause { .. }
                 | JobCommand::Resume { .. }
@@ -1415,7 +1448,9 @@ fn error_exit(message: &str) -> u8 {
     } else if code.contains("CONFLICT")
         || matches!(
             code,
-            "STORAGE_RELOCATION_BLOCKED" | "PREPARATION_CANCEL_IS_TERMINAL"
+            "STORAGE_RELOCATION_BLOCKED"
+                | "PREPARATION_CANCEL_IS_TERMINAL"
+                | "LEASE_HELD_OR_OWNER_UNVERIFIED"
         )
     {
         5

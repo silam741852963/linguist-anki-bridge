@@ -2,6 +2,94 @@
 use linguist_core::records::*;
 use std::collections::BTreeMap;
 
+/// Reconcile a bounded page of interrupted read captures; never dispatches work.
+pub fn recover(
+    root: &std::path::Path,
+    job: uuid::Uuid,
+    after_index: u32,
+    limit: u32,
+    actor: Option<&str>,
+    execute: bool,
+) -> Result<serde_json::Value, String> {
+    if !(1..=1000).contains(&limit) {
+        return Err("JOB_RECOVERY_LIMIT_INVALID".into());
+    }
+    if execute
+        && actor.is_none_or(|actor| {
+            actor.trim().is_empty()
+                || actor.chars().count() > 200
+                || actor.chars().any(char::is_control)
+        })
+    {
+        return Err("JOB_RECOVERY_ACTOR_REQUIRED".into());
+    }
+    let reader = linguist_store::Store::read_only(root)?;
+    let definition = reader.preparation_job(job)?;
+    if std::path::Path::new(
+        definition.job.settings.values["storage.state_dir"]
+            .as_str()
+            .unwrap(),
+    ) != root
+    {
+        return Err("PREPARATION_STORAGE_CONFLICT".into());
+    }
+    let preview = reader.preparation_items(job, after_index, limit)?;
+    let next = preview.last().map(|item| item.index + 1);
+    let started: Vec<_> = preview
+        .into_iter()
+        .filter(|item| item.state == "started")
+        .collect();
+    if !execute {
+        return Ok(
+            serde_json::json!({"schema_version":2,"job_id":job,"scope":"item_page","started":started,"next_index":next,"executed":false,"worker_liveness":"unverified","writes_enabled":false}),
+        );
+    }
+    let seconds = definition
+        .job
+        .settings
+        .values
+        .get("jobs.lease_seconds")
+        .ok_or("JOB_SETTING_MISSING")?;
+    linguist_config::Registry::builtin().validate_value("jobs.lease_seconds", seconds)?;
+    let seconds = seconds.as_u64().unwrap();
+    drop(reader);
+    let mut store = linguist_store::Store::open_existing(root)?;
+    let lease = store.acquire_lease(&linguist_store::lease::Resource::JobWorker(job), seconds)?;
+    let result = (|| -> Result<serde_json::Value, String> {
+        // Re-read after ownership acquisition: the preview is not a mutation authority.
+        let page = store.preparation_items(job, after_index, limit)?;
+        let next = page.last().map(|item| item.index + 1);
+        let mut head = store.preparation_head(job)?.map(|receipt| receipt.digest);
+        let mut reconciled = Vec::new();
+        for item in page.into_iter().filter(|item| item.state == "started") {
+            store.renew_lease(&lease, seconds)?;
+            let receipt = store.append_preparation_event_with_lease(
+                job,
+                item.item_id,
+                item.attempt,
+                linguist_store::preparation::PreparationStage::Interrupted {
+                    actor: actor.unwrap().into(),
+                },
+                head.as_deref(),
+                &lease,
+            )?;
+            head = Some(receipt.digest.clone());
+            reconciled.push(receipt);
+        }
+        Ok(
+            serde_json::json!({"schema_version":2,"job_id":job,"scope":"item_page","executed":true,"reconciled":reconciled,"next_index":next,"checkpoint_digest":head,"control":store.preparation_control(job)?,"work_dispatched":false,"attempts_reset":false,"writes_enabled":false}),
+        )
+    })();
+    let released = store.release_lease(&lease);
+    match result {
+        Ok(value) => {
+            released?;
+            Ok(value)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// Read-only history page: summaries retain evidence references without document bodies.
 pub fn audit(
     store: &linguist_store::Store,
@@ -28,6 +116,7 @@ pub fn audit(
         let item = receipt.event.item_id;
         let input = inputs.get(&item).ok_or("PREPARATION_EVENT_ITEM_CONFLICT")?;
         let detail = match &receipt.event.stage {
+            PreparationStage::Interrupted { actor } => serde_json::json!({"state":"interrupted","actor":actor,"code":"SOURCE_READ_INTERRUPTED","retry_classified":true}),
             PreparationStage::Started => serde_json::json!({"state":"started"}),
             PreparationStage::Failed {
                 code,

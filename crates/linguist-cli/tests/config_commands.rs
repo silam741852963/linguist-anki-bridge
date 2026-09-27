@@ -713,6 +713,99 @@ fn preparation_worker_freezes_settings_and_bounds_retries() {
         store.preparation_items(interrupted.job.id, 0, 1).unwrap()[0].state,
         "pending"
     );
+    let job = interrupted.job.id.to_string();
+    let preview = cli()
+        .args(["--set", &state, "jobs", "recover", &job])
+        .output()
+        .unwrap();
+    assert!(preview.status.success(), "{preview:?}");
+    let value: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(value["executed"], false);
+    assert_eq!(value["started"].as_array().unwrap().len(), 1);
+    let missing_actor = cli()
+        .args(["--set", &state, "jobs", "recover", &job, "--execute"])
+        .output()
+        .unwrap();
+    assert_eq!(missing_actor.status.code(), Some(2));
+    let token = store
+        .acquire_lease(
+            &linguist_store::lease::Resource::JobWorker(interrupted.job.id),
+            60,
+        )
+        .unwrap();
+    let db = rusqlite::Connection::open(root.join("state.sqlite3")).unwrap();
+    db.execute(
+        "UPDATE leases SET expires_ms=0 WHERE resource=?1",
+        [format!("job:{}", interrupted.job.id)],
+    )
+    .unwrap();
+    let args = [
+        "--set",
+        &state,
+        "jobs",
+        "recover",
+        &job,
+        "--actor",
+        "operator",
+        "--execute",
+    ];
+    let held = cli().args(args).output().unwrap();
+    assert_eq!(held.status.code(), Some(5), "{held:?}");
+    assert_eq!(
+        store
+            .preparation_events(interrupted.job.id, 0, 10)
+            .unwrap()
+            .len(),
+        1
+    );
+    // Model an expired, absent Linux process identity; expiry with a live owner was rejected above.
+    db.execute(
+        "UPDATE leases SET pid=4294967295 WHERE resource=?1",
+        [format!("job:{}", interrupted.job.id)],
+    )
+    .unwrap();
+    drop(db);
+    let recovered = cli().args(args).output().unwrap();
+    assert!(recovered.status.success(), "{recovered:?}");
+    let value: serde_json::Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(value["reconciled"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        value["reconciled"][0]["event"]["stage"]["state"],
+        "interrupted"
+    );
+    assert_eq!(value["work_dispatched"], false);
+    assert_eq!(value["attempts_reset"], false);
+    assert!(store.validate_lease(&token).is_err());
+    let items = store.preparation_items(interrupted.job.id, 0, 10).unwrap();
+    assert_eq!(items[0].state, "pending");
+    assert_eq!(items[1].attempt, 1);
+    assert_eq!(
+        items[1].error_code.as_deref(),
+        Some("SOURCE_READ_INTERRUPTED")
+    );
+    assert!(items[1].retry_eligible);
+    let again = cli().args(args).output().unwrap();
+    assert!(again.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&again.stdout).unwrap();
+    assert_eq!(value["reconciled"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        store
+            .preparation_events(interrupted.job.id, 0, 10)
+            .unwrap()
+            .len(),
+        2
+    );
+    let resumed = cli()
+        .args(["--set", &state, "jobs", "run", &job])
+        .output()
+        .unwrap();
+    assert_eq!(resumed.status.code(), Some(3), "{resumed:?}");
+    let items = store.preparation_items(interrupted.job.id, 0, 10).unwrap();
+    assert_eq!(items[1].attempt, 2);
+    assert!(!items[1].retry_eligible);
+    let history = store.preparation_events(interrupted.job.id, 0, 10).unwrap();
+    assert!(matches!(&history[1].event.stage,
+        linguist_store::preparation::PreparationStage::Interrupted { actor } if actor == "operator"));
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }

@@ -293,3 +293,17 @@ OP-35 supports explicit note IDs or query/deck selectors, with a required global
 OP-36 supports `jobs list [--after JOB_UUID] [--limit N]`. OP-37 supports `jobs show JOB_UUID`, exposing the immutable definition and explicitly unverified worker liveness. OP-38 supports `jobs items JOB_UUID [--after-index N] [--limit N]`, returning latest durable item summaries in original input order, including implicit pending items. Summaries include attempt, checkpoint sequence/digest, captured document ID if any, stable error code and bounded retry eligibility. Captured-asset references are verified before reporting captured summaries. A retry flag is classification metadata, not permission to dispatch work.
 
 List/item pages use configured `output.page_size` unless `--limit` overrides it, with a 1–10,000 limit. List cursors are exclusive job UUIDs; item cursors are zero-based positions at which to resume. Responses provide `next_cursor` or `next_index`; an empty subsequent page terminates traversal. Reading absent state returns an empty list without creating directories; show/items require an existing job. Inspection reads only existing state, sends no provider/Anki calls and does not claim worker death or recovery. Status/mode filters, history selection, durable stop acknowledgement and simulate/apply modes remain pending.
+
+Current interrupted-read recovery: `jobs recover JOB` previews one item page.
+Use `--after-index N` and `--limit N` (1–1000) to bound work; `next_index` advances
+through the frozen item order. Preview leaves state and leases unchanged and
+labels worker liveness unverified. `--execute` requires `--actor NAME`, acquires
+the existing strong worker lease and re-reads the page. Live/unverified owners
+block takeover, including after expiry. For each started item, renew ownership
+and append an operator-attributed interruption under checkpoint CAS and lease
+fencing. Preserve attempt counts; exhausted items remain ineligible. Preserve
+other item checkpoints, assets/plans and pause/cancel controls. Results contain
+no dispatch or collection-write claim. A later explicit `jobs run` retries eligible
+read captures. Repeat recovery appends nothing when that page has no started
+items. This operation cannot reconcile ambiguous native writes or claim a stopped
+worker solely from a preview or deadline. Earlier checkpoints remain auditable.
