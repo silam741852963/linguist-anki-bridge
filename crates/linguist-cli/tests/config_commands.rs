@@ -939,16 +939,34 @@ fn ollama_doctor_conflicting_modes_and_missing_model_fail_before_service_probes(
 #[test]
 fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
     use std::io::{BufRead, Read, Write};
-    for (command, purpose, mapping) in [
+    for (command, purpose, mapping, order, count) in [
         (
             "vocab",
             "english_vocab",
             r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
+            "note_id",
+            1,
         ),
         (
             "grammar",
             "japanese_grammar",
             r#"{"pattern":"Pattern","meaning":"Meaning","formation":"Formation","use_key":"Key"}"#,
+            "note_id",
+            1,
+        ),
+        (
+            "vocab",
+            "english_vocab",
+            r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
+            "note_id",
+            2,
+        ),
+        (
+            "grammar",
+            "japanese_grammar",
+            r#"{"pattern":"Pattern","meaning":"Meaning","formation":"Formation","use_key":"Key"}"#,
+            "input",
+            2,
         ),
     ] {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -956,7 +974,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
             let mut actions = Vec::new();
-            for _ in 0..28 {
+            for _ in 0..28 * count {
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
                 let mut stream = loop {
                     match listener.accept() {
@@ -997,7 +1015,8 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                     "getActiveProfile" => serde_json::json!("Fixture"),
                     "modelNamesAndIds" => serde_json::json!({"Legacy":12}),
                     "notesInfo" => {
-                        serde_json::json!([{"noteId":123,"modelName":"Legacy","fields":{"Word":{"value":"cat","order":0},"Meaning":{"value":"source meaning","order":1},"Pattern":{"value":"なら","order":2},"Formation":{"value":"V + なら","order":3},"Key":{"value":"accepted-key","order":4},"Unused":{"value":"  original\n","order":5}},"cards":[456],"tags":["preserved"]}])
+                        let id = request["params"]["notes"][0].as_u64().unwrap();
+                        serde_json::json!([{"noteId":id,"modelName":"Legacy","fields":{"Word":{"value":"cat","order":0},"Meaning":{"value":"source meaning","order":1},"Pattern":{"value":"なら","order":2},"Formation":{"value":"V + なら","order":3},"Key":{"value":"accepted-key","order":4},"Unused":{"value":"  original\n","order":5}},"cards":[id+333],"tags":["preserved"]}])
                     }
                     "modelFieldNames" => serde_json::json!([
                         "Word",
@@ -1009,7 +1028,10 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                     ]),
                     "modelTemplates" => serde_json::json!({"Card":{"Front":"front","Back":"back"}}),
                     "modelStyling" => serde_json::json!({"css":"style"}),
-                    "cardsInfo" => serde_json::json!([{"cardId":456,"note":123,"reps":5,"due":10}]),
+                    "cardsInfo" => {
+                        let id = request["params"]["cards"][0].as_u64().unwrap();
+                        serde_json::json!([{"cardId":id,"note":id-333,"reps":5,"due":10}])
+                    }
                     _ => panic!("unexpected action {action}"),
                 };
                 actions.push(action.to_owned());
@@ -1036,22 +1058,42 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             .arg(format!("storage.state_dir={}", root.display()))
             .arg("--set")
             .arg(format!("purposes.{purpose}.fields={mapping}"))
-            .args([command, "revamp", "--note-id", "123"])
+            .arg("--set")
+            .arg(format!("selection.order={order}"))
+            .args([command, "revamp"])
+            .args(if count == 1 {
+                vec!["--note-id", "123"]
+            } else {
+                vec!["--note-id", "124", "--note-id", "123"]
+            })
             .output()
             .unwrap();
-        assert_eq!(server.join().unwrap().len(), 28);
+        assert_eq!(server.join().unwrap().len(), 28 * count);
         assert_eq!(out.status.code(), Some(4), "{out:?}");
         assert!(out.stderr.is_empty());
         let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         assert_eq!(result["preparation_stage"], "source_draft");
-        assert_eq!(result["result"]["apply_eligible"], false);
-        let id = result["result"]["plan_id"]
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let item = if count == 1 {
+            &result["result"]
+        } else {
+            assert_eq!(result["result"]["item_count"], count);
+            &result["result"]["items"][0]
+        };
+        assert_eq!(item["apply_eligible"], false);
+        let id = item["plan_id"].as_str().unwrap().parse().unwrap();
         let store = linguist_store::Store::read_only(&root).unwrap();
         let plan = store.revision(id, 1).unwrap();
+        assert_eq!(plan.documents.len(), count);
+        if count == 2 {
+            let expected = if order == "note_id" {
+                ["anki_note:123", "anki_note:124"]
+            } else {
+                ["anki_note:124", "anki_note:123"]
+            };
+            for (document, location) in plan.documents.iter().zip(expected) {
+                assert_eq!(document.sources[0].location, location);
+            }
+        }
         assert_eq!(
             plan.documents[0].sources[0].fields["Unused"],
             "  original\n"
@@ -1085,6 +1127,43 @@ fn revamp_missing_wrong_purpose_and_requested_generation_fail_before_state_creat
             .unwrap();
         assert_eq!(out.status.code(), Some(exit), "{out:?}");
         assert!(out.stdout.is_empty());
+        assert!(!root.exists());
+    }
+}
+
+#[test]
+fn revamp_duplicate_and_oversized_selections_fail_before_collection_reads() {
+    for (ids, limit, expected) in [
+        (["123", "123"], "2", "REVAMP_SELECTION_DUPLICATE"),
+        (["123", "124"], "1", "REVAMP_SELECTION_LIMIT"),
+    ] {
+        let root =
+            std::env::temp_dir().join(format!("lab-cli-revamp-selection-{}", uuid::Uuid::new_v4()));
+        let out = cli()
+            .args([
+                "--purpose",
+                "english_vocab",
+                "--set",
+                "llm.enabled=false",
+                "--set",
+                "dictionary.provider=authored",
+                "--set",
+                "images.search_when_missing=false",
+                "--set",
+                "anki.endpoint=http://127.0.0.1:1",
+            ])
+            .arg("--set")
+            .arg(format!("storage.state_dir={}", root.display()))
+            .arg("--set")
+            .arg(format!("selection.max_notes={limit}"))
+            .args(["vocab", "revamp", "--note-id", ids[0], "--note-id", ids[1]])
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains(expected),
+            "{out:?}"
+        );
         assert!(!root.exists());
     }
 }

@@ -312,11 +312,66 @@ pub fn publish_capture_draft(
     purpose: &str,
     environment: &BTreeMap<String, String>,
 ) -> Result<crate::Prepared, String> {
+    publish_capture_drafts(
+        std::slice::from_ref(capture),
+        settings,
+        purpose,
+        environment,
+    )?
+    .into_iter()
+    .next()
+    .ok_or_else(|| "REVAMP_CAPTURE_MISSING".into())
+}
+
+/// Validate every source before creating state and publish the batch as one revision.
+pub fn publish_capture_drafts(
+    captures: &[RevampCapture],
+    settings: &Effective,
+    purpose: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<Vec<crate::Prepared>, String> {
+    if captures.is_empty() {
+        return Err("REVAMP_CAPTURE_MISSING".into());
+    }
+    let registry = linguist_config::Registry::builtin();
+    for key in ["selection.max_notes", "input.max_file_mb"] {
+        registry.validate_value(
+            key,
+            settings.values.get(key).ok_or("REVAMP_SETTING_MISSING")?,
+        )?;
+    }
+    if captures.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap() {
+        return Err("REVAMP_SELECTION_LIMIT".into());
+    }
+    let limit = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
+    let mut total = 0u64;
+    for bytes in captures
+        .iter()
+        .flat_map(|capture| capture.captured.assets.values())
+    {
+        total = total
+            .checked_add(bytes.len() as u64)
+            .ok_or("REVAMP_BATCH_ARCHIVE_LIMIT")?;
+        if total > limit {
+            return Err("REVAMP_BATCH_ARCHIVE_LIMIT".into());
+        }
+    }
+    let mut ids = std::collections::BTreeSet::new();
+    for capture in captures {
+        if !ids.insert(&capture.captured.source.location) {
+            return Err("REVAMP_SELECTION_DUPLICATE".into());
+        }
+    }
     let frozen = crate::freeze_settings(settings, environment)?;
-    let document = stage_document(capture, settings, purpose)?;
-    let input_digest = document.semantic_digest().map_err(|e| e.to_string())?;
-    let source_digest =
-        canonical::digest("source-capture", &document.sources).map_err(|e| e.to_string())?;
+    let documents = captures
+        .iter()
+        .map(|capture| stage_document(capture, settings, purpose))
+        .collect::<Result<Vec<_>, _>>()?;
+    let sources: Vec<_> = documents
+        .iter()
+        .flat_map(|document| &document.sources)
+        .collect();
+    let source_digest = canonical::digest("source-capture", &sources).map_err(|e| e.to_string())?;
     let plan = linguist_core::records::PlanRevision {
         schema_version: 2,
         id: uuid::Uuid::new_v4(),
@@ -325,7 +380,7 @@ pub fn publish_capture_draft(
         settings: frozen,
         binding: None,
         source_digest,
-        documents: vec![document],
+        documents,
         rendered: vec![],
         review_decisions: vec![],
     };
@@ -335,25 +390,31 @@ pub fn publish_capture_draft(
             .ok_or("REVAMP_STATE_PATH_MISSING")?,
     );
     let mut store = linguist_store::Store::open(root)?;
-    for (expected, bytes) in &capture.captured.assets {
+    for (expected, bytes) in captures.iter().flat_map(|capture| &capture.captured.assets) {
         if store.publish_asset(bytes, 100 * 1024 * 1024)? != *expected {
             return Err("REVAMP_CAPTURE_ASSET_CONFLICT".into());
         }
     }
     let digest = store.publish_revision(&plan)?;
-    Ok(crate::Prepared {
-        document_id: plan.documents[0].id,
-        input_digest,
-        schema_version: 2,
-        plan_id: plan.id,
-        revision: 1,
-        digest,
-        ready: false,
-        issues: plan.documents[0].issues.clone(),
-        original_input_digest: capture.captured.source.digest.clone(),
-        apply_eligible: false,
-        duplicate_check_performed: false,
-    })
+    plan.documents
+        .iter()
+        .zip(captures)
+        .map(|(document, capture)| {
+            Ok(crate::Prepared {
+                document_id: document.id,
+                input_digest: document.semantic_digest().map_err(|e| e.to_string())?,
+                schema_version: 2,
+                plan_id: plan.id,
+                revision: 1,
+                digest: digest.clone(),
+                ready: false,
+                issues: document.issues.clone(),
+                original_input_digest: capture.captured.source.digest.clone(),
+                apply_eligible: false,
+                duplicate_check_performed: false,
+            })
+        })
+        .collect()
 }
 
 /// Initial CLI preparation path. Explicitly selected unavailable enrichment never gets skipped.
@@ -364,6 +425,25 @@ pub fn prepare_source_revamp(
     note_id: &str,
     environment: &BTreeMap<String, String>,
 ) -> Result<crate::Prepared, String> {
+    prepare_source_revamps(
+        client,
+        settings,
+        purpose,
+        &[note_id.to_owned()],
+        environment,
+    )?
+    .into_iter()
+    .next()
+    .ok_or_else(|| "REVAMP_CAPTURE_MISSING".into())
+}
+
+pub fn prepare_source_revamps(
+    client: &linguist_anki::Client,
+    settings: &Effective,
+    purpose: &str,
+    note_ids: &[String],
+    environment: &BTreeMap<String, String>,
+) -> Result<Vec<crate::Prepared>, String> {
     crate::authored_capabilities(settings)?;
     if settings.values["dictionary.provider"] != "authored" {
         return Err("CAPABILITY_UNAVAILABLE: revamp dictionary integration is pending; select dictionary.provider=authored for a source draft".into());
@@ -372,6 +452,43 @@ pub fn prepare_source_revamp(
         return Err("CAPABILITY_UNAVAILABLE: revamp kanji enrichment is pending; select kanji.enabled=false for a source draft".into());
     }
     crate::freeze_settings(settings, environment)?;
-    let capture = crate::source_archive::capture_for_revamp(client, settings, purpose, note_id)?;
-    publish_capture_draft(&capture, settings, purpose, environment)
+    let registry = linguist_config::Registry::builtin();
+    for key in ["selection.order", "selection.max_notes"] {
+        registry.validate_value(
+            key,
+            settings.values.get(key).ok_or("REVAMP_SETTING_MISSING")?,
+        )?;
+    }
+    if note_ids.is_empty()
+        || note_ids.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap()
+    {
+        return Err("REVAMP_SELECTION_LIMIT".into());
+    }
+    let mut selection = note_ids.to_vec();
+    let mut unique = std::collections::BTreeSet::new();
+    for id in &selection {
+        linguist_anki::wire_id(&json!(id))?;
+        if !unique.insert(id) {
+            return Err("REVAMP_SELECTION_DUPLICATE".into());
+        }
+    }
+    if settings.values["selection.order"] == "note_id" {
+        selection.sort_by_key(|id| id.parse::<u64>().unwrap());
+    }
+    let mut captures = Vec::new();
+    let mut total = 0u64;
+    let limit = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
+    for id in &selection {
+        let capture = crate::source_archive::capture_for_revamp(client, settings, purpose, id)?;
+        for bytes in capture.captured.assets.values() {
+            total = total
+                .checked_add(bytes.len() as u64)
+                .ok_or("REVAMP_BATCH_ARCHIVE_LIMIT")?;
+        }
+        if total > limit {
+            return Err("REVAMP_BATCH_ARCHIVE_LIMIT".into());
+        }
+        captures.push(capture);
+    }
+    publish_capture_drafts(&captures, settings, purpose, environment)
 }

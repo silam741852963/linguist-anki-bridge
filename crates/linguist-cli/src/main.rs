@@ -87,10 +87,10 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum PrepareCommand {
-    /// Capture one existing note into a local review-required source draft; never applies.
+    /// Capture explicit existing notes into one review-required source draft; never applies.
     Revamp {
-        #[arg(long)]
-        note_id: String,
+        #[arg(long = "note-id", required = true)]
+        note_ids: Vec<String>,
     },
     /// Prepare one version-2 structured JSON record, from a file or piped stdin.
     Add {
@@ -378,10 +378,10 @@ fn run(cli: Cli) -> Result<u8, String> {
             Ok(if result.ready { 0 } else { 4 })
         }
         Command::Vocab {
-            command: PrepareCommand::Revamp { note_id },
+            command: PrepareCommand::Revamp { note_ids },
         }
         | Command::Grammar {
-            command: PrepareCommand::Revamp { note_id },
+            command: PrepareCommand::Revamp { note_ids },
         } => {
             let purpose = cli
                 .purpose
@@ -395,15 +395,22 @@ fn run(cli: Cli) -> Result<u8, String> {
             if !correct_kind {
                 return Err("REVAMP_PURPOSE_KIND_INVALID".into());
             }
-            linguist_anki::wire_id(&serde_json::json!(note_id))?;
+            for id in &note_ids {
+                linguist_anki::wire_id(&serde_json::json!(id))?;
+            }
             let client = anki_client(&settings)?;
-            let result = linguist_application::revamp::prepare_source_revamp(
+            let results = linguist_application::revamp::prepare_source_revamps(
                 &client,
                 &settings,
                 purpose,
-                &note_id,
+                &note_ids,
                 &std::env::vars().collect(),
             )?;
+            let result = if results.len() == 1 {
+                serde_json::to_value(&results[0]).map_err(|e| e.to_string())?
+            } else {
+                serde_json::json!({"items":results,"item_count":results.len()})
+            };
             emit(
                 &serde_json::json!({"preparation_stage":"source_draft","result":result,"enrichment_completed":false,"collection_writes_enabled":false}),
             )?;

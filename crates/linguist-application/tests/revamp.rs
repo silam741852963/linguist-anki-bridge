@@ -8,14 +8,23 @@ fn setup(
     values: &[(&str, &str)],
     mapping: &[(&str, &str)],
 ) -> (RevampCapture, Effective) {
+    setup_id("123", purpose, values, mapping)
+}
+fn setup_id(
+    note_id: &str,
+    purpose: &str,
+    values: &[(&str, &str)],
+    mapping: &[(&str, &str)],
+) -> (RevampCapture, Effective) {
+    let card_id = (note_id.parse::<u64>().unwrap() + 333).to_string();
     let fields = values
         .iter()
         .enumerate()
         .map(|(index, (name, value))| ((*name).to_owned(), json!({"value":value,"order":index})))
         .collect::<BTreeMap<_, _>>();
-    let note = json!({"noteId":"123","modelName":"Legacy","fields":fields,"cards":["456"],"tags":["preserved"]});
+    let note = json!({"noteId":note_id,"modelName":"Legacy","fields":fields,"cards":[card_id],"tags":["preserved"]});
     let model = json!({"model":{"name":"Legacy","id":"12"},"fields":values.iter().map(|(name,_)|name).collect::<Vec<_>>(),"templates":{"Card":{"Front":"front","Back":"back"}},"css":"style"});
-    let cards = json!([{"cardId":"456","note":"123","reps":5}]);
+    let cards = json!([{"cardId":card_id,"note":note_id,"reps":5}]);
     let captured = archive_read_capture(
         &serde_json::to_vec(&note).unwrap(),
         &serde_json::to_vec(&model).unwrap(),
@@ -221,6 +230,127 @@ fn invalid_capture_cannot_initialize_draft_state() {
         .remove(&capture.captured.source.model_manifest);
     let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-revamp-home".into())]);
     assert!(publish_capture_draft(&capture, &settings, "english_vocab", &environment).is_err());
+    assert!(!root.exists());
+}
+
+#[test]
+fn batch_capture_publishes_one_revision_and_recovers_every_source_asset() {
+    let (first, mut settings) = setup_id(
+        "124",
+        "english_vocab",
+        &[("Word", "dog")],
+        &[("expression", "Word")],
+    );
+    let (second, _) = setup_id(
+        "123",
+        "english_vocab",
+        &[("Word", "cat")],
+        &[("expression", "Word")],
+    );
+    let captures = [first, second];
+    let root = std::env::temp_dir().join(format!("lab-revamp-batch-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-revamp-home".into())]);
+    let results =
+        publish_capture_drafts(&captures, &settings, "english_vocab", &environment).unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].plan_id, results[1].plan_id);
+    assert_eq!(results[0].digest, results[1].digest);
+    assert_ne!(results[0].document_id, results[1].document_id);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan = store.revision(results[0].plan_id, 1).unwrap();
+    assert_eq!(plan.documents.len(), 2);
+    for (index, word) in ["dog", "cat"].iter().enumerate() {
+        assert_eq!(plan.documents[index].sources[0].fields["Word"], *word);
+        assert_eq!(plan.documents[index].id, results[index].document_id);
+        assert!(!results[index].ready && !results[index].apply_eligible);
+        for (digest, bytes) in &captures[index].captured.assets {
+            assert_eq!(store.asset(digest, 100000).unwrap(), *bytes);
+        }
+    }
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn batch_limit_duplicate_or_invalid_later_source_leaves_no_state() {
+    let (first, mut settings) = setup_id(
+        "123",
+        "english_vocab",
+        &[("Word", "cat")],
+        &[("expression", "Word")],
+    );
+    let (mut second, _) = setup_id(
+        "124",
+        "english_vocab",
+        &[("Word", "dog")],
+        &[("expression", "Word")],
+    );
+    let root =
+        std::env::temp_dir().join(format!("lab-revamp-batch-reject-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-revamp-home".into())]);
+    second.captured.assets.clear();
+    let captures = [first, second];
+    assert!(publish_capture_drafts(&captures, &settings, "english_vocab", &environment).is_err());
+    assert!(!root.exists());
+    settings
+        .values
+        .insert("selection.max_notes".into(), json!(1));
+    assert_eq!(
+        publish_capture_drafts(&captures, &settings, "english_vocab", &environment).unwrap_err(),
+        "REVAMP_SELECTION_LIMIT"
+    );
+    assert!(!root.exists());
+    settings
+        .values
+        .insert("selection.max_notes".into(), json!(2));
+    let (same, _) = setup_id(
+        "123",
+        "english_vocab",
+        &[("Word", "duplicate")],
+        &[("expression", "Word")],
+    );
+    assert_eq!(
+        publish_capture_drafts(
+            &[captures.into_iter().next().unwrap(), same],
+            &settings,
+            "english_vocab",
+            &environment
+        )
+        .unwrap_err(),
+        "REVAMP_SELECTION_DUPLICATE"
+    );
+    assert!(!root.exists());
+}
+
+#[test]
+fn aggregate_capture_archive_limit_fails_before_state_creation() {
+    let (mut capture, mut settings) = setup(
+        "english_vocab",
+        &[("Word", "cat")],
+        &[("expression", "Word")],
+    );
+    let root =
+        std::env::temp_dir().join(format!("lab-revamp-batch-bytes-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    settings.values.insert("input.max_file_mb".into(), json!(1));
+    let bytes = vec![b'x'; 1024 * 1024];
+    capture
+        .captured
+        .assets
+        .insert(linguist_core::canonical::asset_digest(&bytes), bytes);
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-revamp-home".into())]);
+    assert_eq!(
+        publish_capture_drafts(&[capture], &settings, "english_vocab", &environment).unwrap_err(),
+        "REVAMP_BATCH_ARCHIVE_LIMIT"
+    );
     assert!(!root.exists());
 }
 
