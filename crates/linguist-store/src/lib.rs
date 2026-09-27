@@ -9,7 +9,7 @@ use std::{
 };
 pub type Result<T> = std::result::Result<T, String>;
 const APPLICATION_ID: i64 = 0x4c414232;
-const SCHEMA: i64 = 6;
+const SCHEMA: i64 = 7;
 fn sql(e: rusqlite::Error) -> String {
     format!("STORE_SQL: {e}")
 }
@@ -129,20 +129,34 @@ impl Store {
     }
     /// Opens or creates a private local store. Read-only CLI handlers must check existence first.
     pub fn open(root: &Path) -> Result<Self> {
+        Self::open_inner(root, true)
+    }
+    /// Upgrade/open existing state without creating a missing database.
+    pub fn open_existing(root: &Path) -> Result<Self> {
+        Self::open_inner(root, false)
+    }
+    fn open_inner(root: &Path, allow_create: bool) -> Result<Self> {
         if !root.is_absolute() {
             return Err("STORE_PATH_MUST_BE_ABSOLUTE".into());
+        }
+        if !allow_create {
+            std::fs::symlink_metadata(root).map_err(|_| "STORE_NOT_FOUND")?;
         }
         private_directory(root)?;
         check_filesystem(root)?;
         let db = root.join("state.sqlite3");
-        let new = match private_options().open(&db) {
-            Ok(f) => {
-                f.sync_all().map_err(|_| "STORE_CREATE_SYNC")?;
-                sync_dir(root)?;
-                true
+        let new = if !allow_create {
+            false
+        } else {
+            match private_options().open(&db) {
+                Ok(f) => {
+                    f.sync_all().map_err(|_| "STORE_CREATE_SYNC")?;
+                    sync_dir(root)?;
+                    true
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+                Err(_) => return Err("STORE_CREATE_IO".into()),
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
-            Err(_) => return Err("STORE_CREATE_IO".into()),
         };
         let meta = std::fs::symlink_metadata(&db).map_err(|_| "STORE_DATABASE_IO")?;
         if !meta.is_file() || meta.is_symlink() {
@@ -221,7 +235,11 @@ impl Store {
             if version < 5 {
                 tx.execute_batch(approval::SCHEMA_SQL).map_err(sql)?;
             }
-            tx.execute_batch(preparation::SCHEMA_SQL).map_err(sql)?;
+            if version < 6 {
+                tx.execute_batch(preparation::SCHEMA_SQL).map_err(sql)?;
+            }
+            tx.execute_batch(preparation_control::SCHEMA_SQL)
+                .map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
                 .map_err(sql)?;
             tx.commit().map_err(sql)?;
@@ -237,6 +255,8 @@ impl Store {
             tx.execute_batch(validation::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(approval::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(preparation::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(preparation_control::SCHEMA_SQL)
+                .map_err(sql)?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)
                 .map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
@@ -363,6 +383,9 @@ impl Store {
             .map_err(sql)?;
         if let Some(worker) = worker {
             lease::validate_job_worker_token(&tx, worker, plan.id)?;
+            if preparation_control::stops_dispatch(&tx, plan.id)? {
+                return Err("PREPARATION_CONTROL_BLOCKS_PUBLICATION".into());
+            }
         }
         let previous: Option<(u32, String)> = tx
             .query_row(
@@ -550,3 +573,4 @@ pub mod validation;
 
 pub mod approval;
 pub mod preparation;
+pub mod preparation_control;

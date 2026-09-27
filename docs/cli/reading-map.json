@@ -630,7 +630,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-39 \u2014 `jobs run JOB`",
       "title": "OP-39 \u2014 `jobs run JOB`",
-      "words": 611,
+      "words": 673,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -646,7 +646,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-40 \u2014 `jobs pause JOB`",
       "title": "OP-40 \u2014 `jobs pause JOB`",
-      "words": 62,
+      "words": 147,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -656,7 +656,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-41 \u2014 `jobs resume JOB`",
       "title": "OP-41 \u2014 `jobs resume JOB`",
-      "words": 67,
+      "words": 123,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -687,7 +687,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-43 \u2014 `jobs cancel JOB`",
       "title": "OP-43 \u2014 `jobs cancel JOB`",
-      "words": 59,
+      "words": 108,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -733,7 +733,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-47 \u2014 `jobs migrate`",
       "title": "OP-47 \u2014 `jobs migrate`",
-      "words": 66,
+      "words": 133,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"

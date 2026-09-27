@@ -6,6 +6,132 @@ fn cli() -> Command {
     c
 }
 #[test]
+fn queued_job_controls_resume_cancel_and_explicit_migration_preserve_state() {
+    let root = std::env::temp_dir().join(format!("lab-controls-cli-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.display());
+    let absent = cli()
+        .args(["--set", &state, "jobs", "migrate"])
+        .output()
+        .unwrap();
+    assert!(!absent.status.success());
+    assert!(!root.exists());
+    std::fs::create_dir(&root).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let empty = cli()
+        .args(["--set", &state, "jobs", "migrate"])
+        .output()
+        .unwrap();
+    assert!(!empty.status.success());
+    assert!(!root.join("state.sqlite3").exists());
+    std::fs::remove_dir(&root).unwrap();
+    let created = cli()
+        .args([
+            "--purpose",
+            "english_vocab",
+            "--set",
+            &state,
+            "--set",
+            "anki.endpoint=http://127.0.0.1:1",
+            "--set",
+            "llm.enabled=false",
+            "--set",
+            "dictionary.provider=authored",
+            "--set",
+            "images.search_when_missing=false",
+            "--set",
+            "audio.provider=disabled",
+            "jobs",
+            "create",
+            "--note-id",
+            "123",
+        ])
+        .output()
+        .unwrap();
+    assert!(created.status.success(), "{created:?}");
+    let created: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    let id = created["job_id"].as_str().unwrap();
+    let db = rusqlite::Connection::open(root.join("state.sqlite3")).unwrap();
+    db.execute_batch("DROP TABLE preparation_controls;PRAGMA user_version=6;")
+        .unwrap();
+    drop(db);
+    let migrated = cli()
+        .args(["--set", &state, "jobs", "migrate"])
+        .output()
+        .unwrap();
+    assert!(migrated.status.success(), "{migrated:?}");
+    let mut pause_digest = None;
+    for _ in 0..2 {
+        let pause = cli()
+            .args(["--set", &state, "jobs", "pause", id])
+            .output()
+            .unwrap();
+        assert!(pause.status.success());
+        let pause: serde_json::Value = serde_json::from_slice(&pause.stdout).unwrap();
+        assert_eq!(pause["worker_stopped_confirmed"], false);
+        if let Some(digest) = &pause_digest {
+            assert_eq!(&pause["control"]["digest"], digest);
+        }
+        pause_digest = Some(pause["control"]["digest"].clone());
+    }
+    let paused = cli()
+        .args(["--set", &state, "jobs", "run", id])
+        .output()
+        .unwrap();
+    assert!(paused.status.success(), "{paused:?}");
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    assert!(
+        store
+            .preparation_events(id.parse().unwrap(), 0, 10)
+            .unwrap()
+            .is_empty()
+    );
+    let resumed = cli()
+        .args(["--set", &state, "jobs", "resume", id])
+        .output()
+        .unwrap();
+    assert_eq!(resumed.status.code(), Some(3), "{resumed:?}");
+    let resumed: serde_json::Value = serde_json::from_slice(&resumed.stdout).unwrap();
+    assert_eq!(resumed["control"]["event"]["action"], "resume");
+    let cancel = cli()
+        .args(["--set", &state, "jobs", "cancel", id])
+        .output()
+        .unwrap();
+    assert!(cancel.status.success());
+    let rejected = cli()
+        .args(["--set", &state, "jobs", "resume", id])
+        .output()
+        .unwrap();
+    assert_eq!(rejected.status.code(), Some(5));
+    let cancelled_run = cli()
+        .args(["--set", &state, "jobs", "run", id])
+        .output()
+        .unwrap();
+    assert_eq!(cancelled_run.status.code(), Some(3));
+    let events = store
+        .preparation_events(id.parse().unwrap(), 0, 10)
+        .unwrap();
+    assert_eq!(events.len(), 2);
+    assert!(
+        !store
+            .preparation_job(id.parse().unwrap())
+            .unwrap()
+            .job
+            .pause_requested
+    );
+    assert!(std::fs::read_dir(&root).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".schema-v6-")
+    }));
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn preparation_query_and_deck_jobs_freeze_matches_without_content_reads() {
     use std::io::{BufRead, Read, Write};
     for (kind, mode, limit, max, success, selected_count) in [
@@ -189,7 +315,13 @@ fn preparation_query_and_deck_jobs_freeze_matches_without_content_reads() {
 #[test]
 fn preparation_concurrency_is_frozen_bounded_and_stop_drains_dispatched_items() {
     use std::io::{BufRead, Read, Write};
-    for (workers, policy, dispatched) in [(1, "stop", 1), (2, "stop", 2), (2, "continue", 5)] {
+    for (workers, policy, dispatched) in [
+        (1, "stop", 1),
+        (2, "stop", 2),
+        (2, "continue", 5),
+        (2, "pause", 2),
+        (2, "cancel", 2),
+    ] {
         let root = std::env::temp_dir().join(format!("lab-parallel-cli-{}", uuid::Uuid::new_v4()));
         let state = format!("storage.state_dir={}", root.display());
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -214,7 +346,14 @@ fn preparation_concurrency_is_frozen_bounded_and_stop_drains_dispatched_items() 
                 "--set",
                 &format!("jobs.prepare_workers={workers}"),
                 "--set",
-                &format!("jobs.on_item_error={policy}"),
+                &format!(
+                    "jobs.on_item_error={}",
+                    if matches!(policy, "pause" | "cancel") {
+                        "continue"
+                    } else {
+                        policy
+                    }
+                ),
                 "--set",
                 "jobs.lease_seconds=10",
                 "--set",
@@ -327,6 +466,22 @@ fn preparation_concurrency_is_frozen_bounded_and_stop_drains_dispatched_items() 
                         std::thread::sleep(std::time::Duration::from_millis(5));
                     }
                 }
+                if matches!(policy, "pause" | "cancel") {
+                    let result = cli()
+                        .args([
+                            "--set",
+                            &format!("storage.state_dir={}", state_root.display()),
+                            "jobs",
+                            policy,
+                            &job.to_string(),
+                        ])
+                        .output()
+                        .unwrap();
+                    assert!(result.status.success(), "{result:?}");
+                    let result: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+                    assert_eq!(result["worker_stopped_confirmed"], false);
+                    assert_eq!(result["control"]["event"]["action"], policy);
+                }
                 for mut stream in streams {
                     write!(stream, "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
                 }
@@ -352,6 +507,9 @@ fn preparation_concurrency_is_frozen_bounded_and_stop_drains_dispatched_items() 
         let run: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
         assert_eq!(run["failed_this_run"], dispatched);
         assert_eq!(run["plan_published"], false);
+        if matches!(policy, "pause" | "cancel") {
+            assert_eq!(run["control"]["event"]["action"], policy);
+        }
         let store = linguist_store::Store::read_only(&root).unwrap();
         let items = store.preparation_items(job, 0, 10).unwrap();
         assert_eq!(

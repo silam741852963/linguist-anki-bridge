@@ -117,7 +117,13 @@ invocation, checkpoint digest and optional plan receipt, `ready=false` and
 Aggregate item/error counts include earlier checkpoints, not just this invocation.
 Review-required drafts exit 4; persisted dependency failures exit 3 and other read
 execution failures exit 6. Exhausted failures never turn into exit 0 on a no-dispatch rerun.
-Pause/cancel, interrupted-item reconciliation, provider pacing, enrichment and
+Durable pause/cancel requests now prevent new dispatch. Workers poll at frozen
+`jobs.pause_poll_ms` while waiting for results, renew at the heartbeat interval,
+and record every already-dispatched outcome before returning. Dispatch checks the
+latest request inside its checkpoint transaction, including a request arriving
+between the coordinator check and dispatch. Pause/cancel also blocks new plan
+publication inside its transaction; captured results remain retained. Confirmed
+worker-stop acknowledgements, interrupted-item reconciliation, provider pacing, enrichment and
 partial batch plan publication remain pending.
 
 Inputs: Optional --apply for apply mode; execution limits.
@@ -132,6 +138,15 @@ Result/failure: Apply mode without --apply does not run mutation; actionable aut
 
 ## OP-40 — `jobs pause JOB`
 
+Current prepare-mode behavior: require an existing job, append a digest-linked
+pause request to schema-seven control history, and return its receipt. Repeating
+the current action reuses that receipt without another event. Do not change the
+immutable definition's initial flags or item outcomes. `jobs show` includes the
+current request separately. Return `worker_stopped_confirmed=false`; this handler
+does not infer liveness, wait for drain, or claim a confirmed paused state.
+Requests are serialized in an immediate transaction. Unknown jobs/absent state
+never create storage. Cancel is terminal; subsequent pause/resume requests fail.
+
 Inputs: Job ID.
 
 Effects: Local control request.
@@ -143,6 +158,12 @@ Effects: Local control request.
 Result/failure: Idempotent control receipt. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
 ## OP-41 — `jobs resume JOB`
+
+Current prepare-mode behavior: append/reuse a resume request, then invoke the same
+worker as `jobs run` with immutable inputs/settings. The current request is saved
+even if execution later fails capability checks or lease contention. Resume does
+not reclaim a live worker, reset interrupted items, regenerate captured documents,
+or clear failure/attempt history. Cancelled jobs cannot resume (exit 5).
 
 Inputs: Job ID; --apply required each apply invocation.
 
@@ -167,6 +188,12 @@ Effects: Local new attempts; mode-dependent effects.
 Result/failure: Exhausted/noneligible reasons, not blanket retry. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
 ## OP-43 — `jobs cancel JOB`
+
+Current prepare-mode behavior: append/reuse a terminal cancel request. Prevent new
+dispatch and plan publication; dispatched reads can still checkpoint their result.
+Keep original assets, captures, errors and earlier plans. Return a request receipt
+with `worker_stopped_confirmed=false`. Nothing is deleted or rolled back. Durable
+stop acknowledgement and native-mutation cancellation remain pending.
 
 Inputs: Job ID.
 
@@ -215,6 +242,13 @@ Result/failure: Audit issues and recover inspect command. The shared wrapper sup
 
 ## OP-47 — `jobs migrate`
 
+Current behavior upgrades an existing local state database to schema seven; it
+does not import legacy job files. Refuse absent state rather than initialize it.
+Use the standard verified private backup before upgrade, preserve definitions,
+checkpoints and revisions, and add append-only control storage. Current-schema
+state is a no-op. Read-only job commands never upgrade: existing schema-six users
+run `jobs migrate` explicitly before reading/running controls. No Anki calls occur.
+
 Inputs: Legacy job files and output.
 
 Effects: Local candidate state only.
@@ -227,8 +261,8 @@ Result/failure: Migration report with unsupported/ambiguous records; no resumed 
 
 ## Current preparation queue commands
 
-OP-35 supports `jobs create --note-id ID [--note-id ID...]` with a required global `--purpose` for one of the four vocabulary/grammar purposes. It accepts only existing-note preparation input at this stage. Validate canonical note IDs, reject duplicates/count exceedance, freeze configured selection order and all settings/paths, allocate ordered item UUIDs and persist an immutable definition. It reads no Anki note, starts no worker and creates no plan. Default enabled enrichment may be queued; worker capability checks remain pending and creation does not claim execution availability.
+OP-35 supports explicit note IDs or query/deck selectors, with a required global `--purpose` for one of the four vocabulary/grammar purposes. It accepts existing-note preparation input. Validate canonical note IDs and selection limits, freeze configured order/settings/paths, allocate ordered item UUIDs and persist an immutable definition. Query/deck creation freezes matches with profile checks; it reads no note content, starts no worker and creates no plan. Default enrichment may be queued; worker capability checks reject unavailable adapters when run.
 
 OP-36 supports `jobs list [--after JOB_UUID] [--limit N]`. OP-37 supports `jobs show JOB_UUID`, exposing the immutable definition and explicitly unverified worker liveness. OP-38 supports `jobs items JOB_UUID [--after-index N] [--limit N]`, returning latest durable item summaries in original input order, including implicit pending items. Summaries include attempt, checkpoint sequence/digest, captured document ID if any, stable error code and bounded retry eligibility. Captured-asset references are verified before reporting captured summaries. A retry flag is classification metadata, not permission to dispatch work.
 
-List/item pages use configured `output.page_size` unless `--limit` overrides it, with a 1–10,000 limit. List cursors are exclusive job UUIDs; item cursors are zero-based positions at which to resume. Responses provide `next_cursor` or `next_index`; an empty subsequent page terminates traversal. Reading absent state returns an empty list without creating directories; show/items require an existing job. Commands read only existing state, send no provider/Anki calls and do not claim worker death or recovery. Query/deck job creation, status/mode filters, history selection, worker execution/control and simulate/apply modes remain pending.
+List/item pages use configured `output.page_size` unless `--limit` overrides it, with a 1–10,000 limit. List cursors are exclusive job UUIDs; item cursors are zero-based positions at which to resume. Responses provide `next_cursor` or `next_index`; an empty subsequent page terminates traversal. Reading absent state returns an empty list without creating directories; show/items require an existing job. Inspection reads only existing state, sends no provider/Anki calls and does not claim worker death or recovery. Status/mode filters, history selection, durable stop acknowledgement and simulate/apply modes remain pending.

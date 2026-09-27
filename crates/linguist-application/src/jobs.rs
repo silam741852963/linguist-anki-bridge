@@ -28,6 +28,7 @@ pub fn run(
         "jobs.heartbeat_seconds",
         "jobs.on_item_error",
         "jobs.prepare_workers",
+        "jobs.pause_poll_ms",
     ] {
         registry.validate_value(key, settings.values.get(key).ok_or("JOB_SETTING_MISSING")?)?;
     }
@@ -37,7 +38,7 @@ pub fn run(
         return Err("JOB_HEARTBEAT_INTERVAL_INVALID".into());
     }
     let client = linguist_anki::Client::from_settings(&settings, environment)?;
-    let mut store = linguist_store::Store::open(root)?;
+    let mut store = linguist_store::Store::open_existing(root)?;
     let lease = store.acquire_lease(&linguist_store::lease::Resource::JobWorker(job), seconds)?;
     let result = (|| {
         let mut head = store.preparation_head(job)?.map(|receipt| receipt.digest);
@@ -58,22 +59,37 @@ pub fn run(
             }
         }
         let workers = settings.values["jobs.prepare_workers"].as_u64().unwrap() as usize;
+        let poll = std::time::Duration::from_millis(
+            settings.values["jobs.pause_poll_ms"].as_u64().unwrap(),
+        );
+        let heartbeat_interval = std::time::Duration::from_secs(heartbeat);
         for wave in eligible.chunks(workers) {
+            if store.preparation_control(job)?.is_some_and(|receipt| {
+                receipt.event.action != linguist_store::preparation_control::ControlAction::Resume
+            }) {
+                break;
+            }
             let stop = std::thread::scope(|scope| -> Result<bool, String> {
                 // Capacity covers the entire wave, so fencing errors cannot strand senders.
                 let (sender, receiver) = std::sync::mpsc::sync_channel(wave.len());
+                let mut dispatched = 0;
                 for item in wave {
                     store.renew_lease(&lease, seconds)?;
                     let attempt = item.attempt + 1;
-                    let started = store.append_preparation_event_with_lease(
+                    let started = match store.append_preparation_event_with_lease(
                         job,
                         item.item_id,
                         attempt,
                         PreparationStage::Started,
                         head.as_deref(),
                         &lease,
-                    )?;
+                    ) {
+                        Ok(started) => started,
+                        Err(error) if error == "PREPARATION_CONTROL_BLOCKS_DISPATCH" => break,
+                        Err(error) => return Err(error),
+                    };
                     head = Some(started.digest);
+                    dispatched += 1;
                     let client = &client;
                     let settings = &settings;
                     let purpose = &definition.selection.purpose;
@@ -94,18 +110,24 @@ pub fn run(
                     });
                 }
                 drop(sender);
-                let mut stop = false;
-                for _ in wave {
+                let mut stop = dispatched < wave.len();
+                let mut renewed = std::time::Instant::now();
+                for _ in 0..dispatched {
                     let (item_id, attempt, prepared) = loop {
-                        match receiver.recv_timeout(std::time::Duration::from_secs(heartbeat)) {
+                        match receiver.recv_timeout(poll.min(heartbeat_interval)) {
                             Ok(result) => break result,
                             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                                store.renew_lease(&lease, seconds)?
+                                if renewed.elapsed() >= heartbeat_interval {
+                                    store.renew_lease(&lease, seconds)?;
+                                    renewed = std::time::Instant::now();
+                                }
+                                stop |= store.preparation_control(job)?.is_some_and(|receipt| receipt.event.action != linguist_store::preparation_control::ControlAction::Resume);
                             }
                             Err(_) => return Err("SOURCE_CAPTURE_WORKER_DISCONNECTED".into()),
                         }
                     };
                     store.renew_lease(&lease, seconds)?;
+                    renewed = std::time::Instant::now();
                     let prepared = prepared.and_then(|(document, assets)| {
                         for (digest, bytes) in assets {
                             if store.publish_asset(
@@ -170,7 +192,19 @@ pub fn run(
             }
         }
         store.renew_lease(&lease, seconds)?;
-        let plan = store.publish_preparation_plan(job, head.as_deref(), &lease)?;
+        let control = store.preparation_control(job)?;
+        let halted = control.as_ref().is_some_and(|receipt| {
+            receipt.event.action != linguist_store::preparation_control::ControlAction::Resume
+        });
+        let plan = if halted {
+            None
+        } else {
+            match store.publish_preparation_plan(job, head.as_deref(), &lease) {
+                Err(error) if error == "PREPARATION_CONTROL_BLOCKS_PUBLICATION" => None,
+                other => other?,
+            }
+        };
+        let control = store.preparation_control(job)?;
         let mut counts = BTreeMap::<String, u32>::new();
         let mut errors = BTreeMap::<String, u32>::new();
         for offset in (0..definition.job.item_ids.len()).step_by(1000) {
@@ -197,7 +231,7 @@ pub fn run(
             0
         };
         Ok(
-            serde_json::json!({"schema_version":2,"job_id":job,"stage":"source_draft","captured_this_run":captured,"failed_this_run":failed,"item_counts":counts,"error_counts":errors,"exit_code":exit_code,"checkpoint_digest":head,"plan_published":plan.is_some(),"plan":plan,"ready":false,"writes_enabled":false}),
+            serde_json::json!({"schema_version":2,"job_id":job,"stage":"source_draft","captured_this_run":captured,"failed_this_run":failed,"item_counts":counts,"error_counts":errors,"control":control,"exit_code":exit_code,"checkpoint_digest":head,"plan_published":plan.is_some(),"plan":plan,"ready":false,"writes_enabled":false}),
         )
     })();
     let released = store.release_lease(&lease);

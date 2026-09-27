@@ -157,6 +157,20 @@ Next: continue job controls, provider pacing, interrupted-item recovery and enri
 
 ## Verification
 
+Schema seven adds append-only digest-linked pause/resume/cancel request history.
+`jobs pause` and `jobs cancel` are idempotent local requests; `jobs resume` records
+resume and invokes the frozen preparation worker. Requests preserve immutable
+definitions and item history; cancellation is terminal. Workers poll the frozen
+control interval, fence new dispatch and plan publication inside their SQLite
+transactions, and drain dispatched outcomes. Inspection shows requests separately
+and never claims a stopped worker. `jobs migrate` explicitly upgrades existing
+storage after a verified private backup, without Anki traffic or absent-state
+initialization. Tests cover queued pause/resume/cancel, pause/cancel during blocked
+parallel reads, no stranded started items, current-action idempotence, immutable
+history, schema-six preservation/backup integrity and historical migrations.
+Durable worker-stop acknowledgements, control audit paging and crash reconciliation
+remain pending; these requests do not certify a confirmed paused/cancelled state.
+
 `jobs create` now supports query/deck selections and explicit prefix limits in
 addition to note IDs. It freezes the complete normalized match set and selected
 subset, original selector, exact order and maximum/limit controls. Only profile

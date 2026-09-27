@@ -92,6 +92,20 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum JobCommand {
+    /// Upgrade existing local job storage after preserving a verified backup.
+    Migrate,
+    /// Request a durable pause; dispatched reads finish their accounting.
+    Pause {
+        job: uuid::Uuid,
+    },
+    /// Clear a pause request and run with the job's frozen settings.
+    Resume {
+        job: uuid::Uuid,
+    },
+    /// Prevent future dispatch; retain all checkpoints and assets.
+    Cancel {
+        job: uuid::Uuid,
+    },
     /// Capture pending sources using the job's frozen settings; never applies.
     Run {
         job: uuid::Uuid,
@@ -538,6 +552,45 @@ fn run(cli: Cli) -> Result<u8, String> {
             if !root.is_absolute() {
                 return Err("STORE_PATH_MUST_BE_ABSOLUTE".into());
             }
+            if let JobCommand::Migrate = command {
+                std::fs::symlink_metadata(&root).map_err(|_| "STORE_NOT_FOUND")?;
+                let _ = linguist_store::Store::open_existing(&root)?;
+                emit(
+                    &serde_json::json!({"schema_version":2,"state_ready":true,"writes_enabled":false}),
+                )?;
+                return Ok(0);
+            }
+            let control = match &command {
+                JobCommand::Pause { job } => Some((
+                    *job,
+                    linguist_store::preparation_control::ControlAction::Pause,
+                )),
+                JobCommand::Resume { job } => Some((
+                    *job,
+                    linguist_store::preparation_control::ControlAction::Resume,
+                )),
+                JobCommand::Cancel { job } => Some((
+                    *job,
+                    linguist_store::preparation_control::ControlAction::Cancel,
+                )),
+                _ => None,
+            };
+            if let Some((job, action)) = control {
+                // Unknown/missing jobs must never initialize state for a control request.
+                linguist_store::Store::read_only(&root)?.preparation_job(job)?;
+                let receipt = linguist_store::Store::open_existing(&root)?
+                    .request_preparation_control(job, action)?;
+                if action == linguist_store::preparation_control::ControlAction::Resume {
+                    let result = linguist_application::jobs::run(&root, job, &env)?;
+                    let exit = result["exit_code"].as_u64().ok_or("JOB_RESULT_INVALID")? as u8;
+                    emit(&result)?;
+                    return Ok(exit);
+                }
+                emit(
+                    &serde_json::json!({"schema_version":2,"job_id":job,"control":receipt,"worker_stopped_confirmed":false,"writes_enabled":false}),
+                )?;
+                return Ok(0);
+            }
             if let JobCommand::Run { job } = command {
                 let result = linguist_application::jobs::run(&root, job, &env)?;
                 let exit = result["exit_code"].as_u64().ok_or("JOB_RESULT_INVALID")? as u8;
@@ -568,7 +621,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                         .ok_or("PREPARATION_JOB_NOT_FOUND")?
                         .preparation_job(job)?;
                     emit(
-                        &serde_json::json!({"schema_version":2,"definition":definition,"worker_liveness":"unverified","execution_available":false,"writes_enabled":false}),
+                        &serde_json::json!({"schema_version":2,"definition":definition,"control":store.as_ref().unwrap().preparation_control(job)?,"worker_liveness":"unverified","execution_available":false,"writes_enabled":false}),
                     )?;
                 }
                 JobCommand::Items {
@@ -585,7 +638,12 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &serde_json::json!({"schema_version":2,"job_id":job,"items":items,"next_index":next,"worker_liveness":"unverified","execution_available":false}),
                     )?;
                 }
-                JobCommand::Create { .. } | JobCommand::Run { .. } => unreachable!(),
+                JobCommand::Create { .. }
+                | JobCommand::Run { .. }
+                | JobCommand::Pause { .. }
+                | JobCommand::Resume { .. }
+                | JobCommand::Cancel { .. }
+                | JobCommand::Migrate => unreachable!(),
             }
             Ok(0)
         }
@@ -1261,7 +1319,12 @@ fn error_exit(message: &str) -> u8 {
         7
     } else if code == "DOCUMENT_NOT_READY" {
         4
-    } else if code.contains("CONFLICT") || code == "STORAGE_RELOCATION_BLOCKED" {
+    } else if code.contains("CONFLICT")
+        || matches!(
+            code,
+            "STORAGE_RELOCATION_BLOCKED" | "PREPARATION_CANCEL_IS_TERMINAL"
+        )
+    {
         5
     } else if code.contains("UNAVAILABLE") {
         3

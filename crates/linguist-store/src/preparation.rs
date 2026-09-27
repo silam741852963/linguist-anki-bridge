@@ -596,6 +596,11 @@ impl Store {
             .map_err(sql)?;
         if let Some(worker) = worker {
             crate::lease::validate_job_worker_token(&tx, worker, job_id)?;
+            if stage == PreparationStage::Started
+                && crate::preparation_control::stops_dispatch(&tx, job_id)?
+            {
+                return Err("PREPARATION_CONTROL_BLOCKS_DISPATCH".into());
+            }
         }
         let head: Option<(u32,String)> = tx.query_row("SELECT sequence,digest FROM preparation_events WHERE job_id=?1 ORDER BY sequence DESC LIMIT 1", [job_id.to_string()], |r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(sql)?;
         if head.as_ref().map(|h| h.1.as_str()) != expected_head {

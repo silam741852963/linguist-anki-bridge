@@ -121,6 +121,161 @@ fn capture_items(store: &mut Store, definition: &PreparationDefinition) -> Strin
 }
 
 #[test]
+fn controls_are_immutable_idempotent_and_gate_dispatch_without_losing_results() {
+    use linguist_store::{lease::Resource, preparation_control::ControlAction};
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    let id = definition.job.id;
+    store.create_preparation_job(&definition).unwrap();
+    let lease = store.acquire_lease(&Resource::JobWorker(id), 60).unwrap();
+    let pause = store
+        .request_preparation_control(id, ControlAction::Pause)
+        .unwrap();
+    assert_eq!(
+        pause.digest,
+        store
+            .request_preparation_control(id, ControlAction::Pause)
+            .unwrap()
+            .digest
+    );
+    assert_eq!(
+        store
+            .append_preparation_event_with_lease(
+                id,
+                definition.job.item_ids[0],
+                1,
+                PreparationStage::Started,
+                None,
+                &lease
+            )
+            .unwrap_err(),
+        "PREPARATION_CONTROL_BLOCKS_DISPATCH"
+    );
+    let resume = store
+        .request_preparation_control(id, ControlAction::Resume)
+        .unwrap();
+    assert_eq!(
+        resume.event.parent_digest.as_deref(),
+        Some(pause.digest.as_str())
+    );
+    let started = store
+        .append_preparation_event_with_lease(
+            id,
+            definition.job.item_ids[0],
+            1,
+            PreparationStage::Started,
+            None,
+            &lease,
+        )
+        .unwrap();
+    let cancel = store
+        .request_preparation_control(id, ControlAction::Cancel)
+        .unwrap();
+    assert_eq!(
+        store
+            .request_preparation_control(id, ControlAction::Resume)
+            .unwrap_err(),
+        "PREPARATION_CANCEL_IS_TERMINAL"
+    );
+    assert_eq!(
+        store
+            .append_preparation_event_with_lease(
+                id,
+                definition.job.item_ids[1],
+                1,
+                PreparationStage::Started,
+                Some(&started.digest),
+                &lease
+            )
+            .unwrap_err(),
+        "PREPARATION_CONTROL_BLOCKS_DISPATCH"
+    );
+    store
+        .append_preparation_event_with_lease(
+            id,
+            definition.job.item_ids[0],
+            1,
+            PreparationStage::Failed {
+                code: "SOURCE_READ_TIMEOUT".into(),
+                retry_eligible: true,
+            },
+            Some(&started.digest),
+            &lease,
+        )
+        .unwrap();
+    store.release_lease(&lease).unwrap();
+    assert_eq!(store.preparation_job(id).unwrap(), definition);
+    let db = rusqlite::Connection::open(f.0.join("state.sqlite3")).unwrap();
+    assert!(
+        db.execute("UPDATE preparation_controls SET digest='changed'", [])
+            .is_err()
+    );
+    assert!(db.execute("DELETE FROM preparation_controls", []).is_err());
+    drop(db);
+    drop(store);
+    let store = Store::read_only(&f.0).unwrap();
+    assert_eq!(
+        store.preparation_control(id).unwrap().unwrap().digest,
+        cancel.digest
+    );
+    assert_eq!(
+        store.preparation_items(id, 0, 2).unwrap()[0].state,
+        "failed"
+    );
+    assert_eq!(
+        store.preparation_items(id, 0, 2).unwrap()[1].state,
+        "pending"
+    );
+}
+
+#[test]
+fn schema_six_upgrade_preserves_queued_jobs_and_backs_up_before_controls() {
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    store.create_preparation_job(&definition).unwrap();
+    drop(store);
+    let db = rusqlite::Connection::open(f.0.join("state.sqlite3")).unwrap();
+    db.execute_batch("DROP TABLE preparation_controls;PRAGMA user_version=6;")
+        .unwrap();
+    drop(db);
+    assert!(Store::read_only(&f.0).is_err());
+    let store = f.open();
+    assert_eq!(
+        store.preparation_job(definition.job.id).unwrap(),
+        definition
+    );
+    assert!(
+        store
+            .preparation_control(definition.job.id)
+            .unwrap()
+            .is_none()
+    );
+    let backup = std::fs::read_dir(&f.0)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".schema-v6-")
+        })
+        .unwrap();
+    let db = rusqlite::Connection::open(backup).unwrap();
+    assert_eq!(
+        db.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .unwrap(),
+        6
+    );
+    assert_eq!(
+        db.pragma_query_value(None, "integrity_check", |row| row.get::<_, String>(0))
+            .unwrap(),
+        "ok"
+    );
+}
+
+#[test]
 fn complete_capture_plan_reopens_idempotently_and_preserves_review_children() {
     use linguist_store::lease::Resource;
     let f = Fixture::new();
@@ -157,6 +312,32 @@ fn complete_capture_plan_reopens_idempotently_and_preserves_review_children() {
             .unwrap_err(),
         "PREPARATION_HEAD_CONFLICT"
     );
+    store
+        .request_preparation_control(
+            id,
+            linguist_store::preparation_control::ControlAction::Pause,
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .publish_preparation_plan(id, Some(&head), &lease)
+            .unwrap_err(),
+        "PREPARATION_CONTROL_BLOCKS_PUBLICATION"
+    );
+    assert!(store.list_revisions(10).unwrap().is_empty());
+    assert!(
+        store
+            .preparation_items(id, 0, 10)
+            .unwrap()
+            .iter()
+            .all(|item| item.state == "captured")
+    );
+    store
+        .request_preparation_control(
+            id,
+            linguist_store::preparation_control::ControlAction::Resume,
+        )
+        .unwrap();
     let receipt = store
         .publish_preparation_plan(id, Some(&head), &lease)
         .unwrap()
@@ -630,7 +811,7 @@ fn migration_from_schema_five_backs_up_and_preserves_old_state() {
     let f = Fixture::new();
     drop(f.open());
     let db = rusqlite::Connection::open(f.0.join("state.sqlite3")).unwrap();
-    db.execute_batch("DROP TABLE preparation_event_assets;DROP TABLE preparation_events;DROP TABLE preparation_jobs;PRAGMA user_version=5;").unwrap();
+    db.execute_batch("DROP TABLE preparation_controls;DROP TABLE preparation_event_assets;DROP TABLE preparation_events;DROP TABLE preparation_jobs;PRAGMA user_version=5;").unwrap();
     drop(db);
     let mut store = f.open();
     let definition = definition();
