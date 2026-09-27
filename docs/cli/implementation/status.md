@@ -79,6 +79,16 @@ split execution and recovery/write ordering remain pending. Tests cover the Rust
 boundary and CLI, invalid anchors, duplicate units, stale requests, forged group
 metadata, source/parent preservation and restart recovery.
 
+Typed cue/exercise repairs are now available through `plans resolve`.
+Production/Spelling cues, missing Recognition prompts and complete Application
+prompt/answer pairs are repaired only for matching requested tasks and issues.
+They preserve tasks and source archives, clear corresponding overrides, invalidate
+prior reviews and recompute validation/rendering in a new child. Empty content,
+wrong-task repairs and answer leakage are rejected. Frozen record character limits
+apply to repair content. Tests cover vocabulary and grammar, malformed repairs,
+rendered enable flags, preserved parents/restart and readiness without apply
+eligibility. Native task/history and generated/source fact reviews remain separate.
+
 ## Available foundation
 
 - Root Rust workspace: `linguist-core`, `linguist-config`, `linguist-store`, `linguist-anki`, `linguist-application`, `linguist-dictionary` and `linguist-cli`; no Qt/Python runtime dependency.

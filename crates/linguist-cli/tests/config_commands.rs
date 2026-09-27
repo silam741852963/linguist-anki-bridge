@@ -2438,3 +2438,87 @@ fn revamp_duplicate_and_oversized_selections_fail_before_collection_reads() {
         assert!(!root.exists());
     }
 }
+
+#[test]
+fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
+    let root = std::env::temp_dir().join(format!("lab-cue-cli-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).unwrap();
+    let input = root.join("input.json");
+    std::fs::write(&input, br#"{"schema_version":2,"kind":"vocabulary","target_language":"en","requested_tasks":["comprehension","production"],"body":{"expression":"eat","meaning":"consume food","sense_key":"food"}}"#).unwrap();
+    let state = format!("storage.state_dir={}/state", root.display());
+    let out = cli()
+        .args([
+            "--set",
+            &state,
+            "--set",
+            "llm.enabled=false",
+            "--set",
+            "dictionary.provider=authored",
+            "--set",
+            "images.search_when_missing=false",
+            "vocab",
+            "add",
+            "--document",
+            input.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(4), "{out:?}");
+    let prepared: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = uuid::Uuid::parse_str(prepared["plan_id"].as_str().unwrap()).unwrap();
+    let store = linguist_store::Store::read_only(&root.join("state")).unwrap();
+    let base = store.revision(id, 1).unwrap();
+    let doc = &base.documents[0];
+    let issue = doc
+        .issues
+        .iter()
+        .find(|issue| issue.code == "MISSING_CUE")
+        .unwrap();
+    let request = linguist_core::review::ResolutionRequest {
+        schema_version: 2,
+        base_revision: 1,
+        base_digest: base.approval_digest().unwrap(),
+        document_id: doc.id,
+        issue_id: issue.id.clone(),
+        input_digest: doc.semantic_digest().unwrap(),
+        actor: "author".into(),
+        choice: linguist_core::records::ReviewChoice::Cue {
+            task: linguist_core::Task::Production,
+            text: "Name the verb for consuming food.".into(),
+        },
+    };
+    let file = root.join("decision.json");
+    std::fs::write(&file, serde_json::to_vec(&request).unwrap()).unwrap();
+    drop(store);
+    let id = id.to_string();
+    let args = [
+        "--set",
+        &state,
+        "plans",
+        "resolve",
+        &id,
+        &request.issue_id,
+        "--decision",
+        file.to_str().unwrap(),
+    ];
+    let out = cli().args(args).output().unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(result["revision"], 2);
+    assert_eq!(result["ready"], true);
+    let stale = cli().args(args).output().unwrap();
+    assert_eq!(stale.status.code(), Some(5), "{stale:?}");
+    let store = linguist_store::Store::read_only(&root.join("state")).unwrap();
+    assert_eq!(store.revision(base.id, 1).unwrap(), base);
+    let child = store.revision(base.id, 2).unwrap();
+    assert_eq!(
+        child.documents[0].requested_tasks,
+        base.documents[0].requested_tasks
+    );
+    assert_eq!(
+        child.rendered[0].fields["ProductionPrompt"],
+        "Name the verb for consuming food."
+    );
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

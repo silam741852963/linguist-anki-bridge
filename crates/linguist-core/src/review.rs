@@ -1,4 +1,5 @@
 //! Typed review decisions resolve known review issues; they never waive structural errors.
+mod cue;
 mod media;
 use crate::{
     Issue, Severity,
@@ -59,10 +60,18 @@ pub fn resolve(
         .iter()
         .find(|issue| issue.id == request.issue_id)
         .ok_or_else(|| ContractError("REVIEW_ISSUE_NOT_UNRESOLVED".into()))?;
-    if issue.severity != Severity::Review {
+    if issue.severity != Severity::Review && !cue::applicable(document, issue, &request.choice) {
         return Err(ContractError("ISSUE_CANNOT_BE_WAIVED".into()));
     }
     match &request.choice {
+        ReviewChoice::Cue { .. } | ReviewChoice::Exercise { .. } => {
+            cue::repair(document, issue, &request.choice)?;
+            let old_ids: BTreeSet<_> = document.reviews.iter().map(|review| review.id).collect();
+            document.reviews.clear();
+            candidate
+                .review_decisions
+                .retain(|decision| !old_ids.contains(&decision.id));
+        }
         ReviewChoice::SourceMediaRole {
             source_id,
             asset_digest,

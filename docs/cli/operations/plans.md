@@ -65,6 +65,20 @@ it does not authorize collection writes. See the generated
 
 Inputs: Typed decision and current input digest.
 
+Typed content repairs use the same fingerprint-bound request. For a missing or
+leaking vocabulary cue, use `{"decision":"cue","value":{"task":"production","text":"Say the verb for consuming food."}}`
+(or `task=spelling`). A missing grammar RecognitionPrompt accepts
+`task=recognition`. A missing/leaking Application exercise accepts
+`{"decision":"exercise","value":{"prompt":"Complete the supplied context: ___","answer":"Expected completion"}}`.
+The task must already be requested, the issue must target the corresponding field,
+and frozen character limits apply. Repair changes that content and removes its
+field override; it preserves tasks, sources and archives. Revalidation must remove
+the targeted error without introducing a missing-content/leakage error on that
+field. Invalid repairs publish nothing. This is a typed repair, never an error
+waiver. Other errors and native reviews remain blocking. Content changes clear
+prior reviews and create a new immutable child; no approval or apply authorization
+is inherited.
+
 Effects: Local new revision.
 
 1. Load issue/resolution schema; reject error waiver.

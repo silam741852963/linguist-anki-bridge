@@ -116,6 +116,10 @@ pub enum ReviewChoice {
         task: Task,
         text: String,
     },
+    Exercise {
+        prompt: String,
+        answer: String,
+    },
     ContentVerified {
         evidence_ids: Vec<Uuid>,
     },

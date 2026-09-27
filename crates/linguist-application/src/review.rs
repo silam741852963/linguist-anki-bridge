@@ -10,6 +10,26 @@ pub fn resolve(
     request: &ResolutionRequest,
     created_at: String,
 ) -> Result<ResolutionResult, String> {
+    let texts: Vec<&str> = match &request.choice {
+        ReviewChoice::Cue { text, .. } => vec![text],
+        ReviewChoice::Exercise { prompt, answer } => vec![prompt, answer],
+        _ => vec![],
+    };
+    if !texts.is_empty() {
+        let key = "input.max_record_chars";
+        let value = base
+            .settings
+            .values
+            .get(key)
+            .ok_or("REVIEW_SETTING_MISSING")?;
+        linguist_config::Registry::builtin().validate_value(key, value)?;
+        if texts
+            .iter()
+            .any(|text| text.chars().count() as u64 > value.as_u64().unwrap())
+        {
+            return Err("REVIEW_INPUT_LIMIT".into());
+        }
+    }
     // Validate identities, exact evidence and decision applicability without effects.
     let result =
         linguist_core::review::resolve(base, request, created_at).map_err(|e| e.to_string())?;

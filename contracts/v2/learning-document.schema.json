@@ -720,6 +720,36 @@
           "properties": {
             "decision": {
               "type": "string",
+              "const": "exercise"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "answer": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "prompt",
+                "answer"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
               "const": "content_verified"
             },
             "value": {
