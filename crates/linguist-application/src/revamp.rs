@@ -9,6 +9,30 @@ use linguist_core::{
 use serde_json::json;
 use std::collections::BTreeMap;
 
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct SourceExample {
+    sentence: String,
+    translation: String,
+}
+fn source_examples(raw: &str, translation_required: bool) -> Result<Vec<SourceExample>, String> {
+    let pairs: Vec<SourceExample> =
+        canonical::parse(raw.as_bytes()).map_err(|_| "SOURCE_EXAMPLES_SCHEMA_REVIEW")?;
+    if pairs.len() > 1000 {
+        return Err("SOURCE_EXAMPLES_LIMIT_REVIEW".into());
+    }
+    if pairs.iter().any(|pair| {
+        pair.sentence.trim().is_empty()
+            || (translation_required && pair.translation.trim().is_empty())
+            || [&pair.sentence, &pair.translation]
+                .iter()
+                .any(|text| text.contains('<') || text.contains("[sound:") || text.contains("{{"))
+    }) {
+        return Err("SOURCE_EXAMPLES_CONTENT_REVIEW".into());
+    }
+    Ok(pairs)
+}
+
 fn visible_text(raw: &str) -> String {
     let cleaned = ammonia::Builder::default()
         .tags(std::collections::HashSet::from([
@@ -139,6 +163,7 @@ pub fn stage_document(
     let source_id = capture.captured.source.id;
     let mut issues = vec![issue("SOURCE_NATIVE_HISTORY_REVIEW", None, source_id)];
     let mut values = BTreeMap::new();
+    let mut example_candidates = Vec::new();
     for (role, field) in &mapping.roles {
         if field.raw_value.trim().is_empty() {
             continue;
@@ -147,10 +172,22 @@ pub fn stage_document(
             issues.push(issue("SOURCE_COMBINED_FIELD_REVIEW", Some(role), source_id));
             continue;
         }
+        if role == "examples" {
+            match source_examples(
+                &field.raw_value,
+                target.split('-').next() != explanation.split('-').next(),
+            ) {
+                Ok(pairs) => {
+                    example_candidates = pairs;
+                    issues.push(issue("SOURCE_EXAMPLES_REVIEW", Some(role), source_id));
+                }
+                Err(code) => issues.push(issue(&code, Some(role), source_id)),
+            }
+            continue;
+        }
         if [
             "picture",
             "audio",
-            "examples",
             "enable_production",
             "enable_spelling",
             "enable_application",
@@ -207,6 +244,30 @@ pub fn stage_document(
     let mut doc = LearningDocument::from_json(&bytes).map_err(|e| e.to_string())?;
     doc.sources.push(capture.captured.source.clone());
     doc.archives.push(capture.captured.archive.clone());
+    for pair in example_candidates {
+        let evidence_id = uuid::Uuid::new_v4();
+        doc.evidence.push(Evidence {
+            id: evidence_id,
+            field: "examples".into(),
+            provenance: Provenance::Source,
+            source_id: Some(source_id),
+            region_id: None,
+            language: doc.target_language.clone(),
+            claim: serde_json::to_string(&pair).map_err(|_| "REVAMP_EXAMPLES_ENCODING")?,
+            source_url: None,
+            ambiguous: false,
+        });
+        let example = linguist_core::Example {
+            sentence: pair.sentence,
+            translation: pair.translation,
+            provenance: Provenance::Source,
+            evidence_ids: vec![evidence_id],
+        };
+        match &mut doc.content {
+            linguist_core::LearningContent::Vocabulary(v) => v.examples.push(example),
+            linguist_core::LearningContent::Grammar(g) => g.examples.push(example),
+        }
+    }
     for (field, claim) in values {
         let language = if [
             "expression",

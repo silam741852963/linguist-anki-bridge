@@ -113,7 +113,7 @@ fn grammar_defaults_and_combined_rich_examples_and_language_conflicts_stay_revie
     for code in [
         "SOURCE_COMBINED_FIELD_REVIEW",
         "SOURCE_HTML_TEXT_REVIEW",
-        "SOURCE_STRUCTURED_ROLE_REVIEW",
+        "SOURCE_EXAMPLES_SCHEMA_REVIEW",
         "SOURCE_LANGUAGE_CONFLICT",
     ] {
         assert!(doc.issues.iter().any(|i| i.code == code), "{code}");
@@ -266,4 +266,67 @@ fn html_candidates_preserve_text_boundaries_and_entities_without_scripts_or_sour
             .any(|i| i.code == "SOURCE_RICH_FIELD_REVIEW")
     );
     assert!(!validation::ready(&doc));
+}
+
+#[test]
+fn explicit_example_pairs_preserve_order_repeats_and_application_assigned_source_evidence() {
+    let raw = r#"[{"sentence":"猫です。","translation":"Là mèo."},{"sentence":"猫です。","translation":"Là mèo."}]"#;
+    let (capture, settings) = setup(
+        "japanese_grammar",
+        &[("Examples", raw)],
+        &[("examples", "Examples")],
+    );
+    let doc = stage_document(&capture, &settings, "japanese_grammar").unwrap();
+    let LearningContent::Grammar(g) = &doc.content else {
+        panic!()
+    };
+    assert_eq!(g.examples.len(), 2);
+    assert_eq!(g.examples[0].sentence, "猫です。");
+    assert_eq!(g.examples[0].translation, "Là mèo.");
+    assert_ne!(g.examples[0].evidence_ids, g.examples[1].evidence_ids);
+    for example in &g.examples {
+        assert_eq!(example.provenance, Provenance::Source);
+        assert!(doc.evidence.iter().any(
+            |e| example.evidence_ids.contains(&e.id) && e.source_id == Some(doc.sources[0].id)
+        ));
+    }
+    assert_eq!(doc.archives[0].original_fields["Examples"], raw);
+    assert!(
+        doc.issues
+            .iter()
+            .any(|i| i.code == "SOURCE_EXAMPLES_REVIEW")
+    );
+    assert!(!validation::ready(&doc));
+}
+#[test]
+fn malformed_or_unpaired_examples_remain_archived_without_partial_acceptance() {
+    for raw in [
+        r#"[{"sentence":"猫","translation":""}]"#,
+        r#"[{"sentence":"猫","translation":"cat","provenance":"source"}]"#,
+        r#"[{"sentence":"<b>猫</b>","translation":"cat"}]"#,
+        r#"[{"sentence":"猫","translation":"cat"},{"sentence":"","translation":"bad"}]"#,
+    ] {
+        let (capture, settings) = setup(
+            "japanese_grammar",
+            &[("Examples", raw)],
+            &[("examples", "Examples")],
+        );
+        let doc = stage_document(&capture, &settings, "japanese_grammar").unwrap();
+        let LearningContent::Grammar(g) = &doc.content else {
+            panic!()
+        };
+        assert!(g.examples.is_empty());
+        assert_eq!(doc.sources[0].fields["Examples"], raw);
+        assert!(!doc.evidence.iter().any(|e| e.field == "examples"));
+    }
+    let (capture, settings) = setup(
+        "english_vocab",
+        &[("Examples", r#"[{"sentence":"A cat.","translation":""}]"#)],
+        &[("examples", "Examples")],
+    );
+    let doc = stage_document(&capture, &settings, "english_vocab").unwrap();
+    let LearningContent::Vocabulary(v) = &doc.content else {
+        panic!()
+    };
+    assert_eq!(v.examples.len(), 1);
 }
