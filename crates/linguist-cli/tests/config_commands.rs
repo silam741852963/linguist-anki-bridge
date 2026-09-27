@@ -6,6 +6,62 @@ fn cli() -> Command {
     c
 }
 #[test]
+fn preparation_worker_freezes_settings_and_bounds_retries() {
+    let root = std::env::temp_dir().join(format!("lab-worker-cli-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.display());
+    let created = cli()
+        .args([
+            "--purpose",
+            "english_vocab",
+            "--set",
+            &state,
+            "--set",
+            "anki.endpoint=http://127.0.0.1:1",
+            "--set",
+            "llm.enabled=false",
+            "--set",
+            "dictionary.provider=authored",
+            "--set",
+            "images.search_when_missing=false",
+            "--set",
+            "audio.provider=disabled",
+            "--set",
+            "jobs.max_item_attempts=2",
+            "jobs",
+            "create",
+            "--note-id",
+            "123",
+        ])
+        .output()
+        .unwrap();
+    assert!(created.status.success(), "{:?}", created);
+    let created: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    let id = created["job_id"].as_str().unwrap();
+    for expected in [1, 2, 2] {
+        // Current defaults enable generation; only the frozen settings may govern execution.
+        let run = cli()
+            .args(["--set", &state, "jobs", "run", id])
+            .output()
+            .unwrap();
+        assert!(run.status.success(), "{:?}", run);
+        let run: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+        assert_eq!(run["writes_enabled"], false);
+        assert_eq!(run["plan_published"], false);
+        let items = cli()
+            .args(["--set", &state, "jobs", "items", id])
+            .output()
+            .unwrap();
+        let items: serde_json::Value = serde_json::from_slice(&items.stdout).unwrap();
+        assert_eq!(items["items"][0]["attempt"], expected);
+        assert_eq!(items["items"][0]["state"], "failed");
+        assert_eq!(
+            items["items"][0]["error_code"],
+            "SOURCE_READ_CONNECTION_FAILED"
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn preparation_jobs_queue_and_paginate_without_anki_or_worker_effects() {
     let root = std::env::temp_dir().join(format!("lab-job-cli-{}", uuid::Uuid::new_v4()));
     let state = format!("storage.state_dir={}", root.display());
@@ -57,6 +113,12 @@ fn preparation_jobs_queue_and_paginate_without_anki_or_worker_effects() {
     assert_eq!(value["worker_started"], false);
     assert_eq!(value["writes_enabled"], false);
     let id = value["job_id"].as_str().unwrap();
+    let blocked = cli()
+        .args(["--set", &state, "jobs", "run", id])
+        .output()
+        .unwrap();
+    assert!(!blocked.status.success());
+    assert!(blocked.stdout.is_empty());
     let shown = cli()
         .args(["--set", &state, "jobs", "show", id])
         .output()
@@ -1099,6 +1161,14 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             "english_vocab",
             r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
             "note_id",
+            2,
+            "job",
+        ),
+        (
+            "vocab",
+            "english_vocab",
+            r#"{"expression":"Word","meaning":"Meaning","sense_key":"Key"}"#,
+            "note_id",
             1,
             "ids",
         ),
@@ -1180,7 +1250,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
             let mut actions = Vec::new();
-            for _ in 0..28 * count + if mode == "ids" { 0 } else { 3 } {
+            for _ in 0..28 * count + if matches!(mode, "ids" | "job") { 0 } else { 3 } {
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
                 let mut stream = loop {
                     match listener.accept() {
@@ -1260,7 +1330,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             actions
         });
         let root = std::env::temp_dir().join(format!("lab-cli-revamp-{}", uuid::Uuid::new_v4()));
-        let out = cli()
+        let mut out = cli()
             .args([
                 "--purpose",
                 purpose,
@@ -1285,7 +1355,11 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             } else {
                 "selection.max_notes=1000"
             })
-            .args([command, "revamp"])
+            .args(if mode == "job" {
+                ["jobs", "create"]
+            } else {
+                [command, "revamp"]
+            })
             .args(if mode.starts_with("query") {
                 vec!["--query", "tag:source"]
             } else if mode.starts_with("deck") {
@@ -1304,10 +1378,59 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             })
             .output()
             .unwrap();
+        let job_id = if mode == "job" {
+            assert!(out.status.success(), "{out:?}");
+            let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+            let id = value["job_id"].as_str().unwrap().to_owned();
+            out = cli()
+                .args([
+                    "--set",
+                    &format!("storage.state_dir={}", root.display()),
+                    "jobs",
+                    "run",
+                    &id,
+                ])
+                .output()
+                .unwrap();
+            Some(id)
+        } else {
+            None
+        };
         assert_eq!(
             server.join().unwrap().len(),
-            28 * count + if mode == "ids" { 0 } else { 3 }
+            28 * count + if matches!(mode, "ids" | "job") { 0 } else { 3 }
         );
+        if let Some(id) = job_id {
+            assert!(out.status.success(), "{out:?}");
+            let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+            assert_eq!(value["captured_this_run"], 2);
+            let store = linguist_store::Store::read_only(&root).unwrap();
+            let job = id.parse().unwrap();
+            let items = store.preparation_items(job, 0, 10).unwrap();
+            assert!(
+                items
+                    .iter()
+                    .all(|item| item.state == "captured" && item.attempt == 1)
+            );
+            assert_eq!(store.preparation_events(job, 0, 10).unwrap().len(), 4);
+            assert!(store.list_revisions(10).unwrap().is_empty());
+            let repeat = cli()
+                .args([
+                    "--set",
+                    &format!("storage.state_dir={}", root.display()),
+                    "jobs",
+                    "run",
+                    &id,
+                ])
+                .output()
+                .unwrap();
+            assert!(repeat.status.success(), "{repeat:?}");
+            let repeat: serde_json::Value = serde_json::from_slice(&repeat.stdout).unwrap();
+            assert_eq!(repeat["captured_this_run"], 0);
+            drop(store);
+            std::fs::remove_dir_all(root).unwrap();
+            continue;
+        }
         assert_eq!(
             out.status.code(),
             Some(if count == 0 { 0 } else { 4 }),

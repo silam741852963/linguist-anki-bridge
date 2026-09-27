@@ -48,6 +48,27 @@ Result/failure: Unknown effects distinguished from ordinary failed items. The sh
 
 ## OP-39 — `jobs run JOB`
 
+Current implementation: prepare-mode source capture only, one read worker at a time
+(within `jobs.prepare_workers`' upper bound). No apply flag or collection writes.
+Read the immutable definition from existing state; reject a different frozen storage
+root, unsupported requested enrichment or invalid lease settings before acquiring a
+lease. Use frozen settings for the Anki client, capture limits and failure policy.
+Claim the job lease; scan checkpoint states and refuse any interrupted `started`
+item with `PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY`. Do not infer death from expiry.
+Skip captured items and nonretryable/exhausted failures. Each eligible item gets a
+CAS `started` event before dispatch. Renew the lease during reads at the frozen
+heartbeat interval. After capture, revalidate ownership, stage the document, publish
+original assets and append a CAS `captured` event. Recognized transport failures
+receive stable retry codes; other failures require review and halt the run.
+`jobs.on_item_error=stop` also stops after transport failure. A later invocation may
+retry an eligible failure once, within the frozen attempt ceiling. No retry loop
+runs automatically within one invocation. Release the lease on ordinary completion
+or error; crashes retain their durable checkpoints and strong process identity.
+JSON reports capture/failure counts for this invocation and the checkpoint digest;
+it explicitly reports `plan_published=false` and `writes_enabled=false`.
+Parallel dispatch, pause/cancel, interrupted-item reconciliation, enrichment and
+complete/partial batch plan publication remain pending.
+
 Inputs: Optional --apply for apply mode; execution limits.
 
 Effects: Local/provider reads; Anki writes only apply mode+flag.

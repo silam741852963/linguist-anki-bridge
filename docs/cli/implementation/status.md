@@ -157,6 +157,18 @@ Next: finish WP-01 contracts and fixture parity, then implement WP-02 configurat
 
 ## Verification
 
+`jobs run JOB` now performs prepare-only source capture under a strong job lease,
+using the immutable job settings. Started checkpoints precede dispatch; original
+assets precede captured checkpoints. Heartbeats renew ownership during blocking
+Anki reads. Interrupted started items require explicit recovery; captured items are
+skipped, and eligible transport failures retry only on another invocation up to
+the frozen ceiling. Other failures halt with a sanitized review-required code.
+Tests cover frozen settings despite different current defaults, unreachable-Anki
+failure persistence, bounded retries, lease release across runs, and unsupported
+generation preflight without checkpoints. This is a single capture worker, not the
+complete preparation pipeline: parallel dispatch, controls, enrichment, recovery
+reconciliation and batch plan publication remain pending. Native writes remain disabled.
+
 Run `cargo test --locked --workspace`, `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, and `python3 docs/cli/validate.py`. Generate schemas with `cargo run --locked -p linguist-core --example schemas`; regeneration must be deterministic. Domain tests live in `crates/linguist-core/tests/domain.rs`. These checks establish local contract behavior; they do not establish native history preservation, useful backups or crash recovery.
 
 Dictionary Retry-After behavior follows [RFC 9110 §10.2.3](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after) and the [httpdate parser API](https://docs.rs/httpdate/1.0.3/httpdate/fn.parse_http_date.html). Isolated transport tests cover date/numeric forms, obsolete HTTP date formats, malformed/multiple values, retries, redirect delays and immediate deadline refusal without a second request. These are transport tests, not live dictionary compatibility evidence.

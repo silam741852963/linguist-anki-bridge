@@ -676,7 +676,7 @@ pub fn prepare_source_selection_limited(
     )
 }
 
-fn validate_source_revamp(
+pub(crate) fn validate_source_revamp(
     settings: &Effective,
     purpose: &str,
     environment: &BTreeMap<String, String>,

@@ -92,6 +92,10 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum JobCommand {
+    /// Capture pending sources using the job's frozen settings; never applies.
+    Run {
+        job: uuid::Uuid,
+    },
     /// Queue explicit existing note IDs; never reads notes or starts workers.
     Create {
         #[arg(long = "note-id", required = true)]
@@ -522,6 +526,10 @@ fn run(cli: Cli) -> Result<u8, String> {
             if !root.is_absolute() {
                 return Err("STORE_PATH_MUST_BE_ABSOLUTE".into());
             }
+            if let JobCommand::Run { job } = command {
+                emit(&linguist_application::jobs::run(&root, job, &env)?)?;
+                return Ok(0);
+            }
             let store = match std::fs::symlink_metadata(&root) {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
                 Err(_) => return Err("STORE_READ_IO".into()),
@@ -563,7 +571,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &serde_json::json!({"schema_version":2,"job_id":job,"items":items,"next_index":next,"worker_liveness":"unverified","execution_available":false}),
                     )?;
                 }
-                JobCommand::Create { .. } => unreachable!(),
+                JobCommand::Create { .. } | JobCommand::Run { .. } => unreachable!(),
             }
             Ok(0)
         }
