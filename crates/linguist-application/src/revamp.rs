@@ -245,6 +245,7 @@ pub fn stage_document(
     doc.sources.push(capture.captured.source.clone());
     doc.archives.push(capture.captured.archive.clone());
     if let Some(media) = manifest.get("media") {
+        crate::media::validate_settings(settings)?;
         let receipts: Vec<crate::source_archive::media::MediaReceipt> =
             serde_json::from_value(media.clone()).map_err(|_| "REVAMP_MEDIA_MANIFEST_INVALID")?;
         if manifest["media_content_verified"] != false
@@ -296,17 +297,48 @@ pub fn stage_document(
                             source_id,
                         ));
                     } else {
+                        let inspection = crate::media::inspect_image(bytes, settings);
+                        let mime = match inspection {
+                            Ok(inspection) => {
+                                doc.evidence.push(Evidence {
+                                    id: uuid::Uuid::new_v4(),
+                                    field: "media_format".into(),
+                                    provenance: Provenance::Source,
+                                    source_id: Some(source_id),
+                                    region_id: None,
+                                    language: doc.target_language.clone(),
+                                    claim: serde_json::to_string(&json!({
+                                        "asset_digest": digest,
+                                        "filename": entry.filename,
+                                        "inspection": inspection,
+                                        "scope": "decoded raster buffers; no authorship, rendering-role, hard memory or deadline certification"
+                                    })).map_err(|_| "REVAMP_MEDIA_INSPECTION_ENCODING")?,
+                                    source_url: None,
+                                    ambiguous: false,
+                                });
+                                inspection.mime
+                            }
+                            Err(_) => {
+                                issues.push(issue(
+                                    "SOURCE_MEDIA_FORMAT_REVIEW",
+                                    Some(&entry.filename),
+                                    source_id,
+                                ));
+                                "application/octet-stream".into()
+                            }
+                        };
                         doc.media.push(linguist_core::records::MediaAsset {
                             digest,
                             filename: entry.filename.clone(),
                             original_filename: Some(entry.filename.clone()),
                             size_bytes: size,
-                            mime: "application/octet-stream".into(),
+                            mime,
                             owner: linguist_core::records::MediaOwner::Source,
                             role: linguist_core::records::MediaRole::Archive,
                             source_id: Some(source_id),
-                            attribution: "Original source media; authorship and format unverified."
-                                .into(),
+                            attribution:
+                                "Original source media; authorship and rendering role unverified."
+                                    .into(),
                             license: None,
                         });
                         issues.push(issue(

@@ -38,3 +38,4 @@ clap_complete = "=4.6.11"
 scraper = "=0.27.0"
 percent-encoding = "=2.3.2"
 unicode-normalization = "=0.1.25"
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }

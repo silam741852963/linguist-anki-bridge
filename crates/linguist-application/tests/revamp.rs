@@ -55,6 +55,64 @@ fn setup_id(
     (RevampCapture { captured, mapping }, settings)
 }
 #[test]
+fn decoded_source_image_has_digest_linked_evidence_but_remains_archive_only() {
+    let (mut capture, mut settings) = setup(
+        "english_vocab",
+        &[("Word", "cat"), ("Media", "<img src=\"misnamed.mp3\">")],
+        &[("expression", "Word")],
+    );
+    let mut output = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image::RgbaImage::new(2, 3))
+        .write_to(&mut output, image::ImageFormat::Png)
+        .unwrap();
+    let bytes = output.into_inner();
+    let digest = linguist_core::canonical::asset_digest(&bytes);
+    linguist_application::source_archive::media::attach_original_media(
+        &mut capture.captured,
+        BTreeMap::from([("misnamed.mp3".into(), Some(bytes.clone()))]),
+        10 * 1024 * 1024,
+        10 * 1024 * 1024,
+    )
+    .unwrap();
+    let document = stage_document(&capture, &settings, "english_vocab").unwrap();
+    assert_eq!(document.media[0].mime, "image/png");
+    assert_eq!(
+        document.media[0].role,
+        linguist_core::records::MediaRole::Archive
+    );
+    let evidence = document
+        .evidence
+        .iter()
+        .find(|e| e.field == "media_format")
+        .unwrap();
+    let receipt: serde_json::Value = serde_json::from_str(&evidence.claim).unwrap();
+    assert_eq!(receipt["asset_digest"], digest);
+    assert_eq!(receipt["inspection"]["height"], 3);
+    assert_eq!(capture.captured.assets[&digest], bytes);
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|i| i.code == "SOURCE_MEDIA_CONTENT_REVIEW")
+    );
+    settings
+        .values
+        .insert("media.allowed_image_types".into(), json!(["image/jpeg"]));
+    let document = stage_document(&capture, &settings, "english_vocab").unwrap();
+    assert_eq!(document.media[0].mime, "application/octet-stream");
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|i| i.code == "SOURCE_MEDIA_FORMAT_REVIEW")
+    );
+    settings
+        .values
+        .insert("media.max_asset_mb".into(), json!(0));
+    assert!(stage_document(&capture, &settings, "english_vocab").is_err());
+}
+
+#[test]
 fn plain_vocabulary_roles_become_source_candidates_with_complete_archive_and_review() {
     let (capture, settings) = setup(
         "japanese_vocab",

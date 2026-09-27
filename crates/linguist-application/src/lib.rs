@@ -522,6 +522,7 @@ pub mod capture;
 pub mod export;
 pub mod generation;
 pub mod mapping;
+pub mod media;
 pub mod ollama;
 pub mod revamp;
 pub mod source_archive;
