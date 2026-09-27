@@ -61,6 +61,18 @@ pub fn resolve(
         return Err(ContractError("ISSUE_CANNOT_BE_WAIVED".into()));
     }
     match &request.choice {
+        ReviewChoice::SourceContentVerified {
+            source_id,
+            evidence_ids,
+        } if matches!(
+            issue.code.as_str(),
+            "SOURCE_HTML_TEXT_REVIEW" | "SOURCE_EXAMPLES_REVIEW"
+        ) =>
+        {
+            if !source_content_verified(document, issue, *source_id, evidence_ids) {
+                return Err(ContractError("REVIEW_SOURCE_EVIDENCE_MISMATCH".into()));
+            }
+        }
         ReviewChoice::ContentVerified { evidence_ids } if issue.code == "GENERATED_FACT_REVIEW" => {
             let selected: BTreeSet<_> = evidence_ids.iter().map(|id| id.to_string()).collect();
             let required: BTreeSet<_> = issue.source_refs.iter().cloned().collect();
@@ -167,7 +179,29 @@ pub fn resolve(
     let mut ready = true;
     for document in &mut candidate.documents {
         document.issues.retain(|issue| issue.stage != "validation");
+        let observations: Vec<_> = document
+            .issues
+            .iter()
+            .filter(|issue| {
+                issue.stage == "capture"
+                    && matches!(
+                        issue.code.as_str(),
+                        "SOURCE_HTML_TEXT_REVIEW" | "SOURCE_EXAMPLES_REVIEW"
+                    )
+            })
+            .cloned()
+            .collect();
         document.issues = crate::validation::validate(document);
+        for mut observation in observations {
+            if !document
+                .issues
+                .iter()
+                .any(|issue| issue.id == observation.id)
+            {
+                observation.severity = Severity::Warning;
+                document.issues.push(observation);
+            }
+        }
         let empty = BTreeMap::new();
         let fields = document
             .sources
@@ -202,6 +236,37 @@ pub fn resolve(
         decision_id: decision.id,
         ready,
     })
+}
+
+/// Only derived content review, never source task/history/identity or structural issues.
+pub(crate) fn source_content_verified(
+    document: &crate::LearningDocument,
+    issue: &Issue,
+    source_id: uuid::Uuid,
+    selected: &[uuid::Uuid],
+) -> bool {
+    if issue.stage != "capture"
+        || !matches!(
+            issue.code.as_str(),
+            "SOURCE_HTML_TEXT_REVIEW" | "SOURCE_EXAMPLES_REVIEW"
+        )
+        || issue.source_refs != vec![source_id.to_string()]
+        || !document.sources.iter().any(|source| source.id == source_id)
+    {
+        return false;
+    }
+    let required: BTreeSet<_> = document
+        .evidence
+        .iter()
+        .filter(|e| {
+            e.source_id == Some(source_id)
+                && e.provenance == crate::Provenance::Source
+                && Some(&e.field) == issue.field.as_ref()
+        })
+        .map(|e| e.id)
+        .collect();
+    let chosen: BTreeSet<_> = selected.iter().copied().collect();
+    !required.is_empty() && chosen.len() == selected.len() && chosen == required
 }
 
 /// Keep written-form/reading associations when a provider supplied them.

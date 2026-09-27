@@ -330,3 +330,119 @@ fn malformed_or_unpaired_examples_remain_archived_without_partial_acceptance() {
     };
     assert_eq!(v.examples.len(), 1);
 }
+
+#[test]
+fn source_content_review_is_evidence_exact_and_cannot_waive_native_history() {
+    use linguist_core::{
+        records::ReviewChoice,
+        review::{ResolutionRequest, resolve},
+    };
+    let (capture, mut settings) = setup(
+        "english_vocab",
+        &[
+            ("Word", "<b>cat</b>"),
+            ("Meaning", "feline"),
+            ("Key", "cat-animal"),
+        ],
+        &[
+            ("expression", "Word"),
+            ("meaning", "Meaning"),
+            ("sense_key", "Key"),
+        ],
+    );
+    let root = std::env::temp_dir().join(format!("lab-source-review-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root.to_str().unwrap()));
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-source-review".into())]);
+    let prepared =
+        publish_capture_draft(&capture, &settings, "english_vocab", &environment).unwrap();
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let doc = &plan.documents[0];
+    let issue = doc
+        .issues
+        .iter()
+        .find(|i| i.code == "SOURCE_HTML_TEXT_REVIEW")
+        .unwrap();
+    let evidence = doc
+        .evidence
+        .iter()
+        .find(|e| e.field == "expression")
+        .unwrap();
+    let mut request = ResolutionRequest {
+        schema_version: 2,
+        base_revision: 1,
+        base_digest: plan.approval_digest().unwrap(),
+        document_id: doc.id,
+        issue_id: issue.id.clone(),
+        input_digest: doc.semantic_digest().unwrap(),
+        actor: "reviewer".into(),
+        choice: ReviewChoice::SourceContentVerified {
+            source_id: doc.sources[0].id,
+            evidence_ids: vec![evidence.id],
+        },
+    };
+    let resolved = resolve(&plan, &request, "unix-seconds:1".into()).unwrap();
+    assert!(!resolved.ready);
+    assert!(
+        !validation::validate(&resolved.revision.documents[0])
+            .iter()
+            .any(|i| i.id == issue.id)
+    );
+    assert!(
+        validation::validate(&resolved.revision.documents[0])
+            .iter()
+            .any(|i| i.code == "SOURCE_NATIVE_HISTORY_REVIEW")
+    );
+    assert_eq!(plan.documents[0].reviews.len(), 0);
+    for ids in [
+        vec![],
+        vec![evidence.id, evidence.id],
+        vec![uuid::Uuid::new_v4()],
+    ] {
+        request.choice = ReviewChoice::SourceContentVerified {
+            source_id: doc.sources[0].id,
+            evidence_ids: ids,
+        };
+        assert!(resolve(&plan, &request, "unix-seconds:1".into()).is_err());
+    }
+    request.choice = ReviewChoice::SourceContentVerified {
+        source_id: doc.sources[0].id,
+        evidence_ids: vec![evidence.id],
+    };
+    request.issue_id = doc
+        .issues
+        .iter()
+        .find(|i| i.code == "SOURCE_NATIVE_HISTORY_REVIEW")
+        .unwrap()
+        .id
+        .clone();
+    assert!(resolve(&plan, &request, "unix-seconds:1".into()).is_err());
+    let mut changed = resolved.revision.documents[0].clone();
+    changed.context.push_str("new context");
+    assert!(
+        validation::validate(&changed)
+            .iter()
+            .any(|i| i.code == "SOURCE_HTML_TEXT_REVIEW")
+    );
+    drop(store);
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    store.publish_revision(&resolved.revision).unwrap();
+    drop(store);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let restored = store.revision(prepared.plan_id, 2).unwrap();
+    assert_eq!(
+        restored.documents[0].reviews,
+        resolved.revision.documents[0].reviews
+    );
+    let mut stale = restored.documents[0].clone();
+    stale.context.push_str("after restart");
+    assert!(
+        validation::validate(&stale)
+            .iter()
+            .any(|i| i.code == "SOURCE_HTML_TEXT_REVIEW")
+    );
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

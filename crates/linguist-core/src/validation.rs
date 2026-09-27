@@ -73,6 +73,18 @@ pub fn answer_leaks(prompt: &str, answer: &str, language: &Language) -> bool {
 }
 pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
     let mut issues = doc.issues.clone();
+    // Resolved capture observations remain in the document as warning records.
+    // Re-open them unless a decision still proves the exact current content/evidence.
+    for issue in &mut issues {
+        if issue.stage == "capture"
+            && matches!(
+                issue.code.as_str(),
+                "SOURCE_HTML_TEXT_REVIEW" | "SOURCE_EXAMPLES_REVIEW"
+            )
+        {
+            issue.severity = Severity::Review;
+        }
+    }
     let mut add = |code: &str, severity: Severity, field: Option<&str>, message: &str| {
         issues.push(Issue::new(code, severity, field, message))
     };
@@ -483,6 +495,8 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                 && Some(&r.input_digest) == input.as_ref()
                 && !r.actor.trim().is_empty()
                 && match &r.choice {
+                    ReviewChoice::SourceContentVerified { source_id, evidence_ids } =>
+                        crate::review::source_content_verified(doc, issue, *source_id, evidence_ids),
                     ReviewChoice::ContentVerified { evidence_ids } => {
                         issue.code == "GENERATED_FACT_REVIEW"
                             && !issue.source_refs.is_empty()

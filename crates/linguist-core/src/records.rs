@@ -103,10 +103,22 @@ pub enum ReviewChoice {
     Sense(String),
     Anchor(Uuid),
     Segmentation(Vec<Uuid>),
-    Duplicate { note_id: AnkiId, action: String },
+    Duplicate {
+        note_id: AnkiId,
+        action: String,
+    },
     Media(String),
-    Cue { task: Task, text: String },
-    ContentVerified { evidence_ids: Vec<Uuid> },
+    Cue {
+        task: Task,
+        text: String,
+    },
+    ContentVerified {
+        evidence_ids: Vec<Uuid>,
+    },
+    SourceContentVerified {
+        source_id: Uuid,
+        evidence_ids: Vec<Uuid>,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
