@@ -89,6 +89,9 @@ pub fn run(
         provenance: frozen.provenance.clone(),
         fingerprint: frozen.fingerprint.clone(),
     };
+    if settings.values["dictionary.provider"] != "authored" {
+        return Err("CAPABILITY_UNAVAILABLE: durable jobs currently capture source drafts only; dictionary enrichment checkpoints are pending".into());
+    }
     crate::revamp::validate_source_revamp(&settings, &definition.selection.purpose, environment)?;
     let registry = linguist_config::Registry::builtin();
     for key in [

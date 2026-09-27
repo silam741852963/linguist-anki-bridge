@@ -2,6 +2,29 @@
 
 The implementation has started. The finalized handbook remains the target specification; this page records actual code coverage. No work package or release gate is complete yet.
 
+Vocabulary revamps now reuse verified Jisho/Wiktionary enrichment from authored
+preparation. Explicit `auto`/`jisho` for Japanese and `auto`/`wiktionary` for English
+save source revision 1 before dictionary lookup, then publish enriched revision 2.
+Dictionary response bytes, all returned senses and dictionary evidence are retained;
+original fields, source archives, tasks and meanings remain intact. Sense selection
+remains an explicit review. Provider failure reports the retained source plan ID,
+revision and digest; the original remains readable after restart.
+
+`plans enrich PLAN --base-revision N --digest DIGEST` retries dictionary enrichment
+from a retained draft using its frozen settings. It rejects stale bases, mismatched
+digests, unsupported providers/grammar and already enriched plans. All lookups and
+aggregate archive checks finish before publishing assets and the child revision;
+publication uses the store's parent CAS. The child clears rendered/native binding
+and carries no readiness or apply claim. A concurrent publication can leave
+unreferenced immutable response assets, while the original revision is preserved.
+Durable job workers still require `dictionary.provider=authored`; enrichment job
+checkpoints are pending and requested enrichment is explicitly rejected.
+
+Tests cover provider failure without advancing the plan, child publication and
+restart, original Anki meaning/provenance/task preservation, sense review, saved
+response bytes and stale/repeated enrichment rejection. No live provider or native
+collection mutation is asserted by these tests.
+
 ## Available foundation
 
 - Root Rust workspace: `linguist-core`, `linguist-config`, `linguist-store`, `linguist-anki`, `linguist-application`, `linguist-dictionary` and `linguist-cli`; no Qt/Python runtime dependency.
@@ -101,7 +124,7 @@ Revamp document staging now converts distinct plain scalar role values into sour
 
 Revamp capture drafts can now be published as immutable revision-1 plans through the application. Settings paths are frozen before writes, capture/archive/assets are validated before state initialization, every referenced source asset is published before the revision, and full sources/evidence survive reopening the store. Missing manifest or archive assets fail before store creation. Drafts intentionally contain no staged render, binding or approval: native history/task review and later enrichment remain required, and the result reports readiness/apply eligibility/duplicate checks false. Tests recover exact document identity/digest, source bytes and frozen settings from the durable plan and verify invalid captures create no state. This is source-draft publication, not a full provider preparation executor or CLI revamp command.
 
-The CLI now exposes `vocab revamp --note-id ID` and `grammar revamp --note-id ID` with a required matching purpose. The initial source-only path rejects requested unavailable generation/dictionary/image/audio/kanji enrichment, freezes paths before reads, captures and validates the source twice, and publishes a durable review-required draft. Output labels the source-draft stage and incomplete enrichment, with apply eligibility false and exit 4. Isolated CLI tests exercise vocabulary and Japanese grammar, exact read-only actions, preserved unmapped raw values, Vietnamese explanations and source asset recovery from the published plan. Missing/wrong purposes and default requested generation fail without state creation. Full provider/HTML/example/media processing, all selector modes, typed source review and native task/history mapping remain pending.
+The CLI now exposes `vocab revamp --note-id ID` and `grammar revamp --note-id ID` with a required matching purpose. The source-only path uses dictionary.provider=authored; supported vocabulary dictionary providers now publish an enriched child as described above. Other unavailable generation/image/audio/kanji enrichment is rejected, freezes paths before reads, captures and validates the source twice, and publishes a durable review-required draft. Output labels the source-draft stage and incomplete enrichment, with apply eligibility false and exit 4. Isolated CLI tests exercise vocabulary and Japanese grammar, exact read-only actions, preserved unmapped raw values, Vietnamese explanations and source asset recovery from the published plan. Missing/wrong purposes and default requested generation fail without state creation. Full provider/HTML/example/media processing, all selector modes, typed source review and native task/history mapping remain pending.
 
 Scalar revamp roles now derive reviewable visible text from HTML with pinned ammonia/html-escape. Script/style/attributes are removed from candidate text, HTML entities decode, and paragraph/list/line/table boundaries receive separators. Any changed representation gets `SOURCE_HTML_TEXT_REVIEW`; full original HTML remains in source assets and field archives. Sound markers, cloze syntax and ruby annotations remain archive-only pending dedicated parsing, and combined/structured roles still require review. Tests cover script exclusion, entity and block preservation, HTML vocabulary/grammar candidates, media/ruby exclusion, source/evidence retention and non-readiness. This does not parse examples, prove linguistic correctness or waive source review.
 

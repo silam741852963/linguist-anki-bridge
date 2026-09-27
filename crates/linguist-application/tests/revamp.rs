@@ -1011,3 +1011,118 @@ fn source_content_review_is_evidence_exact_and_cannot_waive_native_history() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn dictionary_enrichment_retains_source_revision_and_requires_sense_review() {
+    struct Dictionary;
+    impl linguist_application::DictionaryPort for Dictionary {
+        fn lookup(
+            &self,
+            query: &str,
+            target: &linguist_core::Language,
+        ) -> std::result::Result<linguist_dictionary::DictionaryPage, String> {
+            linguist_dictionary::wiktionary::parse_definition(query, target,
+                br#"{"en":[{"language":"English","partOfSpeech":"Verb","definitions":[{"definition":"Consume food"},{"definition":"Wear away"}]}]}"#,
+                1024, 10).map_err(|error| error.to_string())
+        }
+    }
+    struct Failure;
+    impl linguist_application::DictionaryPort for Failure {
+        fn lookup(
+            &self,
+            _: &str,
+            _: &linguist_core::Language,
+        ) -> std::result::Result<linguist_dictionary::DictionaryPage, String> {
+            Err("DICTIONARY_PROVIDER_FAILED: fixture unavailable".into())
+        }
+    }
+    let (capture, mut settings) = setup(
+        "english_vocab",
+        &[
+            ("Word", "eat"),
+            ("Meaning", "My original meaning"),
+            ("Private", "Keep this"),
+        ],
+        &[("expression", "Word"), ("meaning", "Meaning")],
+    );
+    let root = std::env::temp_dir().join(format!("lab-dictionary-revamp-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    settings
+        .values
+        .insert("dictionary.provider".into(), json!("wiktionary"));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "english_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-dictionary-revamp".into())]),
+    )
+    .unwrap();
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let base = store.revision(prepared.plan_id, 1).unwrap();
+    assert!(
+        linguist_application::dictionary::enrich_revision(&mut store, &base, Some(&Failure))
+            .is_err()
+    );
+    assert_eq!(store.latest_revision(base.id).unwrap(), 1);
+    assert_eq!(store.revision(base.id, 1).unwrap(), base);
+    let child =
+        linguist_application::dictionary::enrich_revision(&mut store, &base, Some(&Dictionary))
+            .unwrap();
+    assert_eq!(child.revision, 2);
+    assert_eq!(child.parent_digest, Some(base.approval_digest().unwrap()));
+    assert_eq!(child.documents[0].sources[0], base.documents[0].sources[0]);
+    assert_eq!(
+        child.documents[0].archives[0],
+        base.documents[0].archives[0]
+    );
+    assert_eq!(
+        child.documents[0].requested_tasks,
+        base.documents[0].requested_tasks
+    );
+    let LearningContent::Vocabulary(vocab) = &child.documents[0].content else {
+        panic!()
+    };
+    assert_eq!(vocab.expression, "eat");
+    assert_eq!(vocab.meaning, "My original meaning");
+    assert_eq!(vocab.dictionary[0].senses.len(), 2);
+    assert!(
+        child.documents[0]
+            .issues
+            .iter()
+            .any(|issue| issue.code == "DICTIONARY_SENSE_REVIEW")
+    );
+    assert!(
+        child.documents[0]
+            .evidence
+            .iter()
+            .any(|e| e.provenance == Provenance::Source && e.claim == "My original meaning")
+    );
+    assert!(
+        child.documents[0]
+            .evidence
+            .iter()
+            .any(|e| e.provenance == Provenance::Dictionary && e.claim == "Consume food")
+    );
+    assert_eq!(store.revision(base.id, 1).unwrap(), base);
+    assert!(
+        linguist_application::dictionary::enrich_revision(&mut store, &base, Some(&Dictionary))
+            .unwrap_err()
+            .contains("BASE_CONFLICT")
+    );
+    assert!(
+        linguist_application::dictionary::enrich_revision(&mut store, &child, Some(&Dictionary))
+            .unwrap_err()
+            .contains("ALREADY_ENRICHED")
+    );
+    drop(store);
+    let reopened = linguist_store::Store::read_only(&root).unwrap();
+    assert_eq!(reopened.revision(base.id, 2).unwrap(), child);
+    let raw = reopened
+        .asset(&child.documents[0].archives[1].asset_digests[0], 1024)
+        .unwrap();
+    assert!(String::from_utf8(raw).unwrap().contains("Wear away"));
+    drop(reopened);
+    std::fs::remove_dir_all(root).unwrap();
+}

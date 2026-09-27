@@ -231,6 +231,14 @@ enum RecoveryCommand {
 }
 #[derive(Subcommand)]
 enum PlanCommand {
+    /// Enrich a retained vocabulary draft using its frozen dictionary policy.
+    Enrich {
+        plan: uuid::Uuid,
+        #[arg(long)]
+        base_revision: u32,
+        #[arg(long)]
+        digest: String,
+    },
     /// Export a portable JSON bundle; private source archives require explicit inclusion.
     Export {
         plan: uuid::Uuid,
@@ -487,7 +495,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 serde_json::json!({"items":results,"item_count":results.len()})
             };
             emit(
-                &serde_json::json!({"preparation_stage":"source_draft","result":result,"enrichment_completed":false,"collection_writes_enabled":false}),
+                &serde_json::json!({"preparation_stage":if settings.values["dictionary.provider"] == "authored" {"source_draft"} else {"source_dictionary_draft"},"result":result,"dictionary_enrichment_completed":settings.values["dictionary.provider"] != "authored","enrichment_completed":false,"collection_writes_enabled":false}),
             )?;
             Ok(if empty { 0 } else { 4 })
         }
@@ -701,6 +709,29 @@ fn run(cli: Cli) -> Result<u8, String> {
             }
             let store = linguist_store::Store::read_only(&root)?;
             match command {
+                PlanCommand::Enrich {
+                    plan,
+                    base_revision,
+                    digest,
+                } => {
+                    if store.latest_revision(plan)? != base_revision {
+                        return Err("DICTIONARY_BASE_CONFLICT".into());
+                    }
+                    let base = store.revision(plan, base_revision)?;
+                    if base.approval_digest().map_err(|e| e.to_string())? != digest {
+                        return Err("DICTIONARY_BASE_CONFLICT".into());
+                    }
+                    drop(store);
+                    let child = linguist_application::dictionary::enrich_revision(
+                        &mut linguist_store::Store::open_existing(&root)?,
+                        &base,
+                        None,
+                    )?;
+                    emit(
+                        &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":child.revision,"digest":child.approval_digest().map_err(|e| e.to_string())?,"issues":child.documents.iter().map(|document|serde_json::json!({"document_id":document.id,"issues":document.issues})).collect::<Vec<_>>(),"ready":false,"apply_eligible":false,"writes_enabled":false}),
+                    )?;
+                    return Ok(4);
+                }
                 PlanCommand::List { limit } => {
                     let limit = limit
                         .unwrap_or(settings.values["output.page_size"].as_u64().unwrap() as u32);
@@ -1345,7 +1376,14 @@ fn select_values(
 
 fn error_exit(message: &str) -> u8 {
     let code = message.split(':').next().unwrap_or(message);
-    if code == "PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY"
+    if matches!(
+        code,
+        "DICTIONARY_SETTING_MISSING" | "DICTIONARY_ARCHIVE_LIMIT" | "DICTIONARY_REVISION_LIMIT"
+    ) {
+        2
+    } else if code == "DICTIONARY_ALREADY_ENRICHED" {
+        5
+    } else if code == "PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY"
         || (code.starts_with("PREPARATION_") && code.ends_with("_CORRUPT"))
     {
         7

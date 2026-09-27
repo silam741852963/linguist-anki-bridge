@@ -1177,6 +1177,42 @@ fn plan_edit_cli_creates_child_and_rejects_stale_base() {
     let mut store = linguist_store::Store::open(&root).unwrap();
     let digest = store.publish_revision(&plan).unwrap();
     drop(store);
+    // Enrichment rejects mismatched identities before provider or settings lookup.
+    let state = format!("storage.state_dir={}", root.display());
+    let id_for_enrichment = plan.id.to_string();
+    let out = cli()
+        .args([
+            "--set",
+            &state,
+            "plans",
+            "enrich",
+            &id_for_enrichment,
+            "--base-revision",
+            "1",
+            "--digest",
+            "wrong",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(5));
+    assert!(out.stdout.is_empty());
+    // Legacy/incomplete frozen settings return a structured error rather than panic.
+    let out = cli()
+        .args([
+            "--set",
+            &state,
+            "plans",
+            "enrich",
+            &id_for_enrichment,
+            "--base-revision",
+            "1",
+            "--digest",
+            &digest,
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("DICTIONARY_SETTING_MISSING"));
     let patch = root.join("patch.json");
     std::fs::write(&patch, serde_json::to_vec(&serde_json::json!({"schema_version":2,"base_digest":digest,"items":[{"document_id":plan.documents[0].id,"personal_notes":{"intent":"set","value":"authored association"}}]})).unwrap()).unwrap();
     let setting = format!("storage.state_dir={}", root.display());

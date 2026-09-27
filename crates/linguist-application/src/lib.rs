@@ -332,141 +332,8 @@ pub fn prepare_with_dictionary(
         reviews: vec![],
         issues: vec![],
     };
-    let mut provider_assets = Vec::new();
-    if settings.values["dictionary.provider"] != "authored" {
-        if let LearningContent::Vocabulary(vocab) = &mut document.content {
-            let japanese = document.target_language.as_str().split('-').next() == Some("ja");
-            let english = document.target_language.as_str().split('-').next() == Some("en");
-            if !(japanese
-                && matches!(
-                    settings.values["dictionary.provider"].as_str(),
-                    Some("jisho" | "auto")
-                )
-                || english
-                    && matches!(
-                        settings.values["dictionary.provider"].as_str(),
-                        Some("wiktionary" | "auto")
-                    ))
-            {
-                return Err(
-                    "CAPABILITY_UNAVAILABLE: this dictionary/language adapter is not implemented"
-                        .into(),
-                );
-            }
-            if !document.explanation_language.as_str().starts_with("en") {
-                return Err(
-                    "CAPABILITY_UNAVAILABLE: dictionary definition translation is not implemented"
-                        .into(),
-                );
-            }
-            if vocab.expression.trim().is_empty() {
-                return Err("VOCAB_EXPRESSION_REQUIRED".into());
-            }
-            let page = if let Some(provider) = dictionary {
-                provider.lookup(&vocab.expression, &document.target_language)?
-            } else {
-                let client = linguist_dictionary::transport::DictionaryClient::for_target(
-                    settings,
-                    &document.target_language,
-                )
-                .map_err(|e| format!("CAPABILITY_UNAVAILABLE: {e}"))?;
-                client
-                    .lookup(&vocab.expression, &document.target_language, 1000)
-                    .map_err(|e| format!("DICTIONARY_PROVIDER_FAILED: {e}"))?
-            };
-            if page.query != vocab.expression
-                || canonical::asset_digest(&page.raw_bytes) != page.raw_digest
-            {
-                return Err("DICTIONARY_RESPONSE_CONFLICT".into());
-            }
-            // Reparse port output: callers cannot fabricate rich facts unrelated to saved bytes.
-            let maximum =
-                settings.values["network.max_response_mb"].as_u64().unwrap() * 1024 * 1024;
-            let verified = if japanese {
-                linguist_dictionary::parse_jisho(
-                    &page.query,
-                    &document.target_language,
-                    &page.raw_bytes,
-                    maximum,
-                    1000,
-                )
-            } else {
-                linguist_dictionary::wiktionary::parse_definition(
-                    &page.query,
-                    &document.target_language,
-                    &page.raw_bytes,
-                    maximum,
-                    1000,
-                )
-            }
-            .map_err(|e| format!("DICTIONARY_PROVIDER_FAILED: {e}"))?;
-            if verified.entries != page.entries || verified.request_url != page.request_url {
-                return Err("DICTIONARY_RESPONSE_CONFLICT".into());
-            }
-            vocab.dictionary = page.entries;
-            let source_id = uuid::Uuid::new_v4();
-            let fields = BTreeMap::from([(
-                "provider_response".into(),
-                String::from_utf8(page.raw_bytes.clone()).map_err(|_| "INPUT_ENCODING")?,
-            )]);
-            document.sources.push(SourceRecord {
-                id: source_id,
-                kind: if japanese {
-                    "jisho_api_v1"
-                } else {
-                    "wiktionary_definition_v0.8"
-                }
-                .into(),
-                location: page.request_url.clone(),
-                digest: page.raw_digest.clone(),
-                fields: fields.clone(),
-                model_manifest: if japanese {
-                    "jisho-api-v1"
-                } else {
-                    "wiktionary-definition-v0.8"
-                }
-                .into(),
-                tags: vec![],
-                cards: vec![],
-                media_refs: vec![],
-            });
-            document.archives.push(SourceArchive {
-                id: uuid::Uuid::new_v4(),
-                source_id,
-                digest: page.raw_digest.clone(),
-                original_fields: fields,
-                asset_digests: vec![page.raw_digest.clone()],
-            });
-            for entry in &vocab.dictionary {
-                for sense in &entry.senses {
-                    document.evidence.push(Evidence {
-                        id: uuid::Uuid::new_v4(),
-                        field: "meaning".into(),
-                        provenance: Provenance::Dictionary,
-                        source_id: Some(source_id),
-                        region_id: None,
-                        language: "en".to_owned().try_into()?,
-                        claim: sense.definitions.join("; "),
-                        source_url: Some(entry.source_url.clone()),
-                        ambiguous: vocab.dictionary.len() > 1 || entry.senses.len() > 1,
-                    });
-                }
-            }
-            if vocab.dictionary.is_empty() {
-                let mut issue = Issue::new(
-                    "DICTIONARY_NOT_FOUND",
-                    Severity::Warning,
-                    Some("dictionary"),
-                    "No dictionary entry was found; authored content remains distinct from dictionary facts.",
-                );
-                issue.stage = "dictionary".into();
-                document.issues.push(issue);
-            }
-            provider_assets.push(page.raw_bytes);
-        } else {
-            return Err("CAPABILITY_UNAVAILABLE: authored grammar preparation requires dictionary.provider=authored".into());
-        }
-    }
+    let (enriched, provider_assets) = dictionary::enrich_document(&document, settings, dictionary)?;
+    document = enriched;
     document.issues = validation::validate(&document);
     let rendered = render::render(&document, &document.sources[0].fields).ok();
     let ready = rendered.is_some()
@@ -520,6 +387,7 @@ pub fn prepare_with_dictionary(
 
 pub mod audio;
 pub mod capture;
+pub mod dictionary;
 pub mod export;
 pub mod generation;
 pub mod jobs;

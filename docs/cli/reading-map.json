@@ -111,7 +111,7 @@
       "path": "implementation/wp-07.md",
       "heading": "## WP-07 \u2014 vocabulary",
       "title": "WP-07 \u2014 vocabulary",
-      "words": 73,
+      "words": 153,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",

@@ -689,7 +689,25 @@ pub(crate) fn validate_source_revamp(
     }
     crate::authored_capabilities(settings)?;
     if settings.values["dictionary.provider"] != "authored" {
-        return Err("CAPABILITY_UNAVAILABLE: revamp dictionary integration is pending; select dictionary.provider=authored for a source draft".into());
+        let supported = match purpose {
+            "japanese_vocab" => matches!(
+                settings.values["dictionary.provider"].as_str(),
+                Some("auto" | "jisho")
+            ),
+            "english_vocab" => matches!(
+                settings.values["dictionary.provider"].as_str(),
+                Some("auto" | "wiktionary")
+            ),
+            _ => false,
+        };
+        if !supported
+            || settings.values["learning.explanation_language"]
+                .as_str()
+                .and_then(|language| language.split('-').next())
+                != Some("en")
+        {
+            return Err("CAPABILITY_UNAVAILABLE: this revamp dictionary/language adapter is not implemented".into());
+        }
     }
     if purpose == "japanese_vocab" && settings.values["kanji.enabled"] == true {
         return Err("CAPABILITY_UNAVAILABLE: revamp kanji enrichment is pending; select kanji.enabled=false for a source draft".into());
@@ -765,5 +783,28 @@ fn prepare_ids(
         max_notes: settings.values["selection.max_notes"].as_u64().unwrap(),
         command_limit,
     };
-    publish_selected_captures(&captures, settings, purpose, environment, Some(receipt))
+    let mut prepared =
+        publish_selected_captures(&captures, settings, purpose, environment, Some(receipt))?;
+    if settings.values["dictionary.provider"] != "authored" {
+        let first = &prepared[0];
+        let frozen = crate::freeze_settings(settings, environment)?;
+        let root = std::path::Path::new(frozen.values["storage.state_dir"].as_str().unwrap());
+        let mut store = linguist_store::Store::open_existing(root)?;
+        let base = store.revision(first.plan_id, 1)?;
+        let child =
+            crate::dictionary::enrich_revision(&mut store, &base, None).map_err(|error| {
+                format!(
+                    "{error}; retained_source_plan={} revision=1 digest={}",
+                    first.plan_id, first.digest
+                )
+            })?;
+        let digest = child.approval_digest().map_err(|e| e.to_string())?;
+        for (receipt, document) in prepared.iter_mut().zip(&child.documents) {
+            receipt.revision = child.revision;
+            receipt.digest = digest.clone();
+            receipt.input_digest = document.semantic_digest().map_err(|e| e.to_string())?;
+            receipt.issues = document.issues.clone();
+        }
+    }
+    Ok(prepared)
 }
