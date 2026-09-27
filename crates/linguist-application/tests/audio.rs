@@ -41,7 +41,7 @@ fn decoded_audio_formats_report_scope_and_enforce_audio_policy() {
         (
             include_bytes!("fixtures/audio/tone.ogg").as_slice(),
             "audio/ogg",
-            false,
+            true,
         ),
     ] {
         let inspection = inspect_audio(bytes, &config).unwrap();

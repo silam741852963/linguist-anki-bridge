@@ -1,4 +1,5 @@
 //! Decode source audio into bounded packet buffers without rewriting source bytes.
+mod ogg;
 use serde::Serialize;
 use std::io::Cursor;
 use symphonia::core::{
@@ -91,6 +92,12 @@ pub fn inspect_audio(
     if bytes.is_empty() || bytes.len() as u64 > cap {
         return Err(AudioInputLimit);
     }
+    let ogg_extent_verified = if bytes.starts_with(b"OggS") {
+        ogg::validate_extent(bytes)?;
+        true
+    } else {
+        false
+    };
     let source = MediaSourceStream::new(Box::new(Cursor::new(bytes.to_vec())), Default::default());
     let mut format = symphonia::default::get_probe()
         .probe(
@@ -146,7 +153,8 @@ pub fn inspect_audio(
         decoded_sample_budget_bytes: 0,
         decoded_packets: 0,
         stream_end_observed: false,
-        container_extent_verified: expected_frames.is_some(),
+        container_extent_verified: expected_frames.is_some()
+            || (container == "ogg" && ogg_extent_verified),
         decoder_verification: None,
         decoder: "symphonia/0.6.1",
     };

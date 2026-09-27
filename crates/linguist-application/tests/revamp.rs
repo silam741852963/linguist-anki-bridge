@@ -55,7 +55,7 @@ fn setup_id(
     (RevampCapture { captured, mapping }, settings)
 }
 #[test]
-fn source_audio_receipt_and_completeness_review_survive_restart() {
+fn source_audio_receipt_and_archive_role_survive_restart() {
     let (mut capture, mut settings) = setup(
         "english_vocab",
         &[("Word", "cat"), ("Media", "[sound:misnamed.png]")],
@@ -86,7 +86,7 @@ fn source_audio_receipt_and_completeness_review_survive_restart() {
         linguist_core::records::MediaRole::Archive
     );
     assert!(
-        doc.issues
+        !doc.issues
             .iter()
             .any(|i| i.code == "SOURCE_AUDIO_COMPLETENESS_REVIEW")
     );
@@ -97,7 +97,7 @@ fn source_audio_receipt_and_completeness_review_survive_restart() {
         .unwrap();
     let receipt: serde_json::Value = serde_json::from_str(&evidence.claim).unwrap();
     assert_eq!(receipt["asset_digest"], digest);
-    assert_eq!(receipt["inspection"]["container_extent_verified"], false);
+    assert_eq!(receipt["inspection"]["container_extent_verified"], true);
     assert_eq!(receipt["inspection"]["stream_end_observed"], true);
     assert_eq!(store.asset(&digest, 100000).unwrap(), bytes);
     drop(store);
