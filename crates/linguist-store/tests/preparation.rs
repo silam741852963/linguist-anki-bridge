@@ -121,6 +121,121 @@ fn capture_items(store: &mut Store, definition: &PreparationDefinition) -> Strin
 }
 
 #[test]
+fn audit_pages_verify_chain_anchors_and_reject_rehashed_broken_links() {
+    use linguist_store::preparation_control::ControlAction;
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    let id = definition.job.id;
+    store.create_preparation_job(&definition).unwrap();
+    let pause = store
+        .request_preparation_control(id, ControlAction::Pause)
+        .unwrap();
+    let resume = store
+        .request_preparation_control(id, ControlAction::Resume)
+        .unwrap();
+    let mut cancel = store
+        .request_preparation_control(id, ControlAction::Cancel)
+        .unwrap();
+    assert_eq!(
+        store.preparation_controls(id, 1, 1).unwrap()[0].digest,
+        resume.digest
+    );
+    assert_eq!(
+        store.preparation_controls(id, 2, 1).unwrap()[0].digest,
+        cancel.digest
+    );
+    assert!(store.preparation_controls(id, 100, 1).unwrap().is_empty());
+    assert_eq!(
+        store.preparation_controls(id, 0, 10).unwrap()[0].digest,
+        pause.digest
+    );
+    let first = store
+        .append_preparation_event(
+            id,
+            definition.job.item_ids[0],
+            1,
+            PreparationStage::Started,
+            None,
+        )
+        .unwrap();
+    let mut failed = store
+        .append_preparation_event(
+            id,
+            definition.job.item_ids[0],
+            1,
+            PreparationStage::Failed {
+                code: "SOURCE_READ_TIMEOUT".into(),
+                retry_eligible: true,
+            },
+            Some(&first.digest),
+        )
+        .unwrap();
+    let mut sequences = Vec::new();
+    store
+        .visit_preparation_events(id, 0, 10, |receipt| {
+            sequences.push(receipt.event.sequence);
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(sequences, [1, 2]);
+    assert!(store.preparation_events(id, 100, 1).unwrap().is_empty());
+    cancel.event.parent_digest = None;
+    failed.event.parent_digest = None;
+    let db = rusqlite::Connection::open(f.0.join("state.sqlite3")).unwrap();
+    db.execute_batch(
+        "DROP TRIGGER preparation_controls_no_update;DROP TRIGGER preparation_events_no_update;",
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE preparation_controls SET digest=?1,body=?2 WHERE job_id=?3 AND sequence=3",
+        rusqlite::params![
+            canonical::digest("preparation-control", &cancel.event).unwrap(),
+            canonical::bytes(&cancel.event).unwrap(),
+            id.to_string()
+        ],
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE preparation_events SET digest=?1,body=?2 WHERE job_id=?3 AND sequence=2",
+        rusqlite::params![
+            canonical::digest("preparation-event", &failed.event).unwrap(),
+            canonical::bytes(&failed.event).unwrap(),
+            id.to_string()
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        store.preparation_controls(id, 2, 1).unwrap_err(),
+        "PREPARATION_CONTROL_CHAIN_CORRUPT"
+    );
+    assert!(store.preparation_controls(id, 0, 10).is_err());
+    assert_eq!(
+        store.preparation_events(id, 1, 1).unwrap_err(),
+        "PREPARATION_EVENT_CORRUPT"
+    );
+    assert!(store.preparation_head(id).is_err());
+    db.execute(
+        "UPDATE preparation_controls SET digest='forged' WHERE job_id=?1 AND sequence=2",
+        [id.to_string()],
+    )
+    .unwrap();
+    assert_eq!(
+        store.preparation_controls(id, 2, 1).unwrap_err(),
+        "PREPARATION_CONTROL_CORRUPT"
+    );
+    db.execute(
+        "UPDATE preparation_events SET body=zeroblob(10485761) WHERE job_id=?1 AND sequence=1",
+        [id.to_string()],
+    )
+    .unwrap();
+    assert_eq!(
+        store.preparation_events(id, 1, 1).unwrap_err(),
+        "PREPARATION_EVENT_CORRUPT"
+    );
+}
+
+#[test]
 fn controls_are_immutable_idempotent_and_gate_dispatch_without_losing_results() {
     use linguist_store::{lease::Resource, preparation_control::ControlAction};
     let f = Fixture::new();

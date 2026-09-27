@@ -2,6 +2,74 @@
 use linguist_core::records::*;
 use std::collections::BTreeMap;
 
+/// Read-only history page: summaries retain evidence references without document bodies.
+pub fn audit(
+    store: &linguist_store::Store,
+    job: uuid::Uuid,
+    after_checkpoint: u32,
+    after_control: u32,
+    limit: u32,
+) -> Result<serde_json::Value, String> {
+    use linguist_store::preparation::PreparationStage;
+    let definition = store.preparation_job(job)?;
+    let inputs: BTreeMap<_, _> = definition
+        .job
+        .item_ids
+        .iter()
+        .zip(&definition.job.plan_refs)
+        .collect();
+    let mut checkpoints = Vec::new();
+    // Stream one captured document at a time; output never accumulates their full bodies.
+    if !(1..=1000).contains(&limit) {
+        return Err("JOB_AUDIT_PAGE_LIMIT: select --limit between 1 and 1000".into());
+    }
+    store.visit_preparation_events(job, after_checkpoint, limit, |receipt| {
+        let cursor = receipt.event.sequence;
+        let item = receipt.event.item_id;
+        let input = inputs.get(&item).ok_or("PREPARATION_EVENT_ITEM_CONFLICT")?;
+        let detail = match &receipt.event.stage {
+            PreparationStage::Started => serde_json::json!({"state":"started"}),
+            PreparationStage::Failed {
+                code,
+                retry_eligible,
+            } => {
+                serde_json::json!({"state":"failed","error_code":code,"retry_classified":retry_eligible})
+            }
+            PreparationStage::Captured { document } => {
+                let assets: std::collections::BTreeSet<_> = document
+                    .archives
+                    .iter()
+                    .flat_map(|archive| &archive.asset_digests)
+                    .chain(document.media.iter().map(|media| &media.digest))
+                    .collect();
+                serde_json::json!({"state":"captured","document_id":document.id,"semantic_digest":document.semantic_digest().map_err(|e| e.to_string())?,"asset_digests":assets,"source_digests":document.sources.iter().map(|source| &source.digest).collect::<Vec<_>>()})
+            }
+        };
+        checkpoints.push(serde_json::json!({"sequence":cursor,"digest":receipt.digest,"parent_digest":receipt.event.parent_digest,"item_id":item,"input_ref":input,"attempt":receipt.event.attempt,"detail":detail}));
+        Ok(())
+    })?;
+    let controls = store.preparation_controls(job, after_control, limit)?;
+    let next_checkpoint = checkpoints.last().map(|value| value["sequence"].clone());
+    let next_control = controls.last().map(|receipt| receipt.event.sequence);
+    let source_plan = match store.revision(job, 1) {
+        Err(error) if error == "PLAN_NOT_FOUND" => None,
+        Err(error) => return Err(error),
+        Ok(plan) => {
+            if plan.settings != definition.job.settings
+                || plan.selection.as_ref() != Some(&definition.selection)
+            {
+                return Err("PREPARATION_PLAN_CONFLICT".into());
+            }
+            Some(
+                serde_json::json!({"id":job,"revision":1,"digest":plan.approval_digest().map_err(|e| e.to_string())?,"retained_assets_verified":true,"checkpoint_binding_verified":false}),
+            )
+        }
+    };
+    Ok(
+        serde_json::json!({"schema_version":2,"job_id":job,"scope":"local_history_page","checkpoints":checkpoints,"controls":controls,"next_checkpoint_sequence":next_checkpoint,"next_control_sequence":next_control,"source_plan":source_plan,"page_hashes_and_links_verified":true,"full_history_checked":false,"native_verified":false,"worker_liveness":"unverified","writes_enabled":false}),
+    )
+}
+
 /// Run bounded source-capture workers and publish a complete review-required draft.
 pub fn run(
     root: &std::path::Path,

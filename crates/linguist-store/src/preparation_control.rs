@@ -58,6 +58,69 @@ pub(crate) fn stops_dispatch(connection: &rusqlite::Connection, job: Uuid) -> Re
     Ok(read(connection, job)?.is_some_and(|receipt| receipt.event.action != ControlAction::Resume))
 }
 impl Store {
+    /// Verify a bounded control-history page and its immediately preceding anchor.
+    pub fn preparation_controls(
+        &self,
+        job: Uuid,
+        after_sequence: u32,
+        limit: u32,
+    ) -> Result<Vec<ControlReceipt>> {
+        if !(1..=1000).contains(&limit) {
+            return Err("INVALID_PAGE_LIMIT".into());
+        }
+        self.preparation_job(job)?;
+        let mut statement = self.connection.prepare(
+            "SELECT sequence,digest,CASE WHEN length(body)<=4096 THEN body ELSE NULL END FROM preparation_controls WHERE job_id=?1 AND sequence>=?2 ORDER BY sequence LIMIT ?3",
+        ).map_err(sql)?;
+        let rows = statement
+            .query_map(
+                params![
+                    job.to_string(),
+                    after_sequence.max(1),
+                    limit + u32::from(after_sequence > 0)
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, u32>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<Vec<u8>>>(2)?,
+                    ))
+                },
+            )
+            .map_err(sql)?;
+        let mut sequence = after_sequence;
+        let mut previous = None;
+        let mut receipts = Vec::new();
+        for row in rows {
+            let (stored_sequence, digest, body) = row.map_err(sql)?;
+            let body = body.ok_or("PREPARATION_CONTROL_CORRUPT")?;
+            let event: ControlEvent =
+                canonical::parse(&body).map_err(|_| "PREPARATION_CONTROL_CORRUPT")?;
+            if event.schema_version != 1
+                || event.job_id != job
+                || event.sequence != stored_sequence
+                || canonical::digest("preparation-control", &event)
+                    .map_err(|_| "PREPARATION_CONTROL_CORRUPT")?
+                    != digest
+            {
+                return Err("PREPARATION_CONTROL_CORRUPT".into());
+            }
+            if after_sequence > 0 && event.sequence == after_sequence {
+                previous = Some(digest);
+                continue;
+            }
+            if sequence.checked_add(1) != Some(event.sequence)
+                || event.parent_digest != previous
+                || (after_sequence > 0 && previous.is_none())
+            {
+                return Err("PREPARATION_CONTROL_CHAIN_CORRUPT".into());
+            }
+            sequence = event.sequence;
+            previous = Some(digest.clone());
+            receipts.push(ControlReceipt { digest, event });
+        }
+        Ok(receipts)
+    }
     pub fn preparation_control(&self, job: Uuid) -> Result<Option<ControlReceipt>> {
         self.preparation_job(job)?;
         read(&self.connection, job)

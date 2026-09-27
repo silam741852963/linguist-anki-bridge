@@ -723,7 +723,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-46 \u2014 `jobs audit JOB`",
       "title": "OP-46 \u2014 `jobs audit JOB`",
-      "words": 59,
+      "words": 307,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"

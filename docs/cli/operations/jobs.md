@@ -231,6 +231,33 @@ Result/failure: No Anki deletion; no automatic history pruning. The shared wrapp
 
 ## OP-46 — `jobs audit JOB`
 
+Current prepare-mode implementation audits a bounded local history page.
+`--after-checkpoint N` and `--after-control N` are independent exclusive sequence
+cursors (default zero). `--limit` or configured `output.page_size` supplies a
+1–1000 page size; larger configured pages require an explicit supported limit.
+Verify the immutable definition, record identities and hashes, consecutive
+sequences and parent-digest links, including the preceding boundary anchor. Reject
+checkpoint/anchor bodies above frozen `input.max_file_mb` and controls above 4 KiB
+before materializing them from SQLite. Corrupt preparation history exits 7 with
+structured diagnostics and no success result on stdout.
+History earlier than the boundary anchor is outside this page's verification scope.
+Checkpoint storage streams each captured document through verification rather
+than retaining full bodies for the whole page. Captured rows verify original
+archive/media bytes and report document/semantic/source/asset digests without
+document content. Failed rows report stable codes and recorded retry classification,
+which does not authorize retry. Controls report their immutable request receipts.
+Return separate next sequence cursors; empty subsequent pages terminate traversal.
+If an initial source plan exists, verify its stored body, approval digest, retained
+assets and exact frozen settings/selection. Its complete checkpoint binding and
+later review/approval/native histories are not checked by this page command.
+Output says `scope=local_history_page`, `full_history_checked=false`,
+`native_verified=false` and `worker_liveness=unverified`; it cannot certify whole-job
+recovery or a stopped worker. Concurrent append-only history may advance between
+checkpoint/control reads; no cross-stream snapshot claim is made. Invalid hashes,
+anchors, gaps or links fail closed. `--live` explicitly reports unavailable native
+verification. Unknown/absent jobs never initialize state. Full consistency/approval
+and native collection audit remain pending.
+
 Inputs: Optional --live.
 
 Effects: Local read; optional Anki read.

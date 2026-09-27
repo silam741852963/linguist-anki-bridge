@@ -92,6 +92,18 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum JobCommand {
+    /// Inspect verified local checkpoint/control pages; never reads Anki.
+    Audit {
+        job: uuid::Uuid,
+        #[arg(long, default_value_t = 0)]
+        after_checkpoint: u32,
+        #[arg(long, default_value_t = 0)]
+        after_control: u32,
+        #[arg(long,value_parser=clap::value_parser!(u32).range(1..=1000))]
+        limit: Option<u32>,
+        #[arg(long)]
+        live: bool,
+    },
     /// Upgrade existing local job storage after preserving a verified backup.
     Migrate,
     /// Request a durable pause; dispatched reads finish their accounting.
@@ -604,6 +616,24 @@ fn run(cli: Cli) -> Result<u8, String> {
             };
             let page = settings.values["output.page_size"].as_u64().unwrap() as u32;
             match command {
+                JobCommand::Audit {
+                    job,
+                    after_checkpoint,
+                    after_control,
+                    limit,
+                    live,
+                } => {
+                    if live {
+                        return Err("CAPABILITY_UNAVAILABLE: live job audit requires native collection verification".into());
+                    }
+                    emit(&linguist_application::jobs::audit(
+                        store.as_ref().ok_or("PREPARATION_JOB_NOT_FOUND")?,
+                        job,
+                        after_checkpoint,
+                        after_control,
+                        limit.unwrap_or(page),
+                    )?)?;
+                }
                 JobCommand::List { after, limit } => {
                     let jobs = store
                         .as_ref()
@@ -1315,7 +1345,9 @@ fn select_values(
 
 fn error_exit(message: &str) -> u8 {
     let code = message.split(':').next().unwrap_or(message);
-    if code == "PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY" {
+    if code == "PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY"
+        || (code.starts_with("PREPARATION_") && code.ends_with("_CORRUPT"))
+    {
         7
     } else if code == "DOCUMENT_NOT_READY" {
         4

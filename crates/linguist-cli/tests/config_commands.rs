@@ -114,6 +114,57 @@ fn queued_job_controls_resume_cancel_and_explicit_migration_preserve_state() {
         .preparation_events(id.parse().unwrap(), 0, 10)
         .unwrap();
     assert_eq!(events.len(), 2);
+    for (after_checkpoint, after_control, checkpoint_count, control_action) in [
+        (0, 0, 1, Some("pause")),
+        (1, 1, 1, Some("resume")),
+        (2, 2, 0, Some("cancel")),
+        (2, 3, 0, None),
+    ] {
+        let out = cli()
+            .args([
+                "--set",
+                &state,
+                "--set",
+                "output.page_size=1",
+                "jobs",
+                "audit",
+                id,
+                "--after-checkpoint",
+                &after_checkpoint.to_string(),
+                "--after-control",
+                &after_control.to_string(),
+            ])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(
+            value["checkpoints"].as_array().unwrap().len(),
+            checkpoint_count
+        );
+        assert_eq!(value["scope"], "local_history_page");
+        assert_eq!(value["full_history_checked"], false);
+        assert_eq!(value["native_verified"], false);
+        assert_eq!(value["page_hashes_and_links_verified"], true);
+        if let Some(action) = control_action {
+            assert_eq!(value["controls"][0]["event"]["action"], action);
+        } else {
+            assert_eq!(value["controls"], serde_json::json!([]));
+        }
+    }
+    let live = cli()
+        .args(["--set", &state, "jobs", "audit", id, "--live"])
+        .output()
+        .unwrap();
+    assert_eq!(live.status.code(), Some(3));
+    assert!(live.stdout.is_empty());
+    assert_eq!(
+        store
+            .preparation_events(id.parse().unwrap(), 0, 10)
+            .unwrap()
+            .len(),
+        2
+    );
     assert!(
         !store
             .preparation_job(id.parse().unwrap())
@@ -128,6 +179,40 @@ fn queued_job_controls_resume_cancel_and_explicit_migration_preserve_state() {
             .to_string_lossy()
             .starts_with(".schema-v6-")
     }));
+    let mut control = store
+        .preparation_control(id.parse().unwrap())
+        .unwrap()
+        .unwrap();
+    control.event.parent_digest = None;
+    let db = rusqlite::Connection::open(root.join("state.sqlite3")).unwrap();
+    db.execute_batch("DROP TRIGGER preparation_controls_no_update;")
+        .unwrap();
+    db.execute(
+        "UPDATE preparation_controls SET digest=?1,body=?2 WHERE job_id=?3 AND sequence=3",
+        rusqlite::params![
+            linguist_core::canonical::digest("preparation-control", &control.event).unwrap(),
+            linguist_core::canonical::bytes(&control.event).unwrap(),
+            id
+        ],
+    )
+    .unwrap();
+    let corrupt = cli()
+        .args([
+            "--set",
+            &state,
+            "jobs",
+            "audit",
+            id,
+            "--after-control",
+            "2",
+            "--limit",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(corrupt.status.code(), Some(7));
+    assert!(corrupt.stdout.is_empty());
+    drop(db);
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -2054,6 +2139,29 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             let repeat: serde_json::Value = serde_json::from_slice(&repeat.stdout).unwrap();
             assert_eq!(repeat["captured_this_run"], 0);
             assert_eq!(repeat["plan"], value["plan"]);
+            let audited = cli()
+                .args([
+                    "--set",
+                    &format!("storage.state_dir={}", root.display()),
+                    "jobs",
+                    "audit",
+                    &id,
+                ])
+                .output()
+                .unwrap();
+            assert!(audited.status.success(), "{audited:?}");
+            let audited: serde_json::Value = serde_json::from_slice(&audited.stdout).unwrap();
+            assert_eq!(audited["checkpoints"].as_array().unwrap().len(), 4);
+            assert_eq!(audited["checkpoints"][2]["detail"]["state"], "captured");
+            assert!(audited["checkpoints"][2]["detail"]["document"].is_null());
+            assert!(
+                !audited["checkpoints"][2]["detail"]["asset_digests"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+            assert_eq!(audited["source_plan"]["id"], id);
+            assert_eq!(audited["source_plan"]["checkpoint_binding_verified"], false);
             drop(store);
             std::fs::remove_dir_all(root).unwrap();
             continue;

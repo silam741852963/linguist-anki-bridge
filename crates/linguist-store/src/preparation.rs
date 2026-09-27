@@ -669,27 +669,80 @@ impl Store {
         after_sequence: u32,
         limit: u32,
     ) -> Result<Vec<PreparationReceipt>> {
+        let mut receipts = Vec::new();
+        self.visit_preparation_events(id, after_sequence, limit, |receipt| {
+            receipts.push(receipt);
+            Ok(())
+        })?;
+        Ok(receipts)
+    }
+    /// Stream verified checkpoints without retaining captured document bodies for the whole page.
+    pub fn visit_preparation_events(
+        &self,
+        id: Uuid,
+        after_sequence: u32,
+        limit: u32,
+        mut visitor: impl FnMut(PreparationReceipt) -> Result<()>,
+    ) -> Result<()> {
         if !(1..=1000).contains(&limit) {
             return Err("INVALID_PAGE_LIMIT".into());
         }
-        self.preparation_job(id)?;
-        let mut statement = self.connection.prepare("SELECT sequence,digest,body FROM preparation_events WHERE job_id=?1 AND sequence>?2 ORDER BY sequence LIMIT ?3").map_err(sql)?;
+        let definition = self.preparation_job(id)?;
+        let max_bytes = definition.job.settings.values["input.max_file_mb"]
+            .as_i64()
+            .unwrap()
+            * 1024
+            * 1024;
+        let mut statement = self.connection.prepare("SELECT sequence,digest,CASE WHEN length(body)<=?4 THEN body ELSE NULL END FROM preparation_events WHERE job_id=?1 AND sequence>?2 ORDER BY sequence LIMIT ?3").map_err(sql)?;
         let rows = statement
-            .query_map(params![id.to_string(), after_sequence, limit], |r| {
-                Ok((
-                    r.get::<_, u32>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, Vec<u8>>(2)?,
-                ))
-            })
+            .query_map(
+                params![id.to_string(), after_sequence, limit, max_bytes],
+                |r| {
+                    Ok((
+                        r.get::<_, u32>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, Option<Vec<u8>>>(2)?,
+                    ))
+                },
+            )
             .map_err(sql)?;
-        rows.map(|row| {
+        let mut previous_sequence = after_sequence;
+        let mut previous_digest: Option<String> = if after_sequence == 0 {
+            None
+        } else {
+            let anchor: Option<(String, Option<Vec<u8>>)> = self.connection.query_row(
+                "SELECT digest,CASE WHEN length(body)<=?3 THEN body ELSE NULL END FROM preparation_events WHERE job_id=?1 AND sequence=?2",
+                params![id.to_string(), after_sequence, max_bytes], |row| Ok((row.get(0)?, row.get(1)?)),
+            ).optional().map_err(sql)?;
+            anchor
+                .map(|(digest, body)| {
+                    let body = body.ok_or("PREPARATION_EVENT_CORRUPT")?;
+                    let event: PreparationEvent =
+                        canonical::parse(&body).map_err(|_| "PREPARATION_EVENT_CORRUPT")?;
+                    if event.job_id != id
+                        || event.schema_version != 1
+                        || event.sequence != after_sequence
+                        || canonical::digest("preparation-event", &event)
+                            .map_err(|_| "PREPARATION_EVENT_CORRUPT")?
+                            != digest
+                    {
+                        return Err("PREPARATION_EVENT_CORRUPT");
+                    }
+                    Ok(digest)
+                })
+                .transpose()?
+        };
+        for row in rows {
             let (sequence, digest, body) = row.map_err(sql)?;
+            let body = body.ok_or("PREPARATION_EVENT_CORRUPT")?;
             let event: PreparationEvent =
                 canonical::parse(&body).map_err(|_| "PREPARATION_EVENT_CORRUPT")?;
             if event.schema_version != 1
                 || event.job_id != id
                 || event.sequence != sequence
+                || previous_sequence.checked_add(1) != Some(sequence)
+                || event.parent_digest != previous_digest
+                || (after_sequence > 0 && previous_digest.is_none())
                 || canonical::digest("preparation-event", &event).map_err(|e| e.to_string())?
                     != digest
             {
@@ -698,8 +751,10 @@ impl Store {
             if let PreparationStage::Captured { document } = &event.stage {
                 self.verify_document_assets(std::slice::from_ref(document.as_ref()))?;
             }
-            Ok(PreparationReceipt { digest, event })
-        })
-        .collect()
+            previous_sequence = sequence;
+            previous_digest = Some(digest.clone());
+            visitor(PreparationReceipt { digest, event })?;
+        }
+        Ok(())
     }
 }

@@ -157,6 +157,18 @@ Next: continue job controls, provider pacing, interrupted-item recovery and enri
 
 ## Verification
 
+`jobs audit` now exposes bounded checkpoint/control history with independent
+sequence cursors and configured page size. Store reads validate identities, hashes,
+consecutive sequences and parent links against a verified boundary anchor; worker
+head reads also benefit from these checks. Capture rows stream through asset
+verification and output digests/IDs rather than complete document bodies. Optional
+initial plans verify retained bytes and frozen selection/settings. Tests cover
+control/checkpoint pagination and exhaustion, streamed records, initial-plan
+summaries, rejected live audits, rehashed-but-broken parent links and forged
+anchors. Output explicitly limits verification to a local history page; full
+checkpoint-to-plan binding, cross-stream snapshots, approval/native consistency
+and stopped-worker proof remain pending.
+
 Schema seven adds append-only digest-linked pause/resume/cancel request history.
 `jobs pause` and `jobs cancel` are idempotent local requests; `jobs resume` records
 resume and invokes the frozen preparation worker. Requests preserve immutable
@@ -168,7 +180,7 @@ storage after a verified private backup, without Anki traffic or absent-state
 initialization. Tests cover queued pause/resume/cancel, pause/cancel during blocked
 parallel reads, no stranded started items, current-action idempotence, immutable
 history, schema-six preservation/backup integrity and historical migrations.
-Durable worker-stop acknowledgements, control audit paging and crash reconciliation
+Durable worker-stop acknowledgements, full consistency audit and crash reconciliation
 remain pending; these requests do not certify a confirmed paused/cancelled state.
 
 `jobs create` now supports query/deck selections and explicit prefix limits in
