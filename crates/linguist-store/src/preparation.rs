@@ -30,6 +30,11 @@ pub struct PreparationDefinition {
     pub selection: SelectionReceipt,
     pub created_at: String,
 }
+impl PreparationDefinition {
+    pub fn validate(&self) -> Result<()> {
+        validate_definition(self)
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PreparationStage {
@@ -68,6 +73,19 @@ pub struct PreparationSummary {
     pub digest: String,
     pub item_count: u32,
     pub checkpoint_count: u32,
+}
+#[derive(Debug, Serialize)]
+pub struct PreparationItemSummary {
+    pub index: u32,
+    pub item_id: Uuid,
+    pub input_ref: String,
+    pub state: String,
+    pub attempt: u16,
+    pub checkpoint_sequence: Option<u32>,
+    pub checkpoint_digest: Option<String>,
+    pub document_id: Option<Uuid>,
+    pub error_code: Option<String>,
+    pub retry_eligible: bool,
 }
 
 fn validate_definition(definition: &PreparationDefinition) -> Result<()> {
@@ -142,6 +160,120 @@ fn validate_definition(definition: &PreparationDefinition) -> Result<()> {
 }
 
 impl Store {
+    pub fn list_preparation_jobs(
+        &self,
+        after: Option<Uuid>,
+        limit: u32,
+    ) -> Result<Vec<PreparationSummary>> {
+        if !(1..=10000).contains(&limit) {
+            return Err("INVALID_PAGE_LIMIT".into());
+        }
+        let mut statement = self.connection.prepare("SELECT j.id,j.digest,j.item_count,(SELECT COUNT(*) FROM preparation_events e WHERE e.job_id=j.id) FROM preparation_jobs j WHERE j.id>?1 ORDER BY j.id LIMIT ?2").map_err(sql)?;
+        let rows = statement
+            .query_map(
+                params![after.map(|id| id.to_string()).unwrap_or_default(), limit],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, u32>(2)?,
+                        r.get::<_, u32>(3)?,
+                    ))
+                },
+            )
+            .map_err(sql)?;
+        rows.map(|row| {
+            let (id, digest, item_count, checkpoint_count) = row.map_err(sql)?;
+            let id = Uuid::parse_str(&id).map_err(|_| "PREPARATION_JOB_CORRUPT")?;
+            let definition = self.preparation_job(id)?;
+            if item_count as usize != definition.job.item_ids.len()
+                || canonical::digest("preparation-definition", &definition)
+                    .map_err(|e| e.to_string())?
+                    != digest
+            {
+                return Err("PREPARATION_JOB_CORRUPT".into());
+            }
+            Ok(PreparationSummary {
+                id,
+                digest,
+                item_count,
+                checkpoint_count,
+            })
+        })
+        .collect()
+    }
+    pub fn preparation_items(
+        &self,
+        id: Uuid,
+        after_index: u32,
+        limit: u32,
+    ) -> Result<Vec<PreparationItemSummary>> {
+        if !(1..=10000).contains(&limit) {
+            return Err("INVALID_PAGE_LIMIT".into());
+        }
+        let definition = self.preparation_job(id)?;
+        let mut summaries = Vec::new();
+        for (index, item_id) in definition
+            .job
+            .item_ids
+            .iter()
+            .enumerate()
+            .skip(after_index as usize)
+            .take(limit as usize)
+        {
+            let row: Option<(u32,String,Vec<u8>)> = self.connection.query_row("SELECT sequence,digest,body FROM preparation_events WHERE job_id=?1 AND item_id=?2 ORDER BY sequence DESC LIMIT 1", params![id.to_string(),item_id.to_string()], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(sql)?;
+            let mut summary = PreparationItemSummary {
+                index: index as u32,
+                item_id: *item_id,
+                input_ref: definition.job.plan_refs[index].clone(),
+                state: "pending".into(),
+                attempt: 0,
+                checkpoint_sequence: None,
+                checkpoint_digest: None,
+                document_id: None,
+                error_code: None,
+                retry_eligible: false,
+            };
+            if let Some((sequence, digest, body)) = row {
+                let event: PreparationEvent =
+                    canonical::parse(&body).map_err(|_| "PREPARATION_EVENT_CORRUPT")?;
+                if event.schema_version != 1
+                    || event.job_id != id
+                    || event.item_id != *item_id
+                    || event.sequence != sequence
+                    || canonical::digest("preparation-event", &event).map_err(|e| e.to_string())?
+                        != digest
+                {
+                    return Err("PREPARATION_EVENT_CORRUPT".into());
+                }
+                summary.attempt = event.attempt;
+                summary.checkpoint_sequence = Some(sequence);
+                summary.checkpoint_digest = Some(digest);
+                match event.stage {
+                    PreparationStage::Started => summary.state = "started".into(),
+                    PreparationStage::Captured { document } => {
+                        self.verify_document_assets(std::slice::from_ref(document.as_ref()))?;
+                        summary.state = "captured".into();
+                        summary.document_id = Some(document.id);
+                    }
+                    PreparationStage::Failed {
+                        code,
+                        retry_eligible,
+                    } => {
+                        summary.state = "failed".into();
+                        summary.error_code = Some(code);
+                        summary.retry_eligible = retry_eligible
+                            && u64::from(event.attempt)
+                                < definition.job.settings.values["jobs.max_item_attempts"]
+                                    .as_u64()
+                                    .unwrap();
+                    }
+                }
+            }
+            summaries.push(summary);
+        }
+        Ok(summaries)
+    }
     pub fn create_preparation_job(&mut self, definition: &PreparationDefinition) -> Result<String> {
         if !self.writable {
             return Err("STORE_READ_ONLY".into());
@@ -164,7 +296,13 @@ impl Store {
                 ],
             )
             .map_err(sql)?;
-        if self.preparation_job(definition.job.id)? != *definition {
+        if canonical::digest(
+            "preparation-definition",
+            &self.preparation_job(definition.job.id)?,
+        )
+        .map_err(|e| e.to_string())?
+            != digest
+        {
             return Err("PREPARATION_JOB_CONFLICT".into());
         }
         Ok(digest)

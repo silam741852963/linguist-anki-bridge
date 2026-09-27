@@ -165,6 +165,16 @@ fn definitions_events_and_original_assets_survive_reopen_with_cas_conflicts() {
         captured.event
     );
     assert_eq!(store.asset(&hash, 1000).unwrap(), b"original capture bytes");
+    let summaries = store.list_preparation_jobs(None, 1).unwrap();
+    assert_eq!(summaries[0].item_count, 2);
+    assert_eq!(summaries[0].checkpoint_count, 2);
+    assert!(store.list_preparation_jobs(Some(id), 1).unwrap().is_empty());
+    let items = store.preparation_items(id, 0, 1).unwrap();
+    assert_eq!(items[0].state, "captured");
+    assert_eq!(items[0].checkpoint_digest.as_ref(), Some(&captured.digest));
+    let pending = store.preparation_items(id, 1, 1).unwrap();
+    assert_eq!(pending[0].state, "pending");
+    assert_eq!(pending[0].input_ref, "anki-note:124");
 }
 
 #[test]
@@ -260,6 +270,35 @@ fn retries_are_explicit_classified_bounded_and_never_assume_a_worker_died() {
             .is_err()
     );
     assert!(db.execute("DELETE FROM preparation_jobs", []).is_err());
+}
+
+#[test]
+fn equivalent_float_settings_are_idempotent_but_changed_settings_conflict() {
+    let f = Fixture::new();
+    let mut store = f.open();
+    let mut definition = definition();
+    definition
+        .job
+        .settings
+        .values
+        .insert("audio.speed".into(), json!(1.0));
+    definition.job.settings.fingerprint =
+        canonical::digest("resolved-settings", &definition.job.settings.values).unwrap();
+    let digest = store.create_preparation_job(&definition).unwrap();
+    assert_eq!(store.create_preparation_job(&definition).unwrap(), digest);
+    let reopened = store.preparation_job(definition.job.id).unwrap();
+    assert_eq!(store.create_preparation_job(&reopened).unwrap(), digest);
+    definition
+        .job
+        .settings
+        .values
+        .insert("audio.speed".into(), json!(1.5));
+    definition.job.settings.fingerprint =
+        canonical::digest("resolved-settings", &definition.job.settings.values).unwrap();
+    assert_eq!(
+        store.create_preparation_job(&definition).unwrap_err(),
+        "PREPARATION_JOB_CONFLICT"
+    );
 }
 
 #[test]

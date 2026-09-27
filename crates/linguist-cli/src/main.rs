@@ -24,6 +24,11 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Queue preparation inputs and inspect durable local progress.
+    Jobs {
+        #[command(subcommand)]
+        command: JobCommand,
+    },
     /// Print shell completions without reading configuration or contacting services.
     Completions {
         #[arg(value_enum)]
@@ -83,6 +88,31 @@ enum Command {
     Models {
         #[command(subcommand)]
         command: Option<ModelCommand>,
+    },
+}
+#[derive(Subcommand)]
+enum JobCommand {
+    /// Queue explicit existing note IDs; never reads notes or starts workers.
+    Create {
+        #[arg(long = "note-id", required = true)]
+        note_ids: Vec<String>,
+    },
+    List {
+        #[arg(long)]
+        after: Option<uuid::Uuid>,
+        #[arg(long,value_parser=clap::value_parser!(u32).range(1..=10000))]
+        limit: Option<u32>,
+    },
+    Show {
+        job: uuid::Uuid,
+    },
+    Items {
+        job: uuid::Uuid,
+        /// Resume at this zero-based position in the frozen input order.
+        #[arg(long, default_value_t = 0)]
+        after_index: u32,
+        #[arg(long,value_parser=clap::value_parser!(u32).range(1..=10000))]
+        limit: Option<u32>,
     },
 }
 #[derive(Subcommand)]
@@ -471,6 +501,70 @@ fn run(cli: Cli) -> Result<u8, String> {
             emit(
                 &serde_json::json!({"version":2,"journals":journals,"total_pending":total_pending,"live_checked":false,"reconciliation_available":false,"state_exists":store.is_some()}),
             )?;
+            Ok(0)
+        }
+        Command::Jobs { command } => {
+            let env: BTreeMap<String, String> = std::env::vars().collect();
+            if let JobCommand::Create { note_ids } = command {
+                let purpose = cli
+                    .purpose
+                    .as_deref()
+                    .ok_or("JOB_PURPOSE_REQUIRED: select --purpose")?;
+                emit(&linguist_application::jobs::create(
+                    purpose, note_ids, &settings, &env,
+                )?)?;
+                return Ok(0);
+            }
+            let root = linguist_config::expand_path(
+                settings.values["storage.state_dir"].as_str().unwrap(),
+                &env,
+            )?;
+            if !root.is_absolute() {
+                return Err("STORE_PATH_MUST_BE_ABSOLUTE".into());
+            }
+            let store = match std::fs::symlink_metadata(&root) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(_) => return Err("STORE_READ_IO".into()),
+                Ok(_) => Some(linguist_store::Store::read_only(&root)?),
+            };
+            let page = settings.values["output.page_size"].as_u64().unwrap() as u32;
+            match command {
+                JobCommand::List { after, limit } => {
+                    let jobs = store
+                        .as_ref()
+                        .map(|s| s.list_preparation_jobs(after, limit.unwrap_or(page)))
+                        .transpose()?
+                        .unwrap_or_default();
+                    let next = jobs.last().map(|j| j.id);
+                    emit(
+                        &serde_json::json!({"schema_version":2,"jobs":jobs,"next_cursor":next,"state_exists":store.is_some(),"execution_available":false}),
+                    )?;
+                }
+                JobCommand::Show { job } => {
+                    let definition = store
+                        .as_ref()
+                        .ok_or("PREPARATION_JOB_NOT_FOUND")?
+                        .preparation_job(job)?;
+                    emit(
+                        &serde_json::json!({"schema_version":2,"definition":definition,"worker_liveness":"unverified","execution_available":false,"writes_enabled":false}),
+                    )?;
+                }
+                JobCommand::Items {
+                    job,
+                    after_index,
+                    limit,
+                } => {
+                    let items = store
+                        .as_ref()
+                        .ok_or("PREPARATION_JOB_NOT_FOUND")?
+                        .preparation_items(job, after_index, limit.unwrap_or(page))?;
+                    let next = items.last().map(|i| i.index + 1);
+                    emit(
+                        &serde_json::json!({"schema_version":2,"job_id":job,"items":items,"next_index":next,"worker_liveness":"unverified","execution_available":false}),
+                    )?;
+                }
+                JobCommand::Create { .. } => unreachable!(),
+            }
             Ok(0)
         }
         Command::Plans { command } => {

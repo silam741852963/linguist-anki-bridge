@@ -6,6 +6,107 @@ fn cli() -> Command {
     c
 }
 #[test]
+fn preparation_jobs_queue_and_paginate_without_anki_or_worker_effects() {
+    let root = std::env::temp_dir().join(format!("lab-job-cli-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.display());
+    let list = cli()
+        .args(["--set", &state, "jobs", "list"])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&list.stdout).unwrap();
+    assert_eq!(value["jobs"], serde_json::json!([]));
+    assert!(!root.exists());
+    for ids in [vec!["0"], vec!["123", "123"]] {
+        let mut command = cli();
+        command.args([
+            "--purpose",
+            "english_vocab",
+            "--set",
+            &state,
+            "jobs",
+            "create",
+        ]);
+        for id in ids {
+            command.args(["--note-id", id]);
+        }
+        let out = command.output().unwrap();
+        assert!(!out.status.success());
+        assert!(out.stdout.is_empty());
+        assert!(!root.exists());
+    }
+    let created = cli()
+        .args([
+            "--purpose",
+            "english_vocab",
+            "--set",
+            &state,
+            "--set",
+            "anki.endpoint=http://127.0.0.1:1",
+            "jobs",
+            "create",
+            "--note-id",
+            "124",
+            "--note-id",
+            "123",
+        ])
+        .output()
+        .unwrap();
+    assert!(created.status.success(), "{:?}", created);
+    let value: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    assert_eq!(value["worker_started"], false);
+    assert_eq!(value["writes_enabled"], false);
+    let id = value["job_id"].as_str().unwrap();
+    let shown = cli()
+        .args(["--set", &state, "jobs", "show", id])
+        .output()
+        .unwrap();
+    assert!(shown.status.success());
+    let shown: serde_json::Value = serde_json::from_slice(&shown.stdout).unwrap();
+    assert_eq!(
+        shown["definition"]["selection"]["selected_note_ids"],
+        serde_json::json!(["123", "124"])
+    );
+    assert_eq!(shown["worker_liveness"], "unverified");
+    let items = cli()
+        .args([
+            "--set",
+            &state,
+            "--set",
+            "output.page_size=1",
+            "jobs",
+            "items",
+            id,
+        ])
+        .output()
+        .unwrap();
+    assert!(items.status.success());
+    let items: serde_json::Value = serde_json::from_slice(&items.stdout).unwrap();
+    assert_eq!(items["items"].as_array().unwrap().len(), 1);
+    assert_eq!(items["items"][0]["input_ref"], "anki-note:123");
+    assert_eq!(items["items"][0]["state"], "pending");
+    assert_eq!(items["next_index"], 1);
+    let items = cli()
+        .args(["--set", &state, "jobs", "items", id, "--after-index", "1"])
+        .output()
+        .unwrap();
+    let items: serde_json::Value = serde_json::from_slice(&items.stdout).unwrap();
+    assert_eq!(items["items"][0]["input_ref"], "anki-note:124");
+    let listed = cli()
+        .args(["--set", &state, "jobs", "list"])
+        .output()
+        .unwrap();
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert_eq!(listed["jobs"][0]["item_count"], 2);
+    assert_eq!(listed["jobs"][0]["checkpoint_count"], 0);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    assert!(store.list_revisions(100).unwrap().is_empty());
+    let id: uuid::Uuid = id.parse().unwrap();
+    assert!(store.preparation_events(id, 0, 100).unwrap().is_empty());
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn help_and_defaults_do_not_read_bad_configuration_or_create_state() {
     let out = cli()
         .args(["--config", "/does/not/exist", "--help"])

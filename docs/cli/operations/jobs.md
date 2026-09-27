@@ -152,3 +152,11 @@ Effects: Local candidate state only.
 3. Emit imported paused/read-only jobs until settings/identity/approval validate.
 
 Result/failure: Migration report with unsupported/ambiguous records; no resumed writes. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
+
+## Current preparation queue commands
+
+OP-35 supports `jobs create --note-id ID [--note-id ID...]` with a required global `--purpose` for one of the four vocabulary/grammar purposes. It accepts only existing-note preparation input at this stage. Validate canonical note IDs, reject duplicates/count exceedance, freeze configured selection order and all settings/paths, allocate ordered item UUIDs and persist an immutable definition. It reads no Anki note, starts no worker and creates no plan. Default enabled enrichment may be queued; worker capability checks remain pending and creation does not claim execution availability.
+
+OP-36 supports `jobs list [--after JOB_UUID] [--limit N]`. OP-37 supports `jobs show JOB_UUID`, exposing the immutable definition and explicitly unverified worker liveness. OP-38 supports `jobs items JOB_UUID [--after-index N] [--limit N]`, returning latest durable item summaries in original input order, including implicit pending items. Summaries include attempt, checkpoint sequence/digest, captured document ID if any, stable error code and bounded retry eligibility. Captured-asset references are verified before reporting captured summaries. A retry flag is classification metadata, not permission to dispatch work.
+
+List/item pages use configured `output.page_size` unless `--limit` overrides it, with a 1–10,000 limit. List cursors are exclusive job UUIDs; item cursors are zero-based positions at which to resume. Responses provide `next_cursor` or `next_index`; an empty subsequent page terminates traversal. Reading absent state returns an empty list without creating directories; show/items require an existing job. Commands read only existing state, send no provider/Anki calls and do not claim worker death or recovery. Query/deck job creation, status/mode filters, history selection, worker execution/control and simulate/apply modes remain pending.

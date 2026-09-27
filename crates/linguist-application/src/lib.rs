@@ -522,6 +522,7 @@ pub mod audio;
 pub mod capture;
 pub mod export;
 pub mod generation;
+pub mod jobs;
 pub mod mapping;
 pub mod media;
 pub mod ollama;
