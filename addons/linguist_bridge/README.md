@@ -24,7 +24,11 @@ create-new publication and restart/concurrent-initializer tests. It is not
 called by startup yet and does not establish collection identity.
 A main-thread session tracker is tested with explicit lifecycle events and file/
 backend replacement observations; actual Anki lifecycle hooks remain pending.
-Durable operation sidecar,
+Explicit lineage metadata initialization now uses a private SQLite sidecar with
+FULL synchronization, WAL and a bounded cross-process startup lock. Tests cover
+concurrent creation, restart, lock timeout and corrupt/unsafe metadata rejection.
+Path associations alone do not prove collection incarnation or authorize writes.
+The helpers are not called by startup. Durable operation deduplication,
 serialized inspection, authenticated controls, mutations, packaging and native
 recovery tests remain pending. Do not install this scaffold as a functioning
 bridge; no installable artifact is produced yet.
