@@ -156,7 +156,7 @@ fn schema_one_migration_has_verified_private_backup() {
     let db = f.root.join("state.sqlite3");
     let connection = rusqlite::Connection::open(&db).unwrap();
     connection
-        .execute_batch("DROP TABLE approvals;DROP TABLE validations;DROP TABLE journal_heads;DROP TABLE journal_events;DROP TABLE leases;PRAGMA user_version=1;")
+        .execute_batch("DROP TABLE preparation_event_assets;DROP TABLE preparation_events;DROP TABLE preparation_jobs;DROP TABLE approvals;DROP TABLE validations;DROP TABLE journal_heads;DROP TABLE journal_events;DROP TABLE leases;PRAGMA user_version=1;")
         .unwrap();
     drop(connection);
     drop(f.store());

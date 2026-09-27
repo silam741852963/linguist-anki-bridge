@@ -249,7 +249,10 @@ impl PlanRevision {
     }
 }
 impl SelectionReceipt {
-    fn validate(&self, plan: &PlanRevision) -> Result<(), crate::canonical::ContractError> {
+    pub fn validate_inputs(
+        &self,
+        settings: &ResolvedSettings,
+    ) -> Result<(), crate::canonical::ContractError> {
         let fail = || crate::canonical::ContractError("PLAN_SELECTION_INVALID".into());
         if self.schema_version != 1
             || !matches!(
@@ -263,14 +266,12 @@ impl SelectionReceipt {
                 .command_limit
                 .is_some_and(|limit| !(1..=100000).contains(&limit))
             || (self.command_limit.is_none() && self.matched_note_ids.len() as u64 > self.max_notes)
-            || plan
-                .settings
+            || settings
                 .values
                 .get("selection.max_notes")
                 .and_then(serde_json::Value::as_u64)
                 != Some(self.max_notes)
-            || plan
-                .settings
+            || settings
                 .values
                 .get("selection.order")
                 .and_then(serde_json::Value::as_str)
@@ -314,6 +315,11 @@ impl SelectionReceipt {
             }
             _ => (),
         }
+        Ok(())
+    }
+    fn validate(&self, plan: &PlanRevision) -> Result<(), crate::canonical::ContractError> {
+        self.validate_inputs(&plan.settings)?;
+        let fail = || crate::canonical::ContractError("PLAN_SELECTION_INVALID".into());
         let mut captured = Vec::new();
         let mut captured_seen = std::collections::BTreeSet::new();
         for document in &plan.documents {

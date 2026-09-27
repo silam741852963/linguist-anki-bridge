@@ -438,7 +438,7 @@ fn schema_three_upgrade_preserves_revisions_and_leases_and_backs_up_first() {
     store.publish_revision(&original).unwrap();
     drop(store);
     let db = rusqlite::Connection::open(f.root.join("state.sqlite3")).unwrap();
-    db.execute_batch("DROP TABLE approvals;DROP TABLE validations; PRAGMA user_version=3;")
+    db.execute_batch("DROP TABLE preparation_event_assets;DROP TABLE preparation_events;DROP TABLE preparation_jobs;DROP TABLE approvals;DROP TABLE validations; PRAGMA user_version=3;")
         .unwrap();
     drop(db);
     let mut store = f.open();
@@ -602,7 +602,7 @@ fn schema_four_upgrade_retains_validation_receipts() {
     let evidence = store.validate_revision(original.id, 1).unwrap();
     drop(store);
     let db = rusqlite::Connection::open(f.root.join("state.sqlite3")).unwrap();
-    db.execute_batch("DROP TABLE approvals; PRAGMA user_version=4;")
+    db.execute_batch("DROP TABLE preparation_event_assets;DROP TABLE preparation_events;DROP TABLE preparation_jobs;DROP TABLE approvals; PRAGMA user_version=4;")
         .unwrap();
     drop(db);
     let store = f.open();

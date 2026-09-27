@@ -9,7 +9,7 @@ use std::{
 };
 pub type Result<T> = std::result::Result<T, String>;
 const APPLICATION_ID: i64 = 0x4c414232;
-const SCHEMA: i64 = 5;
+const SCHEMA: i64 = 6;
 fn sql(e: rusqlite::Error) -> String {
     format!("STORE_SQL: {e}")
 }
@@ -218,7 +218,10 @@ impl Store {
             if version < 4 {
                 tx.execute_batch(validation::SCHEMA_SQL).map_err(sql)?;
             }
-            tx.execute_batch(approval::SCHEMA_SQL).map_err(sql)?;
+            if version < 5 {
+                tx.execute_batch(approval::SCHEMA_SQL).map_err(sql)?;
+            }
+            tx.execute_batch(preparation::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
                 .map_err(sql)?;
             tx.commit().map_err(sql)?;
@@ -233,6 +236,7 @@ impl Store {
             tx.execute_batch(lease::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(validation::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(approval::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(preparation::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)
                 .map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
@@ -418,8 +422,13 @@ impl Store {
         &self,
         plan: &PlanRevision,
     ) -> Result<std::collections::BTreeSet<String>> {
-        let assets: std::collections::BTreeSet<_> = plan
-            .documents
+        self.verify_document_assets(&plan.documents)
+    }
+    fn verify_document_assets(
+        &self,
+        documents: &[linguist_core::LearningDocument],
+    ) -> Result<std::collections::BTreeSet<String>> {
+        let assets: std::collections::BTreeSet<_> = documents
             .iter()
             .flat_map(|document| {
                 document
@@ -437,7 +446,7 @@ impl Store {
         for digest in &assets {
             self.asset(digest, 100 * 1024 * 1024)?;
         }
-        for document in &plan.documents {
+        for document in documents {
             for media in &document.media {
                 if self.asset(&media.digest, media.size_bytes)?.len() as u64 != media.size_bytes {
                     return Err("ASSET_MANIFEST_SIZE_MISMATCH".into());
@@ -530,3 +539,4 @@ pub mod lease;
 pub mod validation;
 
 pub mod approval;
+pub mod preparation;
