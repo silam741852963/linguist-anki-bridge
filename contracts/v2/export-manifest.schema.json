@@ -758,6 +758,16 @@
           "maximum": 65535,
           "minimum": 0
         },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SelectionReceipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "settings": {
           "$ref": "#/$defs/ResolvedSettings"
         },
@@ -1038,6 +1048,41 @@
             "decision",
             "value"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "source_content_verified"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "evidence_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "evidence_ids"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
         }
       ]
     },
@@ -1072,6 +1117,124 @@
         "actor",
         "created_at",
         "choice"
+      ]
+    },
+    "SelectionInput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "note_ids"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "input"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "query"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "input"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "query": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "query"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "deck"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "input"
+          ]
+        }
+      ]
+    },
+    "SelectionReceipt": {
+      "type": "object",
+      "properties": {
+        "matched_note_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_notes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "order": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "selected_note_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selector": {
+          "$ref": "#/$defs/SelectionInput"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "purpose",
+        "selector",
+        "matched_note_ids",
+        "selected_note_ids",
+        "order",
+        "max_notes"
       ]
     },
     "Sense": {

@@ -40,6 +40,7 @@ fn plan() -> PlanRevision {
         },
         binding: None,
         source_digest: "fixture".into(),
+        selection: None,
         documents: vec![doc],
         rendered: vec![rendered],
         review_decisions: vec![],

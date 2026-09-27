@@ -176,6 +176,7 @@ fn approval_binds_content_but_excludes_review_timestamp_and_epoch() {
             capability_digest: "capabilities".into(),
         }),
         source_digest: "source".into(),
+        selection: None,
         documents: vec![doc],
         rendered: vec![rendered],
         review_decisions: vec![ReviewDecision {
@@ -188,6 +189,12 @@ fn approval_binds_content_but_excludes_review_timestamp_and_epoch() {
         }],
     };
     let before = plan.approval_digest().unwrap();
+    assert!(
+        serde_json::to_value(&plan)
+            .unwrap()
+            .get("selection")
+            .is_none()
+    );
     plan.binding.as_mut().unwrap().session_epoch = uuid::Uuid::new_v4();
     plan.review_decisions[0].created_at = "later".into();
     assert_eq!(before, plan.approval_digest().unwrap());

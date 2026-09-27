@@ -336,6 +336,7 @@ fn full_provider_archive_assets_survive_store_publication_and_restart() {
         },
         binding: None,
         source_digest: request.input_digest,
+        selection: None,
         documents: vec![draft.document],
         rendered: vec![],
         review_decisions: vec![],

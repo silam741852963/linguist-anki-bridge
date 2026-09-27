@@ -236,6 +236,7 @@ fn plan_diff_loads_exact_immutable_revisions_and_rejects_live_checks() {
         },
         binding: None,
         source_digest: "first".into(),
+        selection: None,
         documents: vec![],
         rendered: vec![],
         review_decisions: vec![],
@@ -320,6 +321,7 @@ fn plan_edit_cli_creates_child_and_rejects_stale_base() {
         },
         binding: None,
         source_digest: "fixture".into(),
+        selection: None,
         rendered: vec![linguist_core::render::render(&doc, &BTreeMap::new()).unwrap()],
         documents: vec![doc],
         review_decisions: vec![],
@@ -1163,6 +1165,60 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
         let store = linguist_store::Store::read_only(&root).unwrap();
         let plan = store.revision(id, 1).unwrap();
         assert_eq!(plan.documents.len(), count);
+        let receipt = plan.selection.as_ref().unwrap();
+        assert_eq!(receipt.schema_version, 1);
+        assert_eq!(receipt.purpose, purpose);
+        assert_eq!(receipt.order, order);
+        assert_eq!(receipt.max_notes, 1000);
+        let matched = if count == 1 {
+            vec!["123"]
+        } else if mode == "ids" {
+            vec!["124", "123"]
+        } else {
+            vec!["123", "124"]
+        };
+        assert_eq!(receipt.matched_note_ids, matched);
+        let selected = if count == 1 {
+            vec!["123"]
+        } else if order == "input" {
+            vec!["124", "123"]
+        } else {
+            vec!["123", "124"]
+        };
+        assert_eq!(receipt.selected_note_ids, selected);
+        match (&receipt.selector, mode) {
+            (linguist_core::records::SelectionInput::NoteIds(ids), "ids") => {
+                assert_eq!(ids, &receipt.matched_note_ids)
+            }
+            (linguist_core::records::SelectionInput::Query(query), "query") => {
+                assert_eq!(query, "tag:source")
+            }
+            (linguist_core::records::SelectionInput::Deck { name, query }, "deck") => {
+                assert_eq!(name, "Legacy \"cards\"");
+                assert_eq!(*query, linguist_anki::deck_query(name).unwrap());
+            }
+            _ => panic!("wrong selection receipt"),
+        }
+        let mut forged = plan.clone();
+        forged
+            .selection
+            .as_mut()
+            .unwrap()
+            .selected_note_ids
+            .push("125".into());
+        assert_eq!(
+            forged.approval_digest().unwrap_err().to_string(),
+            "PLAN_SELECTION_INVALID"
+        );
+        if mode == "query" {
+            let mut changed = plan.clone();
+            changed.selection.as_mut().unwrap().selector =
+                linguist_core::records::SelectionInput::Query("tag:other".into());
+            assert_ne!(
+                plan.approval_digest().unwrap(),
+                changed.approval_digest().unwrap()
+            );
+        }
         if count == 2 {
             let expected = if order == "note_id" {
                 ["anki_note:123", "anki_note:124"]

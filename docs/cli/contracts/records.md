@@ -26,3 +26,9 @@
 | GateEvidence | gate ID, version matrix, fixture/input hashes, actual commands/assertions/results and artifact references; not_run is never pass |
 
 Secrets never appear in durable settings/logs/export by default. Inputs needed to reproduce generation can contain private material: store them privately in plan data, not routine progress logs.
+
+## Selection receipt
+
+A v2 plan may include `selection` with a version-1 receipt: purpose, tagged `selector` (`note_ids`, `query`, or `deck` with original name and compiled query), normalized `matched_note_ids`, ordered `selected_note_ids`, `order` and `max_notes`. CLI revamp writes it before publishing its revision. Older plans omit the optional field, including during serialization, so their approval projection remains unchanged.
+
+Validate nonempty unique canonical decimal IDs in the Anki v6 safe integer range, supported purpose, version 1, configured order/limit, selector shape and exact selected source correspondence. Numeric order sorts matched IDs; input order preserves them. Captured notes are collected in first-occurrence document/source order, permitting multiple documents to retain one original note while requiring the complete frozen selection. A receipt is part of the approval digest and must survive edits and recovery. It records observed selection; it does not certify native collection identity, atomicity or card history.

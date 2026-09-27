@@ -174,12 +174,40 @@ pub struct PlanRevision {
     pub settings: ResolvedSettings,
     pub binding: Option<CollectionBinding>,
     pub source_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<SelectionReceipt>,
     pub documents: Vec<LearningDocument>,
     pub rendered: Vec<crate::render::RenderedNote>,
     pub review_decisions: Vec<ReviewDecision>,
 }
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(
+    tag = "kind",
+    content = "input",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum SelectionInput {
+    NoteIds(Vec<String>),
+    Query(String),
+    Deck { name: String, query: String },
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SelectionReceipt {
+    pub schema_version: u16,
+    pub purpose: String,
+    pub selector: SelectionInput,
+    pub matched_note_ids: Vec<String>,
+    pub selected_note_ids: Vec<String>,
+    pub order: String,
+    pub max_notes: u64,
+}
 impl PlanRevision {
     pub fn approval_digest(&self) -> Result<String, crate::canonical::ContractError> {
+        if let Some(selection) = &self.selection {
+            selection.validate(self)?;
+        }
         let mut projection = serde_json::to_value(self)?;
         // Epoch is execution identity; stable lineage remains approval-bound.
         if let Some(binding) = projection
@@ -207,6 +235,84 @@ impl PlanRevision {
             }
         }
         crate::canonical::digest("plan", &projection)
+    }
+}
+impl SelectionReceipt {
+    fn validate(&self, plan: &PlanRevision) -> Result<(), crate::canonical::ContractError> {
+        let fail = || crate::canonical::ContractError("PLAN_SELECTION_INVALID".into());
+        if self.schema_version != 1
+            || !matches!(
+                self.purpose.as_str(),
+                "japanese_vocab" | "english_vocab" | "japanese_grammar" | "english_grammar"
+            )
+            || !(1..=100000).contains(&self.max_notes)
+            || self.matched_note_ids.is_empty()
+            || self.matched_note_ids.len() as u64 > self.max_notes
+            || plan
+                .settings
+                .values
+                .get("selection.max_notes")
+                .and_then(serde_json::Value::as_u64)
+                != Some(self.max_notes)
+            || plan
+                .settings
+                .values
+                .get("selection.order")
+                .and_then(serde_json::Value::as_str)
+                != Some(self.order.as_str())
+        {
+            return Err(fail());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for id in &self.matched_note_ids {
+            let value = id.parse::<u64>().map_err(|_| fail())?;
+            if value == 0
+                || value > 9_007_199_254_740_991
+                || value.to_string() != *id
+                || !seen.insert(id)
+            {
+                return Err(fail());
+            }
+        }
+        let mut expected = self.matched_note_ids.clone();
+        match self.order.as_str() {
+            "input" => (),
+            "note_id" => expected.sort_by_key(|id| id.parse::<u64>().unwrap()),
+            _ => return Err(fail()),
+        }
+        if expected != self.selected_note_ids {
+            return Err(fail());
+        }
+        match &self.selector {
+            SelectionInput::NoteIds(ids) if ids != &self.matched_note_ids => return Err(fail()),
+            SelectionInput::Query(query) if query.trim().is_empty() => return Err(fail()),
+            SelectionInput::Deck { name, query }
+                if name.trim().is_empty() || query.trim().is_empty() =>
+            {
+                return Err(fail());
+            }
+            _ => (),
+        }
+        let mut captured = Vec::new();
+        let mut captured_seen = std::collections::BTreeSet::new();
+        for document in &plan.documents {
+            for source in &document.sources {
+                if source.kind == "anki_read_capture_v2" {
+                    let id = source
+                        .location
+                        .strip_prefix("anki_note:")
+                        .ok_or_else(fail)?
+                        .to_owned();
+                    if captured_seen.insert(id.clone()) {
+                        captured.push(id);
+                    }
+                }
+            }
+        }
+        if captured != self.selected_note_ids {
+            return Err(fail());
+        }
+        Ok(())
     }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

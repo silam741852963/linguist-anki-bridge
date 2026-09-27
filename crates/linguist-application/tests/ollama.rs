@@ -719,6 +719,7 @@ fn inference_draft_archives_wire_and_model_evidence_and_recovers_after_restart()
         },
         binding: None,
         source_digest: original.semantic_digest().unwrap(),
+        selection: None,
         documents: vec![draft.document],
         rendered: vec![],
         review_decisions: vec![],

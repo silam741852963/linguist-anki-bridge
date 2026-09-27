@@ -483,6 +483,7 @@ pub fn prepare_with_dictionary(
         binding: None,
         source_digest: canonical::digest("source-capture", &document.sources)
             .map_err(|e| e.to_string())?,
+        selection: None,
         documents: vec![document],
         rendered: rendered.into_iter().collect(),
         review_decisions: vec![],

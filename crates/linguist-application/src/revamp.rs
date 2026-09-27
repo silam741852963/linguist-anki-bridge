@@ -3,7 +3,7 @@ use crate::{mapping::SourceKind, source_archive::RevampCapture};
 use linguist_config::Effective;
 use linguist_core::{
     LearningDocument, Provenance, canonical,
-    records::Evidence,
+    records::{Evidence, SelectionInput, SelectionReceipt},
     validation::{self, Issue, Severity},
 };
 use serde_json::json;
@@ -330,6 +330,15 @@ pub fn publish_capture_drafts(
     purpose: &str,
     environment: &BTreeMap<String, String>,
 ) -> Result<Vec<crate::Prepared>, String> {
+    publish_selected_captures(captures, settings, purpose, environment, None)
+}
+fn publish_selected_captures(
+    captures: &[RevampCapture],
+    settings: &Effective,
+    purpose: &str,
+    environment: &BTreeMap<String, String>,
+    selection: Option<SelectionReceipt>,
+) -> Result<Vec<crate::Prepared>, String> {
     if captures.is_empty() {
         return Err("REVAMP_CAPTURE_MISSING".into());
     }
@@ -380,6 +389,7 @@ pub fn publish_capture_drafts(
         settings: frozen,
         binding: None,
         source_digest,
+        selection,
         documents,
         rendered: vec![],
         review_decisions: vec![],
@@ -389,6 +399,7 @@ pub fn publish_capture_drafts(
             .as_str()
             .ok_or("REVAMP_STATE_PATH_MISSING")?,
     );
+    plan.approval_digest().map_err(|e| e.to_string())?;
     let mut store = linguist_store::Store::open(root)?;
     for (expected, bytes) in captures.iter().flat_map(|capture| &capture.captured.assets) {
         if store.publish_asset(bytes, 100 * 1024 * 1024)? != *expected {
@@ -445,7 +456,14 @@ pub fn prepare_source_revamps(
     environment: &BTreeMap<String, String>,
 ) -> Result<Vec<crate::Prepared>, String> {
     validate_source_revamp(settings, purpose, environment)?;
-    prepare_ids(client, settings, purpose, note_ids, environment)
+    prepare_ids(
+        client,
+        settings,
+        purpose,
+        note_ids,
+        environment,
+        SelectionInput::NoteIds(note_ids.to_vec()),
+    )
 }
 
 pub enum SourceSelector {
@@ -463,12 +481,16 @@ pub fn prepare_source_selection(
     environment: &BTreeMap<String, String>,
 ) -> Result<Vec<crate::Prepared>, String> {
     validate_source_revamp(settings, purpose, environment)?;
-    let query = match selector {
+    let (query, receipt_input) = match selector {
         SourceSelector::NoteIds(ids) => {
-            return prepare_ids(client, settings, purpose, &ids, environment);
+            let input = SelectionInput::NoteIds(ids.clone());
+            return prepare_ids(client, settings, purpose, &ids, environment, input);
         }
-        SourceSelector::Query(query) => query,
-        SourceSelector::Deck(deck) => linguist_anki::deck_query(&deck)?,
+        SourceSelector::Query(query) => (query.clone(), SelectionInput::Query(query)),
+        SourceSelector::Deck(deck) => {
+            let query = linguist_anki::deck_query(&deck)?;
+            (query.clone(), SelectionInput::Deck { name: deck, query })
+        }
     };
     if query.trim().is_empty() {
         return Err("REVAMP_QUERY_EMPTY".into());
@@ -481,7 +503,7 @@ pub fn prepare_source_selection(
     if ids.is_empty() {
         return Ok(vec![]);
     }
-    prepare_ids(client, settings, purpose, &ids, environment)
+    prepare_ids(client, settings, purpose, &ids, environment, receipt_input)
 }
 
 fn validate_source_revamp(
@@ -524,6 +546,7 @@ fn prepare_ids(
     purpose: &str,
     note_ids: &[String],
     environment: &BTreeMap<String, String>,
+    selector: SelectionInput,
 ) -> Result<Vec<crate::Prepared>, String> {
     if note_ids.is_empty()
         || note_ids.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap()
@@ -556,5 +579,14 @@ fn prepare_ids(
         }
         captures.push(capture);
     }
-    publish_capture_drafts(&captures, settings, purpose, environment)
+    let receipt = SelectionReceipt {
+        schema_version: 1,
+        purpose: purpose.into(),
+        selector,
+        matched_note_ids: note_ids.to_vec(),
+        selected_note_ids: selection,
+        order: settings.values["selection.order"].as_str().unwrap().into(),
+        max_notes: settings.values["selection.max_notes"].as_u64().unwrap(),
+    };
+    publish_selected_captures(&captures, settings, purpose, environment, Some(receipt))
 }
