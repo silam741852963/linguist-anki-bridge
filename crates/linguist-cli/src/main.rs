@@ -195,6 +195,12 @@ enum ModelCommand {
     Inspect {
         model: String,
     },
+    /// Preview a fixed v2 model for a purpose; native installation is gated.
+    Install {
+        purpose: String,
+        #[arg(long)]
+        apply: bool,
+    },
     /// Print builtin manifests without contacting Anki.
     Builtin,
 }
@@ -1066,6 +1072,45 @@ fn run(cli: Cli) -> Result<u8, String> {
             let client = anki_client(&settings)?;
             emit(&client.inspect_model(&model)?)?;
             Ok(0)
+        }
+        Command::Models {
+            command: Some(ModelCommand::Install { purpose, apply }),
+        } => {
+            let target = match purpose.as_str() {
+                "japanese_vocab" | "english_vocab" => model::vocabulary(),
+                "japanese_grammar" | "english_grammar" => model::grammar(),
+                _ => return Err("MODEL_PURPOSE_UNSUPPORTED".into()),
+            };
+            if apply {
+                return Err("CAPABILITY_UNAVAILABLE: native model installation requires verified bridge, checkpoint and journal support".into());
+            }
+            let client = anki_client(&settings)?;
+            let existing = client
+                .models()?
+                .into_iter()
+                .find(|entry| entry.name == target.name);
+            let (action, inspection) = if let Some(existing) = existing {
+                let inspected = client.inspect_model(&existing.id)?;
+                let exact = inspected
+                    .compatibility
+                    .iter()
+                    .any(|comparison| comparison.name_matches && comparison.exact_content_match);
+                (
+                    if exact {
+                        "reuse_requires_native_order_verification"
+                    } else {
+                        "name_collision"
+                    },
+                    Some(inspected),
+                )
+            } else {
+                ("create", None)
+            };
+            client.check_profile()?;
+            emit(
+                &serde_json::json!({"schema_version":2,"purpose":purpose,"proposal":action,"target":target,"existing":inspection,"checkpoint_verified":false,"native_template_order_verified":false,"apply_eligible":false,"writes_enabled":false}),
+            )?;
+            Ok(if action == "name_collision" { 4 } else { 0 })
         }
         Command::Decks { command } => {
             if let DeckCommand::List { limit, .. } = &command {

@@ -67,7 +67,7 @@ pub fn inspect(plan: &PlanRevision) -> Result<ValidationEvidence, ContractError>
                 "DUPLICATE_BATCH_ITEM",
                 Severity::Review,
                 None,
-                format!("This item repeats document {first} in the same plan; remove or separate the duplicate before approval."),
+                format!("This item repeats document {first} in the same plan; approve only one item by ID, or prepare corrected inputs as a new plan."),
             ));
         } else {
             semantic_keys.insert(key, doc.id);

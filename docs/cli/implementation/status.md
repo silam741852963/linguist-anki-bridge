@@ -2,6 +2,14 @@
 
 The implementation has started. The finalized handbook remains the target specification; this page records actual code coverage. No work package or release gate is complete yet.
 
+`models install PURPOSE` now has a read-only CLI preview for all four built-in
+purposes. It emits the exact v2 manifest and distinguishes absent names, byte
+matching reuse candidates and same-name collisions. AnkiConnect does not prove
+template order or managed provenance, so preview explicitly leaves installation
+and apply eligibility false. `--apply` rejects before contacting Anki until the
+native bridge, verified checkpoint and journal executor exist. Isolated CLI tests
+cover missing/exact/colliding models and the write gate; no model was installed.
+
 Vocabulary revamps now reuse verified Jisho/Wiktionary enrichment from authored
 preparation. Explicit `auto`/`jisho` for Japanese and `auto`/`wiktionary` for English
 save source revision 1 before dictionary lookup, then publish enriched revision 2.

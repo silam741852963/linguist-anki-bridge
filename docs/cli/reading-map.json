@@ -348,7 +348,7 @@
       "path": "operations/collection.md",
       "heading": "## OP-17 \u2014 `models install PURPOSE`",
       "title": "OP-17 \u2014 `models install PURPOSE`",
-      "words": 70,
+      "words": 176,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

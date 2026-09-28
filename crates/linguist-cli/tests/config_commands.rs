@@ -1,4 +1,119 @@
 use std::process::Command;
+
+#[test]
+fn model_install_preview_distinguishes_create_and_name_collision_without_writes() {
+    use std::io::{BufRead, Read, Write};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    for state in ["missing", "collision", "exact"] {
+        let manifest = linguist_core::model::vocabulary();
+        let template_map: serde_json::Map<String, serde_json::Value> = manifest
+            .templates
+            .iter()
+            .map(|template| {
+                (
+                    template.name.clone(),
+                    serde_json::json!({"Front":template.front,"Back":template.back}),
+                )
+            })
+            .collect();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("anki.endpoint=http://{}", listener.local_addr().unwrap());
+        let stopped = Arc::new(AtomicBool::new(false));
+        let signal = stopped.clone();
+        let server = std::thread::spawn(move || {
+            let mut actions = Vec::new();
+            while !signal.load(Ordering::SeqCst) {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(connection) => connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                        continue;
+                    }
+                    Err(error) => panic!("{error}"),
+                };
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                    .unwrap();
+                let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+                let mut length = 0usize;
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if line.to_ascii_lowercase().starts_with("content-length:") {
+                        length = line.split_once(':').unwrap().1.trim().parse().unwrap();
+                    }
+                }
+                let mut bytes = vec![0; length];
+                reader.read_exact(&mut bytes).unwrap();
+                let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                let action = request["action"].as_str().unwrap();
+                actions.push(action.to_owned());
+                let result = match action {
+                    "getActiveProfile" => serde_json::json!("Fixture"),
+                    "modelNamesAndIds" if state != "missing" => {
+                        serde_json::json!({"Linguist Vocabulary v2":42})
+                    }
+                    "modelNamesAndIds" => serde_json::json!({}),
+                    "modelFieldNames" if state == "exact" => serde_json::json!(&manifest.fields),
+                    "modelFieldNames" => serde_json::json!(["Expression"]),
+                    "modelTemplates" if state == "exact" => serde_json::json!(&template_map),
+                    "modelTemplates" => {
+                        serde_json::json!({"Comprehension":{"Front":"old","Back":"old"}})
+                    }
+                    "modelStyling" if state == "exact" => serde_json::json!({"css":&manifest.css}),
+                    "modelStyling" => serde_json::json!({"css":"old"}),
+                    _ => panic!("unexpected action {action}"),
+                };
+                let body = serde_json::json!({"result":result,"error":null}).to_string();
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+            }
+            actions
+        });
+        let output = cli()
+            .args(["--set", &endpoint, "models", "install", "japanese_vocab"])
+            .output()
+            .unwrap();
+        stopped.store(true, Ordering::SeqCst);
+        let actions = server.join().unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            result["proposal"],
+            match state {
+                "missing" => "create",
+                "collision" => "name_collision",
+                _ => "reuse_requires_native_order_verification",
+            }
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(if state == "collision" { 4 } else { 0 })
+        );
+        assert_eq!(result["target"]["name"], "Linguist Vocabulary v2");
+        assert_eq!(result["apply_eligible"], false);
+        assert_eq!(result["writes_enabled"], false);
+        assert!(actions.iter().all(|action| matches!(
+            action.as_str(),
+            "getActiveProfile"
+                | "modelNamesAndIds"
+                | "modelFieldNames"
+                | "modelTemplates"
+                | "modelStyling"
+        )));
+    }
+    let rejected = cli()
+        .args(["models", "install", "japanese_vocab", "--apply"])
+        .output()
+        .unwrap();
+    assert_eq!(rejected.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("CAPABILITY_UNAVAILABLE"));
+}
 fn cli() -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"));
     c.env_clear();

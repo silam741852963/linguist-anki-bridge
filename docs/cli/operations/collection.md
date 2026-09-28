@@ -84,6 +84,18 @@ Effects: Preview by default; Anki schema write only with --apply.
 
 Result/failure: Verified model receipt or recovery ID; never overwrites same-name different model. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current preview implementation supports the four built-in Japanese/English
+vocabulary/grammar purposes. Without `--apply`, it performs profile-pinned
+read-only model inventory/inspection and returns the exact v2 field, template and
+CSS manifest. It reports `create` when the name is absent,
+`reuse_requires_native_order_verification` when field order and template/CSS
+bytes match, or `name_collision` when a same-name model differs. Template order
+and managed provenance are not established by AnkiConnect's read actions, so
+even matching content is only a reuse candidate. A collision exits review-needed
+and is never auto-overwritten. `--apply` fails before any Anki request until the
+verified native bridge, checkpoint and journal executor are implemented. Preview
+never claims apply eligibility or mutates the collection.
+
 ## OP-18 — `notes list`
 
 Inputs: Exactly one selector family: IDs, query, deck/purpose; limit/cursor.
