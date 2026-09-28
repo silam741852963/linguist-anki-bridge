@@ -5,15 +5,17 @@ The implementation has started. The finalized handbook remains the target specif
 The inactive Python companion now has a private SQLite operation ledger beside
 the installation/lineage helpers. It accepts only bounded versioned request envelopes
 with exact UUID, digest, session, owner and fencing identities, and appends
-hash-linked queued/running/unknown events. Identical duplicate requests reuse the
-same status; changed identities conflict; any unresolved operation blocks a new
-one. Running and unknown states survive restart and cannot be redispatched by a
-repeated transition. Tests cover concurrent duplicates, immutable evidence,
-corruption, symlink rejection and explicit initialization. Variant-specific
-mutation bodies are not yet validated. No startup hook or
-Anki action calls this ledger. It has no verified/failed terminal transition,
-native effect, recovery authority, or CLI journal linkage, so collection writes
-remain disabled.
+hash-linked queued/running/unknown events. A queued operation can transition to
+`failed_before_write` with its exact owner/fence and a bounded reason, allowing
+the next operation to queue. This transition cannot follow running/unknown; a
+future dispatcher must durably mark running before calling Anki. Identical
+duplicate requests reuse their existing status; changed identities conflict;
+running/unknown block new work across restart. Tests cover restart, concurrent
+start/fail races, immutable evidence, corruption, symlink rejection and explicit
+initialization. Variant-specific mutation bodies are not yet validated. No startup
+hook or Anki action calls this ledger. The pre-write failure is only a local
+ledger fact, not a verified Anki no-effect receipt. The ledger has no native effect,
+recovery authority, or CLI journal linkage, so collection writes remain disabled.
 
 `plans diff --live` now combines an exact saved-revision diff with the bounded
 read-only source comparison. Saved revamp card IDs come from revalidated archived

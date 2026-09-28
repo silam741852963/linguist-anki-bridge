@@ -30,13 +30,18 @@ concurrent creation, restart, lock timeout and corrupt/unsafe metadata rejection
 Path associations alone do not prove collection incarnation or authorize writes.
 An inactive operation ledger now records bounded versioned request envelopes, exact
 payload/approval/session/owner identities and append-only queued/running/unknown
-events. Duplicate UUID+identical payload replays the existing status; changed
-metadata conflicts. A second operation is blocked while any first operation is
-unresolved. Running/unknown states survive restart and never authorize automatic
-redispatch. Private file checks, FULL-sync SQLite, immutable-event triggers,
-event hash links and concurrent duplicate tests cover this local sidecar boundary.
+events. A queued request may end as `failed_before_write` under the same owner and
+fence, with an explicit reason; only then can a later request queue. The running
+event must be durable before any future dispatcher calls Anki. Duplicate
+UUID+identical payload replays the existing status; changed metadata conflicts.
+Running/unknown states survive restart, block later requests and never authorize
+automatic redispatch. Private file checks, FULL-sync SQLite, immutable-event
+triggers, event hash links and concurrent transition tests cover this local
+sidecar boundary.
 Initialization is explicit and not called by startup. The ledger cannot mark
 success, dispatch Anki calls, reconcile unknown effects or verify native state.
+`failed_before_write` records only that this inactive ledger never advanced the
+request to running; it is not a verified no-effect receipt from Anki.
 Variant-specific mutation bodies are not validated or dispatched. It is not yet
 linked to collection lineage/session lifecycle or the Rust CLI
 journal, so it grants no mutation capability. Serialized inspection,

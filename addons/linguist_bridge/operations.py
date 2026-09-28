@@ -23,6 +23,12 @@ VARIANTS = frozenset({
     "install_model", "export_checkpoint", "store_media", "create_note",
     "update_note", "restore_note", "delete_unstudied_created_note",
 })
+BEFORE_WRITE_REASONS = frozenset({
+    "preflight_rejected", "operator_cancelled", "session_changed", "checkpoint_failed",
+})
+UNKNOWN_REASONS = frozenset({
+    "transport_ambiguous", "worker_crash", "native_observation_incomplete",
+})
 
 
 def _strict_object(pairs):
@@ -217,10 +223,14 @@ class OperationLedger:
                     or event["sequence"] != expected or event["previous_digest"] != previous
                     or type(event["recorded_ns"]) is not int or event["recorded_ns"] <= 0):
                 raise OperationError("BRIDGE_OPERATION_HISTORY_INVALID")
-            allowed = ("queued",) if expected == 1 else (("running",) if expected == 2 else ("unknown",))
-            if (event["state"] not in allowed or (expected < 3 and event["reason"] is not None)
-                    or (expected == 3 and (type(event["reason"]) is not str
-                        or event["reason"] not in {"transport_ambiguous", "worker_crash", "native_observation_incomplete"}))):
+            allowed = {1: ("queued",), 2: ("running", "failed_before_write"), 3: ("unknown",)}[expected]
+            expected_reason = (BEFORE_WRITE_REASONS if event["state"] == "failed_before_write"
+                               else UNKNOWN_REASONS if event["state"] == "unknown" else None)
+            if (event["state"] not in allowed
+                    or (expected == 3 and state != "running")
+                    or (expected_reason is None and event["reason"] is not None)
+                    or (expected_reason is not None and
+                        (type(event["reason"]) is not str or event["reason"] not in expected_reason))):
                 raise OperationError("BRIDGE_OPERATION_HISTORY_INVALID")
             state, reason, previous = event["state"], event["reason"], digest
         return {"lineage_id":lineage_id, "operation_id":operation_id,
@@ -275,8 +285,13 @@ class OperationLedger:
                     if row != expected:
                         raise OperationError("BRIDGE_OPERATION_REPLAY_CONFLICT")
                     return status
-                if self._db.execute("SELECT 1 FROM operations LIMIT 1").fetchone():
-                    raise OperationError("BRIDGE_OPERATION_PENDING")
+                # Validate all earlier histories before allowing another request.
+                # Only an operation that never entered running may be superseded.
+                for prior_lineage, prior_operation in self._db.execute(
+                        "SELECT lineage_id,operation_id FROM operations"):
+                    prior_status, _ = self._status(prior_lineage, prior_operation)
+                    if prior_status["state"] != "failed_before_write":
+                        raise OperationError("BRIDGE_OPERATION_PENDING")
                 self._db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?)",
                                  (lineage_id, operation_id, *expected))
                 self._event(lineage_id, operation_id, 1, "queued", None)
@@ -297,6 +312,8 @@ class OperationLedger:
                     raise OperationError("BRIDGE_OPERATION_OWNER_CONFLICT")
                 if status["state"] == "running":
                     return {"transitioned":False, "status":status}
+                if status["state"] == "failed_before_write":
+                    raise OperationError("BRIDGE_OPERATION_STATE_CONFLICT")
                 if status["state"] != "queued":
                     raise OperationError("BRIDGE_OPERATION_REQUIRES_RECOVERY")
                 self._event(lineage_id, operation_id, 2, "running", status["event_digest"])
@@ -310,7 +327,7 @@ class OperationLedger:
         lineage_id, operation_id, owner_token = _identifier(lineage_id), _identifier(operation_id), _identifier(owner_token)
         if type(fence_generation) is not int or not 1 <= fence_generation <= 2**63 - 1:
             raise OperationError("BRIDGE_OPERATION_FENCE_INVALID")
-        if type(reason) is not str or reason not in {"transport_ambiguous", "worker_crash", "native_observation_incomplete"}:
+        if type(reason) is not str or reason not in UNKNOWN_REASONS:
             raise OperationError("BRIDGE_OPERATION_REASON_INVALID")
         try:
             with self._transaction():
@@ -322,6 +339,29 @@ class OperationLedger:
                 if status["state"] != "running":
                     raise OperationError("BRIDGE_OPERATION_STATE_CONFLICT")
                 self._event(lineage_id, operation_id, 3, "unknown", status["event_digest"], reason)
+                return self._status(lineage_id, operation_id)[0]
+        except OperationError:
+            raise
+        except sqlite3.Error:
+            raise OperationError("BRIDGE_OPERATION_IO_FAILED") from None
+
+    def fail_before_write(self, *, lineage_id, operation_id, owner_token, fence_generation, reason):
+        """Close a queued request only; a running request may already have an effect."""
+        lineage_id, operation_id, owner_token = _identifier(lineage_id), _identifier(operation_id), _identifier(owner_token)
+        if type(fence_generation) is not int or not 1 <= fence_generation <= 2**63 - 1:
+            raise OperationError("BRIDGE_OPERATION_FENCE_INVALID")
+        if type(reason) is not str or reason not in BEFORE_WRITE_REASONS:
+            raise OperationError("BRIDGE_OPERATION_REASON_INVALID")
+        try:
+            with self._transaction():
+                status, row = self._status(lineage_id, operation_id)
+                if row[3] != owner_token or row[4] != fence_generation:
+                    raise OperationError("BRIDGE_OPERATION_OWNER_CONFLICT")
+                if status["state"] == "failed_before_write" and status["reason"] == reason:
+                    return status
+                if status["state"] != "queued":
+                    raise OperationError("BRIDGE_OPERATION_STATE_CONFLICT")
+                self._event(lineage_id, operation_id, 2, "failed_before_write", status["event_digest"], reason)
                 return self._status(lineage_id, operation_id)[0]
         except OperationError:
             raise
