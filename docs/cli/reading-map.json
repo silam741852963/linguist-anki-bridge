@@ -1016,7 +1016,7 @@
       "path": "pipelines/validation.md",
       "heading": "## ALG-VALIDATE \u2014 readiness",
       "title": "ALG-VALIDATE \u2014 readiness",
-      "words": 199,
+      "words": 274,
       "requires": [
         "contracts/invariants.md",
         "decisions/learning-and-providers.md"

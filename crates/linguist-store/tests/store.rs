@@ -432,6 +432,40 @@ fn validation_reports_missing_staged_render_without_rewriting_plan() {
 }
 
 #[test]
+fn validation_blocks_empty_and_repeated_batch_items() {
+    let mut empty = plan();
+    empty.documents.clear();
+    empty.rendered.clear();
+    let report = linguist_core::plan_validation::inspect(&empty).unwrap();
+    assert!(!report.content_ready);
+    assert!(report.items.is_empty());
+
+    let mut batch = plan();
+    let mut repeated = batch.documents[0].clone();
+    repeated.id = uuid::Uuid::new_v4();
+    batch
+        .rendered
+        .push(render::render(&repeated, &BTreeMap::new()).unwrap());
+    batch.documents.push(repeated);
+    let report = linguist_core::plan_validation::inspect(&batch).unwrap();
+    assert!(!report.content_ready);
+    assert!(report.items[0].content_ready);
+    assert!(
+        report.items[1]
+            .issues
+            .iter()
+            .any(|issue| issue.code == "DUPLICATE_BATCH_ITEM")
+    );
+
+    if let linguist_core::LearningContent::Vocabulary(vocab) = &mut batch.documents[1].content {
+        vocab.sense_key = "different-sense".into();
+    }
+    batch.rendered[1] = render::render(&batch.documents[1], &BTreeMap::new()).unwrap();
+    let report = linguist_core::plan_validation::inspect(&batch).unwrap();
+    assert!(report.content_ready);
+}
+
+#[test]
 fn schema_three_upgrade_preserves_revisions_and_leases_and_backs_up_first() {
     let f = Fixture::new();
     let mut store = f.open();

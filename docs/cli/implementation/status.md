@@ -359,4 +359,11 @@ reconciliation and partial-batch plan publication remain pending. Native writes 
 
 Run `cargo test --locked --workspace`, `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, and `python3 docs/cli/validate.py`. Generate schemas with `cargo run --locked -p linguist-core --example schemas`; regeneration must be deterministic. Domain tests live in `crates/linguist-core/tests/domain.rs`. These checks establish local contract behavior; they do not establish native history preservation, useful backups or crash recovery.
 
+Local plan validation now rejects empty plans as content-ready and reports exact
+repeated semantic identities within one batch as `DUPLICATE_BATCH_ITEM`. A
+different vocabulary sense/reading or grammar use/context stays independent.
+This is a local readiness guard only. Configured collection/deck duplicate
+search and `skip_exact` outcomes are not implemented, so apply eligibility
+remains false.
+
 Dictionary Retry-After behavior follows [RFC 9110 §10.2.3](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after) and the [httpdate parser API](https://docs.rs/httpdate/1.0.3/httpdate/fn.parse_http_date.html). Isolated transport tests cover date/numeric forms, obsolete HTTP date formats, malformed/multiple values, retries, redirect delays and immediate deadline refusal without a second request. These are transport tests, not live dictionary compatibility evidence.
