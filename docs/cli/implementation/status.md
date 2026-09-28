@@ -110,6 +110,16 @@ or power-loss certification is claimed. The new interruption event variant uses
 the current checkpoint schema; older binaries may reject it, so do not downgrade
 an active store after recording recovery.
 
+Focused plan inspection is now available through `plans show --item` and
+`plans show --issues-only`. The issue view is bounded/paginated, revalidates the
+exact saved revision, binds templates to the plan/document/issue digest and omits
+raw archives. It shows supported sense/reading and typed cue/exercise choices,
+source/generated evidence choices, and whether media decisions need manual
+attributes. Templates are proposals only; the normal resolver rechecks every
+submitted choice and requires a named actor. Unsupported issues are labelled
+unavailable; no native verification or apply eligibility is inferred. Tests cover
+pagination, disclosure boundary, exact fingerprints and CLI cue templates.
+
 ## Available foundation
 
 - Root Rust workspace: `linguist-core`, `linguist-config`, `linguist-store`, `linguist-anki`, `linguist-application`, `linguist-dictionary` and `linguist-cli`; no Qt/Python runtime dependency.

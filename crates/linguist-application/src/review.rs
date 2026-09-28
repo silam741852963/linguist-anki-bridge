@@ -1,4 +1,5 @@
 //! Review preflight verifies source bytes before the caller publishes a child revision.
+pub mod inspection;
 use linguist_core::{
     records::{MediaRole, PlanRevision, ReviewChoice},
     review::{ResolutionRequest, ResolutionResult},

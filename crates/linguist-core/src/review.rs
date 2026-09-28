@@ -28,6 +28,109 @@ pub struct ResolutionResult {
     pub decision_id: uuid::Uuid,
     pub ready: bool,
 }
+/// Supported fact choices and repair skeletons; every submitted decision is revalidated.
+pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> Vec<ReviewChoice> {
+    let mut choices = Vec::new();
+    for task in [
+        crate::Task::Production,
+        crate::Task::Spelling,
+        crate::Task::Recognition,
+    ] {
+        let choice = ReviewChoice::Cue {
+            task,
+            text: String::new(),
+        };
+        if cue::applicable(document, issue, &choice) {
+            choices.push(choice);
+        }
+    }
+    let exercise = ReviewChoice::Exercise {
+        prompt: String::new(),
+        answer: String::new(),
+    };
+    if cue::applicable(document, issue, &exercise) {
+        choices.push(exercise);
+    }
+    if issue.code == "DICTIONARY_SENSE_REVIEW"
+        && issue.severity == Severity::Review
+        && let crate::LearningContent::Vocabulary(vocab) = &document.content
+    {
+        let mut key_counts = BTreeMap::<&str, usize>::new();
+        for sense in vocab.dictionary.iter().flat_map(|entry| &entry.senses) {
+            *key_counts.entry(&sense.key).or_default() += 1;
+        }
+        for entry in &vocab.dictionary {
+            if !entry
+                .forms
+                .iter()
+                .chain(&entry.readings)
+                .any(|form| form == &vocab.expression)
+            {
+                continue;
+            }
+            let Ok(readings) = dictionary_readings(entry, &vocab.expression) else {
+                continue;
+            };
+            for sense in &entry.senses {
+                if key_counts.get(sense.key.as_str()) != Some(&1) {
+                    continue;
+                }
+                if readings.is_empty()
+                    && document.target_language.as_str().split('-').next() == Some("en")
+                    && vocab.reading.is_empty()
+                {
+                    choices.push(ReviewChoice::Sense(sense.key.clone()));
+                } else {
+                    choices.extend(
+                        readings
+                            .iter()
+                            .map(|reading| ReviewChoice::SenseWithReading {
+                                key: sense.key.clone(),
+                                reading: reading.clone(),
+                            }),
+                    );
+                }
+            }
+        }
+    }
+    if issue.source_refs.len() == 1
+        && let Ok(source_id) = uuid::Uuid::parse_str(&issue.source_refs[0])
+    {
+        let evidence_ids: Vec<_> = document
+            .evidence
+            .iter()
+            .filter(|evidence| {
+                evidence.source_id == Some(source_id)
+                    && evidence.provenance == crate::Provenance::Source
+                    && Some(&evidence.field) == issue.field.as_ref()
+            })
+            .map(|evidence| evidence.id)
+            .collect();
+        if source_content_verified(document, issue, source_id, &evidence_ids) {
+            choices.push(ReviewChoice::SourceContentVerified {
+                source_id,
+                evidence_ids,
+            });
+        }
+    }
+    if issue.code == "GENERATED_FACT_REVIEW" && issue.severity == Severity::Review {
+        let ids: Option<Vec<_>> = issue
+            .source_refs
+            .iter()
+            .map(|id| uuid::Uuid::parse_str(id).ok())
+            .collect();
+        if let Some(evidence_ids) = ids
+            && !evidence_ids.is_empty()
+            && evidence_ids.iter().collect::<BTreeSet<_>>().len() == evidence_ids.len()
+            && evidence_ids
+                .iter()
+                .all(|id| document.evidence.iter().any(|evidence| evidence.id == *id))
+        {
+            choices.push(ReviewChoice::ContentVerified { evidence_ids });
+        }
+    }
+    choices
+}
 pub fn resolve(
     base: &PlanRevision,
     request: &ResolutionRequest,

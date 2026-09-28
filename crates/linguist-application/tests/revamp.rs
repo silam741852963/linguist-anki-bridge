@@ -948,6 +948,27 @@ fn source_content_review_is_evidence_exact_and_cannot_waive_native_history() {
             evidence_ids: vec![evidence.id],
         },
     };
+    let choices = linguist_core::review::decision_templates(doc, issue);
+    assert_eq!(choices, vec![request.choice.clone()]);
+    let page = linguist_application::review::inspection::page(&plan, Some(doc.id), 0, 100).unwrap();
+    assert!(
+        page["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["issue"]["code"] == "SOURCE_HTML_TEXT_REVIEW"
+                && entry["templates"][0]["choice"]["decision"] == "source_content_verified")
+    );
+    assert!(
+        page["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(
+                |entry| entry["issue"]["code"] == "SOURCE_NATIVE_HISTORY_REVIEW"
+                    && entry["resolution_available"] == false
+            )
+    );
     let resolved = resolve(&plan, &request, "unix-seconds:1".into()).unwrap();
     assert!(!resolved.ready);
     assert!(

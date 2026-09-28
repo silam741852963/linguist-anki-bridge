@@ -326,6 +326,16 @@ enum PlanCommand {
         plan: uuid::Uuid,
         #[arg(long)]
         revision: Option<u32>,
+        /// Inspect only this document from the selected revision.
+        #[arg(long)]
+        item: Option<uuid::Uuid>,
+        /// Show a bounded issue page with exact decision identities and templates.
+        #[arg(long)]
+        issues_only: bool,
+        #[arg(long, requires = "issues_only")]
+        after_index: Option<u32>,
+        #[arg(long, requires = "issues_only", value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: Option<u32>,
     },
 }
 #[derive(Subcommand)]
@@ -958,11 +968,41 @@ fn run(cli: Cli) -> Result<u8, String> {
                             .map_err(|e| e.to_string())?,
                     )?;
                 }
-                PlanCommand::Show { plan, revision } => {
+                PlanCommand::Show {
+                    plan,
+                    revision,
+                    item,
+                    issues_only,
+                    after_index,
+                    limit,
+                } => {
                     let revision = revision
                         .map(Ok)
                         .unwrap_or_else(|| store.latest_revision(plan))?;
-                    emit(&store.revision(plan, revision)?)?;
+                    let saved = store.revision(plan, revision)?;
+                    if issues_only {
+                        let limit =
+                            limit.unwrap_or(
+                                settings.values["output.page_size"].as_u64().unwrap() as u32
+                            );
+                        emit(&linguist_application::review::inspection::page(
+                            &saved,
+                            item,
+                            after_index.unwrap_or(0),
+                            limit,
+                        )?)?;
+                    } else if let Some(id) = item {
+                        let document = saved
+                            .documents
+                            .iter()
+                            .find(|document| document.id == id)
+                            .ok_or("PLAN_DOCUMENT_NOT_FOUND")?;
+                        emit(
+                            &serde_json::json!({"schema_version":2,"plan_id":saved.id,"revision":saved.revision,"digest":saved.approval_digest().map_err(|e| e.to_string())?,"document":document,"archives_included":true,"native_verified":false}),
+                        )?;
+                    } else {
+                        emit(&saved)?;
+                    }
                 }
             }
             Ok(0)

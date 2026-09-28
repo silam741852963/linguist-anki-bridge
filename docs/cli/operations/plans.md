@@ -24,6 +24,24 @@ Effects: Local read.
 
 Result/failure: Human/machine inspection; missing archived asset reported. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current focused inspection: `plans show PLAN --item DOCUMENT_ID` returns only that
+saved document with the exact plan revision and approval digest. It contains the
+original archive fields, so use it when source detail is needed.
+
+`plans show PLAN --issues-only [--item DOCUMENT_ID] [--revision N]
+[--after-index N] [--limit N]` returns a bounded page (1–1000 issues, configured
+page size by default). Pin `--revision` when paginating; latest may change after
+review. Results revalidate the saved revision and include only non-warning issues,
+exact base/document/issue/input digests and actor requirement. Supported dictionary
+sense/reading choices, authored cue/exercise skeletons, source-content evidence
+choices and generated-fact evidence choices are shown as typed templates. Each
+choice is revalidated when submitted; empty authored text must be filled and no
+actor is invented. Source-media decisions need manual typed attributes and are
+marked as such. Unsupported or blocked issues have no template and are explicitly
+marked unavailable. This page omits raw source/archive fields, credentials and
+card media; `plans show` without flags retains the full private view. Read-only
+inspection does not approve or enable native writes.
+
 ## OP-27 — `plans diff PLAN`
 
 Inputs: Revision or captured source comparison.

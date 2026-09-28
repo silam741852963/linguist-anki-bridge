@@ -293,6 +293,42 @@ fn dictionary_preparation_archives_all_senses_and_requires_explicit_selection() 
     assert!(vocab.meaning.is_empty());
     assert!(vocab.sense_key.is_empty());
     assert_eq!(vocab.dictionary[0].senses.len(), 2);
+    let mut seen = Vec::new();
+    let mut cursor = 0;
+    loop {
+        let page =
+            linguist_application::review::inspection::page(&base, Some(doc.id), cursor, 1).unwrap();
+        assert!(page["issues"].as_array().unwrap().len() <= 1);
+        assert_eq!(page["archives_included"], false);
+        assert!(
+            !serde_json::to_string(&page)
+                .unwrap()
+                .contains("provider_response")
+        );
+        for issue in page["issues"].as_array().unwrap() {
+            seen.push(issue.clone());
+        }
+        let Some(next) = page["next_index"].as_u64() else {
+            break;
+        };
+        cursor = next as u32;
+    }
+    let selected = seen
+        .iter()
+        .find(|issue| issue["issue"]["code"] == "DICTIONARY_SENSE_REVIEW")
+        .unwrap();
+    assert_eq!(selected["actor_required"], true);
+    assert_eq!(selected["request_identity"]["base_digest"], result.digest);
+    assert_eq!(selected["templates"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        selected["templates"][0]["choice"]["decision"],
+        "sense_with_reading"
+    );
+    assert!(
+        seen.iter()
+            .any(|issue| issue["issue"]["code"] == "REQUIRED_CONTENT"
+                && issue["resolution_available"] == false)
+    );
     let raw = store
         .asset(&doc.archives[1].asset_digests[0], 1024)
         .unwrap();

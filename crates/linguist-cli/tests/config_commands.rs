@@ -2580,6 +2580,100 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
             text: "Name the verb for consuming food.".into(),
         },
     };
+    let compact = cli()
+        .args([
+            "--set",
+            &state,
+            "plans",
+            "show",
+            &id.to_string(),
+            "--issues-only",
+            "--item",
+            &doc.id.to_string(),
+            "--limit",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    assert!(compact.status.success(), "{compact:?}");
+    let page: serde_json::Value = serde_json::from_slice(&compact.stdout).unwrap();
+    assert_eq!(page["issues"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        page["issues"][0]["request_identity"]["base_digest"],
+        request.base_digest
+    );
+    assert_eq!(
+        page["issues"][0]["request_identity"]["input_digest"],
+        request.input_digest
+    );
+    assert_eq!(
+        page["issues"][0]["templates"][0]["choice"]["decision"],
+        "cue"
+    );
+    assert_eq!(
+        page["issues"][0]["templates"][0]["choice"]["value"]["task"],
+        "production"
+    );
+    assert_eq!(page["issues"][0]["actor_required"], true);
+    assert_eq!(page["archives_included"], false);
+    assert!(!String::from_utf8_lossy(&compact.stdout).contains("authored_input"));
+    let focused = cli()
+        .args([
+            "--set",
+            &state,
+            "plans",
+            "show",
+            &id.to_string(),
+            "--item",
+            &doc.id.to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(focused.status.success(), "{focused:?}");
+    let focused: serde_json::Value = serde_json::from_slice(&focused.stdout).unwrap();
+    assert_eq!(focused["document"]["id"], doc.id.to_string());
+    assert_eq!(focused["archives_included"], true);
+    assert_eq!(
+        focused["document"]["sources"][0]["fields"]["authored_input"],
+        std::fs::read_to_string(&input).unwrap()
+    );
+    let missing = cli()
+        .args([
+            "--set",
+            &state,
+            "plans",
+            "show",
+            &id.to_string(),
+            "--issues-only",
+            "--item",
+            &uuid::Uuid::new_v4().to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(missing.status.code(), Some(2));
+    assert!(missing.stdout.is_empty());
+    let empty = cli()
+        .args([
+            "--set",
+            &state,
+            "plans",
+            "show",
+            &id.to_string(),
+            "--issues-only",
+            "--after-index",
+            "1",
+            "--limit",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    assert!(empty.status.success(), "{empty:?}");
+    assert!(
+        serde_json::from_slice::<serde_json::Value>(&empty.stdout).unwrap()["issues"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     let file = root.join("decision.json");
     std::fs::write(&file, serde_json::to_vec(&request).unwrap()).unwrap();
     drop(store);
