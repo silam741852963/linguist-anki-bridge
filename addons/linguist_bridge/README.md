@@ -28,10 +28,21 @@ Explicit lineage metadata initialization now uses a private SQLite sidecar with
 FULL synchronization, WAL and a bounded cross-process startup lock. Tests cover
 concurrent creation, restart, lock timeout and corrupt/unsafe metadata rejection.
 Path associations alone do not prove collection incarnation or authorize writes.
-The helpers are not called by startup. Durable operation deduplication,
-serialized inspection, authenticated controls, mutations, packaging and native
-recovery tests remain pending. Do not install this scaffold as a functioning
-bridge; no installable artifact is produced yet.
+An inactive operation ledger now records bounded versioned request envelopes, exact
+payload/approval/session/owner identities and append-only queued/running/unknown
+events. Duplicate UUID+identical payload replays the existing status; changed
+metadata conflicts. A second operation is blocked while any first operation is
+unresolved. Running/unknown states survive restart and never authorize automatic
+redispatch. Private file checks, FULL-sync SQLite, immutable-event triggers,
+event hash links and concurrent duplicate tests cover this local sidecar boundary.
+Initialization is explicit and not called by startup. The ledger cannot mark
+success, dispatch Anki calls, reconcile unknown effects or verify native state.
+Variant-specific mutation bodies are not validated or dispatched. It is not yet
+linked to collection lineage/session lifecycle or the Rust CLI
+journal, so it grants no mutation capability. Serialized inspection,
+authenticated controls, terminal receipts, packaging and native recovery tests
+remain pending. Do not install this scaffold as a functioning bridge; no
+installable artifact is produced yet.
 
 Files in this directory are licensed under GPL-3.0-or-later as indicated in their
 SPDX headers. The complete license text is available at

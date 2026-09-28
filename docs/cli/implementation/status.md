@@ -2,6 +2,19 @@
 
 The implementation has started. The finalized handbook remains the target specification; this page records actual code coverage. No work package or release gate is complete yet.
 
+The inactive Python companion now has a private SQLite operation ledger beside
+the installation/lineage helpers. It accepts only bounded versioned request envelopes
+with exact UUID, digest, session, owner and fencing identities, and appends
+hash-linked queued/running/unknown events. Identical duplicate requests reuse the
+same status; changed identities conflict; any unresolved operation blocks a new
+one. Running and unknown states survive restart and cannot be redispatched by a
+repeated transition. Tests cover concurrent duplicates, immutable evidence,
+corruption, symlink rejection and explicit initialization. Variant-specific
+mutation bodies are not yet validated. No startup hook or
+Anki action calls this ledger. It has no verified/failed terminal transition,
+native effect, recovery authority, or CLI journal linkage, so collection writes
+remain disabled.
+
 `plans diff --live` now combines an exact saved-revision diff with the bounded
 read-only source comparison. Saved revamp card IDs come from revalidated archived
 note/model/card payloads, rather than the still-empty native `SourceRecord.cards`
