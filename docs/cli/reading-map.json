@@ -887,7 +887,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-31 \u2014 `plans validate PLAN`",
       "title": "OP-31 \u2014 `plans validate PLAN`",
-      "words": 64,
+      "words": 261,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

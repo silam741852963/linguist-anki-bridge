@@ -303,6 +303,10 @@ enum PlanCommand {
         revision: Option<u32>,
         #[arg(long)]
         live: bool,
+        #[arg(long, requires = "live")]
+        after_index: Option<u32>,
+        #[arg(long, requires = "live", value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: Option<u32>,
     },
     /// Apply a typed JSON patch and preserve an immutable parent revision.
     Edit {
@@ -909,20 +913,46 @@ fn run(cli: Cli) -> Result<u8, String> {
                     plan,
                     revision,
                     live,
+                    after_index,
+                    limit,
                 } => {
-                    if live {
-                        return Err("CAPABILITY_UNAVAILABLE: live plan validation requires native identity/conflict inspection".into());
+                    if live && after_index.unwrap_or(0) > 0 && revision.is_none() {
+                        return Err("LIVE_VALIDATION_REVISION_REQUIRED_FOR_CURSOR".into());
                     }
                     let revision = revision
                         .map(Ok)
                         .unwrap_or_else(|| store.latest_revision(plan))?;
-                    // Load before reopening writable state; absent/corrupt evidence cannot create a report.
-                    store.revision(plan, revision)?;
+                    // Complete live reads before persisting local evidence; a transport error
+                    // cannot leave a misleading partial live-validation receipt.
+                    let base = store.revision(plan, revision)?;
+                    let live_page = if live {
+                        let client = anki_client(&settings)?;
+                        Some(linguist_application::live_validation::inspect(
+                            &store,
+                            &base,
+                            &client,
+                            after_index.unwrap_or(0),
+                            limit.unwrap_or(
+                                settings.values["output.page_size"].as_u64().unwrap() as u32
+                            ),
+                        )?)
+                    } else {
+                        None
+                    };
                     drop(store);
                     let receipt =
                         linguist_store::Store::open(&root)?.validate_revision(plan, revision)?;
-                    let ready = receipt.evidence.content_ready;
-                    emit(&receipt)?;
+                    let ready = receipt.evidence.content_ready
+                        && live_page
+                            .as_ref()
+                            .is_none_or(|page| !page.source_conflicts && page.all_sources_checked);
+                    if let Some(live_page) = live_page {
+                        emit(
+                            &serde_json::json!({"schema_version":2,"content":receipt,"live":live_page,"apply_eligible":false,"writes_enabled":false}),
+                        )?;
+                    } else {
+                        emit(&receipt)?;
+                    }
                     if !ready {
                         return Ok(4);
                     }

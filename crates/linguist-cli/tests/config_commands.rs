@@ -1,6 +1,103 @@
 use std::process::Command;
 
 #[test]
+fn live_plan_validation_reports_no_revamp_sources_without_claiming_apply() {
+    use linguist_core::{LearningDocument, records::*};
+    use std::{
+        collections::BTreeMap,
+        io::{BufRead, Read, Write},
+    };
+    let root = std::env::temp_dir().join(format!("lab-live-cli-{}", uuid::Uuid::new_v4()));
+    let doc = LearningDocument::from_json(include_bytes!(
+        "../../../contracts/v2/fixtures/vocabulary.json"
+    ))
+    .unwrap();
+    let plan = PlanRevision {
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: ResolvedSettings {
+            version: 2,
+            values: BTreeMap::from([("input.max_file_mb".into(), serde_json::json!(1))]),
+            provenance: BTreeMap::new(),
+            resource_hashes: BTreeMap::new(),
+            secret_refs: BTreeMap::new(),
+            fingerprint: "fixture".into(),
+        },
+        binding: None,
+        source_digest: "fixture".into(),
+        selection: None,
+        grammar_groups: vec![],
+        rendered: vec![linguist_core::render::render(&doc, &BTreeMap::new()).unwrap()],
+        documents: vec![doc],
+        review_decisions: vec![],
+    };
+    linguist_store::Store::open(&root)
+        .unwrap()
+        .publish_revision(&plan)
+        .unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let endpoint = format!("anki.endpoint=http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                Err(error) => panic!("{error}"),
+            }
+        };
+        let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+        let mut length = 0usize;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            if line == "\r\n" {
+                break;
+            }
+            if line.to_ascii_lowercase().starts_with("content-length:") {
+                length = line.split_once(':').unwrap().1.trim().parse().unwrap();
+            }
+        }
+        let mut bytes = vec![0; length];
+        reader.read_exact(&mut bytes).unwrap();
+        let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(request["action"], "getActiveProfile");
+        let body = serde_json::json!({"result":"Fixture","error":null}).to_string();
+        write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+    });
+    let state = format!("storage.state_dir={}", root.display());
+    let out = cli()
+        .args([
+            "--set",
+            &state,
+            "--set",
+            &endpoint,
+            "plans",
+            "validate",
+            &plan.id.to_string(),
+            "--live",
+            "--revision",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    server.join().unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(result["live"]["total_sources"], 0);
+    assert_eq!(result["live"]["all_sources_checked"], true);
+    assert_eq!(result["live"]["apply_eligible"], false);
+    assert_eq!(result["content"]["evidence"]["content_ready"], true);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn model_install_preview_distinguishes_create_and_name_collision_without_writes() {
     use std::io::{BufRead, Read, Write};
     use std::sync::{
@@ -1608,7 +1705,16 @@ fn authored_add_cli_creates_plan_without_anki_and_blocks_requested_generation() 
         .unwrap();
     assert_eq!(v1.status.code(), Some(2));
     let live = cli()
-        .args(["--set", &setting, "plans", "validate", &id_text, "--live"])
+        .args([
+            "--set",
+            &setting,
+            "--set",
+            "anki.endpoint=http://127.0.0.1:1",
+            "plans",
+            "validate",
+            &id_text,
+            "--live",
+        ])
         .output()
         .unwrap();
     assert_eq!(live.status.code(), Some(3));

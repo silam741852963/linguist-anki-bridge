@@ -2,6 +2,17 @@
 
 The implementation has started. The finalized handbook remains the target specification; this page records actual code coverage. No work package or release gate is complete yet.
 
+`plans validate --live` now performs a bounded read-only comparison of archived
+revamp sources against repeated current Anki reads. It checks source/archive
+links, fields, tags, model identity/fields/templates/CSS, card identity/ordinal and decks, and reports
+scheduler/other card-payload changes separately. Missing structural card data
+blocks a match. Pages are revision-pinned after the first; only a complete
+single-page scan can report all sources checked. The local content receipt is
+persisted after successful reads, while the live comparison remains time-bound.
+This does not verify native history, recheck media bytes, search duplicates or
+authorize apply. Native atomic preflight and conflict reconciliation remain
+pending.
+
 `models install PURPOSE` now has a read-only CLI preview for all four built-in
 purposes. It emits the exact v2 manifest and distinguishes absent names, byte
 matching reuse candidates and same-name collisions. AnkiConnect does not prove

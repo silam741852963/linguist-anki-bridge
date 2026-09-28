@@ -139,6 +139,27 @@ Effects: Local validation; optional Anki read.
 
 Result/failure: ready/needs_review/invalid; live check is time-bound, apply rechecks. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current `--live` path performs bounded, profile-pinned read-only recapture of
+revamp source notes. It verifies saved source/archive/payload links, then compares
+current fields, tags, model manifest content, card IDs/ordinals and deck IDs with
+the archived capture. Card payload changes such as ordinary scheduling progress
+are reported separately from content conflicts; they do not by themselves mark
+source content drift. Missing card ordinal/deck data fail closed. A repeated
+capture match is optimistic, never an atomic native snapshot or history proof.
+Media bytes are not rechecked. Authored add plans have no captured source to
+compare; this command does not perform collection duplicate search.
+
+Use `plans validate PLAN --live --revision N [--after-index N] [--limit N]`
+for bounded pages (1–1000 source notes; configured page size by default). The
+first page may omit `--revision`, but later pages require it. Source note IDs are
+ordered numerically; the response gives `next_index`. A page is not a whole-plan
+live clearance: only an unpaginated complete scan can report
+`all_sources_checked=true`, and `apply_eligible` remains false. Live transport
+failure publishes no validation receipt. Once live reads finish, the ordinary
+immutable local content-validation receipt is persisted and returned alongside
+the time-bound live report. Apply must repeat source/identity checks through the
+native bridge.
+
 ## OP-32 — `plans export PLAN`
 
 Inputs: Output path/format, optional explicit private archive inclusion.
