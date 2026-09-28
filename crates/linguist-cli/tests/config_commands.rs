@@ -41,35 +41,37 @@ fn live_plan_validation_reports_no_revamp_sources_without_claiming_apply() {
     listener.set_nonblocking(true).unwrap();
     let endpoint = format!("anki.endpoint=http://{}", listener.local_addr().unwrap());
     let server = std::thread::spawn(move || {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        let mut stream = loop {
-            match listener.accept() {
-                Ok((stream, _)) => break stream,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    assert!(std::time::Instant::now() < deadline);
-                    std::thread::sleep(std::time::Duration::from_millis(2));
+        for _ in 0..2 {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(std::time::Instant::now() < deadline);
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    }
+                    Err(error) => panic!("{error}"),
                 }
-                Err(error) => panic!("{error}"),
+            };
+            let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+            let mut length = 0usize;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if line.to_ascii_lowercase().starts_with("content-length:") {
+                    length = line.split_once(':').unwrap().1.trim().parse().unwrap();
+                }
             }
-        };
-        let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
-        let mut length = 0usize;
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line).unwrap();
-            if line == "\r\n" {
-                break;
-            }
-            if line.to_ascii_lowercase().starts_with("content-length:") {
-                length = line.split_once(':').unwrap().1.trim().parse().unwrap();
-            }
+            let mut bytes = vec![0; length];
+            reader.read_exact(&mut bytes).unwrap();
+            let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(request["action"], "getActiveProfile");
+            let body = serde_json::json!({"result":"Fixture","error":null}).to_string();
+            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
         }
-        let mut bytes = vec![0; length];
-        reader.read_exact(&mut bytes).unwrap();
-        let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(request["action"], "getActiveProfile");
-        let body = serde_json::json!({"result":"Fixture","error":null}).to_string();
-        write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
     });
     let state = format!("storage.state_dir={}", root.display());
     let out = cli()
@@ -87,13 +89,37 @@ fn live_plan_validation_reports_no_revamp_sources_without_claiming_apply() {
         ])
         .output()
         .unwrap();
-    server.join().unwrap();
     assert!(out.status.success(), "{out:?}");
     let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(result["live"]["total_sources"], 0);
     assert_eq!(result["live"]["all_sources_checked"], true);
     assert_eq!(result["live"]["apply_eligible"], false);
     assert_eq!(result["content"]["evidence"]["content_ready"], true);
+    let diff = cli()
+        .args([
+            "--set",
+            &state,
+            "--set",
+            &endpoint,
+            "plans",
+            "diff",
+            &plan.id.to_string(),
+            "--from-revision",
+            "1",
+            "--revision",
+            "1",
+            "--live",
+        ])
+        .output()
+        .unwrap();
+    server.join().unwrap();
+    assert!(diff.status.success(), "{diff:?}");
+    let diff: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
+    assert_eq!(diff["captured"]["from_revision"], 1);
+    assert_eq!(diff["captured"]["to_revision"], 1);
+    assert_eq!(diff["live"]["total_sources"], 0);
+    assert_eq!(diff["live"]["all_sources_checked"], true);
+    assert_eq!(diff["apply_eligible"], false);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -1369,7 +1395,7 @@ fn local_doctor_and_builtin_models_need_no_anki_service() {
 }
 
 #[test]
-fn plan_diff_loads_exact_immutable_revisions_and_rejects_live_checks() {
+fn plan_diff_loads_exact_immutable_revisions_and_reports_unavailable_live_transport() {
     use linguist_core::records::{PlanRevision, ResolvedSettings};
     use std::collections::BTreeMap;
     let root = std::env::temp_dir().join(format!("lab-diff-cli-{}", uuid::Uuid::new_v4()));
@@ -1382,7 +1408,7 @@ fn plan_diff_loads_exact_immutable_revisions_and_rejects_live_checks() {
         parent_digest: None,
         settings: ResolvedSettings {
             version: 2,
-            values: BTreeMap::new(),
+            values: BTreeMap::from([("input.max_file_mb".into(), serde_json::json!(1))]),
             provenance: BTreeMap::new(),
             resource_hashes: BTreeMap::new(),
             secret_refs: BTreeMap::new(),
@@ -1434,6 +1460,8 @@ fn plan_diff_loads_exact_immutable_revisions_and_rejects_live_checks() {
         .args([
             "--set",
             &setting,
+            "--set",
+            "anki.endpoint=http://127.0.0.1:1",
             "plans",
             "diff",
             &id,

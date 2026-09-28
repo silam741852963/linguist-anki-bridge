@@ -318,7 +318,7 @@ enum PlanCommand {
         #[arg(long)]
         save_draft: bool,
     },
-    /// Compare exact saved revisions without regeneration or collection reads.
+    /// Compare saved revisions; --live adds a bounded read-only source check.
     Diff {
         plan: uuid::Uuid,
         #[arg(long)]
@@ -327,6 +327,10 @@ enum PlanCommand {
         revision: Option<u32>,
         #[arg(long)]
         live: bool,
+        #[arg(long, requires = "live")]
+        after_index: Option<u32>,
+        #[arg(long, requires = "live", value_parser = clap::value_parser!(u32).range(1..=1000))]
+        limit: Option<u32>,
     },
     List {
         #[arg(long)]
@@ -990,19 +994,41 @@ fn run(cli: Cli) -> Result<u8, String> {
                     from_revision,
                     revision,
                     live,
+                    after_index,
+                    limit,
                 } => {
-                    if live {
-                        return Err("CAPABILITY_UNAVAILABLE: live plan conflict inspection requires native binding".into());
+                    if live && after_index.unwrap_or(0) > 0 && revision.is_none() {
+                        return Err("LIVE_DIFF_REVISION_REQUIRED_FOR_CURSOR".into());
                     }
                     let revision = revision
                         .map(Ok)
                         .unwrap_or_else(|| store.latest_revision(plan))?;
                     let before = store.revision(plan, from_revision)?;
                     let after = store.revision(plan, revision)?;
-                    emit(
-                        &linguist_core::inspection::revision_diff(&before, &after)
-                            .map_err(|e| e.to_string())?,
-                    )?;
+                    let captured =
+                        linguist_application::plan_diff::revision_diff(&store, &before, &after)?;
+                    if live {
+                        let client = anki_client(&settings)?;
+                        let page = linguist_application::live_validation::inspect(
+                            &store,
+                            &after,
+                            &client,
+                            after_index.unwrap_or(0),
+                            limit.unwrap_or(
+                                settings.values["output.page_size"].as_u64().unwrap() as u32
+                            ),
+                        )?;
+                        let incomplete = !page.all_sources_checked;
+                        let conflict = page.source_conflicts;
+                        emit(
+                            &serde_json::json!({"schema_version":2,"captured":captured,"live":page,"apply_eligible":false,"writes_enabled":false}),
+                        )?;
+                        if incomplete || conflict {
+                            return Ok(4);
+                        }
+                    } else {
+                        emit(&captured)?;
+                    }
                 }
                 PlanCommand::Show {
                     plan,

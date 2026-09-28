@@ -843,7 +843,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-27 \u2014 `plans diff PLAN`",
       "title": "OP-27 \u2014 `plans diff PLAN`",
-      "words": 68,
+      "words": 181,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

@@ -397,6 +397,7 @@ pub mod live_validation;
 pub mod mapping;
 pub mod media;
 pub mod ollama;
+pub mod plan_diff;
 pub mod revamp;
 pub mod review;
 pub mod source_archive;

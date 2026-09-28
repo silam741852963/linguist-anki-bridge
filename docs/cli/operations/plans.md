@@ -54,6 +54,19 @@ Effects: Local read; explicit --live requests Anki reads.
 
 Result/failure: Exact proposed changes and conflict warnings. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current saved-revision diff verifies archived revamp note/model/card payloads and
+fills `captured_card_ids` from original card bytes. Task additions/removals remain
+intent only; neither card creation/deletion nor history migration is inferred.
+Malformed or unbound archives fail instead of producing empty card evidence.
+
+`plans diff PLAN --from-revision A [--revision B] --live [--after-index N]
+[--limit N]` adds the same bounded source comparison as OP-31 against revision
+B. Later pages require an explicit `--revision`. The output separates the saved
+`captured` diff from the time-bound `live` page; only a complete single-page scan
+reports all sources checked. The command does not persist validation evidence,
+approve, checkpoint, mutate or claim apply eligibility. Live transport failures
+return an error without changing local state.
+
 ## OP-28 — `plans edit PLAN`
 
 Inputs: Structured --patch file OR explicit --editor; --base-revision/base digest required.
