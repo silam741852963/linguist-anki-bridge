@@ -34,7 +34,8 @@ class ProtocolTest(unittest.TestCase):
                            ("anki_version", "猫" * 43),
                            ("anki_connect_source_digest", "A" * 64),
                            ("anki_connect_source_digest", "secret"),
-                           ("api_key_configured", 1)]:
+                           ("api_key_configured", 1),
+                           ("operation_status_available", 1)]:
             with self.subTest(key=key, value=value):
                 args = self.arguments()
                 args[key] = value
@@ -42,6 +43,12 @@ class ProtocolTest(unittest.TestCase):
                     protocol.build_capabilities(**args)
                 if str(value):
                     self.assertNotIn(str(value), str(result.exception))
+
+    def test_status_read_declaration_does_not_claim_mutation_or_session(self):
+        manifest = protocol.build_capabilities(**self.arguments(), operation_status_available=True)
+        self.assertEqual(manifest["actions"], ["labCapabilities", "labOperationStatus"])
+        self.assertEqual(manifest["mutation_variants"], [])
+        self.assertIsNone(manifest["collection_session"])
 
     def test_import_does_not_register_or_initialize_services(self):
         package_spec = importlib.util.spec_from_file_location("bridge_scaffold", PACKAGE / "__init__.py")

@@ -6,7 +6,7 @@ This package contains the independent Python companion source for the CLI's
 The current package imports no Anki/Qt modules, registers no actions and creates
 no server, sidecar or installation/session identity. `protocol.build_capabilities`
 requires a supplied durable installation UUID and pinned integration metadata;
-it declares only a read-only capability action and no native session/effects.
+it declares only registered read-only actions and no native session/effects.
 Its manifest is a declaration, not verification of installed compatibility.
 
 Run protocol tests from the repository root:
@@ -17,7 +17,10 @@ cargo test --locked -p linguist-anki --test read_port native
 ```
 
 Python and Rust tests use the same capability fixture in `contracts/v2/fixtures/`.
-The pinned additive registration adapter is tested with isolated fake modules.
+The pinned additive registration adapter can register read-only capabilities and
+operation-status actions together. Isolated fake-module tests check unchanged
+standard dispatch and all-or-nothing rollback. A caller must supply a bound
+ledger status function and advertise the status action only after registration.
 Its source-pin matrix/startup activation and real Anki integration remain pending.
 Explicit installation identity initialization is implemented with private files,
 create-new publication and restart/concurrent-initializer tests. It is not
@@ -44,7 +47,7 @@ success, dispatch Anki calls, reconcile unknown effects or verify native state.
 request to running; it is not a verified no-effect receipt from Anki.
 Variant-specific mutation bodies are not validated or dispatched. It is not yet
 linked to collection lineage/session lifecycle or the Rust CLI
-journal, so it grants no mutation capability. Serialized inspection,
+journal, so it grants no mutation capability. Serialized collection inspection,
 authenticated controls, terminal receipts, packaging and native recovery tests
 remain pending. Do not install this scaffold as a functioning bridge; no
 installable artifact is produced yet.

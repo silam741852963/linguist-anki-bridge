@@ -8,6 +8,10 @@ import types
 import unittest
 import uuid
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from linguist_bridge.lineage import LineageStore
+from linguist_bridge.operations import OperationLedger
+
 PACKAGE = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("bridge_registration", PACKAGE / "registration.py")
 registration = importlib.util.module_from_spec(spec)
@@ -66,14 +70,76 @@ class RegistrationTest(unittest.TestCase):
         cls = self.module.AnkiConnect
         handler = cls.handler
         standard = cls.standard
-        registration.register_capabilities(self.module, self.pins, lambda: {'read_only': True})
+        manifest = {"actions": ["labCapabilities"], "mutation_variants": [], "collection_session": None}
+        registration.register_capabilities(self.module, self.pins, lambda: manifest)
         self.assertIs(cls.handler, handler)
         self.assertIs(cls.standard, standard)
         self.assertEqual(self.module.ac.handler({'action': 'standard'}), 'unchanged')
-        self.assertEqual(self.module.ac.handler({'action': 'labCapabilities'}), {'read_only': True})
+        self.assertEqual(self.module.ac.handler({'action': 'labCapabilities'}), manifest)
         self.assertFalse(hasattr(cls, 'labMutate'))
         with self.assertRaises(registration.RegistrationError):
             registration.register_capabilities(self.module, self.pins, lambda: {})
+
+    def test_status_action_is_additive_read_only_and_uses_exact_supplied_ids(self):
+        cls = self.module.AnkiConnect
+        handler = cls.handler
+        seen = []
+        def status(lineage_id, operation_id):
+            seen.append((lineage_id, operation_id))
+            return {"state": "queued", "dispatch_newly_authorized": False}
+        registration.register_read_actions(
+            self.module, self.pins, lambda: {"actions": ["labCapabilities", "labOperationStatus"],
+                                              "mutation_variants": [], "collection_session": None},
+            status,
+        )
+        self.assertIs(cls.handler, handler)
+        self.assertEqual(self.module.ac.handler({"action": "standard"}), "unchanged")
+        self.assertEqual(self.module.ac.handler({"action": "labOperationStatus", "params": {
+            "lineage_id": "lineage", "operation_id": "operation",
+        }}), {"state": "queued", "dispatch_newly_authorized": False})
+        self.assertEqual(seen, [("lineage", "operation")])
+        self.assertFalse(hasattr(cls, "labMutate"))
+        self.assertEqual(self.module.ac.handler({"action": "labCapabilities"})["actions"],
+                         ["labCapabilities", "labOperationStatus"])
+        with self.assertRaises(registration.RegistrationError):
+            registration.register_read_actions(self.module, self.pins, lambda: {}, status)
+
+    def test_status_action_reads_durable_ledger_without_dispatch(self):
+        root = self.root / "private"
+        lineage_store = LineageStore(root)
+        lineage_id = lineage_store.lineage("b" * 64, initialize=True)
+        lineage_store.close()
+        ledger = OperationLedger(root, initialize=True)
+        operation_id = str(uuid.uuid4())
+        payload = b'{"body":{},"schema_version":1,"variant":"create_note"}'
+        ledger.queue(lineage_id=lineage_id, operation_id=operation_id,
+                     payload=payload, payload_digest=hashlib.sha256(payload).hexdigest(),
+                     approved_digest="a" * 64, session_epoch=str(uuid.uuid4()),
+                     owner_token=str(uuid.uuid4()), fence_generation=1, variant="create_note")
+        registration.register_read_actions(self.module, self.pins, lambda: {
+            "actions": ["labCapabilities", "labOperationStatus"],
+            "mutation_variants": [], "collection_session": None,
+        }, ledger.status)
+        status = self.module.ac.handler({"action": "labOperationStatus", "params": {
+            "lineage_id": lineage_id, "operation_id": operation_id,
+        }})
+        self.assertEqual(status["state"], "queued")
+        self.assertFalse(status["dispatch_newly_authorized"])
+        self.assertEqual(ledger._db.execute("SELECT count(*) FROM operation_events").fetchone()[0], 1)
+        ledger.close()
+
+    def test_manifest_cannot_advertise_unregistered_or_mutating_actions(self):
+        advertised = {"actions": ["labCapabilities", "labOperationStatus"],
+                      "mutation_variants": [], "collection_session": None}
+        registration.register_capabilities(self.module, self.pins, lambda: advertised)
+        with self.assertRaisesRegex(registration.RegistrationError, "BRIDGE_MANIFEST_INVALID"):
+            self.module.ac.handler({"action": "labCapabilities"})
+        advertised["actions"] = ["labCapabilities"]
+        advertised["mutation_variants"] = ["create_note"]
+        with self.assertRaisesRegex(registration.RegistrationError, "BRIDGE_MANIFEST_INVALID"):
+            self.module.ac.handler({"action": "labCapabilities"})
+        advertised["mutation_variants"] = []
+        self.assertEqual(self.module.ac.handler({"action": "labCapabilities"}), advertised)
 
     def test_unknown_sources_collision_and_unexpected_decorator_are_rejected(self):
         (self.root / 'util.py').write_text(UTIL + '\n# changed source\n')
@@ -103,4 +169,19 @@ class RegistrationTest(unittest.TestCase):
         with self.assertRaises(registration.RegistrationError):
             registration.register_capabilities(self.module, self.pins, lambda: {})
         self.assertFalse(hasattr(self.module.AnkiConnect, 'labCapabilities'))
+        self.assertEqual(self.module.ac.standard(), 'unchanged')
+
+    def test_failed_status_registration_rolls_back_both_actions(self):
+        original = self.module.AnkiConnect.apiReflect
+        def broken(self, scopes):
+            result = original(self, scopes)
+            if hasattr(type(self), 'labOperationStatus'):
+                result['actions'].remove('standard')
+            return result
+        broken.api = True
+        self.module.AnkiConnect.apiReflect = broken
+        with self.assertRaises(registration.RegistrationError):
+            registration.register_read_actions(self.module, self.pins, lambda: {}, lambda a, b: {})
+        self.assertFalse(hasattr(self.module.AnkiConnect, 'labCapabilities'))
+        self.assertFalse(hasattr(self.module.AnkiConnect, 'labOperationStatus'))
         self.assertEqual(self.module.ac.standard(), 'unchanged')

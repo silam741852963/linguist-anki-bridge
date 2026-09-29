@@ -22,7 +22,10 @@ matching lineage/operation UUIDs, valid digests, known state/reason combinations
 and no dispatch authorization. It checks the active profile before and after the
 read. This is a protocol boundary for future journal reconciliation, not a
 verified native-effect receipt. `recover inspect --live` remains unavailable until
-the companion action, binding checks and recovery algorithm are implemented.
+the companion is activated and binding checks and recovery logic are implemented.
+The pinned Python registration adapter can add the read-only status action with
+capabilities and rolls back both on reflection failure. It remains inactive: no
+startup hook or live Anki integration has been certified.
 
 `plans diff --live` now combines an exact saved-revision diff with the bounded
 read-only source comparison. Saved revamp card IDs come from revalidated archived

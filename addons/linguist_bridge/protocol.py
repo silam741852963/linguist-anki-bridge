@@ -33,13 +33,13 @@ def _uuid(value):
 
 
 def build_capabilities(*, bridge_id, anki_version, anki_connect_source_digest,
-                       api_key_configured):
+                       api_key_configured, operation_status_available=False):
     """Use a supplied durable installation ID; never allocate identity during a read.
 
-    This builder declares only the capability action. The caller must establish
-    pinned registration before serving it. Session/native variants stay absent.
+    The caller must establish pinned registration before serving either read
+    action. Session/native mutation variants stay absent.
     """
-    if type(api_key_configured) is not bool:
+    if type(api_key_configured) is not bool or type(operation_status_available) is not bool:
         raise ValueError("NATIVE_MANIFEST_AUTH_INVALID")
     return {
         "protocol": PROTOCOL,
@@ -50,7 +50,7 @@ def build_capabilities(*, bridge_id, anki_version, anki_connect_source_digest,
             "anki_connect_source_digest": _digest(anki_connect_source_digest),
         },
         "collection_session": None,
-        "actions": ["labCapabilities"],
+        "actions": ["labCapabilities"] + (["labOperationStatus"] if operation_status_available else []),
         "mutation_variants": [],
         "api_key_configured": api_key_configured,
     }
