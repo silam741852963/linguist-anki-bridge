@@ -174,15 +174,197 @@ enum PrepareCommand {
         #[arg(long, conflicts_with = "note_ids", requires = "NoteSelector", value_parser = clap::value_parser!(u64).range(1..=100000))]
         limit: Option<u64>,
     },
-    /// Prepare version-2 structured records from a file or piped stdin.
+    /// Prepare one authored card from flags, or structured records from a file.
     Add {
         #[arg(long)]
         /// UTF-8 input file; use - for noninteractive stdin.
-        document: PathBuf,
+        document: Option<PathBuf>,
         /// Explicit input framing: JSON, JSONL, or simple vocabulary CSV.
-        #[arg(long, value_enum, default_value_t = AddFormat::Json)]
-        format: AddFormat,
+        #[arg(long, value_enum, requires = "document")]
+        format: Option<AddFormat>,
+        #[command(flatten)]
+        inline: Box<InlineAdd>,
     },
+}
+#[derive(Args)]
+struct InlineAdd {
+    /// Vocabulary expression; use with --meaning, --sense-key and --target-language.
+    #[arg(long)]
+    expression: Option<String>,
+    /// Grammar pattern; use with --meaning, --formation, --use-key and --target-language.
+    #[arg(long)]
+    pattern: Option<String>,
+    #[arg(long)]
+    meaning: Option<String>,
+    #[arg(long)]
+    sense_key: Option<String>,
+    #[arg(long)]
+    formation: Option<String>,
+    #[arg(long)]
+    use_key: Option<String>,
+    #[arg(long)]
+    target_language: Option<String>,
+    #[arg(long)]
+    explanation_language: Option<String>,
+    #[arg(long)]
+    reading: Option<String>,
+    #[arg(long)]
+    pronunciation: Option<String>,
+    #[arg(long)]
+    usage: Option<String>,
+    /// One authored example in the target language.
+    #[arg(long)]
+    example_sentence: Option<String>,
+    /// Translation paired with --example-sentence.
+    #[arg(long)]
+    example_translation: Option<String>,
+    #[arg(long)]
+    production_prompt: Option<String>,
+    #[arg(long)]
+    spelling_prompt: Option<String>,
+    #[arg(long)]
+    recognition_prompt: Option<String>,
+    #[arg(long)]
+    exercise_prompt: Option<String>,
+    #[arg(long)]
+    exercise_answer: Option<String>,
+    #[arg(long)]
+    context: Option<String>,
+    #[arg(long)]
+    personal_notes: Option<String>,
+    #[arg(long)]
+    source_summary: Option<String>,
+    /// Add a tag to the prepared card; may be repeated.
+    #[arg(long = "tag")]
+    tags: Vec<String>,
+}
+impl InlineAdd {
+    fn present(&self) -> bool {
+        self.expression.is_some()
+            || self.pattern.is_some()
+            || self.meaning.is_some()
+            || self.sense_key.is_some()
+            || self.formation.is_some()
+            || self.use_key.is_some()
+            || self.target_language.is_some()
+            || self.explanation_language.is_some()
+            || self.reading.is_some()
+            || self.pronunciation.is_some()
+            || self.usage.is_some()
+            || self.example_sentence.is_some()
+            || self.example_translation.is_some()
+            || self.production_prompt.is_some()
+            || self.spelling_prompt.is_some()
+            || self.recognition_prompt.is_some()
+            || self.exercise_prompt.is_some()
+            || self.exercise_answer.is_some()
+            || self.context.is_some()
+            || self.personal_notes.is_some()
+            || self.source_summary.is_some()
+            || !self.tags.is_empty()
+    }
+    fn into_input(
+        self,
+        kind: linguist_application::Kind,
+    ) -> Result<linguist_application::AddInput, String> {
+        let required = |value: Option<String>, flag: &str| {
+            value.ok_or_else(|| format!("INPUT_INLINE_REQUIRED: --{flag}"))
+        };
+        let target_language =
+            linguist_core::Language::try_from(required(self.target_language, "target-language")?)
+                .map_err(|_| "INPUT_INLINE_LANGUAGE_INVALID")?;
+        let explanation_language = self
+            .explanation_language
+            .map(linguist_core::Language::try_from)
+            .transpose()
+            .map_err(|_| "INPUT_INLINE_LANGUAGE_INVALID")?;
+        let context = self.context.unwrap_or_default();
+        let personal_notes = self.personal_notes.unwrap_or_default();
+        let source_summary = self.source_summary.unwrap_or_default();
+        let tags = self.tags;
+        let examples = match (self.example_sentence, self.example_translation) {
+            (None, None) => vec![],
+            (Some(sentence), Some(translation)) => vec![linguist_core::Example {
+                sentence,
+                translation,
+                provenance: linguist_core::Provenance::User,
+                evidence_ids: vec![],
+            }],
+            _ => return Err("INPUT_INLINE_EXAMPLE_PAIR_REQUIRED".into()),
+        };
+        match kind {
+            linguist_application::Kind::Vocabulary => {
+                if self.pattern.is_some()
+                    || self.formation.is_some()
+                    || self.use_key.is_some()
+                    || self.recognition_prompt.is_some()
+                    || self.exercise_prompt.is_some()
+                    || self.exercise_answer.is_some()
+                {
+                    return Err(
+                        "INPUT_INLINE_KIND_CONFLICT: grammar-only flag on vocabulary add".into(),
+                    );
+                }
+                Ok(linguist_application::AddInput::Vocabulary {
+                    schema_version: 2,
+                    target_language,
+                    explanation_language,
+                    body: linguist_application::VocabularyInput {
+                        expression: required(self.expression, "expression")?,
+                        meaning: required(self.meaning, "meaning")?,
+                        sense_key: required(self.sense_key, "sense-key")?,
+                        reading: self.reading.unwrap_or_default(),
+                        pronunciation: self.pronunciation.unwrap_or_default(),
+                        usage: self.usage.unwrap_or_default(),
+                        examples,
+                        dictionary: vec![],
+                        kanji: String::new(),
+                        production_prompt: self.production_prompt.unwrap_or_default(),
+                        spelling_prompt: self.spelling_prompt.unwrap_or_default(),
+                    },
+                    requested_tasks: None,
+                    context,
+                    personal_notes,
+                    source_summary,
+                    tags,
+                })
+            }
+            linguist_application::Kind::Grammar => {
+                if self.expression.is_some()
+                    || self.sense_key.is_some()
+                    || self.reading.is_some()
+                    || self.pronunciation.is_some()
+                    || self.production_prompt.is_some()
+                    || self.spelling_prompt.is_some()
+                {
+                    return Err(
+                        "INPUT_INLINE_KIND_CONFLICT: vocabulary-only flag on grammar add".into(),
+                    );
+                }
+                Ok(linguist_application::AddInput::Grammar {
+                    schema_version: 2,
+                    target_language,
+                    explanation_language,
+                    body: linguist_core::Grammar {
+                        pattern: required(self.pattern, "pattern")?,
+                        use_key: required(self.use_key, "use-key")?,
+                        meaning: required(self.meaning, "meaning")?,
+                        formation: required(self.formation, "formation")?,
+                        recognition_prompt: self.recognition_prompt.unwrap_or_default(),
+                        examples,
+                        usage: self.usage.unwrap_or_default(),
+                        exercise_prompt: self.exercise_prompt.unwrap_or_default(),
+                        exercise_answer: self.exercise_answer.unwrap_or_default(),
+                    },
+                    requested_tasks: None,
+                    context,
+                    personal_notes,
+                    source_summary,
+                    tags,
+                })
+            }
+        }
+    }
 }
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum AddFormat {
@@ -507,16 +689,47 @@ fn run(cli: Cli) -> Result<u8, String> {
     match cli.command {
         Command::Config { .. } | Command::Completions { .. } => unreachable!(),
         Command::Vocab {
-            command: PrepareCommand::Add { document, format },
+            command:
+                PrepareCommand::Add {
+                    document,
+                    format,
+                    inline,
+                },
         }
         | Command::Grammar {
-            command: PrepareCommand::Add { document, format },
+            command:
+                PrepareCommand::Add {
+                    document,
+                    format,
+                    inline,
+                },
         } => {
             let kind = if vocab_command {
                 linguist_application::Kind::Vocabulary
             } else {
                 linguist_application::Kind::Grammar
             };
+            let environment = std::env::vars().collect();
+            let Some(document) = document else {
+                if !inline.present() {
+                    return Err(
+                        "INPUT_MODE_REQUIRED: supply --document or inline card fields".into(),
+                    );
+                }
+                let input = inline.into_input(kind)?;
+                let result = linguist_application::prepare_authored_inline(
+                    input,
+                    kind,
+                    &settings,
+                    &environment,
+                )?;
+                emit(&result)?;
+                return Ok(if result.ready { 0 } else { 4 });
+            };
+            if inline.present() {
+                return Err("INPUT_MODE_CONFLICT: --document and inline card fields".into());
+            }
+            let format = format.unwrap_or(AddFormat::Json);
             let bytes = read_input(
                 &document,
                 max_bytes,
@@ -526,7 +739,6 @@ fn run(cli: Cli) -> Result<u8, String> {
                     max_chars
                 },
             )?;
-            let environment = std::env::vars().collect();
             match format {
                 AddFormat::Json => {
                     let result = linguist_application::prepare_authored(

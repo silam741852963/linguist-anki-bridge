@@ -97,6 +97,31 @@ fn both_authored_workflows_preserve_raw_input_and_freeze_settings() {
     }
 }
 #[test]
+fn inline_authored_input_is_recoverable_as_normalized_values() {
+    for kind in [Kind::Vocabulary, Kind::Grammar] {
+        let f = Fixture::new();
+        let input: AddInput = serde_json::from_value(input(kind)).unwrap();
+        let expected = linguist_core::canonical::bytes(&input).unwrap();
+        let result = prepare_authored_inline(input, kind, &f.settings, &f.environment).unwrap();
+        assert!(result.ready, "{:?}", result.issues);
+        let store = linguist_store::Store::read_only(&f.state()).unwrap();
+        let plan = store.revision(result.plan_id, 1).unwrap();
+        assert_eq!(plan.documents[0].sources[0].kind, "authored_inline_v1");
+        assert_eq!(plan.documents[0].sources[0].location, "cli:inline");
+        assert_eq!(
+            plan.documents[0].sources[0].fields["inline_input"],
+            String::from_utf8(expected.clone()).unwrap()
+        );
+        assert_eq!(
+            store
+                .asset(&result.original_input_digest, 1024 * 1024)
+                .unwrap(),
+            expected
+        );
+        assert!(!result.apply_eligible);
+    }
+}
+#[test]
 fn jsonl_batch_preserves_order_sources_and_reports_exact_duplicates() {
     for kind in [Kind::Vocabulary, Kind::Grammar] {
         let f = Fixture::new();

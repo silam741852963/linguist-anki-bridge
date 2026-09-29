@@ -201,6 +201,28 @@ pub fn prepare_authored(
 ) -> Result<Prepared, String> {
     prepare_with_dictionary(bytes, expected_kind, settings, environment, None)
 }
+/// Stage one explicitly authored CLI record. The canonical normalized values
+/// are the recoverable source asset; shell quoting/argv spelling is not claimed.
+pub fn prepare_authored_inline(
+    input: AddInput,
+    expected_kind: Kind,
+    settings: &linguist_config::Effective,
+    environment: &BTreeMap<String, String>,
+) -> Result<Prepared, String> {
+    let bytes = canonical::bytes(&input).map_err(|e| e.to_string())?;
+    let text = String::from_utf8(bytes.clone()).map_err(|_| "INPUT_ENCODING")?;
+    let record = PreparedRecord {
+        structured: Cow::Borrowed(&bytes),
+        archive: &bytes,
+        source_kind: "authored_inline_v1",
+        location: "cli:inline".into(),
+        model_manifest: "authored-inline-v1",
+        fields: Some(BTreeMap::from([("inline_input".into(), text)])),
+    };
+    let mut batch =
+        publish_authored_records(&[record], expected_kind, settings, environment, None, false)?;
+    Ok(batch.items.remove(0))
+}
 pub trait DictionaryPort {
     fn lookup(
         &self,

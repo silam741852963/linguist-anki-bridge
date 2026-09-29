@@ -1770,6 +1770,152 @@ fn authored_add_cli_creates_plan_without_anki_and_blocks_requested_generation() 
 }
 
 #[test]
+fn inline_vocabulary_and_grammar_add_create_recoverable_plans() {
+    for grammar in [false, true] {
+        let root = std::env::temp_dir().join(format!("lab-inline-add-{}", uuid::Uuid::new_v4()));
+        let setting = format!("storage.state_dir={}/state", root.display());
+        let mut cmd = cli();
+        cmd.args([
+            "--set",
+            &setting,
+            "--set",
+            "llm.enabled=false",
+            "--set",
+            "dictionary.provider=authored",
+            "--set",
+            "images.search_when_missing=false",
+            "--set",
+            "kanji.enabled=false",
+        ]);
+        if grammar {
+            cmd.args([
+                "grammar",
+                "add",
+                "--pattern",
+                "〜ために",
+                "--meaning",
+                "in order to",
+                "--formation",
+                "verb dictionary form + ために",
+                "--use-key",
+                "purpose",
+                "--target-language",
+                "ja",
+                "--explanation-language",
+                "en",
+                "--recognition-prompt",
+                "What purpose does this express?",
+                "--example-sentence",
+                "学ぶために行く。",
+                "--example-translation",
+                "I go to learn.",
+            ]);
+        } else {
+            cmd.args([
+                "vocab",
+                "add",
+                "--expression",
+                "eat",
+                "--meaning",
+                "consume food",
+                "--sense-key",
+                "food",
+                "--target-language",
+                "en",
+                "--tag",
+                "study",
+            ]);
+        }
+        let out = cmd.output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(value["ready"], true);
+        assert_eq!(value["apply_eligible"], false);
+        let store = linguist_store::Store::read_only(&root.join("state")).unwrap();
+        let id = uuid::Uuid::parse_str(value["plan_id"].as_str().unwrap()).unwrap();
+        let plan = store.revision(id, 1).unwrap();
+        assert_eq!(plan.documents[0].sources[0].kind, "authored_inline_v1");
+        let bytes = store
+            .asset(
+                value["original_input_digest"].as_str().unwrap(),
+                1024 * 1024,
+            )
+            .unwrap();
+        let archived: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            archived["kind"],
+            if grammar { "grammar" } else { "vocabulary" }
+        );
+        if grammar {
+            assert_eq!(archived["body"]["examples"][0]["provenance"], "user");
+        } else {
+            assert_eq!(archived["tags"][0], "study");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn inline_add_rejects_mixed_modes_incomplete_pairs_and_wrong_kind_before_state() {
+    let root = std::env::temp_dir().join(format!("lab-inline-invalid-{}", uuid::Uuid::new_v4()));
+    let setting = format!("storage.state_dir={}/state", root.display());
+    let common = [
+        "--set",
+        setting.as_str(),
+        "--set",
+        "llm.enabled=false",
+        "--set",
+        "dictionary.provider=authored",
+        "--set",
+        "images.search_when_missing=false",
+    ];
+    for args in [
+        vec!["vocab", "add"],
+        vec![
+            "vocab",
+            "add",
+            "--document",
+            "/missing.json",
+            "--expression",
+            "eat",
+        ],
+        vec![
+            "grammar",
+            "add",
+            "--expression",
+            "eat",
+            "--meaning",
+            "consume",
+            "--target-language",
+            "en",
+        ],
+        vec![
+            "vocab",
+            "add",
+            "--expression",
+            "eat",
+            "--meaning",
+            "consume",
+            "--sense-key",
+            "food",
+            "--target-language",
+            "en",
+            "--example-sentence",
+            "I eat.",
+        ],
+        vec!["vocab", "add", "--format", "csv"],
+    ] {
+        let out = cli().args(common).args(args).output().unwrap();
+        assert!(!out.status.success(), "{out:?}");
+        assert!(!root.join("state").exists());
+    }
+}
+
+#[test]
 fn completions_are_generated_without_config_state_or_services() {
     let root = std::env::temp_dir().join(format!("lab-completions-{}", uuid::Uuid::new_v4()));
     for shell in ["bash", "elvish", "fish", "powershell", "zsh"] {

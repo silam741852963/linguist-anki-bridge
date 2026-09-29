@@ -71,10 +71,12 @@ pub fn inspect(
         .find(|d| d.id == document_id)
         .ok_or("PLAN_ITEM_NOT_FOUND")?;
     if document.sources.is_empty()
-        || document
-            .sources
-            .iter()
-            .any(|source| !matches!(source.kind.as_str(), "authored_json_v2" | "authored_csv_v1"))
+        || document.sources.iter().any(|source| {
+            !matches!(
+                source.kind.as_str(),
+                "authored_json_v2" | "authored_csv_v1" | "authored_inline_v1"
+            )
+        })
     {
         return Err("DUPLICATE_CANDIDATES_ADD_ONLY".into());
     }
