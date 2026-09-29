@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -11,6 +12,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from linguist_bridge.lineage import LineageStore
 from linguist_bridge.operations import OperationLedger
+from linguist_bridge.payloads import VOCAB_FIELDS
 
 PACKAGE = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("bridge_registration", PACKAGE / "registration.py")
@@ -111,10 +113,21 @@ class RegistrationTest(unittest.TestCase):
         lineage_store.close()
         ledger = OperationLedger(root, initialize=True)
         operation_id = str(uuid.uuid4())
-        payload = b'{"body":{},"schema_version":1,"variant":"create_note"}'
+        marker = "lab_op_" + operation_id.replace("-", "")
+        fields = {name: "" for name in VOCAB_FIELDS}
+        fields.update(Expression="cat", Meaning="<p>animal</p>", Language="en")
+        body = {"model_name":"Linguist Vocabulary v2", "model_manifest_digest":"b" * 64,
+                "deck_id":"123", "fields":fields, "tags":[marker], "marker_tag":marker,
+                "source_plan_digest":"lab-jcs-v1:plan:" + "a" * 64,
+                "checkpoint_digest":"c" * 64,
+                "binding":{"profile_fingerprint":"d" * 64,"path_fingerprint":"e" * 64},
+                "expected_absent":True}
+        payload = json.dumps({"body":body,"schema_version":1,"variant":"create_note"},
+                             sort_keys=True, separators=(",", ":")).encode()
         ledger.queue(lineage_id=lineage_id, operation_id=operation_id,
                      payload=payload, payload_digest=hashlib.sha256(payload).hexdigest(),
-                     approved_digest="a" * 64, session_epoch=str(uuid.uuid4()),
+                     approved_digest="lab-jcs-v1:plan:" + "a" * 64,
+                     session_epoch=str(uuid.uuid4()),
                      owner_token=str(uuid.uuid4()), fence_generation=1, variant="create_note")
         registration.register_read_actions(self.module, self.pins, lambda: {
             "actions": ["labCapabilities", "labOperationStatus"],

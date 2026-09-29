@@ -76,6 +76,9 @@ fn digest(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+fn plan_digest(value: &str) -> bool {
+    value.strip_prefix("lab-jcs-v1:plan:").is_some_and(digest)
+}
 fn label(value: &str, limit: usize) -> bool {
     !value.trim().is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
 }
@@ -180,7 +183,7 @@ pub fn inspect_native_operation_status(
         || status.operation_id != operation_id
         || status.session_epoch.is_nil()
         || !digest(&status.payload_digest)
-        || !digest(&status.approved_digest)
+        || !plan_digest(&status.approved_digest)
         || !digest(&status.event_digest)
         || !valid_reason
         || status.needs_recovery

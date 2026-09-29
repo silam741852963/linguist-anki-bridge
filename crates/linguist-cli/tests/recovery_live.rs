@@ -93,7 +93,7 @@ fn pending_journal(endpoint: String) -> OperationJournal {
     OperationJournal {
         id: Uuid::new_v4(),
         group_id: None,
-        approval_digest: "b".repeat(64),
+        approval_digest: format!("lab-jcs-v1:plan:{}", "b".repeat(64)),
         binding: CollectionBinding {
             endpoint,
             profile_fingerprint: "e".repeat(64),

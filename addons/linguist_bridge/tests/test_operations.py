@@ -14,14 +14,24 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from linguist_bridge.lineage import LineageStore
 from linguist_bridge.operations import OperationError, OperationLedger
+from linguist_bridge.payloads import VOCAB_FIELDS, GRAMMAR_FIELDS
 
 
 def request(lineage_id=None, operation_id=None):
-    payload = json.dumps({"schema_version": 1, "variant": "create_note", "body": {"fixture": "cat"}},
+    operation_id = operation_id or str(uuid4())
+    marker = "lab_op_" + operation_id.replace("-", "")
+    fields = {name: "" for name in VOCAB_FIELDS}
+    fields.update(Expression="cat", Meaning="<p>animal</p>", Language="en")
+    body = {"model_name":"Linguist Vocabulary v2", "model_manifest_digest":"b" * 64,
+            "deck_id":"123", "fields":fields, "tags":[marker], "marker_tag":marker,
+            "source_plan_digest":"lab-jcs-v1:plan:" + "a" * 64, "checkpoint_digest":"c" * 64,
+            "binding":{"profile_fingerprint":"d" * 64,"path_fingerprint":"e" * 64},
+            "expected_absent":True}
+    payload = json.dumps({"schema_version": 1, "variant": "create_note", "body": body},
                          sort_keys=True, separators=(",", ":")).encode()
-    return dict(lineage_id=lineage_id or str(uuid4()), operation_id=operation_id or str(uuid4()),
+    return dict(lineage_id=lineage_id or str(uuid4()), operation_id=operation_id,
                 payload=payload, payload_digest=hashlib.sha256(payload).hexdigest(),
-                approved_digest="a" * 64, session_epoch=str(uuid4()),
+                approved_digest="lab-jcs-v1:plan:" + "a" * 64, session_epoch=str(uuid4()),
                 owner_token=str(uuid4()), fence_generation=1, variant="create_note")
 
 
@@ -35,6 +45,61 @@ class OperationLedgerTest(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def test_create_note_body_is_typed_before_queue_and_checked_on_reopen(self):
+        ledger = OperationLedger(self.root, initialize=True)
+        original = request(self.lineage_id)
+        def changed(edit, variant="create_note"):
+            candidate = dict(original)
+            envelope = json.loads(original["payload"])
+            envelope["variant"] = variant
+            edit(envelope["body"])
+            candidate["variant"] = variant
+            candidate["payload"] = json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode()
+            candidate["payload_digest"] = hashlib.sha256(candidate["payload"]).hexdigest()
+            return candidate
+        for edit in (
+            lambda body: body.update(extra="ignored"),
+            lambda body: body.pop("checkpoint_digest"),
+            lambda body: body.update(source_plan_digest="f" * 64),
+            lambda body: body.update(deck_id="01"),
+            lambda body: body.update(model_name="Basic"),
+            lambda body: body.update(marker_tag="wrong"),
+            lambda body: body.update(expected_absent=1),
+            lambda body: body.update(tags=["ordinary"]),
+            lambda body: body.update(binding={"profile_fingerprint":"d" * 64}),
+            lambda body: body["fields"].update(Unexpected="value"),
+            lambda body: body["fields"].update(Language="other"),
+            lambda body: body["fields"].update(Expression=""),
+            lambda body: body["fields"].update(EnableProduction="yes"),
+            lambda body: body["fields"].update(Meaning="x" * 262145),
+        ):
+            with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_BODY_INVALID"):
+                ledger.queue(**changed(edit))
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_APPROVAL_INVALID"):
+            ledger.queue(**dict(original, approved_digest="a" * 64))
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_VARIANT_UNAVAILABLE"):
+            ledger.queue(**changed(lambda body: None, variant="update_note"))
+        self.assertEqual(ledger._db.execute("SELECT count(*) FROM operations").fetchone()[0], 0)
+        self.assertEqual(ledger.queue(**original)["state"], "queued")
+        ledger.close()
+        reopened = OperationLedger(self.root)
+        self.assertEqual(reopened.status(original["lineage_id"], original["operation_id"])["state"], "queued")
+        reopened.close()
+
+    def test_grammar_create_note_requires_complete_managed_fields(self):
+        ledger = OperationLedger(self.root, initialize=True)
+        args = request(self.lineage_id)
+        payload = json.loads(args["payload"])
+        fields = {name: "" for name in GRAMMAR_FIELDS}
+        fields.update(Pattern="〜ても", Meaning="<p>even if</p>", Formation="<p>V-て + も</p>",
+                      Examples="<p>雨が降っても行く</p>", UseKey="concession", Language="ja")
+        payload["body"]["model_name"] = "Linguist Grammar v2"
+        payload["body"]["fields"] = fields
+        args["payload"] = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        args["payload_digest"] = hashlib.sha256(args["payload"]).hexdigest()
+        self.assertEqual(ledger.queue(**args)["state"], "queued")
+        ledger.close()
 
     def test_missing_ledger_requires_explicit_initialization_and_restart_keeps_pending(self):
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_LEDGER_MISSING"):
@@ -61,7 +126,7 @@ class OperationLedgerTest(unittest.TestCase):
         ledger = OperationLedger(self.root, initialize=True)
         args = request(self.lineage_id)
         ledger.queue(**args)
-        forged = dict(args, approved_digest="c" * 64)
+        forged = dict(args, owner_token=str(uuid4()))
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_REPLAY_CONFLICT"):
             ledger.queue(**forged)
         forged = dict(args, payload_digest="d" * 64)

@@ -12,6 +12,7 @@ import stat
 import time
 
 from .identity import IdentityError, _read as read_installation_identity
+from .payloads import PayloadError, _plan_digest, validate_body
 from .protocol import _digest, _uuid
 
 
@@ -77,6 +78,13 @@ def _hash(value):
         return _digest(value)
     except ValueError:
         raise OperationError("BRIDGE_OPERATION_DIGEST_INVALID") from None
+
+
+def _approval(value):
+    try:
+        return _plan_digest(value)
+    except PayloadError:
+        raise OperationError("BRIDGE_OPERATION_APPROVAL_INVALID") from None
 
 
 class OperationLedger:
@@ -193,12 +201,14 @@ class OperationLedger:
         row = self._db.execute("SELECT payload_digest,approved_digest,session_epoch,owner_token,fence_generation,variant,payload FROM operations WHERE lineage_id=? AND operation_id=?", (lineage_id, operation_id)).fetchone()
         if row is None:
             raise OperationError("BRIDGE_OPERATION_NOT_FOUND")
+        if type(row[6]) is not bytes or not 1 <= len(row[6]) <= 1024 * 1024:
+            raise OperationError("BRIDGE_OPERATION_RECORD_INVALID")
         try:
-            _digest(row[1])
+            _approval(row[1])
             _uuid(row[2])
             _uuid(row[3])
             decoded = _json(row[6])
-        except (ValueError, TypeError, UnicodeError):
+        except (ValueError, TypeError, UnicodeError, OperationError):
             raise OperationError("BRIDGE_OPERATION_RECORD_INVALID") from None
         if (type(row[6]) is not bytes or hashlib.sha256(row[6]).hexdigest() != row[0]
                 or row[5] not in VARIANTS or type(row[4]) is not int or not 1 <= row[4] <= 2**63 - 1
@@ -207,6 +217,11 @@ class OperationLedger:
                 or decoded["variant"] != row[5]
                 or type(decoded["body"]) is not dict):
             raise OperationError("BRIDGE_OPERATION_RECORD_INVALID")
+        try:
+            validate_body(row[5], decoded["body"], operation_id=operation_id,
+                          approved_digest=row[1])
+        except PayloadError:
+            raise OperationError("BRIDGE_OPERATION_RECORD_INVALID") from None
         events = self._db.execute("SELECT sequence,digest,body FROM operation_events WHERE lineage_id=? AND operation_id=? ORDER BY sequence", (lineage_id, operation_id)).fetchall()
         if not 1 <= len(events) <= 3:
             raise OperationError("BRIDGE_OPERATION_HISTORY_INVALID")
@@ -214,6 +229,8 @@ class OperationLedger:
         state = None
         reason = None
         for expected, (sequence, digest, body) in enumerate(events, 1):
+            if type(body) is not bytes or not 1 <= len(body) <= 10000:
+                raise OperationError("BRIDGE_OPERATION_HISTORY_INVALID")
             try:
                 event = _json(body)
             except (ValueError, TypeError, UnicodeError):
@@ -262,7 +279,7 @@ class OperationLedger:
               approved_digest, session_epoch, owner_token, fence_generation, variant):
         lineage_id, operation_id = _identifier(lineage_id), _identifier(operation_id)
         session_epoch, owner_token = _identifier(session_epoch), _identifier(owner_token)
-        payload_digest, approved_digest = _hash(payload_digest), _hash(approved_digest)
+        payload_digest, approved_digest = _hash(payload_digest), _approval(approved_digest)
         if type(fence_generation) is not int or not 1 <= fence_generation <= 2**63 - 1:
             raise OperationError("BRIDGE_OPERATION_FENCE_INVALID")
         if type(variant) is not str or variant not in VARIANTS or type(payload) is not bytes or not 1 <= len(payload) <= 1024 * 1024:
@@ -276,6 +293,11 @@ class OperationLedger:
                 or decoded["variant"] != variant or type(decoded["body"]) is not dict
                 or hashlib.sha256(payload).hexdigest() != payload_digest):
             raise OperationError("BRIDGE_OPERATION_PAYLOAD_INVALID")
+        try:
+            validate_body(variant, decoded["body"], operation_id=operation_id,
+                          approved_digest=approved_digest)
+        except PayloadError as error:
+            raise OperationError(str(error)) from None
         try:
             with self._transaction():
                 existing = self._db.execute("SELECT 1 FROM operations WHERE lineage_id=? AND operation_id=?", (lineage_id,operation_id)).fetchone()

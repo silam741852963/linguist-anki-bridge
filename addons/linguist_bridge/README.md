@@ -57,7 +57,10 @@ Initialization is explicit and not called by startup. The ledger cannot mark
 success, dispatch Anki calls, reconcile unknown effects or verify native state.
 `failed_before_write` records only that this inactive ledger never advanced the
 request to running; it is not a verified no-effect receipt from Anki.
-Variant-specific mutation bodies are not validated or dispatched. It is not yet
+The `create_note` body now has a strict managed-model intent schema, checked
+again when reopening stored evidence. Other variants fail at queue time; none
+is dispatched. The complete `lab-jcs-v1:plan:<hash>` approval digest is bound
+to the payload and ledger status. This is structural validation only. It is not yet
 linked to collection lineage/session lifecycle or the Rust CLI
 journal, so it grants no mutation capability. Serialized collection inspection,
 authenticated controls, terminal receipts, packaging and native recovery tests

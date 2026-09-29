@@ -30,7 +30,13 @@ future dispatcher must durably mark running before calling Anki. Identical
 duplicate requests reuse their existing status; changed identities conflict;
 running/unknown block new work across restart. Tests cover restart, concurrent
 start/fail races, immutable evidence, corruption, symlink rejection and explicit
-initialization. Variant-specific mutation bodies are not yet validated. No startup
+initialization. The first typed body boundary now rejects arbitrary `create_note`
+objects: exact managed vocabulary/grammar fields, language/task flags, note
+marker, collection fingerprints, checkpoint/model hashes and the complete
+domain-separated plan approval digest are required. Reserved mutation variants
+remain unavailable at queue time. The Rust read-only status parser uses the
+same approval-digest format. These checks do not verify actual Anki state or
+enable dispatch. No startup
 hook or Anki action calls this ledger. The pre-write failure is only a local
 ledger fact, not a verified Anki no-effect receipt. The ledger has no native effect,
 recovery authority, or mutation journal executor linkage, so collection writes remain disabled.

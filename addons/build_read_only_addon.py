@@ -13,7 +13,7 @@ import zipfile
 SOURCE = Path(__file__).resolve().parent / "linguist_bridge"
 RUNTIME = (
     "compatibility.py", "identity.py", "lineage.py", "operations.py",
-    "protocol.py", "registration.py", "session.py", "startup.py",
+    "payloads.py", "protocol.py", "registration.py", "session.py", "startup.py",
 )
 
 
