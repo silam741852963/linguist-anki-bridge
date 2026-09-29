@@ -922,7 +922,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-21 \u2014 `vocab add`",
       "title": "OP-21 \u2014 `vocab add`",
-      "words": 223,
+      "words": 309,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -1016,7 +1016,7 @@
       "path": "pipelines/validation.md",
       "heading": "## ALG-VALIDATE \u2014 readiness",
       "title": "ALG-VALIDATE \u2014 readiness",
-      "words": 274,
+      "words": 340,
       "requires": [
         "contracts/invariants.md",
         "decisions/learning-and-providers.md"

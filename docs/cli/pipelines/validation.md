@@ -14,6 +14,12 @@ batch items by target language, kind, expression/pattern, selected sense/use,
 meaning and context (vocabulary also includes reading). A repeated identity
 produces `DUPLICATE_BATCH_ITEM` on later items and blocks whole-plan content
 readiness. Distinct homographs, readings, uses and contexts remain separate.
-This only checks the saved batch; it does not claim collection-wide duplicate
-search or prove `selection.duplicate_policy=skip_exact` safe. Native duplicate
-inspection and explicit skip outcomes remain pending.
+This only checks the saved batch. `plans duplicate-candidates PLAN --item-id UUID`
+can now read candidate IDs and managed v2 fields for one rendered authored add
+item. Its exact-primary-field Anki search is bounded by `selection.max_notes`,
+but legacy models, HTML search behavior, context and concurrent changes mean
+even matching returned fields do not prove semantic identity or absence of
+other duplicates. The report always says collection duplicate checking is
+incomplete and cannot authorize `selection.duplicate_policy=skip_exact`.
+Complete native duplicate inspection and explicit skip outcomes remain pending.
+Query escaping and exact-field behavior follow the [Anki search manual](https://docs.ankiweb.net/searching.html#limiting-to-a-field).

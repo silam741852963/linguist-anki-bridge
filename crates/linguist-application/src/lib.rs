@@ -499,6 +499,7 @@ fn publish_authored_records(
 pub mod audio;
 pub mod capture;
 pub mod dictionary;
+pub mod duplicate_candidates;
 pub mod export;
 pub mod generation;
 pub mod grammar;

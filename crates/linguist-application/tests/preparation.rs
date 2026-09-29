@@ -200,6 +200,71 @@ fn jsonl_framing_and_configured_bounds_fail_before_state_creation() {
     assert!(!f.state().exists());
 }
 #[test]
+fn managed_duplicate_candidates_remain_review_evidence_even_when_fields_match() {
+    use linguist_application::duplicate_candidates::{CandidateReader, inspect};
+    struct OverflowReader;
+    impl CandidateReader for OverflowReader {
+        fn find_notes(&self, _query: &str) -> Result<Vec<String>> {
+            Ok(vec!["123".into(), "124".into()])
+        }
+        fn notes_info(&self, _ids: &[String]) -> Result<Vec<serde_json::Value>> {
+            panic!("oversized candidate sets must not fetch note fields")
+        }
+    }
+    struct Reader {
+        query: String,
+        rows: Vec<serde_json::Value>,
+    }
+    impl CandidateReader for Reader {
+        fn find_notes(&self, query: &str) -> Result<Vec<String>> {
+            assert_eq!(query, self.query);
+            Ok(vec!["123".into()])
+        }
+        fn notes_info(&self, ids: &[String]) -> Result<Vec<serde_json::Value>> {
+            assert_eq!(ids, &["123"]);
+            Ok(self.rows.clone())
+        }
+    }
+    for kind in [Kind::Vocabulary, Kind::Grammar] {
+        let f = Fixture::new();
+        let prepared = prepare_authored(
+            &serde_json::to_vec(&input(kind)).unwrap(),
+            kind,
+            &f.settings,
+            &f.environment,
+        )
+        .unwrap();
+        let store = linguist_store::Store::read_only(&f.state()).unwrap();
+        let plan = store.revision(prepared.plan_id, 1).unwrap();
+        let rendered = &plan.rendered[0];
+        let fields = rendered
+            .fields
+            .iter()
+            .map(|(key, value)| (key.clone(), serde_json::json!({"value":value})))
+            .collect::<serde_json::Map<_, _>>();
+        let (name, field, term) = match kind {
+            Kind::Vocabulary => ("Linguist Vocabulary v2", "Expression", "食べる"),
+            Kind::Grammar => ("Linguist Grammar v2", "Pattern", "〜ても"),
+        };
+        let reader = Reader {
+            query: format!("note:\"{name}\" {field}:\"{term}\""),
+            rows: vec![serde_json::json!({"noteId":123,"modelName":name,"fields":fields})],
+        };
+        let report = inspect(&plan, prepared.document_id, &reader, 1, 10000).unwrap();
+        assert_eq!(report.candidates.len(), 1);
+        assert!(report.candidates[0].compared_fields_match);
+        assert!(!report.collection_duplicate_check_complete);
+        assert!(!report.semantic_identity_verified);
+        assert!(!report.apply_eligible);
+        assert!(inspect(&plan, prepared.document_id, &reader, 0, 10000).is_err());
+        assert!(
+            inspect(&plan, prepared.document_id, &OverflowReader, 1, 10000)
+                .unwrap_err()
+                .starts_with("DUPLICATE_CANDIDATES_TOO_MANY")
+        );
+    }
+}
+#[test]
 fn invalid_content_is_persisted_for_review_without_a_render() {
     let f = Fixture::new();
     let mut value = input(Kind::Vocabulary);

@@ -2,6 +2,14 @@
 
 The implementation has started. The finalized handbook remains the target specification; this page records actual code coverage. No work package or release gate is complete yet.
 
+`plans duplicate-candidates PLAN --item-id UUID [--revision N]` now performs a
+bounded, read-only Anki search for one rendered authored add item in its managed
+v2 model. It compares returned primary, language and selected sense/use fields
+with the staged rendering. Search hits are candidate evidence only: legacy
+models, context, HTML search behavior and concurrent edits remain unresolved,
+so no match or empty result clears collection duplicate checking or enables
+`skip_exact`/apply. Oversized queries and result sets fail without truncating.
+
 The inactive Python companion now has a private SQLite operation ledger beside
 the installation/lineage helpers. It accepts only bounded versioned request envelopes
 with exact UUID, digest, session, owner and fencing identities, and appends

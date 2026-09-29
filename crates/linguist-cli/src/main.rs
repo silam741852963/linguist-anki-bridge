@@ -258,6 +258,14 @@ enum RecoveryCommand {
 }
 #[derive(Subcommand)]
 enum PlanCommand {
+    /// Read managed v2 duplicate candidates for one authored add item; never clears apply.
+    DuplicateCandidates {
+        plan: uuid::Uuid,
+        #[arg(long)]
+        item_id: uuid::Uuid,
+        #[arg(long)]
+        revision: Option<u32>,
+    },
     /// Split a retained grammar source into authored units with one explicit anchor.
     SplitGrammar {
         plan: uuid::Uuid,
@@ -817,6 +825,25 @@ fn run(cli: Cli) -> Result<u8, String> {
             }
             let store = linguist_store::Store::read_only(&root)?;
             match command {
+                PlanCommand::DuplicateCandidates {
+                    plan,
+                    item_id,
+                    revision,
+                } => {
+                    let revision = revision
+                        .map(Ok)
+                        .unwrap_or_else(|| store.latest_revision(plan))?;
+                    let base = store.revision(plan, revision)?;
+                    let client = anki_client(&settings)?;
+                    let report = linguist_application::duplicate_candidates::inspect(
+                        &base,
+                        item_id,
+                        &client,
+                        settings.values["selection.max_notes"].as_u64().unwrap() as usize,
+                        max_chars,
+                    )?;
+                    emit(&report)?;
+                }
                 PlanCommand::SplitGrammar { plan, request } => {
                     let raw = read_input(&request, max_bytes, max_chars)?;
                     let request: linguist_application::grammar::SplitRequest =

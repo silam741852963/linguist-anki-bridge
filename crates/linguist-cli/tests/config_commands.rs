@@ -2069,6 +2069,129 @@ fn explicit_jsonl_add_publishes_one_ordered_plan_and_rejects_bad_second_line() {
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
+fn duplicate_candidates_command_reads_managed_note_without_changing_plan() {
+    use std::io::{BufRead, Read, Write};
+    let root =
+        std::env::temp_dir().join(format!("lab-duplicate-candidates-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.display());
+    let input = b"{\"schema_version\":2,\"kind\":\"vocabulary\",\"target_language\":\"en\",\"body\":{\"expression\":\"eat\",\"meaning\":\"consume food\",\"sense_key\":\"food\"}}";
+    let prepared = piped(
+        {
+            let mut command = cli();
+            command.args([
+                "--set",
+                &state,
+                "--set",
+                "llm.enabled=false",
+                "--set",
+                "dictionary.provider=authored",
+                "--set",
+                "images.search_when_missing=false",
+                "vocab",
+                "add",
+                "--document",
+                "-",
+            ]);
+            command
+        },
+        input,
+    );
+    assert!(prepared.status.success(), "{prepared:?}");
+    let prepared: serde_json::Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    let plan_id = uuid::Uuid::parse_str(prepared["plan_id"].as_str().unwrap()).unwrap();
+    let item_id = uuid::Uuid::parse_str(prepared["document_id"].as_str().unwrap()).unwrap();
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let before = store.revision(plan_id, 1).unwrap();
+    let fields = before.rendered[0]
+        .fields
+        .iter()
+        .map(|(key, value)| (key.clone(), serde_json::json!({"value":value})))
+        .collect::<serde_json::Map<_, _>>();
+    drop(store);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("anki.endpoint=http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let mut actions = Vec::new();
+        for _ in 0..5 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+            let mut length = 0usize;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if line.to_ascii_lowercase().starts_with("content-length:") {
+                    length = line.split_once(':').unwrap().1.trim().parse().unwrap();
+                }
+            }
+            let mut bytes = vec![0; length];
+            reader.read_exact(&mut bytes).unwrap();
+            let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let action = request["action"].as_str().unwrap().to_owned();
+            let result = match action.as_str() {
+                "getActiveProfile" => serde_json::json!("Fixture"),
+                "findNotes" => {
+                    assert_eq!(
+                        request["params"]["query"],
+                        "note:\"Linguist Vocabulary v2\" Expression:\"eat\""
+                    );
+                    serde_json::json!([123])
+                }
+                "notesInfo" => {
+                    assert_eq!(request["params"]["notes"], serde_json::json!([123]));
+                    serde_json::json!([{"noteId":123,"modelName":"Linguist Vocabulary v2","fields":fields}])
+                }
+                _ => panic!("unexpected action: {action}"),
+            };
+            actions.push(action);
+            let body = serde_json::json!({"result":result,"error":null}).to_string();
+            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+        }
+        actions
+    });
+    let output = cli()
+        .args([
+            "--set",
+            &state,
+            "--set",
+            &endpoint,
+            "plans",
+            "duplicate-candidates",
+            &plan_id.to_string(),
+            "--item-id",
+            &item_id.to_string(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        server.join().unwrap(),
+        [
+            "getActiveProfile",
+            "findNotes",
+            "getActiveProfile",
+            "notesInfo",
+            "getActiveProfile"
+        ]
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["candidates"][0]["note_id"], "123");
+    assert_eq!(report["candidates"][0]["compared_fields_match"], true);
+    assert_eq!(report["collection_duplicate_check_complete"], false);
+    assert_eq!(report["semantic_identity_verified"], false);
+    assert_eq!(report["apply_eligible"], false);
+    assert_eq!(
+        linguist_store::Store::read_only(&root)
+            .unwrap()
+            .revision(plan_id, 1)
+            .unwrap(),
+        before
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn stdin_limits_encoding_and_multiple_records_fail_before_state_creation() {
     for (bytes, setting) in [
         (vec![], "input.max_record_chars=100"),
