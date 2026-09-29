@@ -496,7 +496,7 @@
       "path": "operations/doctor.md",
       "heading": "## OP-01 \u2014 `doctor`",
       "title": "OP-01 \u2014 `doctor`",
-      "words": 215,
+      "words": 297,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

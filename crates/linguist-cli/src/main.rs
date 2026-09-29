@@ -64,11 +64,14 @@ enum Command {
     Doctor {
         #[arg(long)]
         offline: bool,
-        #[arg(long, conflicts_with = "ollama")]
+        #[arg(long, conflicts_with_all = ["ollama", "bridge"])]
         local: bool,
         /// Probe only the configured local Ollama model metadata; never load or pull.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "bridge")]
         ollama: bool,
+        /// Inspect the native companion's declaration without authorizing writes.
+        #[arg(long)]
+        bridge: bool,
     },
     /// Read Anki deck names, IDs and requested counts.
     Decks {
@@ -1201,6 +1204,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             offline,
             local,
             ollama,
+            bridge,
         } => {
             if local {
                 emit(
@@ -1224,6 +1228,13 @@ fn run(cli: Cli) -> Result<u8, String> {
                     &serde_json::json!({"version":2,"probe":"ollama_metadata","ollama":evidence,
                     "metadata_ready":true,"collection_writes_enabled":false,"release_gates":"not_run",
                     "raw_assets_persisted":false}),
+                )?;
+                return Ok(0);
+            }
+            if bridge {
+                let inspection = anki_client(&settings)?.native_capabilities()?;
+                emit(
+                    &serde_json::json!({"version":2,"probe":"native_bridge","native_bridge":inspection,"release_gates":"not_run"}),
                 )?;
                 return Ok(0);
             }

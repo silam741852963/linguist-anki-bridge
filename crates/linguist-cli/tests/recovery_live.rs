@@ -142,6 +142,53 @@ fn save_pending(root: &std::path::Path, journal: &OperationJournal) {
 }
 
 #[test]
+fn doctor_bridge_inspects_declaration_without_enabling_writes() {
+    let journal = pending_journal(String::new());
+    let root = std::env::temp_dir().join(format!("lab-bridge-doctor-{}", Uuid::new_v4()));
+    let server = Server::new(vec![json!("Fixture"), manifest(&journal), json!("Fixture")]);
+    let out = cli()
+        .arg("--set")
+        .arg(format!("anki.endpoint={}", server.endpoint))
+        .arg("--set")
+        .arg(format!("storage.state_dir={}", root.display()))
+        .args(["doctor", "--bridge", "--offline"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(value["probe"], "native_bridge");
+    assert_eq!(
+        value["native_bridge"]["declaration"]["protocol"],
+        "lab-native-v1"
+    );
+    assert_eq!(value["native_bridge"]["compatibility_verified"], false);
+    assert_eq!(
+        value["native_bridge"]["collection_identity_verified"],
+        false
+    );
+    assert_eq!(value["native_bridge"]["collection_writes_enabled"], false);
+    assert_eq!(value["release_gates"], "not_run");
+    assert!(!root.exists());
+    let requests = server.finish();
+    assert_eq!(
+        requests
+            .iter()
+            .map(|request| request["action"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["getActiveProfile", "labCapabilities", "getActiveProfile"]
+    );
+    let conflict = cli()
+        .args(["doctor", "--bridge", "--ollama"])
+        .output()
+        .unwrap();
+    assert_eq!(conflict.status.code(), Some(2));
+}
+
+#[test]
 fn live_recovery_reads_step_identity_but_does_not_verify_native_effect() {
     let root = std::env::temp_dir().join(format!("lab-native-status-cli-{}", Uuid::new_v4()));
     let mut journal = pending_journal(String::new());
