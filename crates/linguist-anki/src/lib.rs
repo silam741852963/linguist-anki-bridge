@@ -15,6 +15,7 @@ pub mod native;
 #[derive(Clone, Copy, Debug)]
 enum Action {
     NativeCapabilities,
+    NativeOperationStatus,
     Version,
     Reflect,
     Profile,
@@ -33,6 +34,7 @@ impl Action {
     fn name(self) -> &'static str {
         match self {
             Self::NativeCapabilities => "labCapabilities",
+            Self::NativeOperationStatus => "labOperationStatus",
             Self::Version => "version",
             Self::Reflect => "apiReflect",
             Self::Profile => "getActiveProfile",

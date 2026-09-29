@@ -595,3 +595,107 @@ fn malformed_native_declarations_and_unimplemented_effects_are_rejected() {
     let inspected = inspect_native_manifest(manifest).unwrap();
     assert!(!inspected.collection_writes_enabled);
 }
+
+fn native_status() -> Value {
+    json!({
+        "lineage_id":"c17625b0-7a88-4aab-a8a5-c1d993c72a01",
+        "operation_id":"c17625b0-7a88-4aab-a8a5-c1d993c72a03",
+        "payload_digest":"a".repeat(64),
+        "approved_digest":"b".repeat(64),
+        "session_epoch":"c17625b0-7a88-4aab-a8a5-c1d993c72a02",
+        "variant":"create_note",
+        "state":"queued",
+        "reason":null,
+        "event_digest":"c".repeat(64),
+        "needs_recovery":false,
+        "dispatch_newly_authorized":false
+    })
+}
+
+#[test]
+fn native_operation_status_is_profile_pinned_and_never_authorizes_dispatch() {
+    use linguist_anki::native::NativeOperationState;
+    let lineage = uuid::Uuid::parse_str(native_status()["lineage_id"].as_str().unwrap()).unwrap();
+    let operation =
+        uuid::Uuid::parse_str(native_status()["operation_id"].as_str().unwrap()).unwrap();
+    let server = Server::new(vec![
+        response(json!("Fixture")),
+        response(native_status()),
+        response(json!("Fixture")),
+    ]);
+    let client = Client::from_settings(&settings(&server.endpoint), &BTreeMap::new()).unwrap();
+    let status = client.native_operation_status(lineage, operation).unwrap();
+    assert_eq!(status.state, NativeOperationState::Queued);
+    assert!(!status.needs_recovery && !status.dispatch_newly_authorized);
+    let requests = server.finish();
+    assert_eq!(requests[1]["action"], "labOperationStatus");
+    assert_eq!(
+        requests[1]["params"],
+        json!({"lineage_id":lineage,"operation_id":operation})
+    );
+
+    let server = Server::new(vec![
+        response(json!("Fixture")),
+        response(native_status()),
+        response(json!("Other")),
+    ]);
+    let client = Client::from_settings(&settings(&server.endpoint), &BTreeMap::new()).unwrap();
+    assert_eq!(
+        client
+            .native_operation_status(lineage, operation)
+            .unwrap_err(),
+        "ANKI_PROFILE_CONFLICT"
+    );
+    server.finish();
+}
+
+#[test]
+fn malformed_native_operation_status_is_rejected() {
+    use linguist_anki::native::inspect_native_operation_status;
+    let value = native_status();
+    let lineage = uuid::Uuid::parse_str(value["lineage_id"].as_str().unwrap()).unwrap();
+    let operation = uuid::Uuid::parse_str(value["operation_id"].as_str().unwrap()).unwrap();
+    assert!(inspect_native_operation_status(value.clone(), lineage, operation).is_ok());
+    let mut unknown = value.clone();
+    unknown["state"] = json!("unknown");
+    unknown["reason"] = json!("worker_crash");
+    unknown["needs_recovery"] = json!(true);
+    assert!(inspect_native_operation_status(unknown, lineage, operation).is_ok());
+    let mut failed = value.clone();
+    failed["state"] = json!("failed_before_write");
+    failed["reason"] = json!("preflight_rejected");
+    assert!(inspect_native_operation_status(failed, lineage, operation).is_ok());
+    for (pointer, replacement) in [
+        ("/lineage_id", json!("c17625b0-7a88-4aab-a8a5-c1d993c72a04")),
+        (
+            "/operation_id",
+            json!("c17625b0-7a88-4aab-a8a5-c1d993c72a04"),
+        ),
+        (
+            "/session_epoch",
+            json!("00000000-0000-0000-0000-000000000000"),
+        ),
+        ("/payload_digest", json!("not-a-digest")),
+        ("/approved_digest", json!("A".repeat(64))),
+        ("/event_digest", json!("short")),
+        ("/variant", json!("arbitrary_sql")),
+        ("/state", json!("verified")),
+        ("/reason", json!("worker_crash")),
+        ("/needs_recovery", json!(true)),
+        ("/dispatch_newly_authorized", json!(true)),
+    ] {
+        let mut invalid = value.clone();
+        *invalid.pointer_mut(pointer).unwrap() = replacement;
+        assert_eq!(
+            inspect_native_operation_status(invalid, lineage, operation).unwrap_err(),
+            "ANKI_NATIVE_STATUS_INVALID",
+            "{pointer}"
+        );
+    }
+    let mut extra = value;
+    extra["verified"] = json!(true);
+    assert_eq!(
+        inspect_native_operation_status(extra, lineage, operation).unwrap_err(),
+        "ANKI_NATIVE_STATUS_INVALID"
+    );
+}

@@ -46,6 +46,30 @@ pub struct NativeInspection {
     pub collection_identity_verified: bool,
     pub collection_writes_enabled: bool,
 }
+/// Untrusted companion ledger evidence. This is not a native-effect receipt.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeOperationState {
+    Queued,
+    Running,
+    Unknown,
+    FailedBeforeWrite,
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeOperationStatus {
+    pub lineage_id: Uuid,
+    pub operation_id: Uuid,
+    pub payload_digest: String,
+    pub approved_digest: String,
+    pub session_epoch: Uuid,
+    pub variant: MutationVariant,
+    pub state: NativeOperationState,
+    pub reason: Option<String>,
+    pub event_digest: String,
+    pub needs_recovery: bool,
+    pub dispatch_newly_authorized: bool,
+}
 fn digest(value: &str) -> bool {
     value.len() == 64
         && value
@@ -127,6 +151,49 @@ pub fn inspect_native_manifest(value: Value) -> Result<NativeInspection> {
         collection_writes_enabled: false,
     })
 }
+pub fn inspect_native_operation_status(
+    value: Value,
+    lineage_id: Uuid,
+    operation_id: Uuid,
+) -> Result<NativeOperationStatus> {
+    let status: NativeOperationStatus =
+        serde_json::from_value(value).map_err(|_| "ANKI_NATIVE_STATUS_INVALID")?;
+    let valid_reason = match status.state {
+        NativeOperationState::Queued | NativeOperationState::Running => status.reason.is_none(),
+        NativeOperationState::Unknown => matches!(
+            status.reason.as_deref(),
+            Some("transport_ambiguous" | "worker_crash" | "native_observation_incomplete")
+        ),
+        NativeOperationState::FailedBeforeWrite => matches!(
+            status.reason.as_deref(),
+            Some(
+                "preflight_rejected"
+                    | "operator_cancelled"
+                    | "session_changed"
+                    | "checkpoint_failed"
+            )
+        ),
+    };
+    if lineage_id.is_nil()
+        || operation_id.is_nil()
+        || status.lineage_id != lineage_id
+        || status.operation_id != operation_id
+        || status.session_epoch.is_nil()
+        || !digest(&status.payload_digest)
+        || !digest(&status.approved_digest)
+        || !digest(&status.event_digest)
+        || !valid_reason
+        || status.needs_recovery
+            != matches!(
+                status.state,
+                NativeOperationState::Running | NativeOperationState::Unknown
+            )
+        || status.dispatch_newly_authorized
+    {
+        return Err("ANKI_NATIVE_STATUS_INVALID".into());
+    }
+    Ok(status)
+}
 impl Client {
     /// Profile-pinned read only. A declaration cannot bypass the compatibility/disposable-test gate.
     pub fn native_capabilities(&self) -> Result<NativeInspection> {
@@ -134,5 +201,23 @@ impl Client {
         let value = self.call(Action::NativeCapabilities, json!({}))?;
         self.check_profile()?;
         inspect_native_manifest(value)
+    }
+
+    /// Profile-pinned observation only; callers must reconcile it with the CLI journal.
+    pub fn native_operation_status(
+        &self,
+        lineage_id: Uuid,
+        operation_id: Uuid,
+    ) -> Result<NativeOperationStatus> {
+        if lineage_id.is_nil() || operation_id.is_nil() {
+            return Err("ANKI_NATIVE_STATUS_ID_INVALID".into());
+        }
+        self.check_profile()?;
+        let value = self.call(
+            Action::NativeOperationStatus,
+            json!({"lineage_id":lineage_id,"operation_id":operation_id}),
+        )?;
+        self.check_profile()?;
+        inspect_native_operation_status(value, lineage_id, operation_id)
     }
 }

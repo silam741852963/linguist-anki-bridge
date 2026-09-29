@@ -17,6 +17,13 @@ hook or Anki action calls this ledger. The pre-write failure is only a local
 ledger fact, not a verified Anki no-effect receipt. The ledger has no native effect,
 recovery authority, or CLI journal linkage, so collection writes remain disabled.
 
+The Rust Anki read port now accepts a strict `labOperationStatus` response with
+matching lineage/operation UUIDs, valid digests, known state/reason combinations
+and no dispatch authorization. It checks the active profile before and after the
+read. This is a protocol boundary for future journal reconciliation, not a
+verified native-effect receipt. `recover inspect --live` remains unavailable until
+the companion action, binding checks and recovery algorithm are implemented.
+
 `plans diff --live` now combines an exact saved-revision diff with the bounded
 read-only source comparison. Saved revamp card IDs come from revalidated archived
 note/model/card payloads, rather than the still-empty native `SourceRecord.cards`
