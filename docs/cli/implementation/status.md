@@ -15,18 +15,26 @@ start/fail races, immutable evidence, corruption, symlink rejection and explicit
 initialization. Variant-specific mutation bodies are not yet validated. No startup
 hook or Anki action calls this ledger. The pre-write failure is only a local
 ledger fact, not a verified Anki no-effect receipt. The ledger has no native effect,
-recovery authority, or CLI journal linkage, so collection writes remain disabled.
+recovery authority, or mutation journal executor linkage, so collection writes remain disabled.
 
 The Rust Anki read port now accepts a strict `labOperationStatus` response with
 matching lineage/operation UUIDs, valid digests, known state/reason combinations
 and no dispatch authorization. It checks the active profile before and after the
 read. This is a protocol boundary for future journal reconciliation, not a
-verified native-effect receipt. `recover inspect --live` remains unavailable until
-the companion is activated and binding checks and recovery logic are implemented.
+verified native-effect receipt. `recover inspect --live` can now read each started
+journal step's native ledger status through the profile-pinned Rust port. It compares
+the declared bridge/session binding and exact step payload, approval, session and
+variant identities, reports read errors and conflicts alongside local journals,
+and does not query a foreign bridge's operation status. Empty pending inspections
+do not connect to Anki or create local state. This is ledger observation only:
+`live_checked` and `reconciliation_available` remain false until collection
+read-back and the recovery algorithm exist.
+
 The pinned Python registration adapter can add the read-only status action with
 capabilities and rolls back both on reflection failure. A packaged entrypoint now
 defers activation to Anki's main-window hook and the exact supported build/source
 gate; no real Anki integration has been certified.
+
 An exact read-adapter matrix pins the locally inspected Anki 25.09.2 build and
 AnkiConnect source hashes; unknown builds/sources fail closed. This matrix does
 not certify native writes. The deterministic `.ankiaddon` builder includes only

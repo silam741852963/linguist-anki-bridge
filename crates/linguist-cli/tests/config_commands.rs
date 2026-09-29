@@ -1300,7 +1300,7 @@ fn config_edit_commands_backup_and_reset_requires_execute() {
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
-fn recovery_inspection_never_initializes_state_and_live_read_is_explicitly_unavailable() {
+fn recovery_inspection_never_initializes_state_or_connects_when_no_journals_exist() {
     let root =
         std::env::temp_dir().join(format!("lab-recovery-read-test-{}", uuid::Uuid::new_v4()));
     let out = cli()
@@ -1314,11 +1314,17 @@ fn recovery_inspection_never_initializes_state_and_live_read_is_explicitly_unava
     assert_eq!(value["state_exists"], false);
     assert!(!root.exists());
     let out = cli()
+        .args(["--set"])
+        .arg(format!("storage.state_dir={}", root.display()))
         .args(["recover", "inspect", "--pending", "--live"])
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(3));
-    assert!(out.stdout.is_empty());
+    assert!(out.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(value["live_requested"], true);
+    assert_eq!(value["native_status_checked"], false);
+    assert_eq!(value["live"], serde_json::Value::Null);
+    assert!(!root.exists());
 }
 #[test]
 fn note_selector_conflicts_and_invalid_ids_fail_before_anki_requests() {

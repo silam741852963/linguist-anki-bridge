@@ -2,6 +2,7 @@
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use linguist_core::{LearningDocument, canonical, model, render, validation};
 use std::{collections::BTreeMap, path::PathBuf, process::ExitCode};
+mod recovery_live;
 #[derive(Parser)]
 #[command(
     name = "linguist-anki-bridge",
@@ -242,7 +243,7 @@ enum RecoveryCommand {
         operation: Option<uuid::Uuid>,
         #[arg(long)]
         pending: bool,
-        /// Native read-back is unavailable until the Anki adapter is implemented.
+        /// Read native ledger status without reconciling or retrying effects.
         #[arg(long)]
         live: bool,
     },
@@ -549,12 +550,6 @@ fn run(cli: Cli) -> Result<u8, String> {
                     live,
                 },
         } => {
-            if live {
-                return Err(
-                    "CAPABILITY_UNAVAILABLE: live Anki recovery inspection is not implemented"
-                        .into(),
-                );
-            }
             let environment: BTreeMap<String, String> = std::env::vars().collect();
             let root = linguist_config::expand_path(
                 settings.values["storage.state_dir"].as_str().unwrap(),
@@ -581,10 +576,29 @@ fn run(cli: Cli) -> Result<u8, String> {
                 .map(|s| s.pending_journal_count())
                 .transpose()?
                 .unwrap_or(0);
+            let live_report = if live && !journals.is_empty() {
+                Some(match anki_client(&settings) {
+                    Ok(client) => recovery_live::inspect(
+                        &journals,
+                        &client,
+                        settings.values["anki.endpoint"].as_str().unwrap(),
+                        settings.values["anki.read_batch_size"].as_u64().unwrap() as usize,
+                    )?,
+                    Err(error) => recovery_live::LiveReport::unavailable(error),
+                })
+            } else {
+                None
+            };
+            let dependency_unavailable = live_report
+                .as_ref()
+                .is_some_and(recovery_live::LiveReport::dependency_unavailable);
+            let native_status_checked = live_report
+                .as_ref()
+                .is_some_and(|report| report.status_reads_completed > 0);
             emit(
-                &serde_json::json!({"version":2,"journals":journals,"total_pending":total_pending,"live_checked":false,"reconciliation_available":false,"state_exists":store.is_some()}),
+                &serde_json::json!({"version":2,"journals":journals,"total_pending":total_pending,"live_requested":live,"live_checked":false,"native_status_checked":native_status_checked,"live":live_report,"reconciliation_available":false,"state_exists":store.is_some()}),
             )?;
-            Ok(0)
+            Ok(if dependency_unavailable { 3 } else { 0 })
         }
         Command::Jobs { command } => {
             let env: BTreeMap<String, String> = std::env::vars().collect();
