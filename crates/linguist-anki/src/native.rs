@@ -1,5 +1,6 @@
 //! Native companion declarations are evidence to inspect, never client-side write authorization.
 use super::*;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -70,6 +71,35 @@ pub struct NativeOperationStatus {
     pub needs_recovery: bool,
     pub dispatch_newly_authorized: bool,
 }
+/// Complete create-note wire intent. Structural validation does not prove any
+/// collection, model, checkpoint, duplicate, or approval precondition.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCreateNoteIntent {
+    pub schema_version: u8,
+    pub variant: String,
+    pub body: NativeCreateNoteBody,
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCreateNoteBody {
+    pub model_name: String,
+    pub model_manifest_digest: String,
+    pub deck_id: String,
+    pub fields: BTreeMap<String, String>,
+    pub tags: Vec<String>,
+    pub marker_tag: String,
+    pub source_plan_digest: String,
+    pub checkpoint_digest: String,
+    pub binding: NativeCreateNoteBinding,
+    pub expected_absent: bool,
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCreateNoteBinding {
+    pub profile_fingerprint: String,
+    pub path_fingerprint: String,
+}
 fn digest(value: &str) -> bool {
     value.len() == 64
         && value
@@ -81,6 +111,111 @@ fn plan_digest(value: &str) -> bool {
 }
 fn label(value: &str, limit: usize) -> bool {
     !value.trim().is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
+}
+/// Parse the exact proposed wire bytes before any future journal or dispatch.
+/// The companion independently repeats these checks; neither side authorizes
+/// the write until native preconditions and recovery are implemented.
+pub fn validate_create_note_intent(
+    bytes: &[u8],
+    operation_id: Uuid,
+    approved_digest: &str,
+) -> Result<NativeCreateNoteIntent> {
+    let invalid = || "ANKI_NATIVE_CREATE_INTENT_INVALID".into();
+    if operation_id.is_nil()
+        || !plan_digest(approved_digest)
+        || !(1..=1024 * 1024).contains(&bytes.len())
+    {
+        return Err(invalid());
+    }
+    let intent: NativeCreateNoteIntent = canonical::parse(bytes).map_err(|_| invalid())?;
+    if intent.schema_version != 1 {
+        return Err(invalid());
+    }
+    if intent.variant != "create_note" {
+        return Err("CAPABILITY_UNAVAILABLE: native operation variant is not implemented".into());
+    }
+    let body = &intent.body;
+    if !digest(&body.model_manifest_digest)
+        || !digest(&body.checkpoint_digest)
+        || !digest(&body.binding.profile_fingerprint)
+        || !digest(&body.binding.path_fingerprint)
+        || body.source_plan_digest != approved_digest
+        || !body.expected_absent
+        || body.marker_tag != format!("lab_op_{}", operation_id.simple())
+        || body.deck_id.is_empty()
+        || body.deck_id.len() > 16
+        || body.deck_id.starts_with('0')
+        || !body.deck_id.bytes().all(|byte| byte.is_ascii_digit())
+        || !body
+            .deck_id
+            .parse::<u64>()
+            .is_ok_and(|id| (1..=9_007_199_254_740_991).contains(&id))
+    {
+        return Err(invalid());
+    }
+    let model = if body.model_name == linguist_core::model::vocabulary().name {
+        linguist_core::model::vocabulary()
+    } else if body.model_name == linguist_core::model::grammar().name {
+        linguist_core::model::grammar()
+    } else {
+        return Err(invalid());
+    };
+    if body.fields.len() != model.fields.len()
+        || model
+            .fields
+            .iter()
+            .any(|field| !body.fields.contains_key(field))
+        || body
+            .fields
+            .values()
+            .any(|value| value.len() > 262_144 || value.contains('\0'))
+    {
+        return Err(invalid());
+    }
+    let required: &[&str] = if model.name == "Linguist Vocabulary v2" {
+        &["Expression", "Meaning"]
+    } else {
+        &["Pattern", "Meaning", "Formation", "Examples", "UseKey"]
+    };
+    if required
+        .iter()
+        .any(|field| body.fields[*field].trim().is_empty())
+        || !matches!(body.fields["Language"].as_str(), "ja" | "en")
+    {
+        return Err(invalid());
+    }
+    let switches: &[&str] = if model.name == "Linguist Vocabulary v2" {
+        &["EnableProduction", "EnableSpelling"]
+    } else {
+        &["EnableApplication"]
+    };
+    if switches
+        .iter()
+        .any(|field| !matches!(body.fields[*field].as_str(), "" | "1"))
+        || !(1..=100).contains(&body.tags.len())
+        || body.tags.iter().any(|tag| {
+            tag.is_empty()
+                || tag.len() > 100
+                || tag.chars().any(|ch| {
+                    ch.is_whitespace() || ch.is_control() || (0x7f..=0x9f).contains(&(ch as u32))
+                })
+        })
+        || body
+            .tags
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != body.tags.len()
+        || body
+            .tags
+            .iter()
+            .filter(|tag| **tag == body.marker_tag)
+            .count()
+            != 1
+    {
+        return Err(invalid());
+    }
+    Ok(intent)
 }
 pub fn inspect_native_manifest(value: Value) -> Result<NativeInspection> {
     let declaration: NativeManifest =
