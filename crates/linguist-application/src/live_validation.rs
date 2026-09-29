@@ -24,6 +24,18 @@ pub struct LiveSource {
     pub atomic_snapshot_verified: bool,
     pub native_history_verified: bool,
     pub media_bytes_rechecked: bool,
+    pub media_conflict: bool,
+    pub media: Vec<LiveMedia>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LiveMedia {
+    pub filename: String,
+    pub saved_digest: Option<String>,
+    pub live_digest: Option<String>,
+    pub saved_size_bytes: Option<u64>,
+    pub live_size_bytes: Option<u64>,
+    pub matched: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -134,7 +146,85 @@ fn compare(
         atomic_snapshot_verified: false,
         native_history_verified: false,
         media_bytes_rechecked: false,
+        media_conflict: false,
+        media: vec![],
     })
+}
+
+fn recheck_media<M>(
+    store: &linguist_store::Store,
+    source: &SourceRecord,
+    archived_assets: &BTreeSet<String>,
+    manifest: &Value,
+    max_asset_bytes: u64,
+    max_total_bytes: u64,
+    retrieve: &mut M,
+) -> Result<(bool, Vec<LiveMedia>), String>
+where
+    M: FnMut(&str) -> Result<Option<linguist_anki::MediaFile>, String>,
+{
+    if source.media_refs.is_empty() {
+        if manifest
+            .get("media")
+            .is_some_and(|value| !value.as_array().is_some_and(Vec::is_empty))
+        {
+            return Err("LIVE_MEDIA_ARCHIVE_CONFLICT".into());
+        }
+        return Ok((true, vec![]));
+    }
+    let Some(raw_receipts) = manifest.get("media") else {
+        return Ok((false, vec![]));
+    };
+    let receipts: Vec<crate::source_archive::media::MediaReceipt> =
+        serde_json::from_value(raw_receipts.clone()).map_err(|_| "LIVE_MEDIA_MANIFEST_INVALID")?;
+    if receipts.len() != source.media_refs.len()
+        || receipts
+            .iter()
+            .zip(&source.media_refs)
+            .any(|(receipt, expected)| receipt.filename != *expected)
+    {
+        return Err("LIVE_MEDIA_ARCHIVE_CONFLICT".into());
+    }
+    let mut total = 0u64;
+    let mut observations = Vec::with_capacity(receipts.len());
+    for receipt in receipts {
+        if receipt.digest.is_some() != receipt.size_bytes.is_some() {
+            return Err("LIVE_MEDIA_MANIFEST_INVALID".into());
+        }
+        if let (Some(digest), Some(size)) = (&receipt.digest, receipt.size_bytes)
+            && (!archived_assets.contains(digest)
+                || store.asset(digest, max_asset_bytes)?.len() as u64 != size)
+        {
+            return Err("LIVE_MEDIA_ARCHIVE_CONFLICT".into());
+        }
+        let live = retrieve(&receipt.filename)?;
+        if let Some(file) = &live {
+            if file.filename != receipt.filename
+                || canonical::asset_digest(&file.bytes) != file.digest
+                || file.bytes.len() as u64 > max_asset_bytes
+            {
+                return Err("LIVE_MEDIA_READ_INVALID".into());
+            }
+            total = total
+                .checked_add(file.bytes.len() as u64)
+                .ok_or("LIVE_MEDIA_LIMIT")?;
+            if total > max_total_bytes {
+                return Err("LIVE_MEDIA_LIMIT".into());
+            }
+        }
+        let live_digest = live.as_ref().map(|file| file.digest.clone());
+        let live_size_bytes = live.as_ref().map(|file| file.bytes.len() as u64);
+        let matched = receipt.digest == live_digest && receipt.size_bytes == live_size_bytes;
+        observations.push(LiveMedia {
+            filename: receipt.filename,
+            saved_digest: receipt.digest,
+            live_digest,
+            saved_size_bytes: receipt.size_bytes,
+            live_size_bytes,
+            matched,
+        });
+    }
+    Ok((true, observations))
 }
 
 /// Inspect one bounded page. The caller must recheck at apply time; this is not a lock.
@@ -145,22 +235,29 @@ pub fn inspect(
     after_index: u32,
     limit: u32,
 ) -> Result<LivePage, String> {
-    let page = inspect_with(store, plan, after_index, limit, |note_id| {
-        client.capture_note(note_id)
-    })?;
+    let page = inspect_with(
+        store,
+        plan,
+        after_index,
+        limit,
+        |note_id| client.capture_note(note_id),
+        |filename| client.retrieve_media_file(filename),
+    )?;
     client.check_profile()?;
     Ok(page)
 }
 
-fn inspect_with<F>(
+fn inspect_with<F, M>(
     store: &linguist_store::Store,
     plan: &PlanRevision,
     after_index: u32,
     limit: u32,
     mut capture: F,
+    mut retrieve_media: M,
 ) -> Result<LivePage, String>
 where
     F: FnMut(&str) -> Result<linguist_anki::ReadCapture, String>,
+    M: FnMut(&str) -> Result<Option<linguist_anki::MediaFile>, String>,
 {
     if !(1..=1000).contains(&limit) {
         return Err("LIVE_VALIDATION_LIMIT_INVALID".into());
@@ -217,12 +314,35 @@ where
     }
     let mut ordered: Vec<_> = source_map.into_iter().collect();
     ordered.sort_by_key(|(note_id, _)| note_id.parse::<u64>().unwrap());
-    let mut sources = Vec::new();
-    for (_, (source, document_ids, archived_assets)) in ordered
+    let selected: Vec<_> = ordered
         .into_iter()
         .skip(after_index as usize)
         .take(limit as usize)
+        .collect();
+    if selected
+        .iter()
+        .map(|(_, (source, _, _))| source.media_refs.len())
+        .sum::<usize>()
+        > 1000
     {
+        return Err("LIVE_MEDIA_REFERENCE_LIMIT".into());
+    }
+    let max_media_asset = if selected
+        .iter()
+        .any(|(_, (source, _, _))| !source.media_refs.is_empty())
+    {
+        let setting = plan
+            .settings
+            .values
+            .get("media.max_asset_mb")
+            .ok_or("LIVE_MEDIA_SETTING_MISSING")?;
+        linguist_config::Registry::builtin().validate_value("media.max_asset_mb", setting)?;
+        setting.as_u64().unwrap() * 1024 * 1024
+    } else {
+        0
+    };
+    let mut sources = Vec::new();
+    for (_, (source, document_ids, archived_assets)) in selected {
         let manifest: Value = canonical::parse(&store.asset(&source.digest, cap)?)
             .map_err(|_| "LIVE_SOURCE_MANIFEST_INVALID")?;
         if manifest["kind"] != "anki_read_capture_v2"
@@ -262,16 +382,41 @@ where
         {
             return Err("LIVE_SOURCE_ARCHIVE_CONFLICT".into());
         }
+        let discovered = crate::capture::discover_media(&saved_fields, cap, 10000)?;
+        let discovered_refs: Vec<_> = discovered
+            .references
+            .into_iter()
+            .map(|reference| reference.filename)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        if discovered_refs != source.media_refs {
+            return Err("LIVE_MEDIA_ARCHIVE_CONFLICT".into());
+        }
         let note_id = source.location.strip_prefix("anki_note:").unwrap();
         let live = capture(note_id)?;
-        sources.push(compare(
+        let mut compared = compare(
             &source,
             document_ids,
             &saved_note,
             &saved_model,
             &saved_cards,
             &live,
-        )?);
+        )?;
+        let (rechecked, media) = recheck_media(
+            store,
+            &source,
+            &archived_assets,
+            &manifest,
+            max_media_asset,
+            cap,
+            &mut retrieve_media,
+        )?;
+        compared.media_bytes_rechecked = rechecked;
+        compared.media_conflict = !rechecked || media.iter().any(|entry| !entry.matched);
+        compared.source_conflict |= compared.media_conflict;
+        compared.media = media;
+        sources.push(compared);
     }
     let end = (after_index as usize).saturating_add(sources.len());
     let next_index = if end < total_sources {
@@ -299,6 +444,7 @@ where
 mod tests {
     use super::*;
     use linguist_anki::{ModelInspection, NamedId};
+    use linguist_core::{LearningDocument, records::ResolvedSettings};
     use serde_json::json;
 
     fn fixture() -> (
@@ -409,7 +555,6 @@ mod tests {
 
     #[test]
     fn archived_source_links_are_checked_before_live_comparison() {
-        use linguist_core::{LearningDocument, records::ResolvedSettings};
         let (_, note, model, cards, live) = fixture();
         let captured = crate::source_archive::archive_read_capture(
             &canonical::bytes(&note).unwrap(),
@@ -452,10 +597,17 @@ mod tests {
             review_decisions: vec![],
         };
         let mut one = Some(live);
-        let page = inspect_with(&store, &plan, 0, 1, |id| {
-            assert_eq!(id, "123");
-            Ok(one.take().unwrap())
-        })
+        let page = inspect_with(
+            &store,
+            &plan,
+            0,
+            1,
+            |id| {
+                assert_eq!(id, "123");
+                Ok(one.take().unwrap())
+            },
+            |_| panic!("unexpected media read"),
+        )
         .unwrap();
         assert!(page.all_sources_checked);
         assert!(!page.source_conflicts);
@@ -463,14 +615,201 @@ mod tests {
         assert!(page.sources[0].card_structure_match);
         assert!(page.sources[0].deck_membership_match);
         assert_eq!(
-            inspect_with(&store, &plan, 1, 1, |_| panic!("unexpected read")).unwrap_err(),
+            inspect_with(
+                &store,
+                &plan,
+                1,
+                1,
+                |_| panic!("unexpected read"),
+                |_| panic!("unexpected media read")
+            )
+            .unwrap_err(),
             "LIVE_VALIDATION_CURSOR_OUT_OF_RANGE"
         );
         let mut forged = plan.clone();
         forged.documents[0].sources[0].model_manifest = "forged".into();
         assert_eq!(
-            inspect_with(&store, &forged, 0, 1, |_| panic!("unexpected read")).unwrap_err(),
+            inspect_with(
+                &store,
+                &forged,
+                0,
+                1,
+                |_| panic!("unexpected read"),
+                |_| panic!("unexpected media read")
+            )
+            .unwrap_err(),
             "LIVE_SOURCE_ARCHIVE_CONFLICT"
+        );
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn live_media_capture() -> linguist_anki::ReadCapture {
+        let (_, mut note, _, _, mut live) = fixture();
+        note["fields"]["Expression"]["value"] = json!("猫 [sound:cat.mp3]");
+        live.note = note;
+        live
+    }
+
+    fn media_fixture(
+        attach: bool,
+    ) -> (
+        linguist_store::Store,
+        std::path::PathBuf,
+        PlanRevision,
+        linguist_anki::ReadCapture,
+    ) {
+        let (_, _, model, cards, _) = fixture();
+        let live = live_media_capture();
+        let note = live.note.clone();
+        let mut captured = crate::source_archive::archive_read_capture(
+            &canonical::bytes(&note).unwrap(),
+            &canonical::bytes(&model).unwrap(),
+            &canonical::bytes(&cards).unwrap(),
+            1024 * 1024,
+        )
+        .unwrap();
+        assert_eq!(captured.source.media_refs, ["cat.mp3"]);
+        if attach {
+            crate::source_archive::media::attach_original_media(
+                &mut captured,
+                BTreeMap::from([("cat.mp3".into(), Some(b"original audio".to_vec()))]),
+                1024 * 1024,
+                1024 * 1024,
+            )
+            .unwrap();
+        }
+        let root = std::env::temp_dir().join(format!("lab-live-media-{}", uuid::Uuid::new_v4()));
+        let mut store = linguist_store::Store::open(&root).unwrap();
+        for (digest, bytes) in &captured.assets {
+            assert_eq!(&store.publish_asset(bytes, 1024 * 1024).unwrap(), digest);
+        }
+        let mut document = LearningDocument::from_json(include_bytes!(
+            "../../../contracts/v2/fixtures/vocabulary.json"
+        ))
+        .unwrap();
+        document.sources.push(captured.source);
+        document.archives.push(captured.archive);
+        let plan = PlanRevision {
+            schema_version: 2,
+            id: uuid::Uuid::new_v4(),
+            revision: 1,
+            parent_digest: None,
+            settings: ResolvedSettings {
+                version: 2,
+                values: BTreeMap::from([
+                    ("input.max_file_mb".into(), json!(1)),
+                    ("media.max_asset_mb".into(), json!(1)),
+                ]),
+                provenance: BTreeMap::new(),
+                resource_hashes: BTreeMap::new(),
+                secret_refs: BTreeMap::new(),
+                fingerprint: "fixture".into(),
+            },
+            binding: None,
+            source_digest: "fixture".into(),
+            selection: None,
+            grammar_groups: vec![],
+            documents: vec![document],
+            rendered: vec![],
+            review_decisions: vec![],
+        };
+        (store, root, plan, live)
+    }
+
+    #[test]
+    fn archived_media_bytes_are_rechecked_and_drift_blocks_live_match() {
+        let (store, root, plan, live) = media_fixture(true);
+        let original = b"original audio".to_vec();
+        let mut read = Some(live);
+        let exact = inspect_with(
+            &store,
+            &plan,
+            0,
+            1,
+            |_| Ok(read.take().unwrap()),
+            |name| {
+                assert_eq!(name, "cat.mp3");
+                Ok(Some(linguist_anki::MediaFile {
+                    filename: name.into(),
+                    digest: canonical::asset_digest(&original),
+                    bytes: original.clone(),
+                }))
+            },
+        )
+        .unwrap();
+        assert!(exact.sources[0].media_bytes_rechecked);
+        assert!(exact.sources[0].media[0].matched);
+        assert!(!exact.source_conflicts);
+        let changed = b"changed audio".to_vec();
+        let drift = inspect_with(
+            &store,
+            &plan,
+            0,
+            1,
+            |_| Ok(live_media_capture()),
+            |name| {
+                Ok(Some(linguist_anki::MediaFile {
+                    filename: name.into(),
+                    digest: canonical::asset_digest(&changed),
+                    bytes: changed.clone(),
+                }))
+            },
+        )
+        .unwrap();
+        assert!(drift.sources[0].media_bytes_rechecked);
+        assert!(drift.sources[0].media_conflict);
+        assert!(!drift.sources[0].media[0].matched);
+        assert!(drift.source_conflicts);
+        let missing = inspect_with(
+            &store,
+            &plan,
+            0,
+            1,
+            |_| Ok(live_media_capture()),
+            |_| Ok(None),
+        )
+        .unwrap();
+        assert!(missing.sources[0].media_conflict && missing.source_conflicts);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_saved_media_receipt_never_claims_recheck() {
+        let (store, root, plan, live) = media_fixture(false);
+        let mut live = Some(live);
+        let page = inspect_with(
+            &store,
+            &plan,
+            0,
+            1,
+            |_| Ok(live.take().unwrap()),
+            |_| panic!("unbound media must not be read"),
+        )
+        .unwrap();
+        assert!(!page.sources[0].media_bytes_rechecked);
+        assert!(page.sources[0].media_conflict);
+        assert!(page.source_conflicts);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archived_field_media_references_must_match_the_source_index() {
+        let (store, root, mut plan, _) = media_fixture(true);
+        plan.documents[0].sources[0].media_refs.clear();
+        assert_eq!(
+            inspect_with(
+                &store,
+                &plan,
+                0,
+                1,
+                |_| panic!("inconsistent archive must fail before Anki reads"),
+                |_| panic!("inconsistent archive must not fetch media"),
+            )
+            .unwrap_err(),
+            "LIVE_MEDIA_ARCHIVE_CONFLICT"
         );
         drop(store);
         std::fs::remove_dir_all(root).unwrap();

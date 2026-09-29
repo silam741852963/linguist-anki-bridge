@@ -46,7 +46,7 @@ note/model/card payloads, rather than the still-empty native `SourceRecord.cards
 placeholder. Changed tasks remain planned intent, and ordinary scheduler changes
 remain separately visible in the live report. Pagination is revision-pinned after
 the first page; incomplete pages cannot indicate whole-plan clearance. This does
-not establish native history preservation, media read-back or apply readiness.
+not establish native history preservation, atomic media observation or apply readiness.
 
 `plans validate --live` now performs a bounded read-only comparison of archived
 revamp sources against repeated current Anki reads. It checks source/archive
@@ -55,9 +55,14 @@ scheduler/other card-payload changes separately. Missing structural card data
 blocks a match. Pages are revision-pinned after the first; only a complete
 single-page scan can report all sources checked. The local content receipt is
 persisted after successful reads, while the live comparison remains time-bound.
-This does not verify native history, recheck media bytes, search duplicates or
-authorize apply. Native atomic preflight and conflict reconciliation remain
-pending.
+Live revamp validation now rereads each archived media reference through the
+profile-pinned Anki read port and compares its digest/size with the verified
+saved asset receipt. Changed or missing bytes, or a source with references but
+no saved receipt, block the live source match. Responses report each filename,
+saved/live digest and match result; a bounded page makes at most 1,000 media
+reads. This is a time-bound comparison, not an atomic native snapshot. Native
+history verification, collection-wide duplicate search, apply authorization,
+atomic preflight and conflict reconciliation remain pending.
 
 `models install PURPOSE` now has a read-only CLI preview for all four built-in
 purposes. It emits the exact v2 manifest and distinguishes absent names, byte
@@ -208,9 +213,9 @@ Still pending: full command graph, config import/migrate and init --replace, gen
 
 `completions SHELL` (OP-61) generates scripts directly from the current clap command schema for Bash, Elvish, Fish, PowerShell and Zsh. It runs before configuration resolution, never reads state/services and writes only script text to stdout. Unknown shells exit 2. Scripts include the currently implemented command graph; pending commands appear when their handlers are added. Generation uses a memory buffer so stdout failures follow the normal OUTPUT_IO diagnostic instead of panicking inside the generator. Tests cover all five shells with invalid configuration/settings, no state creation, no secret-option interpolation, unsupported shell rejection and Bash syntax. The dependency pair is pinned to [clap 4.6.7](https://docs.rs/clap/4.6.7/clap/) and [clap_complete 4.6.11](https://docs.rs/clap_complete/4.6.11/clap_complete/). No startup file is edited or completion script installed automatically.
 
-WP-04 is in progress. The new store uses pinned rusqlite 0.40.2 with bundled SQLite, WAL, synchronous FULL and foreign keys. It checks private root/database paths and supported Linux filesystem types, publishes synced content-addressed assets before indexed metadata, validates immutable revisions and their exact parent digest, and verifies stored bytes when reading. Publication and reads both verify archive-only asset references and media manifest sizes; missing or corrupt original bytes prevent revision loading. Rendered output is recomputed before publication to reject stale projections. Initial schema creation and future-schema rejection are implemented; an interrupted initialization is reported rather than guessed away. `plans list`/`plans show` inspect revisions through a read-only connection; absent state is not initialized by listing. List currently reports revisions, without status filtering or pagination cursors. `plans diff PLAN --from-revision N [--revision M]` compares saved revisions and their exact approval digests, reports JSON-pointer changes with absent/null distinguished, and lists intended task additions/removals and captured card IDs. Arrays are compared as complete values. It never regenerates or writes state. Archived card IDs and bounded read-only live source conflicts are now reported; native atomic inspection, media read-back and history verification remain pending. Task differences are intent, not verified card creation/deletion or native history preservation.
+WP-04 is in progress. The new store uses pinned rusqlite 0.40.2 with bundled SQLite, WAL, synchronous FULL and foreign keys. It checks private root/database paths and supported Linux filesystem types, publishes synced content-addressed assets before indexed metadata, validates immutable revisions and their exact parent digest, and verifies stored bytes when reading. Publication and reads both verify archive-only asset references and media manifest sizes; missing or corrupt original bytes prevent revision loading. Rendered output is recomputed before publication to reject stale projections. Initial schema creation and future-schema rejection are implemented; an interrupted initialization is reported rather than guessed away. `plans list`/`plans show` inspect revisions through a read-only connection; absent state is not initialized by listing. List currently reports revisions, without status filtering or pagination cursors. `plans diff PLAN --from-revision N [--revision M]` compares saved revisions and their exact approval digests, reports JSON-pointer changes with absent/null distinguished, and lists intended task additions/removals and captured card IDs. Arrays are compared as complete values. It never regenerates or writes state. Archived card IDs and bounded read-only live source/media conflicts are now reported; native atomic inspection and history verification remain pending. Task differences are intent, not verified card creation/deletion or native history preservation.
 
-The store now has append-only journal events and compare-and-swap heads. Intent identities are immutable; unfinished requests and unverified observations are indexed for recovery, and later effects cannot start over an unresolved earlier step. Blind retry, sent-effect `failed_before_write`, and forged/stale prior versions are rejected. Terminal committed/compensated/restored writes remain unavailable until native/checkpoint/restore receipts exist. `recover inspect OPERATION` or `recover inspect --pending` reads local evidence only; `--live` explicitly reports unavailable capability.
+The store now has append-only journal events and compare-and-swap heads. Intent identities are immutable; unfinished requests and unverified observations are indexed for recovery, and later effects cannot start over an unresolved earlier step. Blind retry, sent-effect `failed_before_write`, and forged/stale prior versions are rejected. Terminal committed/compensated/restored writes remain unavailable until native/checkpoint/restore receipts exist. `recover inspect OPERATION` or `recover inspect --pending` reads local evidence; `--live` adds read-only native ledger observations when available, without collection reconciliation.
 
 Durable job-worker and bridge-writer leases use unique tokens and generations. Linux boot ID + PID + process start ticks distinguish worker identity from PID reuse. Expiry alone cannot reclaim a live/unverifiable owner; renewal/release reject stale tokens, and nested helpers must borrow an existing token. Lease enforcement has not yet been connected to any application dispatch or native adapter.
 
