@@ -2192,6 +2192,78 @@ fn duplicate_candidates_command_reads_managed_note_without_changing_plan() {
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
+fn plan_generate_requires_explicit_settings_and_enabled_engine_before_inference() {
+    let root = std::env::temp_dir().join(format!("lab-generation-cli-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.display());
+    let input = b"{\"schema_version\":2,\"kind\":\"vocabulary\",\"target_language\":\"en\",\"body\":{\"expression\":\"eat\",\"meaning\":\"consume food\",\"sense_key\":\"food\"}}";
+    let prepared = piped(
+        {
+            let mut command = cli();
+            command.args([
+                "--set",
+                &state,
+                "--set",
+                "llm.enabled=false",
+                "--set",
+                "dictionary.provider=authored",
+                "--set",
+                "images.search_when_missing=false",
+                "vocab",
+                "add",
+                "--document",
+                "-",
+            ]);
+            command
+        },
+        input,
+    );
+    assert!(prepared.status.success(), "{prepared:?}");
+    let prepared: serde_json::Value = serde_json::from_slice(&prepared.stdout).unwrap();
+    let plan_id = prepared["plan_id"].as_str().unwrap();
+    let item_id = prepared["document_id"].as_str().unwrap();
+    let digest = prepared["digest"].as_str().unwrap();
+    let command = |ack: bool| {
+        let mut command = cli();
+        command.args([
+            "--set",
+            &state,
+            "--set",
+            "llm.enabled=false",
+            "plans",
+            "generate",
+            plan_id,
+            "--item-id",
+            item_id,
+            "--base-revision",
+            "1",
+            "--digest",
+            digest,
+        ]);
+        if ack {
+            command.arg("--use-current-settings");
+        }
+        command.output().unwrap()
+    };
+    let no_ack = command(false);
+    assert!(!no_ack.status.success());
+    assert!(
+        String::from_utf8_lossy(&no_ack.stderr)
+            .contains("GENERATION_CURRENT_SETTINGS_ACK_REQUIRED")
+    );
+    let disabled = command(true);
+    assert!(!disabled.status.success());
+    assert!(String::from_utf8_lossy(&disabled.stderr).contains("GENERATION_DISABLED"));
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    assert_eq!(
+        store
+            .latest_revision(uuid::Uuid::parse_str(plan_id).unwrap())
+            .unwrap(),
+        1
+    );
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn stdin_limits_encoding_and_multiple_records_fail_before_state_creation() {
     for (bytes, setting) in [
         (vec![], "input.max_record_chars=100"),

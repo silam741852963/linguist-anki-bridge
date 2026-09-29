@@ -876,7 +876,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-30 \u2014 `plans regenerate PLAN`",
       "title": "OP-30 \u2014 `plans regenerate PLAN`",
-      "words": 71,
+      "words": 197,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

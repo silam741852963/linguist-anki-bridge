@@ -21,6 +21,99 @@ pub struct GeneratedDraft {
     pub assets: BTreeMap<String, Vec<u8>>,
 }
 
+/// Publish one transport-validated candidate as a blocked review revision.
+/// Inference is never retried here and no native collection effect is possible.
+pub fn publish_candidate(
+    store: &mut linguist_store::Store,
+    base: &linguist_core::records::PlanRevision,
+    document_id: uuid::Uuid,
+    expected_digest: &str,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    client: &crate::ollama::transport::Client,
+) -> Result<Value, String> {
+    if base.approval_digest().map_err(|e| e.to_string())? != expected_digest
+        || store.latest_revision(base.id)? != base.revision
+    {
+        return Err("GENERATION_BASE_CONFLICT".into());
+    }
+    let parent = base
+        .documents
+        .iter()
+        .find(|document| document.id == document_id)
+        .ok_or("PLAN_ITEM_NOT_FOUND")?;
+    let frozen = crate::freeze_settings(settings, environment)?;
+    if frozen.values["storage.state_dir"] != base.settings.values["storage.state_dir"] {
+        return Err("GENERATION_STORAGE_CONFLICT".into());
+    }
+    if settings.values["llm.enabled"] != true {
+        return Err("GENERATION_DISABLED: enable llm.enabled in current settings".into());
+    }
+    // Check request and revised configuration before any provider call.
+    build_request(parent, settings)?;
+    let mut child = base.clone();
+    child.revision = base
+        .revision
+        .checked_add(1)
+        .ok_or("GENERATION_REVISION_LIMIT")?;
+    child.parent_digest = Some(expected_digest.into());
+    child.settings = frozen;
+    child.binding = None;
+    child.approval_digest().map_err(|e| e.to_string())?;
+    let mut draft = client.generate_draft(parent)?;
+    if draft.document.id != document_id
+        || draft.document.target_language != parent.target_language
+        || draft.document.explanation_language != parent.explanation_language
+        || !draft.document.issues.iter().any(|issue| {
+            issue.code == "GENERATION_ENGINE_UNVERIFIED"
+                && issue.severity == validation::Severity::Error
+        })
+    {
+        return Err("GENERATION_DRAFT_CONFLICT".into());
+    }
+    draft.document.reviews.clear();
+    let max_bytes = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
+    let mut total = 0u64;
+    for (digest, bytes) in &draft.assets {
+        if canonical::asset_digest(bytes) != *digest {
+            return Err("GENERATION_ASSET_DIGEST_CONFLICT".into());
+        }
+        total = total
+            .checked_add(bytes.len() as u64)
+            .ok_or("GENERATION_ARCHIVE_LIMIT")?;
+        if total > max_bytes {
+            return Err("GENERATION_ARCHIVE_LIMIT".into());
+        }
+    }
+    let index = child
+        .documents
+        .iter()
+        .position(|document| document.id == document_id)
+        .ok_or("PLAN_ITEM_NOT_FOUND")?;
+    child.documents[index] = draft.document;
+    child
+        .rendered
+        .retain(|rendered| rendered.document_id != document_id);
+    child.review_decisions.clear();
+    let sources: Vec<_> = child
+        .documents
+        .iter()
+        .flat_map(|document| &document.sources)
+        .collect();
+    child.source_digest =
+        canonical::digest("source-capture", &sources).map_err(|e| e.to_string())?;
+    child.approval_digest().map_err(|e| e.to_string())?;
+    for (digest, bytes) in draft.assets {
+        if store.publish_asset(&bytes, max_bytes)? != digest {
+            return Err("GENERATION_ASSET_DIGEST_CONFLICT".into());
+        }
+    }
+    let digest = store.publish_revision(&child)?;
+    Ok(
+        json!({"schema_version":2,"plan_id":child.id,"revision":child.revision,"digest":digest,"document_id":document_id,"ready":false,"generation_engine_verified":false,"apply_eligible":false,"issues":child.documents[index].issues,"assets_archived":true}),
+    )
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GeneratedExample {

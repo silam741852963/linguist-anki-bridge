@@ -770,6 +770,106 @@ fn inference_draft_rejects_schema_invalid_and_protected_field_output() {
     }
 }
 #[test]
+fn candidate_publication_freezes_current_settings_and_keeps_engine_blocker() {
+    use linguist_application::{freeze_settings, generation::publish_candidate};
+    use linguist_core::{LearningContent, records::PlanRevision};
+    let mut output = completion_response();
+    output["message"]["content"] = json!(
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"production_prompt":"","spelling_prompt":""}}"#
+    );
+    let server = FixtureServer::new(vec![
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+        reply(output),
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+    ]);
+    let root =
+        std::env::temp_dir().join(format!("lab-publish-generation-{}", uuid::Uuid::new_v4()));
+    let environment =
+        std::collections::BTreeMap::from([("HOME".into(), root.to_str().unwrap().into())]);
+    let mut current = settings();
+    current
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    current
+        .values
+        .insert("llm.endpoint".into(), json!(server.endpoint));
+    current
+        .values
+        .insert("services.ollama.min_interval_seconds".into(), json!(0));
+    let mut original = current.clone();
+    original.values.insert("llm.enabled".into(), json!(false));
+    let document = generation_document();
+    let plan = PlanRevision {
+        grammar_groups: vec![],
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: freeze_settings(&original, &environment).unwrap(),
+        binding: None,
+        source_digest: canonical::digest("source-capture", &document.sources).unwrap(),
+        selection: None,
+        documents: vec![document.clone()],
+        rendered: vec![linguist_core::render::render(&document, &Default::default()).unwrap()],
+        review_decisions: vec![],
+    };
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let digest = store.publish_revision(&plan).unwrap();
+    let client = transport::Client::from_settings(&current, &environment).unwrap();
+    assert_eq!(
+        publish_candidate(
+            &mut store,
+            &plan,
+            document.id,
+            "wrong",
+            &current,
+            &environment,
+            &client
+        )
+        .unwrap_err(),
+        "GENERATION_BASE_CONFLICT"
+    );
+    let result = publish_candidate(
+        &mut store,
+        &plan,
+        document.id,
+        &digest,
+        &current,
+        &environment,
+        &client,
+    )
+    .unwrap();
+    assert_eq!(result["revision"], 2);
+    assert_eq!(result["ready"], false);
+    assert_eq!(result["generation_engine_verified"], false);
+    assert_eq!(result["apply_eligible"], false);
+    assert_eq!(server.worker.join().unwrap().len(), 7);
+    drop(store);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let retained = store.revision(plan.id, 2).unwrap();
+    assert_eq!(retained.parent_digest.as_deref(), Some(digest.as_str()));
+    assert_eq!(retained.settings.values["llm.enabled"], true);
+    assert!(retained.rendered.is_empty());
+    assert!(
+        retained.documents[0]
+            .issues
+            .iter()
+            .any(|issue| issue.code == "GENERATION_ENGINE_UNVERIFIED")
+    );
+    assert!(
+        matches!(&retained.documents[0].content, LearningContent::Vocabulary(v) if v.usage == "Meal context.")
+    );
+    for digest in &retained.documents[0].archives.last().unwrap().asset_digests {
+        assert!(!store.asset(digest, 20 * 1024 * 1024).unwrap().is_empty());
+    }
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn complete_text_response_retains_exact_raw_bytes_without_claiming_input_fit() {
     let raw = serde_json::to_vec_pretty(&completion_response()).unwrap();
     let parsed = parse_completion(&raw, &settings()).unwrap();

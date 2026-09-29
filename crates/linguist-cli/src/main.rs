@@ -258,6 +258,19 @@ enum RecoveryCommand {
 }
 #[derive(Subcommand)]
 enum PlanCommand {
+    /// Generate one review-only supplement with explicit current settings.
+    Generate {
+        plan: uuid::Uuid,
+        #[arg(long)]
+        item_id: uuid::Uuid,
+        #[arg(long)]
+        base_revision: u32,
+        #[arg(long)]
+        digest: String,
+        /// Freeze current configuration into the child revision (including --set overrides).
+        #[arg(long)]
+        use_current_settings: bool,
+    },
     /// Read managed v2 duplicate candidates for one authored add item; never clears apply.
     DuplicateCandidates {
         plan: uuid::Uuid,
@@ -825,6 +838,38 @@ fn run(cli: Cli) -> Result<u8, String> {
             }
             let store = linguist_store::Store::read_only(&root)?;
             match command {
+                PlanCommand::Generate {
+                    plan,
+                    item_id,
+                    base_revision,
+                    digest,
+                    use_current_settings,
+                } => {
+                    if !use_current_settings {
+                        return Err("GENERATION_CURRENT_SETTINGS_ACK_REQUIRED: pass --use-current-settings to freeze the resolved configuration into a new revision".into());
+                    }
+                    let base = store.revision(plan, base_revision)?;
+                    if store.latest_revision(plan)? != base_revision
+                        || base.approval_digest().map_err(|e| e.to_string())? != digest
+                    {
+                        return Err("GENERATION_BASE_CONFLICT".into());
+                    }
+                    drop(store);
+                    let client = linguist_application::ollama::transport::Client::from_settings(
+                        &settings, &env,
+                    )?;
+                    let result = linguist_application::generation::publish_candidate(
+                        &mut linguist_store::Store::open_existing(&root)?,
+                        &base,
+                        item_id,
+                        &digest,
+                        &settings,
+                        &env,
+                        &client,
+                    )?;
+                    emit(&result)?;
+                    return Ok(4);
+                }
                 PlanCommand::DuplicateCandidates {
                     plan,
                     item_id,

@@ -140,6 +140,8 @@ Effects: Provider reads/local new revision.
 
 Result/failure: New revision; no approved outputs overwritten in place. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current candidate generation subset: `plans generate PLAN --item-id UUID --base-revision N --digest DIGEST --use-current-settings`. The explicit settings flag freezes the currently resolved configuration, including `--set llm.enabled=true`, into a child revision. Require an exact latest base digest, existing item, compatible state path and a valid generation request before contacting Ollama. One nonstreaming inference is validated; provider request/response and before/after model metadata are archived by digest before the child revision is published. Authored fields remain protected. The generated item's old render and review decisions are invalidated. The child always has `GENERATION_ENGINE_UNVERIFIED`, returns exit 4, and cannot be approved or applied until installed-engine parameter and input-preservation certification exists. No automatic retry follows an ambiguous inference error. This is a reviewable development candidate, not completion of OP-30's full regeneration pipeline.
+
 ## OP-31 — `plans validate PLAN`
 
 Inputs: Exact revision; optional --live.
