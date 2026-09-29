@@ -24,11 +24,13 @@ read. This is a protocol boundary for future journal reconciliation, not a
 verified native-effect receipt. `recover inspect --live` remains unavailable until
 the companion is activated and binding checks and recovery logic are implemented.
 The pinned Python registration adapter can add the read-only status action with
-capabilities and rolls back both on reflection failure. It remains inactive: no
-startup hook or live Anki integration has been certified.
+capabilities and rolls back both on reflection failure. A packaged entrypoint now
+defers activation to Anki's main-window hook and the exact supported build/source
+gate; no real Anki integration has been certified.
 An exact read-adapter matrix pins the locally inspected Anki 25.09.2 build and
 AnkiConnect source hashes; unknown builds/sources fail closed. This matrix does
-not certify native writes or activate the companion.
+not certify native writes. The deterministic `.ankiaddon` builder includes only
+runtime modules and the GPL license; the artifact is not installed automatically.
 
 `plans diff --live` now combines an exact saved-revision diff with the bounded
 read-only source comparison. Saved revamp card IDs come from revalidated archived

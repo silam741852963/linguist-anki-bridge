@@ -3,17 +3,22 @@
 This package contains the independent Python companion source for the CLI's
 `lab-native-v1` contract. The Rust CLI does not require Python at runtime.
 
-The current package imports no Anki/Qt modules, registers no actions and creates
-no server, sidecar or installation/session identity. `protocol.build_capabilities`
+The repository source package imports no Anki/Qt modules, registers no actions and
+creates no server, sidecar or installation/session identity. The separately built
+`.ankiaddon` entrypoint hooks Anki's main-window initialization; it creates a
+private read-only ledger under the Anki base directory only after an exact build
+and AnkiConnect source match. It never touches the collection. `protocol.build_capabilities`
 requires a supplied durable installation UUID and pinned integration metadata;
 it declares only registered read-only actions and no native session/effects.
 Its manifest is a declaration, not verification of installed compatibility.
 
-Run protocol tests from the repository root:
+Run protocol tests or build an installable development artifact from the repository root:
 
 ```sh
 python3 -m unittest discover -s addons/linguist_bridge/tests -v
 cargo test --locked -p linguist-anki --test read_port native
+mkdir -p dist
+python3 addons/build_read_only_addon.py "$(pwd)/dist/linguist-bridge-read-only.ankiaddon"
 ```
 
 Python and Rust tests use the same capability fixture in `contracts/v2/fixtures/`.
@@ -21,7 +26,9 @@ The pinned additive registration adapter can register read-only capabilities and
 operation-status actions together. Isolated fake-module tests check unchanged
 standard dispatch and all-or-nothing rollback. A caller must supply a bound
 ledger status function and advertise the status action only after registration.
-Startup activation and real Anki integration remain pending.
+The packaged startup hook is implemented and isolated fake-hook tests cover
+deferred activation, private identity persistence and unsupported-build refusal.
+Real Anki integration remains pending.
 The read-only matrix currently pins local Anki `25.09.2` (build `3d813c83`)
 and the exact inspected AnkiConnect `__init__.py`/`util.py` bytes. A different
 build or changed add-on source fails before registration. This is an isolated
@@ -54,8 +61,8 @@ Variant-specific mutation bodies are not validated or dispatched. It is not yet
 linked to collection lineage/session lifecycle or the Rust CLI
 journal, so it grants no mutation capability. Serialized collection inspection,
 authenticated controls, terminal receipts, packaging and native recovery tests
-remain pending. Do not install this scaffold as a functioning bridge; no
-installable artifact is produced yet.
+remain pending. The generated artifact is a read-only development preview, not a
+functioning mutation bridge; do not use it for managed collection writes.
 
 Files in this directory are licensed under GPL-3.0-or-later as indicated in their
 SPDX headers. The complete license text is available at
