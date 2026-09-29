@@ -21,7 +21,12 @@ The pinned additive registration adapter can register read-only capabilities and
 operation-status actions together. Isolated fake-module tests check unchanged
 standard dispatch and all-or-nothing rollback. A caller must supply a bound
 ledger status function and advertise the status action only after registration.
-Its source-pin matrix/startup activation and real Anki integration remain pending.
+Startup activation and real Anki integration remain pending.
+The read-only matrix currently pins local Anki `25.09.2` (build `3d813c83`)
+and the exact inspected AnkiConnect `__init__.py`/`util.py` bytes. A different
+build or changed add-on source fails before registration. This is an isolated
+compatibility guard, not a live integration or mutation certification; startup
+activation and disposable Anki tests remain pending.
 Explicit installation identity initialization is implemented with private files,
 create-new publication and restart/concurrent-initializer tests. It is not
 called by startup yet and does not establish collection identity.
