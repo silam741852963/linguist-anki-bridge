@@ -2,6 +2,7 @@
 use linguist_core::{records::*, *};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -115,6 +116,26 @@ pub struct PreparedBatch {
     pub apply_eligible: bool,
     pub duplicate_check_performed: bool,
 }
+struct PreparedRecord<'a> {
+    structured: Cow<'a, [u8]>,
+    archive: &'a [u8],
+    source_kind: &'static str,
+    location: String,
+    model_manifest: &'static str,
+    fields: Option<BTreeMap<String, String>>,
+}
+impl<'a> PreparedRecord<'a> {
+    fn json(bytes: &'a [u8]) -> Self {
+        Self {
+            structured: Cow::Borrowed(bytes),
+            archive: bytes,
+            source_kind: "authored_json_v2",
+            location: "local_input".into(),
+            model_manifest: "authored-input-v2",
+            fields: None,
+        }
+    }
+}
 /// Initial authored path; requested adapters must never be silently skipped.
 fn authored_capabilities(settings: &linguist_config::Effective) -> Result<(), String> {
     if settings.values["llm.enabled"] != false {
@@ -195,7 +216,7 @@ pub fn prepare_with_dictionary(
     dictionary: Option<&dyn DictionaryPort>,
 ) -> Result<Prepared, String> {
     let mut batch = publish_authored_records(
-        &[bytes],
+        &[PreparedRecord::json(bytes)],
         expected_kind,
         settings,
         environment,
@@ -230,15 +251,118 @@ pub fn prepare_authored_jsonl(
             return Err(format!("INPUT_EMPTY_RECORD: line {}", index + 1));
         }
     }
+    let records: Vec<_> = records.into_iter().map(PreparedRecord::json).collect();
+    publish_authored_records(&records, expected_kind, settings, environment, None, true)
+}
+
+/// Explicit simple-vocabulary CSV; the whole original file is retained as the
+/// shared source asset, while every record keeps its decoded column evidence.
+pub fn prepare_authored_csv(
+    bytes: &[u8],
+    expected_kind: Kind,
+    settings: &linguist_config::Effective,
+    environment: &BTreeMap<String, String>,
+) -> Result<PreparedBatch, String> {
+    if expected_kind != Kind::Vocabulary {
+        return Err("INPUT_CSV_VOCABULARY_ONLY".into());
+    }
+    if bytes.len() as u64 > settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024 {
+        return Err("INPUT_TOO_LARGE".into());
+    }
+    std::str::from_utf8(bytes).map_err(|_| "INPUT_ENCODING")?;
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .flexible(false)
+        .from_reader(bytes);
+    let headers = reader
+        .headers()
+        .map_err(|_| "INPUT_CSV_HEADER_INVALID")?
+        .clone();
+    let required = ["expression", "meaning", "target_language", "sense_key"];
+    let optional = [
+        "reading",
+        "pronunciation",
+        "usage",
+        "context",
+        "personal_notes",
+        "source_summary",
+        "explanation_language",
+        "production_prompt",
+        "spelling_prompt",
+    ];
+    let names: std::collections::BTreeSet<_> = headers.iter().collect();
+    if headers.is_empty()
+        || names.len() != headers.len()
+        || required.iter().any(|name| !names.contains(name))
+        || names
+            .iter()
+            .any(|name| !required.contains(name) && !optional.contains(name))
+    {
+        return Err("INPUT_CSV_HEADER_INVALID: require unique known vocabulary columns".into());
+    }
+    let header_json =
+        serde_json::to_string(&headers.iter().collect::<Vec<_>>()).map_err(|e| e.to_string())?;
+    let mut records = Vec::new();
+    let max_notes = settings.values["selection.max_notes"].as_u64().unwrap() as usize;
+    for (index, row) in reader.records().enumerate() {
+        let row = row.map_err(|_| format!("INPUT_CSV_RECORD_INVALID: record {}", index + 1))?;
+        if records.len() >= max_notes {
+            return Err("INPUT_BATCH_TOO_LARGE: exceeds selection.max_notes".into());
+        }
+        let cells: BTreeMap<_, _> = headers.iter().zip(row.iter()).collect();
+        let value = |name: &str| cells.get(name).copied().unwrap_or_default();
+        let mut body = serde_json::json!({"expression":value("expression"),"meaning":value("meaning"),"sense_key":value("sense_key")});
+        for field in [
+            "reading",
+            "pronunciation",
+            "usage",
+            "production_prompt",
+            "spelling_prompt",
+        ] {
+            if names.contains(field) {
+                body[field] = serde_json::json!(value(field));
+            }
+        }
+        let mut input = serde_json::json!({"schema_version":2,"kind":"vocabulary","target_language":value("target_language"),"body":body});
+        for field in [
+            "context",
+            "personal_notes",
+            "source_summary",
+            "explanation_language",
+        ] {
+            if names.contains(field) && !value(field).is_empty() {
+                input[field] = serde_json::json!(value(field));
+            }
+        }
+        let structured = serde_json::to_vec(&input).map_err(|e| e.to_string())?;
+        let fields = BTreeMap::from([
+            ("csv_header".into(), header_json.clone()),
+            (
+                "csv_record".into(),
+                serde_json::to_string(&row.iter().collect::<Vec<_>>())
+                    .map_err(|e| e.to_string())?,
+            ),
+            ("csv_record_index".into(), (index + 1).to_string()),
+        ]);
+        records.push(PreparedRecord {
+            structured: Cow::Owned(structured),
+            archive: bytes,
+            source_kind: "authored_csv_v1",
+            location: format!("local_input:csv-record:{}", index + 1),
+            model_manifest: "authored-csv-v1",
+            fields: Some(fields),
+        });
+    }
     publish_authored_records(&records, expected_kind, settings, environment, None, true)
 }
 
 fn build_authored_document(
-    bytes: &[u8],
+    record: &PreparedRecord<'_>,
     expected_kind: Kind,
     settings: &linguist_config::Effective,
     dictionary: Option<&dyn DictionaryPort>,
 ) -> Result<(LearningDocument, Vec<Vec<u8>>), String> {
+    let bytes = record.structured.as_ref();
     if bytes.len() as u64 > settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024 {
         return Err("INPUT_TOO_LARGE".into());
     }
@@ -348,9 +472,12 @@ fn build_authored_document(
             .unwrap()
             .to_owned(),
     )?);
-    let original_input_digest = canonical::asset_digest(bytes);
+    let original_input_digest = canonical::asset_digest(record.archive);
     let source_id = uuid::Uuid::new_v4();
-    let fields = BTreeMap::from([("authored_input".into(), text.into())]);
+    let fields = record
+        .fields
+        .clone()
+        .unwrap_or_else(|| BTreeMap::from([("authored_input".into(), text.into())]));
     let mut document = LearningDocument {
         schema_version: 2,
         id: uuid::Uuid::new_v4(),
@@ -364,11 +491,11 @@ fn build_authored_document(
         source_summary,
         sources: vec![SourceRecord {
             id: source_id,
-            kind: "authored_json_v2".into(),
-            location: "local_input".into(),
+            kind: record.source_kind.into(),
+            location: record.location.clone(),
             digest: original_input_digest.clone(),
             fields: fields.clone(),
-            model_manifest: "authored-input-v2".into(),
+            model_manifest: record.model_manifest.into(),
             tags: vec![],
             cards: vec![],
             media_refs: vec![],
@@ -394,7 +521,7 @@ fn build_authored_document(
 }
 
 fn publish_authored_records(
-    records: &[&[u8]],
+    records: &[PreparedRecord<'_>],
     expected_kind: Kind,
     settings: &linguist_config::Effective,
     environment: &BTreeMap<String, String>,
@@ -409,9 +536,9 @@ fn publish_authored_records(
     let mut assets = Vec::new();
     let mut rendered = Vec::new();
     // Complete all parsing, enrichment and validation before opening state.
-    for (index, bytes) in records.iter().enumerate() {
+    for (index, record) in records.iter().enumerate() {
         let (document, provider_assets) =
-            build_authored_document(bytes, expected_kind, settings, dictionary).map_err(
+            build_authored_document(record, expected_kind, settings, dictionary).map_err(
                 |error| {
                     if line_numbered {
                         format!("INPUT_RECORD_{}: {error}", index + 1)
@@ -451,11 +578,14 @@ fn publish_authored_records(
     let ready = validation.content_ready;
     let root = std::path::Path::new(plan.settings.values["storage.state_dir"].as_str().unwrap());
     let mut store = linguist_store::Store::open(root)?;
-    for bytes in records {
-        store.publish_asset(
-            bytes,
-            settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024,
-        )?;
+    let mut seen = std::collections::BTreeSet::new();
+    for record in records {
+        if seen.insert(canonical::asset_digest(record.archive)) {
+            store.publish_asset(
+                record.archive,
+                settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024,
+            )?;
+        }
     }
     for asset in assets {
         store.publish_asset(

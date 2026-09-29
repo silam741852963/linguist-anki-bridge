@@ -176,7 +176,7 @@ enum PrepareCommand {
         #[arg(long)]
         /// UTF-8 input file; use - for noninteractive stdin.
         document: PathBuf,
-        /// Explicit input framing: one JSON object or one JSON object per line.
+        /// Explicit input framing: JSON, JSONL, or simple vocabulary CSV.
         #[arg(long, value_enum, default_value_t = AddFormat::Json)]
         format: AddFormat,
     },
@@ -185,6 +185,7 @@ enum PrepareCommand {
 enum AddFormat {
     Json,
     Jsonl,
+    Csv,
 }
 #[derive(Subcommand)]
 enum DeckCommand {
@@ -516,7 +517,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             let bytes = read_input(
                 &document,
                 max_bytes,
-                if matches!(format, AddFormat::Jsonl) {
+                if matches!(format, AddFormat::Jsonl | AddFormat::Csv) {
                     max_bytes as usize
                 } else {
                     max_chars
@@ -536,6 +537,16 @@ fn run(cli: Cli) -> Result<u8, String> {
                 }
                 AddFormat::Jsonl => {
                     let result = linguist_application::prepare_authored_jsonl(
+                        &bytes,
+                        kind,
+                        &settings,
+                        &environment,
+                    )?;
+                    emit(&result)?;
+                    Ok(if result.ready { 0 } else { 4 })
+                }
+                AddFormat::Csv => {
+                    let result = linguist_application::prepare_authored_csv(
                         &bytes,
                         kind,
                         &settings,

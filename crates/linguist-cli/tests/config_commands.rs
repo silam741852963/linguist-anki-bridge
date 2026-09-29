@@ -2069,6 +2069,54 @@ fn explicit_jsonl_add_publishes_one_ordered_plan_and_rejects_bad_second_line() {
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
+fn explicit_vocabulary_csv_prepares_one_plan_and_grammar_csv_fails() {
+    let root = std::env::temp_dir().join(format!("lab-csv-add-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.display());
+    let bytes = b"expression,meaning,target_language,sense_key\neat,consume food,en,food\ndrink,consume liquid,en,liquid\n";
+    let make_command = |kind| {
+        let mut command = cli();
+        command.args([
+            "--set",
+            &state,
+            "--set",
+            "llm.enabled=false",
+            "--set",
+            "dictionary.provider=authored",
+            "--set",
+            "images.search_when_missing=false",
+            kind,
+            "add",
+            "--document",
+            "-",
+            "--format",
+            "csv",
+        ]);
+        command
+    };
+    let grammar = piped(make_command("grammar"), bytes);
+    assert!(!grammar.status.success());
+    assert!(String::from_utf8_lossy(&grammar.stderr).contains("INPUT_CSV_VOCABULARY_ONLY"));
+    assert!(!root.exists());
+    let output = piped(make_command("vocab"), bytes);
+    assert!(output.status.success(), "{output:?}");
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["items"].as_array().unwrap().len(), 2);
+    assert_eq!(result["ready"], true);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan_id = uuid::Uuid::parse_str(result["plan_id"].as_str().unwrap()).unwrap();
+    let plan = store.revision(plan_id, 1).unwrap();
+    assert_eq!(plan.documents.len(), 2);
+    assert_eq!(plan.documents[0].sources[0].kind, "authored_csv_v1");
+    assert_eq!(
+        store
+            .asset(&plan.documents[1].sources[0].digest, 10000)
+            .unwrap(),
+        bytes
+    );
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn duplicate_candidates_command_reads_managed_note_without_changing_plan() {
     use std::io::{BufRead, Read, Write};
     let root =

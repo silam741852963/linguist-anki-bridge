@@ -74,7 +74,7 @@ pub fn inspect(
         || document
             .sources
             .iter()
-            .any(|source| source.kind != "authored_json_v2")
+            .any(|source| !matches!(source.kind.as_str(), "authored_json_v2" | "authored_csv_v1"))
     {
         return Err("DUPLICATE_CANDIDATES_ADD_ONLY".into());
     }

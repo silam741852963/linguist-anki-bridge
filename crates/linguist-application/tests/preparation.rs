@@ -200,6 +200,79 @@ fn jsonl_framing_and_configured_bounds_fail_before_state_creation() {
     assert!(!f.state().exists());
 }
 #[test]
+fn vocabulary_csv_archives_original_file_and_decoded_record_evidence() {
+    let f = Fixture::new();
+    let bytes = b"expression,meaning,target_language,sense_key,context,reading\r\n\"eat, drink\",\"consume food, liquid\",en,shared,\"a quoted\ncontext\",\r\n\xe9\xa3\x9f\xe3\x81\xb9\xe3\x82\x8b,to eat,ja,eat-food,,\xe3\x81\x9f\xe3\x81\xb9\xe3\x82\x8b\r\n";
+    let result =
+        prepare_authored_csv(bytes, Kind::Vocabulary, &f.settings, &f.environment).unwrap();
+    assert_eq!(result.items.len(), 2);
+    assert!(
+        result.ready,
+        "{:?}",
+        result
+            .items
+            .iter()
+            .map(|item| &item.issues)
+            .collect::<Vec<_>>()
+    );
+    let store = linguist_store::Store::read_only(&f.state()).unwrap();
+    let plan = store.revision(result.plan_id, 1).unwrap();
+    assert_eq!(plan.documents.len(), 2);
+    for (index, document) in plan.documents.iter().enumerate() {
+        assert_eq!(document.sources[0].kind, "authored_csv_v1");
+        assert_eq!(
+            document.sources[0].fields["csv_record_index"],
+            (index + 1).to_string()
+        );
+        assert_eq!(
+            document.archives[0].asset_digests,
+            vec![linguist_core::canonical::asset_digest(bytes)]
+        );
+        assert_eq!(
+            store
+                .asset(&document.sources[0].digest, 1024 * 1024)
+                .unwrap(),
+            bytes
+        );
+    }
+    assert!(plan.documents[0].context.contains("quoted\ncontext"));
+    assert_eq!(plan.documents[1].target_language.as_str(), "ja");
+}
+#[test]
+fn vocabulary_csv_rejects_header_shape_and_later_row_before_state() {
+    let mut f = Fixture::new();
+    for bytes in [
+        b"expression,meaning,target_language,sense_key,unknown\ncat,animal,en,animal,x\n"
+            .as_slice(),
+        b"expression,meaning,target_language,sense_key,sense_key\ncat,animal,en,animal,animal\n",
+        b"expression,meaning,target_language,sense_key\ncat,animal,en,animal\ndog,animal,en\n",
+    ] {
+        assert!(
+            prepare_authored_csv(bytes, Kind::Vocabulary, &f.settings, &f.environment).is_err()
+        );
+        assert!(!f.state().exists());
+    }
+    let valid = b"expression,meaning,target_language,sense_key\ncat,animal,en,animal\n";
+    assert_eq!(
+        prepare_authored_csv(valid, Kind::Grammar, &f.settings, &f.environment).unwrap_err(),
+        "INPUT_CSV_VOCABULARY_ONLY"
+    );
+    f.settings
+        .values
+        .insert("selection.max_notes".into(), serde_json::json!(1));
+    assert!(
+        prepare_authored_csv(
+            &[valid.as_slice(), b"dog,animal,en,animal\n"].concat(),
+            Kind::Vocabulary,
+            &f.settings,
+            &f.environment
+        )
+        .unwrap_err()
+        .starts_with("INPUT_BATCH_TOO_LARGE")
+    );
+    assert!(!f.state().exists());
+}
+#[test]
 fn managed_duplicate_candidates_remain_review_evidence_even_when_fields_match() {
     use linguist_application::duplicate_candidates::{CandidateReader, inspect};
     struct OverflowReader;
