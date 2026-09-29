@@ -15,6 +15,8 @@ Effects: Anki/provider reads; local immutable plan/assets.
 
 Result/failure: Plan ID/revision/digest; needs_review has actionable exit, ready is not committed. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current structured add mode (OP-21/OP-23): `--document FILE|-` defaults to one strict v2 JSON object. `--format jsonl` explicitly frames one complete v2 object per physical line for either kind. Blank lines, malformed/incorrect-kind rows and an empty batch fail with a line number before local state opens. The whole file is bounded by `input.max_file_mb`, each line by `input.max_record_chars`, and rows by `selection.max_notes`. Every original line, including its terminator, is preserved as a source field and content-addressed asset. All rows are parsed, enriched and validated before one ordered immutable plan is published; an invalid content item remains reviewable, whereas malformed framing/schema aborts the batch. Output has shared plan identity and ordered `items`; ready requires every item to pass effective validation. Batch-local exact semantic duplicates are reported as review issues. Collection duplicate checking and native writes remain unavailable.
+
 ## OP-22 — `vocab revamp`
 
 Inputs: Purpose, input/selector, --set overrides; optional --output.

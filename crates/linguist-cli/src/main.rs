@@ -171,12 +171,20 @@ enum PrepareCommand {
         #[arg(long, conflicts_with = "note_ids", requires = "NoteSelector", value_parser = clap::value_parser!(u64).range(1..=100000))]
         limit: Option<u64>,
     },
-    /// Prepare one version-2 structured JSON record, from a file or piped stdin.
+    /// Prepare version-2 structured records from a file or piped stdin.
     Add {
         #[arg(long)]
-        /// UTF-8 JSON file; use - to read one record from noninteractive stdin.
+        /// UTF-8 input file; use - for noninteractive stdin.
         document: PathBuf,
+        /// Explicit input framing: one JSON object or one JSON object per line.
+        #[arg(long, value_enum, default_value_t = AddFormat::Json)]
+        format: AddFormat,
     },
+}
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum AddFormat {
+    Json,
+    Jsonl,
 }
 #[derive(Subcommand)]
 enum DeckCommand {
@@ -474,25 +482,48 @@ fn run(cli: Cli) -> Result<u8, String> {
     match cli.command {
         Command::Config { .. } | Command::Completions { .. } => unreachable!(),
         Command::Vocab {
-            command: PrepareCommand::Add { document },
+            command: PrepareCommand::Add { document, format },
         }
         | Command::Grammar {
-            command: PrepareCommand::Add { document },
+            command: PrepareCommand::Add { document, format },
         } => {
             let kind = if vocab_command {
                 linguist_application::Kind::Vocabulary
             } else {
                 linguist_application::Kind::Grammar
             };
-            let bytes = read_input(&document, max_bytes, max_chars)?;
-            let result = linguist_application::prepare_authored(
-                &bytes,
-                kind,
-                &settings,
-                &std::env::vars().collect(),
+            let bytes = read_input(
+                &document,
+                max_bytes,
+                if matches!(format, AddFormat::Jsonl) {
+                    max_bytes as usize
+                } else {
+                    max_chars
+                },
             )?;
-            emit(&result)?;
-            Ok(if result.ready { 0 } else { 4 })
+            let environment = std::env::vars().collect();
+            match format {
+                AddFormat::Json => {
+                    let result = linguist_application::prepare_authored(
+                        &bytes,
+                        kind,
+                        &settings,
+                        &environment,
+                    )?;
+                    emit(&result)?;
+                    Ok(if result.ready { 0 } else { 4 })
+                }
+                AddFormat::Jsonl => {
+                    let result = linguist_application::prepare_authored_jsonl(
+                        &bytes,
+                        kind,
+                        &settings,
+                        &environment,
+                    )?;
+                    emit(&result)?;
+                    Ok(if result.ready { 0 } else { 4 })
+                }
+            }
         }
         Command::Vocab {
             command: PrepareCommand::Revamp { selector, limit },

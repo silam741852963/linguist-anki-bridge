@@ -104,6 +104,17 @@ pub struct Prepared {
     pub apply_eligible: bool,
     pub duplicate_check_performed: bool,
 }
+#[derive(Debug, Serialize)]
+pub struct PreparedBatch {
+    pub schema_version: u16,
+    pub plan_id: uuid::Uuid,
+    pub revision: u32,
+    pub digest: String,
+    pub ready: bool,
+    pub items: Vec<Prepared>,
+    pub apply_eligible: bool,
+    pub duplicate_check_performed: bool,
+}
 /// Initial authored path; requested adapters must never be silently skipped.
 fn authored_capabilities(settings: &linguist_config::Effective) -> Result<(), String> {
     if settings.values["llm.enabled"] != false {
@@ -183,6 +194,51 @@ pub fn prepare_with_dictionary(
     environment: &BTreeMap<String, String>,
     dictionary: Option<&dyn DictionaryPort>,
 ) -> Result<Prepared, String> {
+    let mut batch = publish_authored_records(
+        &[bytes],
+        expected_kind,
+        settings,
+        environment,
+        dictionary,
+        false,
+    )?;
+    Ok(batch.items.remove(0))
+}
+
+/// JSONL is opt-in. Each physical line is one complete v2 record; whitespace-only
+/// lines fail with their one-based position instead of silently shifting items.
+pub fn prepare_authored_jsonl(
+    bytes: &[u8],
+    expected_kind: Kind,
+    settings: &linguist_config::Effective,
+    environment: &BTreeMap<String, String>,
+) -> Result<PreparedBatch, String> {
+    let max_bytes = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
+    if bytes.len() as u64 > max_bytes {
+        return Err("INPUT_TOO_LARGE".into());
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| "INPUT_ENCODING")?;
+    if text.is_empty() {
+        return Err("INPUT_EMPTY_BATCH".into());
+    }
+    let records: Vec<&[u8]> = text.split_inclusive('\n').map(str::as_bytes).collect();
+    if records.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap() {
+        return Err("INPUT_BATCH_TOO_LARGE: exceeds selection.max_notes".into());
+    }
+    for (index, record) in records.iter().enumerate() {
+        if record.iter().all(u8::is_ascii_whitespace) {
+            return Err(format!("INPUT_EMPTY_RECORD: line {}", index + 1));
+        }
+    }
+    publish_authored_records(&records, expected_kind, settings, environment, None, true)
+}
+
+fn build_authored_document(
+    bytes: &[u8],
+    expected_kind: Kind,
+    settings: &linguist_config::Effective,
+    dictionary: Option<&dyn DictionaryPort>,
+) -> Result<(LearningDocument, Vec<Vec<u8>>), String> {
     if bytes.len() as u64 > settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024 {
         return Err("INPUT_TOO_LARGE".into());
     }
@@ -192,7 +248,6 @@ pub fn prepare_with_dictionary(
     }
     let input: AddInput = canonical::parse(bytes).map_err(|e| e.to_string())?;
     authored_capabilities(settings)?;
-    let frozen = freeze_settings(settings, environment)?;
     let (
         version,
         target_language,
@@ -335,12 +390,42 @@ pub fn prepare_with_dictionary(
     let (enriched, provider_assets) = dictionary::enrich_document(&document, settings, dictionary)?;
     document = enriched;
     document.issues = validation::validate(&document);
-    let rendered = render::render(&document, &document.sources[0].fields).ok();
-    let ready = rendered.is_some()
-        && document
-            .issues
-            .iter()
-            .all(|issue| issue.severity == Severity::Warning);
+    Ok((document, provider_assets))
+}
+
+fn publish_authored_records(
+    records: &[&[u8]],
+    expected_kind: Kind,
+    settings: &linguist_config::Effective,
+    environment: &BTreeMap<String, String>,
+    dictionary: Option<&dyn DictionaryPort>,
+    line_numbered: bool,
+) -> Result<PreparedBatch, String> {
+    if records.is_empty() {
+        return Err("INPUT_EMPTY_BATCH".into());
+    }
+    let frozen = freeze_settings(settings, environment)?;
+    let mut documents = Vec::with_capacity(records.len());
+    let mut assets = Vec::new();
+    let mut rendered = Vec::new();
+    // Complete all parsing, enrichment and validation before opening state.
+    for (index, bytes) in records.iter().enumerate() {
+        let (document, provider_assets) =
+            build_authored_document(bytes, expected_kind, settings, dictionary).map_err(
+                |error| {
+                    if line_numbered {
+                        format!("INPUT_RECORD_{}: {error}", index + 1)
+                    } else {
+                        error
+                    }
+                },
+            )?;
+        if let Ok(card) = render::render(&document, &document.sources[0].fields) {
+            rendered.push(card);
+        }
+        assets.extend(provider_assets);
+        documents.push(document);
+    }
     let plan = PlanRevision {
         grammar_groups: vec![],
         schema_version: 2,
@@ -349,38 +434,63 @@ pub fn prepare_with_dictionary(
         parent_digest: None,
         settings: frozen,
         binding: None,
-        source_digest: canonical::digest("source-capture", &document.sources)
-            .map_err(|e| e.to_string())?,
+        source_digest: canonical::digest(
+            "source-capture",
+            &documents
+                .iter()
+                .flat_map(|document| document.sources.iter())
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|e| e.to_string())?,
         selection: None,
-        documents: vec![document],
-        rendered: rendered.into_iter().collect(),
+        documents,
+        rendered,
         review_decisions: vec![],
     };
+    let validation = linguist_core::plan_validation::inspect(&plan).map_err(|e| e.to_string())?;
+    let ready = validation.content_ready;
     let root = std::path::Path::new(plan.settings.values["storage.state_dir"].as_str().unwrap());
     let mut store = linguist_store::Store::open(root)?;
-    store.publish_asset(
-        bytes,
-        settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024,
-    )?;
-    for asset in provider_assets {
+    for bytes in records {
+        store.publish_asset(
+            bytes,
+            settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024,
+        )?;
+    }
+    for asset in assets {
         store.publish_asset(
             &asset,
             settings.values["network.max_response_mb"].as_u64().unwrap() * 1024 * 1024,
         )?;
     }
     let digest = store.publish_revision(&plan)?;
-    Ok(Prepared {
-        document_id: plan.documents[0].id,
-        input_digest: plan.documents[0]
-            .semantic_digest()
-            .map_err(|e| e.to_string())?,
+    let items = plan
+        .documents
+        .iter()
+        .zip(validation.items.iter())
+        .map(|(document, checked)| {
+            Ok(Prepared {
+                document_id: document.id,
+                input_digest: document.semantic_digest().map_err(|e| e.to_string())?,
+                schema_version: 2,
+                plan_id: plan.id,
+                revision: 1,
+                digest: digest.clone(),
+                ready: checked.content_ready,
+                issues: checked.issues.clone(),
+                original_input_digest: document.sources[0].digest.clone(),
+                apply_eligible: false,
+                duplicate_check_performed: false,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(PreparedBatch {
         schema_version: 2,
         plan_id: plan.id,
         revision: 1,
         digest,
         ready,
-        issues: plan.documents[0].issues.clone(),
-        original_input_digest,
+        items,
         apply_eligible: false,
         duplicate_check_performed: false,
     })

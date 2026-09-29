@@ -97,6 +97,109 @@ fn both_authored_workflows_preserve_raw_input_and_freeze_settings() {
     }
 }
 #[test]
+fn jsonl_batch_preserves_order_sources_and_reports_exact_duplicates() {
+    for kind in [Kind::Vocabulary, Kind::Grammar] {
+        let f = Fixture::new();
+        let first = serde_json::to_vec(&input(kind)).unwrap();
+        let mut bytes = first.clone();
+        bytes.push(b'\n');
+        bytes.extend_from_slice(&first);
+        let prepared = prepare_authored_jsonl(&bytes, kind, &f.settings, &f.environment).unwrap();
+        assert_eq!(prepared.items.len(), 2);
+        assert!(!prepared.ready);
+        assert!(prepared.items[0].ready);
+        assert!(!prepared.items[1].ready);
+        assert!(
+            prepared.items[1]
+                .issues
+                .iter()
+                .any(|issue| issue.code == "DUPLICATE_BATCH_ITEM")
+        );
+        let store = linguist_store::Store::read_only(&f.state()).unwrap();
+        let plan = store.revision(prepared.plan_id, 1).unwrap();
+        assert_eq!(plan.documents.len(), 2);
+        assert_eq!(
+            plan.documents[0].sources[0].fields["authored_input"].as_bytes(),
+            &[first.as_slice(), b"\n"].concat()
+        );
+        assert_eq!(
+            plan.documents[1].sources[0].fields["authored_input"].as_bytes(),
+            first
+        );
+        for document in &plan.documents {
+            let digest = &document.archives[0].asset_digests[0];
+            assert_eq!(
+                store.asset(digest, 1024 * 1024).unwrap(),
+                document.sources[0].fields["authored_input"].as_bytes()
+            );
+        }
+    }
+}
+#[test]
+fn jsonl_invalid_later_record_leaves_no_state() {
+    let f = Fixture::new();
+    let first = serde_json::to_vec(&input(Kind::Vocabulary)).unwrap();
+    let bytes = [
+        first.as_slice(),
+        b"\n{\"schema_version\":2,\"kind\":\"grammar\"}",
+    ]
+    .concat();
+    let error =
+        prepare_authored_jsonl(&bytes, Kind::Vocabulary, &f.settings, &f.environment).unwrap_err();
+    assert!(error.starts_with("INPUT_RECORD_2:"), "{error}");
+    assert!(!f.state().exists());
+}
+#[test]
+fn jsonl_framing_and_configured_bounds_fail_before_state_creation() {
+    let mut f = Fixture::new();
+    let first = serde_json::to_vec(&input(Kind::Vocabulary)).unwrap();
+    assert!(
+        prepare_authored_jsonl(b"{broken}\n", Kind::Vocabulary, &f.settings, &f.environment)
+            .unwrap_err()
+            .starts_with("INPUT_RECORD_1:")
+    );
+    assert_eq!(
+        prepare_authored_jsonl(b"", Kind::Vocabulary, &f.settings, &f.environment).unwrap_err(),
+        "INPUT_EMPTY_BATCH"
+    );
+    assert_eq!(
+        prepare_authored_jsonl(
+            &[first.as_slice(), b"\n\n"].concat(),
+            Kind::Vocabulary,
+            &f.settings,
+            &f.environment
+        )
+        .unwrap_err(),
+        "INPUT_EMPTY_RECORD: line 2"
+    );
+    f.settings
+        .values
+        .insert("selection.max_notes".into(), serde_json::json!(1));
+    assert!(
+        prepare_authored_jsonl(
+            &[first.as_slice(), b"\n", first.as_slice()].concat(),
+            Kind::Vocabulary,
+            &f.settings,
+            &f.environment
+        )
+        .unwrap_err()
+        .starts_with("INPUT_BATCH_TOO_LARGE")
+    );
+    f.settings
+        .values
+        .insert("selection.max_notes".into(), serde_json::json!(10));
+    f.settings.values.insert(
+        "input.max_record_chars".into(),
+        serde_json::json!(std::str::from_utf8(&first).unwrap().chars().count() - 1),
+    );
+    assert!(
+        prepare_authored_jsonl(&first, Kind::Vocabulary, &f.settings, &f.environment)
+            .unwrap_err()
+            .contains("INPUT_RECORD_TOO_LARGE")
+    );
+    assert!(!f.state().exists());
+}
+#[test]
 fn invalid_content_is_persisted_for_review_without_a_render() {
     let f = Fixture::new();
     let mut value = input(Kind::Vocabulary);

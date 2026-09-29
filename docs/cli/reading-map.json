@@ -922,7 +922,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-21 \u2014 `vocab add`",
       "title": "OP-21 \u2014 `vocab add`",
-      "words": 89,
+      "words": 223,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

@@ -2016,6 +2016,59 @@ fn piped_add_archives_the_exact_single_json_record_without_an_input_file() {
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
+fn explicit_jsonl_add_publishes_one_ordered_plan_and_rejects_bad_second_line() {
+    let root = std::env::temp_dir().join(format!("lab-jsonl-add-{}", uuid::Uuid::new_v4()));
+    let first = b"{\"schema_version\":2,\"kind\":\"vocabulary\",\"target_language\":\"en\",\"body\":{\"expression\":\"eat\",\"meaning\":\"consume food\",\"sense_key\":\"food\"}}\n";
+    let second = b"{\"schema_version\":2,\"kind\":\"vocabulary\",\"target_language\":\"en\",\"body\":{\"expression\":\"drink\",\"meaning\":\"consume liquid\",\"sense_key\":\"liquid\"}}\n";
+    let make_command = || {
+        let mut command = cli();
+        command
+            .arg("--set")
+            .arg(format!("storage.state_dir={}", root.display()))
+            .args([
+                "--set",
+                "llm.enabled=false",
+                "--set",
+                "dictionary.provider=authored",
+                "--set",
+                "images.search_when_missing=false",
+                "vocab",
+                "add",
+                "--document",
+                "-",
+                "--format",
+                "jsonl",
+            ]);
+        command
+    };
+    let bad = piped(make_command(), &[first.as_slice(), b"{broken}\n"].concat());
+    assert!(!bad.status.success());
+    assert!(!root.exists());
+    let output = piped(
+        make_command(),
+        &[first.as_slice(), second.as_slice()].concat(),
+    );
+    assert!(output.status.success(), "{output:?}");
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["items"].as_array().unwrap().len(), 2);
+    assert_eq!(result["ready"], true);
+    assert_eq!(result["apply_eligible"], false);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan_id = uuid::Uuid::parse_str(result["plan_id"].as_str().unwrap()).unwrap();
+    let plan = store.revision(plan_id, 1).unwrap();
+    assert_eq!(plan.documents.len(), 2);
+    assert_eq!(
+        plan.documents[0].sources[0].fields["authored_input"].as_bytes(),
+        first
+    );
+    assert_eq!(
+        plan.documents[1].sources[0].fields["authored_input"].as_bytes(),
+        second
+    );
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn stdin_limits_encoding_and_multiple_records_fail_before_state_creation() {
     for (bytes, setting) in [
         (vec![], "input.max_record_chars=100"),
