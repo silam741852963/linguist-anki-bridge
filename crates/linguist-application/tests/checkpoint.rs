@@ -19,12 +19,31 @@ struct MediaEntry {
 }
 
 fn sqlite_header() -> Vec<u8> {
-    let mut bytes = vec![0u8; 512];
-    bytes[..16].copy_from_slice(b"SQLite format 3\0");
+    let path = std::env::temp_dir().join(format!("lab-sqlite-test-{}", uuid::Uuid::new_v4()));
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .create_collation("unicase", |left, right| {
+            unicase::UniCase::new(left).cmp(&unicase::UniCase::new(right))
+        })
+        .unwrap();
+    connection.execute_batch("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT); CREATE INDEX test_unicase ON test(value COLLATE unicase); INSERT INTO test (value) VALUES ('test');").unwrap();
+    drop(connection);
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::remove_file(path).unwrap();
     bytes
 }
 
 fn package(meta: &[u8], declared: &[u8], media: Option<&[u8]>, extra: Option<&str>) -> Vec<u8> {
+    package_with_collection(meta, declared, media, extra, &sqlite_header())
+}
+
+fn package_with_collection(
+    meta: &[u8],
+    declared: &[u8],
+    media: Option<&[u8]>,
+    extra: Option<&str>,
+    collection: &[u8],
+) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let options =
         zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
@@ -35,7 +54,7 @@ fn package(meta: &[u8], declared: &[u8], media: Option<&[u8]>, extra: Option<&st
     entry("meta", meta);
     entry(
         "collection.anki21b",
-        &zstd::encode_all(sqlite_header().as_slice(), 0).unwrap(),
+        &zstd::encode_all(collection, 0).unwrap(),
     );
     entry("collection.anki2", &sqlite_header());
     entry("media", &zstd::encode_all(declared, 0).unwrap());
@@ -48,6 +67,32 @@ fn package(meta: &[u8], declared: &[u8], media: Option<&[u8]>, extra: Option<&st
     zip.finish().unwrap().into_inner()
 }
 
+#[test]
+fn sqlite_corruption_fails_and_private_scratch_is_removed() {
+    let dir = std::env::temp_dir().join(format!("lab-colpkg-scratch-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&dir).unwrap();
+    let mut limits = limits();
+    limits.scratch_dir = dir.clone();
+    let good = sqlite_header();
+    assert!(good.len() > 4096);
+    let mut corrupt = good.clone();
+    corrupt[4096] = 0xff;
+    let result = inspect(
+        &package_with_collection(&[8, 3], &[], None, None, &corrupt),
+        limits.clone(),
+    );
+    assert_eq!(result.unwrap_err(), "CHECKPOINT_SQLITE_INTEGRITY_FAILED");
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+    let result = inspect(
+        &package_with_collection(&[8, 3], &[], None, None, &good),
+        limits,
+    )
+    .unwrap();
+    assert_eq!(result["sqlite_integrity_verified"], true);
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+    std::fs::remove_dir(dir).unwrap();
+}
+
 fn limits() -> PackageLimits {
     PackageLimits {
         max_package_bytes: 1024 * 1024,
@@ -56,6 +101,7 @@ fn limits() -> PackageLimits {
         max_media_map_bytes: 1024 * 1024,
         max_entries: 100,
         timeout: Duration::from_secs(5),
+        scratch_dir: std::env::temp_dir(),
     }
 }
 
@@ -84,14 +130,22 @@ fn latest_container_checks_every_declared_media_byte_but_not_restore_eligibility
     assert_eq!(result["declared_media_files"], 1);
     assert_eq!(result["declared_media_bytes"], media.len());
     assert_eq!(result["container_and_declared_media_verified"], true);
+    assert_eq!(result["sqlite_integrity_verified"], true);
     for flag in [
-        "sqlite_integrity_verified",
         "collection_scope_verified",
         "restoration_tested",
         "checkpoint_eligible",
     ] {
         assert_eq!(result[flag], false);
     }
+}
+
+#[test]
+fn invalid_scratch_directory_fails_without_persistent_file() {
+    let mut limits = limits();
+    limits.scratch_dir = std::env::temp_dir().join(format!("lab-missing-{}", uuid::Uuid::new_v4()));
+    let result = inspect(&package(&[8, 3], &[], None, None), limits);
+    assert_eq!(result.unwrap_err(), "CHECKPOINT_SCRATCH_DIR_UNAVAILABLE");
 }
 
 #[test]

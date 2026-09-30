@@ -63,6 +63,7 @@ backup.max_collection_gb = 64
 backup.max_media_gb = 64
 backup.max_media_map_mb = 64
 backup.max_entries = 100000
+backup.verify_scratch_dir = "/tmp"
 
 # Optional controlled scraping fallback.
 browser.enabled = false

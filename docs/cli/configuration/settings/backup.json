@@ -91,6 +91,16 @@
       "consumer": "ALG-BACKUP",
       "description": "Maximum ZIP entries accepted by package inspection.",
       "sensitive": false
+    },
+    {
+      "key": "backup.verify_scratch_dir",
+      "type": "string",
+      "default": "/tmp",
+      "constraints": { "format": "path" },
+      "scope": "global",
+      "consumer": "ALG-BACKUP",
+      "description": "Existing directory for private, automatically removed decoded collection files during package inspection.",
+      "sensitive": false
     }
   ]
 }

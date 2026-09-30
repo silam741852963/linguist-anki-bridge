@@ -4,14 +4,14 @@ use prost::Message;
 use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, File},
-    io::{Read, Seek, SeekFrom},
-    path::Path,
+    fs::{self, File, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 use unicode_normalization::is_nfc;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct PackageLimits {
     pub max_package_bytes: u64,
     pub max_collection_bytes: u64,
@@ -19,6 +19,46 @@ pub struct PackageLimits {
     pub max_media_map_bytes: u64,
     pub max_entries: usize,
     pub timeout: Duration,
+    pub scratch_dir: PathBuf,
+}
+
+struct ScratchCollection {
+    path: PathBuf,
+    file: File,
+}
+
+impl ScratchCollection {
+    fn create(dir: &Path) -> Result<Self, String> {
+        if !fs::symlink_metadata(dir)
+            .map_err(|_| "CHECKPOINT_SCRATCH_DIR_UNAVAILABLE")?
+            .file_type()
+            .is_dir()
+        {
+            return Err("CHECKPOINT_SCRATCH_DIR_INVALID".into());
+        }
+        for _ in 0..8 {
+            let path = dir.join(format!(".lab-colpkg-{}", uuid::Uuid::new_v4()));
+            let mut options = OpenOptions::new();
+            options.write(true).read(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            match options.open(&path) {
+                Ok(file) => return Ok(Self { path, file }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(_) => return Err("CHECKPOINT_SCRATCH_CREATE_FAILED".into()),
+            }
+        }
+        Err("CHECKPOINT_SCRATCH_CREATE_FAILED".into())
+    }
+}
+
+impl Drop for ScratchCollection {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -65,6 +105,16 @@ fn scan(
     capture: bool,
     deadline: Instant,
 ) -> Result<Scanned, String> {
+    scan_with_sink(&mut input, limit, capture, deadline, None)
+}
+
+fn scan_with_sink(
+    mut input: impl Read,
+    limit: u64,
+    capture: bool,
+    deadline: Instant,
+    mut sink: Option<&mut File>,
+) -> Result<Scanned, String> {
     let mut sha256 = <sha2::Sha256 as sha2::Digest>::new();
     let mut sha1 = <sha1::Sha1 as sha1::Digest>::new();
     let mut bytes = 0u64;
@@ -85,6 +135,10 @@ fn scan(
             .ok_or("CHECKPOINT_CONTENT_LIMIT")?;
         if bytes > limit {
             return Err("CHECKPOINT_CONTENT_LIMIT".into());
+        }
+        if let Some(file) = sink.as_mut() {
+            file.write_all(&chunk[..count])
+                .map_err(|_| "CHECKPOINT_SCRATCH_WRITE_FAILED")?;
         }
         sha2::Digest::update(&mut sha256, &chunk[..count]);
         sha1::Digest::update(&mut sha1, &chunk[..count]);
@@ -107,10 +161,11 @@ fn compressed(
     limit: u64,
     capture: bool,
     deadline: Instant,
+    sink: Option<&mut File>,
 ) -> Result<Scanned, String> {
     let mut decoder =
         zstd::stream::read::Decoder::new(input).map_err(|_| "CHECKPOINT_ZSTD_INVALID")?;
-    let result = scan(&mut decoder, limit, capture, deadline)?;
+    let result = scan_with_sink(&mut decoder, limit, capture, deadline, sink)?;
     decoder
         .finish_frame()
         .map_err(|_| "CHECKPOINT_ZSTD_INVALID")?;
@@ -124,6 +179,43 @@ fn compressed(
         return Err("CHECKPOINT_ZSTD_TRAILING_DATA".into());
     }
     Ok(result)
+}
+
+fn sqlite_integrity(path: &Path, deadline: Instant) -> Result<(), String> {
+    if Instant::now() >= deadline {
+        return Err("CHECKPOINT_INSPECTION_TIMEOUT".into());
+    }
+    let connection = rusqlite::Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|_| "CHECKPOINT_SQLITE_INVALID")?;
+    // Anki indexes use this collation. Its version is pinned by Anki because
+    // a comparator change can make an otherwise sound index look corrupt.
+    connection
+        .create_collation("unicase", |left, right| {
+            unicase::UniCase::new(left).cmp(&unicase::UniCase::new(right))
+        })
+        .map_err(|_| "CHECKPOINT_SQLITE_INVALID")?;
+    connection
+        .progress_handler(1000, Some(move || Instant::now() >= deadline))
+        .map_err(|_| "CHECKPOINT_SQLITE_INVALID")?;
+    let check = (|| -> rusqlite::Result<bool> {
+        let mut statement = connection.prepare("PRAGMA integrity_check")?;
+        let mut rows = statement.query([])?;
+        let first = rows
+            .next()?
+            .map(|row| row.get::<_, String>(0))
+            .transpose()?;
+        Ok(first.as_deref() == Some("ok") && rows.next()?.is_none())
+    })();
+    if Instant::now() >= deadline {
+        return Err("CHECKPOINT_INSPECTION_TIMEOUT".into());
+    }
+    match check {
+        Ok(true) => Ok(()),
+        _ => Err("CHECKPOINT_SQLITE_INTEGRITY_FAILED".into()),
+    }
 }
 
 fn sqlite_header(scan: &Scanned) -> bool {
@@ -160,9 +252,9 @@ fn count_media_records(mut bytes: &[u8], max: usize) -> Result<usize, String> {
     Ok(count)
 }
 
-/// Checks the latest `.colpkg` container, decoded collection header and every
-/// declared media byte without extracting paths. Scope, SQLite integrity and
-/// restoration require separate evidence before a checkpoint can be used.
+/// Checks the latest `.colpkg` container, decoded SQLite integrity and every
+/// declared media byte without extracting paths. Scope and restoration require
+/// separate evidence before a checkpoint can be used.
 pub fn inspect_colpkg(path: &Path, limits: PackageLimits) -> Result<PackageInspection, String> {
     if limits.max_package_bytes == 0
         || limits.max_collection_bytes == 0
@@ -207,6 +299,7 @@ pub fn inspect_colpkg(path: &Path, limits: PackageLimits) -> Result<PackageInspe
     let mut media_map = None;
     let mut media = BTreeMap::new();
     let mut media_bytes = 0u64;
+    let mut scratch = ScratchCollection::create(&limits.scratch_dir)?;
     for index in 0..archive.len() {
         if Instant::now() >= deadline {
             return Err("CHECKPOINT_INSPECTION_TIMEOUT".into());
@@ -231,6 +324,7 @@ pub fn inspect_colpkg(path: &Path, limits: PackageLimits) -> Result<PackageInspe
                     limits.max_collection_bytes,
                     false,
                     deadline,
+                    Some(&mut scratch.file),
                 )?)
             }
             "collection.anki2" => dummy = Some(scan(entry, 16 * 1024 * 1024, false, deadline)?),
@@ -240,6 +334,7 @@ pub fn inspect_colpkg(path: &Path, limits: PackageLimits) -> Result<PackageInspe
                     limits.max_media_map_bytes,
                     true,
                     deadline,
+                    None,
                 )?)
             }
             _ => {
@@ -257,7 +352,7 @@ pub fn inspect_colpkg(path: &Path, limits: PackageLimits) -> Result<PackageInspe
                     .max_media_bytes
                     .checked_sub(media_bytes)
                     .ok_or("CHECKPOINT_MEDIA_LIMIT")?;
-                let scanned = compressed(entry, remaining, false, deadline)?;
+                let scanned = compressed(entry, remaining, false, deadline, None)?;
                 media_bytes = media_bytes
                     .checked_add(scanned.bytes)
                     .ok_or("CHECKPOINT_MEDIA_LIMIT")?;
@@ -316,6 +411,11 @@ pub fn inspect_colpkg(path: &Path, limits: PackageLimits) -> Result<PackageInspe
     {
         return Err("CHECKPOINT_FILE_CHANGED".into());
     }
+    scratch
+        .file
+        .flush()
+        .map_err(|_| "CHECKPOINT_SCRATCH_WRITE_FAILED")?;
+    sqlite_integrity(&scratch.path, deadline)?;
     Ok(PackageInspection {
         format: "anki-colpkg-latest-v3",
         package_sha256: initial.sha256,
@@ -325,7 +425,7 @@ pub fn inspect_colpkg(path: &Path, limits: PackageLimits) -> Result<PackageInspe
         declared_media_files: media.len(),
         declared_media_bytes: media_bytes,
         container_and_declared_media_verified: true,
-        sqlite_integrity_verified: false,
+        sqlite_integrity_verified: true,
         collection_scope_verified: false,
         restoration_tested: false,
         checkpoint_eligible: false,

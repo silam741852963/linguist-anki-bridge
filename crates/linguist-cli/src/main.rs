@@ -1479,6 +1479,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 "backup.max_media_gb",
                 "backup.max_media_map_mb",
                 "backup.max_entries",
+                "backup.verify_scratch_dir",
             ] {
                 registry.validate_value(key, &settings.values[key])?;
             }
@@ -1499,6 +1500,12 @@ fn run(cli: Cli) -> Result<u8, String> {
                         .as_u64()
                         .unwrap(),
                 ),
+                scratch_dir: linguist_config::expand_path(
+                    settings.values["backup.verify_scratch_dir"]
+                        .as_str()
+                        .unwrap(),
+                    &std::env::vars().collect(),
+                )?,
             };
             let report = linguist_application::checkpoint::inspect_colpkg(&file, limits)?;
             emit(&serde_json::json!({"schema_version":2,"inspection":report}))?;
