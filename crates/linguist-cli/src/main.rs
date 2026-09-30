@@ -93,6 +93,16 @@ enum Command {
         #[command(subcommand)]
         command: Option<ModelCommand>,
     },
+    /// Inspect a local Anki package; inspection never authorizes apply or restore.
+    Backup {
+        #[command(subcommand)]
+        command: BackupCommand,
+    },
+}
+#[derive(Subcommand)]
+enum BackupCommand {
+    /// Check the current .colpkg container and declared media without restoring it.
+    Inspect { file: PathBuf },
 }
 #[derive(Subcommand)]
 enum JobCommand {
@@ -1457,6 +1467,42 @@ fn run(cli: Cli) -> Result<u8, String> {
                 &serde_json::json!({"version":2,"anki":capabilities,"provider_resources_checked":false,"release_gates":"not_run"}),
             )?;
             Ok(if ready { 0 } else { 3 })
+        }
+        Command::Backup {
+            command: BackupCommand::Inspect { file },
+        } => {
+            let registry = linguist_config::Registry::builtin();
+            for key in [
+                "backup.verify_timeout_seconds",
+                "backup.max_package_gb",
+                "backup.max_collection_gb",
+                "backup.max_media_gb",
+                "backup.max_media_map_mb",
+                "backup.max_entries",
+            ] {
+                registry.validate_value(key, &settings.values[key])?;
+            }
+            let gib = 1024 * 1024 * 1024;
+            let limits = linguist_application::checkpoint::PackageLimits {
+                max_package_bytes: settings.values["backup.max_package_gb"].as_u64().unwrap() * gib,
+                max_collection_bytes: settings.values["backup.max_collection_gb"]
+                    .as_u64()
+                    .unwrap()
+                    * gib,
+                max_media_bytes: settings.values["backup.max_media_gb"].as_u64().unwrap() * gib,
+                max_media_map_bytes: settings.values["backup.max_media_map_mb"].as_u64().unwrap()
+                    * 1024
+                    * 1024,
+                max_entries: settings.values["backup.max_entries"].as_u64().unwrap() as usize,
+                timeout: std::time::Duration::from_secs(
+                    settings.values["backup.verify_timeout_seconds"]
+                        .as_u64()
+                        .unwrap(),
+                ),
+            };
+            let report = linguist_application::checkpoint::inspect_colpkg(&file, limits)?;
+            emit(&serde_json::json!({"schema_version":2,"inspection":report}))?;
+            Ok(0)
         }
         Command::Models {
             command: None | Some(ModelCommand::Builtin),

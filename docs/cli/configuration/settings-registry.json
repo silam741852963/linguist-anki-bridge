@@ -16,7 +16,7 @@
     {
       "name": "backup",
       "path": "settings/backup.json",
-      "count": 3
+      "count": 8
     },
     {
       "name": "browser",

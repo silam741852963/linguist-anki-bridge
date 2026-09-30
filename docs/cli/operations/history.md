@@ -77,3 +77,5 @@ Effects: Read file; explicit disposable-target test separately authorized.
 3. Never import backup into active user collection; restoration test requires isolated disposable environment.
 
 Result/failure: Verification report; no claim of scheduler recovery from file presence alone. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
+
+Available preliminary command: `backup inspect FILE` reads an existing current-format `.colpkg` and reports container and declared-media checks. It does not require a registered backup receipt, create local state, call Anki, restore a collection, or mark the file as a verified checkpoint. All `checkpoint_eligible` results are false until scope, SQLite integrity, and a disposable restoration test are implemented. The file and decoded-entry limits and timeout are configurable through the backup settings group.

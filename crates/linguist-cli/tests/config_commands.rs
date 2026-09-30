@@ -1,6 +1,25 @@
 use std::process::Command;
 
 #[test]
+fn backup_inspection_failure_does_not_create_state_or_contact_anki() {
+    let root = std::env::temp_dir().join(format!("lab-backup-inspect-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.display());
+    let out = cli()
+        .args([
+            "--set",
+            &state,
+            "backup",
+            "inspect",
+            "/missing-lab-package.colpkg",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(!root.exists());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("CHECKPOINT_FILE_UNAVAILABLE"));
+}
+
+#[test]
 fn live_plan_validation_reports_no_revamp_sources_without_claiming_apply() {
     use linguist_core::{LearningDocument, records::*};
     use std::{

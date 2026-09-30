@@ -1,0 +1,7 @@
+# Disposable collection-package inspection, 2026-09-30
+
+The installed Anki Python package reports version `25.09.2`, build `3d813c83`. Two isolated collections were created beneath `/tmp` with `/usr/bin/python3.14`; neither used the user's Anki profile or the CLI state store. Each used `Collection.export_collection_package(path, include_media=True, legacy=False)`. The second collection had one 16-byte disposable `voice.ogg` in its media directory.
+
+`linguist-anki-bridge backup inspect FILE` accepted both. The empty package contained `meta`, `collection.anki21b`, `collection.anki2`, and `media`, with metadata bytes `08 03`. It reported a 139,264-byte decoded collection and zero media files. The media package reported one declared file and 16 decoded media bytes; all declared size and SHA-1 checks passed. In both cases it returned `container_and_declared_media_verified=true`, and `sqlite_integrity_verified=false`, `collection_scope_verified=false`, `restoration_tested=false`, `checkpoint_eligible=false`. No native collection write or restore was attempted by the CLI.
+
+This smoke check supports compatibility with these two exported examples only. The automated tests additionally reject a missing media entry, changed SHA-1, unsafe media name, unsupported metadata version, extra traversal entry, truncated ZIP and configured media limit. Coverage against source-collection state, SQLite integrity, large real collections and successful disposable restore remains unverified.

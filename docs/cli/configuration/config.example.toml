@@ -57,6 +57,13 @@ backup.reuse_max_age_seconds = 0
 # Package verification deadline.
 backup.verify_timeout_seconds = 120
 
+# Read-only .colpkg inspection bounds; no value grants checkpoint eligibility.
+backup.max_package_gb = 64
+backup.max_collection_gb = 64
+backup.max_media_gb = 64
+backup.max_media_map_mb = 64
+backup.max_entries = 100000
+
 # Optional controlled scraping fallback.
 browser.enabled = false
 

@@ -47,4 +47,4 @@ Documentation verification: `python3 docs/cli/validate.py` passed with 143 regis
 
 Final design review: [baseline decisions](../decisions/README.md) and [decision register](../decisions/register.json) close all preference/architecture items. Runtime source ambiguity still requires content review. Native correctness remains evidence to collect during implementation, with test owners/failure policies in [release gates](../decisions/release-gates.md).
 
-Finalization consistency validation additionally checks all 34 resolved R decisions, 24 finalized FG approaches, 14 unrun EV gates, 150 settings in 29 groups, and four builtin purpose presets. These counts describe the final design registry; earlier counts record previous documentation passes.
+Finalization consistency validation additionally checks all 34 resolved R decisions, 24 finalized FG approaches, 14 unrun EV gates, 155 settings in 29 groups, and four builtin purpose presets. These counts describe the current design registry; earlier counts record previous documentation passes.

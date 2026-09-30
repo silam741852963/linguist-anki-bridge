@@ -41,6 +41,56 @@
       "consumer": "ALG-BACKUP",
       "description": "Package verification deadline.",
       "sensitive": false
+    },
+    {
+      "key": "backup.max_package_gb",
+      "type": "integer",
+      "default": 64,
+      "constraints": { "min": 1, "max": 1024 },
+      "scope": "global",
+      "consumer": "ALG-BACKUP",
+      "description": "Maximum collection package file size accepted by read-only inspection.",
+      "sensitive": false
+    },
+    {
+      "key": "backup.max_collection_gb",
+      "type": "integer",
+      "default": 64,
+      "constraints": { "min": 1, "max": 1024 },
+      "scope": "global",
+      "consumer": "ALG-BACKUP",
+      "description": "Maximum decoded collection bytes accepted from a package.",
+      "sensitive": false
+    },
+    {
+      "key": "backup.max_media_gb",
+      "type": "integer",
+      "default": 64,
+      "constraints": { "min": 1, "max": 1024 },
+      "scope": "global",
+      "consumer": "ALG-BACKUP",
+      "description": "Maximum aggregate decoded media bytes accepted from a package.",
+      "sensitive": false
+    },
+    {
+      "key": "backup.max_media_map_mb",
+      "type": "integer",
+      "default": 64,
+      "constraints": { "min": 1, "max": 1024 },
+      "scope": "global",
+      "consumer": "ALG-BACKUP",
+      "description": "Maximum decoded media index bytes accepted from a package.",
+      "sensitive": false
+    },
+    {
+      "key": "backup.max_entries",
+      "type": "integer",
+      "default": 100000,
+      "constraints": { "min": 4, "max": 1000000 },
+      "scope": "global",
+      "consumer": "ALG-BACKUP",
+      "description": "Maximum ZIP entries accepted by package inspection.",
+      "sensitive": false
     }
   ]
 }
