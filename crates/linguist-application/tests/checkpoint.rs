@@ -26,7 +26,7 @@ fn sqlite_header() -> Vec<u8> {
             unicase::UniCase::new(left).cmp(&unicase::UniCase::new(right))
         })
         .unwrap();
-    connection.execute_batch("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT); CREATE INDEX test_unicase ON test(value COLLATE unicase); INSERT INTO test (value) VALUES ('test');").unwrap();
+    connection.execute_batch("CREATE TABLE col(id INTEGER PRIMARY KEY, ver INTEGER); INSERT INTO col VALUES (1,18); CREATE TABLE notes(id INTEGER PRIMARY KEY, mid INTEGER, flds TEXT); INSERT INTO notes VALUES (10,1,'word'); CREATE TABLE cards(id INTEGER PRIMARY KEY,nid INTEGER,did INTEGER,ord INTEGER,queue INTEGER,due INTEGER,ivl INTEGER,factor INTEGER,reps INTEGER,lapses INTEGER); INSERT INTO cards VALUES (20,10,1,0,0,0,0,0,0,0); CREATE TABLE revlog(id INTEGER PRIMARY KEY,cid INTEGER,ease INTEGER,ivl INTEGER,lastIvl INTEGER); INSERT INTO revlog VALUES (30,20,1,1,0); CREATE TABLE graves(usn INTEGER,oid INTEGER,type INTEGER); CREATE INDEX notes_unicase ON notes(flds COLLATE unicase);").unwrap();
     drop(connection);
     let bytes = std::fs::read(&path).unwrap();
     std::fs::remove_file(path).unwrap();
@@ -131,6 +131,11 @@ fn latest_container_checks_every_declared_media_byte_but_not_restore_eligibility
     assert_eq!(result["declared_media_bytes"], media.len());
     assert_eq!(result["container_and_declared_media_verified"], true);
     assert_eq!(result["sqlite_integrity_verified"], true);
+    assert_eq!(result["anki_core_schema_verified"], true);
+    assert_eq!(result["collection_schema_version"], 18);
+    assert_eq!(result["collection_note_count"], 1);
+    assert_eq!(result["collection_card_count"], 1);
+    assert_eq!(result["collection_review_count"], 1);
     for flag in [
         "collection_scope_verified",
         "restoration_tested",
@@ -138,6 +143,23 @@ fn latest_container_checks_every_declared_media_byte_but_not_restore_eligibility
     ] {
         assert_eq!(result[flag], false);
     }
+}
+
+#[test]
+fn valid_sqlite_without_anki_tables_cannot_pass_as_collection() {
+    let path = std::env::temp_dir().join(format!("lab-other-sqlite-{}", uuid::Uuid::new_v4()));
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch("CREATE TABLE unrelated (id INTEGER PRIMARY KEY);")
+        .unwrap();
+    drop(connection);
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::remove_file(path).unwrap();
+    let result = inspect(
+        &package_with_collection(&[8, 3], &[], None, None, &bytes),
+        limits(),
+    );
+    assert_eq!(result.unwrap_err(), "CHECKPOINT_ANKI_SCHEMA_UNRECOGNIZED");
 }
 
 #[test]

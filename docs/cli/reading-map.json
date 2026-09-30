@@ -580,7 +580,7 @@
       "path": "operations/history.md",
       "heading": "## OP-54 \u2014 `backup verify BACKUP`",
       "title": "OP-54 \u2014 `backup verify BACKUP`",
-      "words": 168,
+      "words": 180,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -1056,7 +1056,7 @@
       "path": "recovery/backup.md",
       "heading": "## ALG-BACKUP \u2014 verified checkpoint",
       "title": "ALG-BACKUP \u2014 verified checkpoint",
-      "words": 338,
+      "words": 400,
       "requires": [
         "contracts/invariants.md",
         "recovery/README.md",

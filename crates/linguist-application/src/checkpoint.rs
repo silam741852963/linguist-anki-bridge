@@ -68,13 +68,25 @@ pub struct PackageInspection {
     pub package_size_bytes: u64,
     pub collection_sha256: String,
     pub collection_size_bytes: u64,
+    pub collection_schema_version: u8,
+    pub collection_note_count: u64,
+    pub collection_card_count: u64,
+    pub collection_review_count: u64,
     pub declared_media_files: usize,
     pub declared_media_bytes: u64,
     pub container_and_declared_media_verified: bool,
     pub sqlite_integrity_verified: bool,
+    pub anki_core_schema_verified: bool,
     pub collection_scope_verified: bool,
     pub restoration_tested: bool,
     pub checkpoint_eligible: bool,
+}
+
+struct CollectionContents {
+    schema_version: u8,
+    notes: u64,
+    cards: u64,
+    reviews: u64,
 }
 
 #[derive(Clone, PartialEq, Message)]
@@ -181,7 +193,7 @@ fn compressed(
     Ok(result)
 }
 
-fn sqlite_integrity(path: &Path, deadline: Instant) -> Result<(), String> {
+fn sqlite_integrity(path: &Path, deadline: Instant) -> Result<CollectionContents, String> {
     if Instant::now() >= deadline {
         return Err("CHECKPOINT_INSPECTION_TIMEOUT".into());
     }
@@ -212,10 +224,65 @@ fn sqlite_integrity(path: &Path, deadline: Instant) -> Result<(), String> {
     if Instant::now() >= deadline {
         return Err("CHECKPOINT_INSPECTION_TIMEOUT".into());
     }
-    match check {
-        Ok(true) => Ok(()),
-        _ => Err("CHECKPOINT_SQLITE_INTEGRITY_FAILED".into()),
+    if !matches!(check, Ok(true)) {
+        return Err("CHECKPOINT_SQLITE_INTEGRITY_FAILED".into());
     }
+    // The v11 core persists in later Anki schemas. Check names and key columns
+    // before reporting a package as an Anki collection; do not infer full
+    // semantic correctness or source coverage from these checks.
+    for (table, required) in [
+        ("col", &["id", "ver"][..]),
+        ("notes", &["id", "mid", "flds"][..]),
+        (
+            "cards",
+            &[
+                "id", "nid", "did", "ord", "queue", "due", "ivl", "factor", "reps", "lapses",
+            ][..],
+        ),
+        ("revlog", &["id", "cid", "ease", "ivl", "lastIvl"][..]),
+        ("graves", &["usn", "oid", "type"][..]),
+    ] {
+        let mut columns = std::collections::BTreeSet::new();
+        let mut statement = connection
+            .prepare("SELECT name FROM pragma_table_info(?1)")
+            .map_err(|_| "CHECKPOINT_ANKI_SCHEMA_INVALID")?;
+        let rows = statement
+            .query_map([table], |row| row.get::<_, String>(0))
+            .map_err(|_| "CHECKPOINT_ANKI_SCHEMA_INVALID")?;
+        for column in rows {
+            columns.insert(column.map_err(|_| "CHECKPOINT_ANKI_SCHEMA_INVALID")?);
+        }
+        if required.iter().any(|name| !columns.contains(*name)) {
+            return Err("CHECKPOINT_ANKI_SCHEMA_UNRECOGNIZED".into());
+        }
+    }
+    let version: i64 = connection
+        .query_row("SELECT ver FROM col WHERE id=1", [], |row| row.get(0))
+        .map_err(|_| "CHECKPOINT_ANKI_SCHEMA_UNRECOGNIZED")?;
+    let col_count: i64 = connection
+        .query_row("SELECT count(*) FROM col", [], |row| row.get(0))
+        .map_err(|_| "CHECKPOINT_ANKI_SCHEMA_INVALID")?;
+    // 12/13 are intermediate schemas that Anki itself refuses to reopen.
+    if col_count != 1 || !(11..=18).contains(&version) || matches!(version, 12 | 13) {
+        return Err("CHECKPOINT_ANKI_SCHEMA_UNRECOGNIZED".into());
+    }
+    let count = |table: &str| -> Result<u64, String> {
+        let sql = format!("SELECT count(*) FROM {table}");
+        let value: i64 = connection
+            .query_row(&sql, [], |row| row.get(0))
+            .map_err(|_| "CHECKPOINT_ANKI_SCHEMA_INVALID")?;
+        u64::try_from(value).map_err(|_| "CHECKPOINT_ANKI_SCHEMA_INVALID".into())
+    };
+    let contents = CollectionContents {
+        schema_version: version as u8,
+        notes: count("notes")?,
+        cards: count("cards")?,
+        reviews: count("revlog")?,
+    };
+    if Instant::now() >= deadline {
+        return Err("CHECKPOINT_INSPECTION_TIMEOUT".into());
+    }
+    Ok(contents)
 }
 
 fn sqlite_header(scan: &Scanned) -> bool {
@@ -415,17 +482,22 @@ pub fn inspect_colpkg(path: &Path, limits: PackageLimits) -> Result<PackageInspe
         .file
         .flush()
         .map_err(|_| "CHECKPOINT_SCRATCH_WRITE_FAILED")?;
-    sqlite_integrity(&scratch.path, deadline)?;
+    let contents = sqlite_integrity(&scratch.path, deadline)?;
     Ok(PackageInspection {
         format: "anki-colpkg-latest-v3",
         package_sha256: initial.sha256,
         package_size_bytes: initial.bytes,
         collection_sha256: collection.sha256,
         collection_size_bytes: collection.bytes,
+        collection_schema_version: contents.schema_version,
+        collection_note_count: contents.notes,
+        collection_card_count: contents.cards,
+        collection_review_count: contents.reviews,
         declared_media_files: media.len(),
         declared_media_bytes: media_bytes,
         container_and_declared_media_verified: true,
         sqlite_integrity_verified: true,
+        anki_core_schema_verified: true,
         collection_scope_verified: false,
         restoration_tested: false,
         checkpoint_eligible: false,
