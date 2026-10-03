@@ -114,3 +114,29 @@ fn purpose_mapping_consumes_resolved_overrides_and_expected_source_model() {
         );
     }
 }
+
+#[test]
+fn grammar_screenshot_and_vietnamese_explanation_remain_source_evidence() {
+    let fields = BTreeMap::from([
+        ("Pattern".into(), "～ている\n～ておる".into()),
+        ("Meaning".into(), "diễn tả trạng thái".into()),
+        ("Formation".into(), "Vて + いる".into()),
+        ("Screenshot".into(), "<img src='ngữ%20pháp.png'>".into()),
+        ("Private".into(), "Keep teacher's correction".into()),
+    ]);
+    let mapping = BTreeMap::from([
+        ("pattern".into(), "Pattern".into()),
+        ("meaning".into(), "Meaning".into()),
+        ("formation".into(), "Formation".into()),
+        ("picture".into(), "Screenshot".into()),
+    ]);
+    let result = map_fields(SourceKind::Grammar, &fields, &mapping, 10000, 10000).unwrap();
+    assert!(result.missing_required_roles.is_empty());
+    assert_eq!(result.roles["pattern"].raw_value, "～ている\n～ておる");
+    assert_eq!(result.roles["meaning"].raw_value, "diễn tả trạng thái");
+    assert_eq!(result.unmapped_fields, vec!["Private"]);
+    assert!(!result.normalized_facts_verified);
+    let media = linguist_application::capture::discover_media(&fields, 10000, 100).unwrap();
+    assert_eq!(media.references[0].filename, "ngữ pháp.png");
+    assert_eq!(media.references[0].field, "Screenshot");
+}

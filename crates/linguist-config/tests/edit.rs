@@ -29,6 +29,84 @@ impl Drop for Fixture {
     }
 }
 #[test]
+fn batch_mapping_is_atomic_and_unmap_is_idempotent() {
+    let f = Fixture::new();
+    let original = std::fs::read(&f.path).unwrap();
+    let prefix = "purposes.japanese_vocab.";
+    let mapping = BTreeMap::from([
+        (format!("{prefix}source_deck"), json!("日本語::語彙 \"A\"")),
+        (format!("{prefix}source_model"), json!("Picture Words")),
+        (
+            format!("{prefix}fields"),
+            json!({"expression":"Expression","meaning":"Meaning","picture":"Picture"}),
+        ),
+        (
+            format!("{prefix}card_tasks"),
+            json!({"0":"comprehension","1":"production"}),
+        ),
+    ]);
+    let bad = f.edit(
+        Scope::default(),
+        Change::Batch {
+            sets: mapping
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .chain([(format!("{prefix}unknown"), json!("bad"))])
+                .collect(),
+            unsets: vec![],
+        },
+        true,
+    );
+    assert!(bad.is_err());
+    assert_eq!(std::fs::read(&f.path).unwrap(), original);
+    let receipt = f
+        .edit(
+            Scope::default(),
+            Change::Batch {
+                sets: mapping.clone(),
+                unsets: vec![],
+            },
+            true,
+        )
+        .unwrap();
+    assert!(receipt.changed && receipt.executed);
+    assert_eq!(std::fs::read(receipt.backup.unwrap()).unwrap(), original);
+    let saved = ConfigFile::read(&f.path, &Registry::builtin()).unwrap();
+    for (key, value) in &mapping {
+        assert_eq!(&saved.values[key], value);
+    }
+    let unsets = mapping.keys().cloned().collect();
+    let receipt = f
+        .edit(
+            Scope::default(),
+            Change::Batch {
+                sets: BTreeMap::new(),
+                unsets,
+            },
+            true,
+        )
+        .unwrap();
+    assert!(receipt.changed && receipt.executed);
+    let second = f
+        .edit(
+            Scope::default(),
+            Change::Batch {
+                sets: BTreeMap::new(),
+                unsets: mapping.keys().cloned().collect(),
+            },
+            true,
+        )
+        .unwrap();
+    assert!(!second.changed && !second.executed);
+    assert_eq!(
+        ConfigFile::read(&f.path, &Registry::builtin())
+            .unwrap()
+            .values
+            .len(),
+        1
+    );
+}
+#[test]
 fn set_publishes_private_file_and_byte_exact_backup() {
     let f = Fixture::new();
     let original = std::fs::read(&f.path).unwrap();

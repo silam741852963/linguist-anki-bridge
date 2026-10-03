@@ -581,6 +581,10 @@ enum DeckCommand {
         counts: bool,
         #[arg(long)]
         limit: Option<usize>,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        name_contains: Option<String>,
     },
     Show {
         deck: String,
@@ -956,12 +960,6 @@ fn unavailable_operation(command: &Command) -> Option<&'static str> {
         Command::Config {
             command: ConfigCommand::Import { .. },
         } => Some("OP-09 config import"),
-        Command::Decks {
-            command: DeckCommand::Map { .. },
-        } => Some("OP-13 decks map"),
-        Command::Decks {
-            command: DeckCommand::Unmap { .. },
-        } => Some("OP-14 decks unmap"),
         Command::Plans {
             command: PlanCommand::Regenerate { .. },
         } => Some("OP-30 plans regenerate"),
@@ -1017,6 +1015,13 @@ fn run(cli: Cli) -> Result<u8, String> {
     use_settings_output(&cli, &settings)?;
     let max_bytes = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
     let max_chars = settings.values["input.max_record_chars"].as_u64().unwrap() as usize;
+    if let Command::Decks { command } = &cli.command {
+        match command {
+            DeckCommand::Map { .. } => return map_deck(&cli, command, max_bytes, max_chars),
+            DeckCommand::Unmap { purpose } => return unmap_deck(&cli, purpose),
+            _ => {}
+        }
+    }
     let vocab_command = matches!(cli.command, Command::Vocab { .. });
     match cli.command {
         Command::Config { .. }
@@ -2006,11 +2011,47 @@ fn run(cli: Cli) -> Result<u8, String> {
             let decks = client.decks()?;
             match command {
                 DeckCommand::Map { .. } | DeckCommand::Unmap { .. } => unreachable!(),
-                DeckCommand::List { counts, limit } => {
+                DeckCommand::List {
+                    counts,
+                    limit,
+                    cursor,
+                    name_contains,
+                } => {
                     let limit = page_limit(limit, &settings)?;
+                    if name_contains.as_ref().is_some_and(|value| {
+                        value.chars().any(char::is_control) || value.chars().count() > max_chars
+                    }) {
+                        return Err("INVALID_DECK_FILTER".into());
+                    }
+                    let decks = decks
+                        .into_iter()
+                        .filter(|deck| {
+                            name_contains
+                                .as_ref()
+                                .is_none_or(|filter| deck.name.contains(filter))
+                        })
+                        .collect::<Vec<_>>();
+                    let fingerprint =
+                        canonical::digest("deck-selection", &decks).map_err(|e| e.to_string())?;
+                    let start = if let Some(cursor) = cursor {
+                        let (digest, last) = cursor.rsplit_once('/').ok_or("INVALID_CURSOR")?;
+                        if digest != fingerprint {
+                            return Err(
+                                "DECK_SELECTION_CONFLICT: inventory changed; restart listing"
+                                    .into(),
+                            );
+                        }
+                        decks
+                            .iter()
+                            .position(|deck| deck.id == last)
+                            .ok_or("INVALID_CURSOR")?
+                            + 1
+                    } else {
+                        0
+                    };
                     let total = decks.len();
                     let mut rows = Vec::new();
-                    for deck in decks.into_iter().take(limit) {
+                    for deck in decks.iter().skip(start).take(limit) {
                         let count = if counts {
                             Some(client.counts(&linguist_anki::deck_query(&deck.name)?)?)
                         } else {
@@ -2018,22 +2059,46 @@ fn run(cli: Cli) -> Result<u8, String> {
                         };
                         rows.push(serde_json::json!({"id":deck.id,"name":deck.name,"counts":count,"counts_include_subdecks":counts}));
                     }
+                    let end = (start + rows.len()).min(total);
+                    let next_cursor = if end < total {
+                        Some(format!("{fingerprint}/{}", decks[end - 1].id))
+                    } else {
+                        None
+                    };
                     emit(
-                        &serde_json::json!({"version":2,"decks":rows,"total":total,"truncated":total>limit}),
+                        &serde_json::json!({"version":2,"decks":rows,"total":total,"truncated":end<total,"next_cursor":next_cursor,"selection_digest":fingerprint}),
                     )?;
                 }
                 DeckCommand::Show { deck } => {
                     let deck = linguist_anki::select_name(decks, &deck)?;
                     let query = linguist_anki::deck_query(&deck.name)?;
                     let counts = client.counts(&query)?;
+                    let note_ids = client.find_notes(&query)?;
+                    if note_ids.len() != counts.note_count {
+                        return Err("ANKI_DECK_SELECTION_CHANGED".into());
+                    }
+                    if note_ids.len() > 100000 {
+                        return Err(
+                            "ANKI_DECK_MODEL_SCAN_LIMIT: narrow the deck before inspection".into(),
+                        );
+                    }
+                    let mut models = BTreeMap::<String, usize>::new();
+                    for chunk in note_ids.chunks(100) {
+                        for note in client.notes_info(chunk)? {
+                            let name = note["modelName"].as_str().ok_or("ANKI_NOTE_INVALID")?;
+                            *models.entry(name.to_owned()).or_default() += 1;
+                        }
+                    }
                     let mut subdecks = client
                         .decks()?
                         .into_iter()
                         .filter(|d| d.name.starts_with(&format!("{}::", deck.name)))
                         .collect::<Vec<_>>();
                     subdecks.sort_by(|a, b| a.name.cmp(&b.name));
+                    let purpose_mappings =
+                        deck_purpose_mappings(cli.config.as_deref(), &deck.name)?;
                     emit(
-                        &serde_json::json!({"version":2,"deck":deck,"counts":counts,"counts_include_subdecks":true,"subdecks":subdecks,"source_model_manifest_checked":false}),
+                        &serde_json::json!({"version":2,"deck":deck,"counts":counts,"counts_include_subdecks":true,"subdecks":subdecks,"models_by_note_count":models,"mixed_models":models.len()>1,"purpose_mappings":purpose_mappings,"source_model_manifest_checked":false}),
                     )?;
                 }
             }
@@ -2129,7 +2194,18 @@ fn run(cli: Cli) -> Result<u8, String> {
                 }
                 NoteCommand::Count { selector } => {
                     let query = note_query(&selector, cli.purpose.as_deref(), &settings)?;
+                    linguist_application::selector::require_explicit_matches(
+                        &selector.note_ids,
+                        &selector.note_ids,
+                    )?;
                     let client = anki_client(&settings)?;
+                    if !selector.note_ids.is_empty() {
+                        let found = client.find_notes(&query)?;
+                        linguist_application::selector::require_explicit_matches(
+                            &selector.note_ids,
+                            &found,
+                        )?;
+                    }
                     emit(
                         &serde_json::json!({"version":2,"counts":client.counts(&query)?,"identity_confidence":"weak"}),
                     )?;
@@ -2141,6 +2217,10 @@ fn run(cli: Cli) -> Result<u8, String> {
                 } => {
                     let query = note_query(&selector, cli.purpose.as_deref(), &settings)?;
                     let limit = page_limit(limit, &settings)?;
+                    linguist_application::selector::require_explicit_matches(
+                        &selector.note_ids,
+                        &selector.note_ids,
+                    )?;
                     if cursor
                         .as_ref()
                         .is_some_and(|c| c.rsplit_once('/').is_none())
@@ -2149,6 +2229,10 @@ fn run(cli: Cli) -> Result<u8, String> {
                     }
                     let client = anki_client(&settings)?;
                     let ids = client.find_notes(&query)?;
+                    linguist_application::selector::require_explicit_matches(
+                        &selector.note_ids,
+                        &ids,
+                    )?;
                     let fingerprint = canonical::digest("note-selection", &(query, &ids))
                         .map_err(|e| e.to_string())?;
                     let start = if let Some(cursor) = cursor {
@@ -2626,6 +2710,263 @@ fn load_effective(cli: &Cli) -> Result<linguist_config::Effective, String> {
 
 fn anki_client(settings: &linguist_config::Effective) -> Result<linguist_anki::Client, String> {
     linguist_anki::Client::from_settings(settings, &std::env::vars().collect())
+}
+fn deck_purpose_mappings(
+    config: Option<&std::path::Path>,
+    deck: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let environment: BTreeMap<String, String> = std::env::vars().collect();
+    let path = linguist_config::config_path(config, &environment)?;
+    let file = match std::fs::symlink_metadata(&path) {
+        Ok(_) => linguist_config::ConfigFile::read(&path, &linguist_config::Registry::builtin())?,
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                && config.is_none()
+                && !environment.contains_key("LAB_CONFIG") =>
+        {
+            linguist_config::ConfigFile::default()
+        }
+        Err(_) => {
+            return Err(
+                "CONFIG_IO: selected configuration does not exist or cannot be inspected".into(),
+            );
+        }
+    };
+    let mut mappings = Vec::new();
+    for purpose in linguist_config::builtin_purposes() {
+        for (role, key) in [("source", "source_deck"), ("target", "target_deck")] {
+            if file
+                .values
+                .get(&format!("purposes.{purpose}.{key}"))
+                .and_then(serde_json::Value::as_str)
+                == Some(deck)
+            {
+                mappings.push(serde_json::json!({"purpose":purpose,"role":role,"source_model":file.values.get(&format!("purposes.{purpose}.source_model")),"verified_live":false}));
+            }
+        }
+    }
+    Ok(mappings)
+}
+fn mapping_edit(
+    cli: &Cli,
+    purpose: &str,
+    change: linguist_config::edit::Change,
+) -> Result<linguist_config::edit::EditReceipt, String> {
+    if !linguist_config::builtin_purposes()
+        .iter()
+        .any(|p| p == purpose)
+    {
+        return Err("SOURCE_MAPPING_PURPOSE_UNSUPPORTED".into());
+    }
+    if cli.profile.is_some()
+        || cli
+            .purpose
+            .as_deref()
+            .is_some_and(|selected| selected != purpose)
+        || !cli.settings.is_empty()
+    {
+        return Err("DECK_MAPPING_SCOPE_CONFLICT: use durable purpose mapping without profile, purpose or --set overrides".into());
+    }
+    let environment: BTreeMap<String, String> = std::env::vars().collect();
+    let path = linguist_config::config_path(cli.config.as_deref(), &environment)?;
+    linguist_config::edit::edit(
+        &path,
+        &linguist_config::edit::Scope::default(),
+        &change,
+        true,
+        &environment,
+    )
+}
+fn map_deck(
+    cli: &Cli,
+    command: &DeckCommand,
+    max_bytes: u64,
+    max_chars: usize,
+) -> Result<u8, String> {
+    let DeckCommand::Map {
+        purpose,
+        source_deck,
+        target_deck,
+        source_model,
+        fields: field_file,
+        task_map: task_file,
+        ocr_languages,
+    } = command
+    else {
+        unreachable!()
+    };
+    if !linguist_config::builtin_purposes()
+        .iter()
+        .any(|p| p == purpose)
+    {
+        return Err("SOURCE_MAPPING_PURPOSE_UNSUPPORTED".into());
+    }
+    if cli.profile.is_some()
+        || cli
+            .purpose
+            .as_deref()
+            .is_some_and(|selected| selected != purpose)
+        || !cli.settings.is_empty()
+    {
+        return Err("DECK_MAPPING_SCOPE_CONFLICT: use durable purpose mapping without profile, purpose or --set overrides".into());
+    }
+    let registry = linguist_config::Registry::builtin();
+    let prefix = format!("purposes.{purpose}.");
+    let fields: BTreeMap<String, String> =
+        serde_json::from_slice(&read_input(field_file, max_bytes, max_chars)?)
+            .map_err(|_| "SOURCE_MAPPING_FIELDS_INVALID")?;
+    let tasks: BTreeMap<String, String> = task_file
+        .as_ref()
+        .map(|path| {
+            serde_json::from_slice(&read_input(path, max_bytes, max_chars)?)
+                .map_err(|_| "SOURCE_MAPPING_TASKS_INVALID".to_owned())
+        })
+        .transpose()?
+        .unwrap_or_default();
+    registry.validate_value(&(prefix.clone() + "fields"), &serde_json::json!(fields))?;
+    registry.validate_value(&(prefix.clone() + "card_tasks"), &serde_json::json!(tasks))?;
+    registry.validate_value(
+        &(prefix.clone() + "ocr_languages"),
+        &serde_json::json!(ocr_languages),
+    )?;
+    let settings = load_effective(cli)?;
+    let client = anki_client(&settings)?;
+    let decks = client.decks()?;
+    let source = linguist_anki::select_name(decks.clone(), source_deck)?;
+    let target = target_deck
+        .as_ref()
+        .map(|name| linguist_anki::select_name(decks.clone(), name))
+        .transpose()?;
+    if client.deck_is_filtered(&source.name)? {
+        return Err("SOURCE_MAPPING_FILTERED_DECK_UNSUPPORTED".into());
+    }
+    if let Some(target) = &target
+        && client.deck_is_filtered(&target.name)?
+    {
+        return Err("SOURCE_MAPPING_FILTERED_DECK_UNSUPPORTED".into());
+    }
+    let inspected = client.inspect_model(source_model)?;
+    if inspected.model.name != *source_model && inspected.model.id != *source_model {
+        return Err("SOURCE_MAPPING_MODEL_CONFLICT".into());
+    }
+    let observed_fields = inspected
+        .fields
+        .iter()
+        .map(|name| (name.clone(), name.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let kind = if purpose.ends_with("vocab") {
+        linguist_application::mapping::SourceKind::Vocabulary
+    } else {
+        linguist_application::mapping::SourceKind::Grammar
+    };
+    let validation = linguist_application::mapping::map_fields(
+        kind,
+        &observed_fields,
+        &fields,
+        max_bytes.min(100 * 1024 * 1024),
+        max_chars,
+    )?;
+    if !validation.missing_required_roles.is_empty() {
+        return Err(format!(
+            "SOURCE_MAPPING_REQUIRED_ROLES_MISSING: {}",
+            validation.missing_required_roles.join(",")
+        ));
+    }
+    for ordinal in tasks.keys() {
+        if ordinal
+            .parse::<usize>()
+            .map_err(|_| "SOURCE_MAPPING_TASK_ORDINAL_INVALID")?
+            >= inspected.templates.len()
+        {
+            return Err("SOURCE_MAPPING_TASK_ORDINAL_INVALID".into());
+        }
+    }
+    client.check_profile()?;
+    let mut sets = BTreeMap::from([
+        (
+            prefix.clone() + "source_deck",
+            serde_json::json!(source.name),
+        ),
+        (
+            prefix.clone() + "source_model",
+            serde_json::json!(inspected.model.name),
+        ),
+        (prefix.clone() + "fields", serde_json::json!(fields)),
+        (prefix.clone() + "card_tasks", serde_json::json!(tasks)),
+        (
+            prefix.clone() + "ocr_languages",
+            serde_json::json!(ocr_languages),
+        ),
+    ]);
+    let mut unsets = Vec::new();
+    if let Some(target) = &target {
+        sets.insert(
+            prefix.clone() + "target_deck",
+            serde_json::json!(target.name),
+        );
+    } else {
+        unsets.push(prefix.clone() + "target_deck");
+    }
+    let receipt = mapping_edit(
+        cli,
+        purpose,
+        linguist_config::edit::Change::Batch { sets, unsets },
+    )?;
+    emit(
+        &serde_json::json!({"version":2,"purpose":purpose,"mapping_digest":validation.mapping_digest,"source_deck":source,"target_deck":target,"source_model":inspected.model,"unmapped_fields":validation.unmapped_fields,"template_order_verified":inspected.template_order_verified,"filtered_deck_verified":true,"writes_enabled":false,"config":receipt}),
+    )?;
+    Ok(0)
+}
+fn unmap_deck(cli: &Cli, purpose: &str) -> Result<u8, String> {
+    if !linguist_config::builtin_purposes()
+        .iter()
+        .any(|name| name == purpose)
+    {
+        return Err("SOURCE_MAPPING_PURPOSE_UNSUPPORTED".into());
+    }
+    if cli.profile.is_some()
+        || cli
+            .purpose
+            .as_deref()
+            .is_some_and(|selected| selected != purpose)
+        || !cli.settings.is_empty()
+    {
+        return Err("DECK_MAPPING_SCOPE_CONFLICT: use durable purpose mapping without profile, purpose or --set overrides".into());
+    }
+    let environment: BTreeMap<String, String> = std::env::vars().collect();
+    let path = linguist_config::config_path(cli.config.as_deref(), &environment)?;
+    if matches!(std::fs::symlink_metadata(&path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+        && cli.config.is_none()
+        && !environment.contains_key("LAB_CONFIG")
+    {
+        emit(
+            &serde_json::json!({"version":2,"purpose":purpose,"config":{"changed":false,"executed":false},"collection_changed":false}),
+        )?;
+        return Ok(0);
+    }
+    let prefix = format!("purposes.{purpose}.");
+    let receipt = mapping_edit(
+        cli,
+        purpose,
+        linguist_config::edit::Change::Batch {
+            sets: BTreeMap::new(),
+            unsets: [
+                "source_deck",
+                "target_deck",
+                "source_model",
+                "fields",
+                "card_tasks",
+                "ocr_languages",
+            ]
+            .iter()
+            .map(|key| format!("{prefix}{key}"))
+            .collect(),
+        },
+    )?;
+    emit(
+        &serde_json::json!({"version":2,"purpose":purpose,"config":receipt,"collection_changed":false}),
+    )?;
+    Ok(0)
 }
 fn page_limit(
     limit: Option<usize>,

@@ -24,6 +24,7 @@ pub struct Candidate {
     pub note_id: String,
     pub model_matches: bool,
     pub compared_fields_match: bool,
+    pub relation: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -97,11 +98,46 @@ pub fn inspect(
             &["Pattern", "Language", "UseKey", "Meaning", "Formation"],
         ),
     };
-    let query = format!(
-        "note:\"{}\" {field}:\"{}\"",
-        rendered.model.name,
-        search_value(value)?
-    );
+    // Search all models: a legacy Basic or Picture Words note can be a candidate.
+    // Anki search is approximate; only the returned fields are compared below.
+    let mut query = format!("\"{}\"", search_value(value)?);
+    let scope = plan
+        .settings
+        .values
+        .get("selection.duplicate_scope")
+        .and_then(Value::as_str)
+        .unwrap_or("collection");
+    let search_scope = match scope {
+        "collection" => "collection_text_candidates",
+        "target_deck" => {
+            let suffix = if field == "Expression" {
+                "vocab"
+            } else {
+                "grammar"
+            };
+            let prefix = match document
+                .target_language
+                .as_str()
+                .split('-')
+                .next()
+                .unwrap_or("")
+            {
+                "ja" => "japanese",
+                "en" => "english",
+                _ => return Err("DUPLICATE_TARGET_DECK_PURPOSE_UNRESOLVED".into()),
+            };
+            let key = format!("purposes.{prefix}_{suffix}.target_deck");
+            let deck = plan
+                .settings
+                .values
+                .get(&key)
+                .and_then(Value::as_str)
+                .ok_or("DUPLICATE_TARGET_DECK_UNCONFIGURED")?;
+            query = format!("{} {query}", linguist_anki::deck_query(deck)?);
+            "target_deck_text_candidates"
+        }
+        _ => return Err("DUPLICATE_SCOPE_INVALID".into()),
+    };
     if query.chars().count() > max_query_chars {
         return Err("DUPLICATE_QUERY_TOO_LARGE".into());
     }
@@ -141,10 +177,34 @@ pub fn inspect(
                     .and_then(Value::as_str)
                     == rendered.fields.get(*field).map(String::as_str)
             });
+        let raw = |field: &str| {
+            fields
+                .get(field)
+                .and_then(|entry| entry.get("value"))
+                .and_then(Value::as_str)
+        };
+        let expected = |field: &str| rendered.fields.get(field).map(String::as_str);
+        let sense_field = if field == "Expression" {
+            "SenseKey"
+        } else {
+            "UseKey"
+        };
+        let relation = if !model_matches || raw(field) != expected(field) {
+            "search_hit_unresolved"
+        } else if raw("Language") != expected("Language") {
+            "same_primary_other_language"
+        } else if raw(sense_field) != expected(sense_field) {
+            "same_primary_other_sense_or_use"
+        } else if compared_fields_match {
+            "same_compared_fields"
+        } else {
+            "same_identity_fields_other_content"
+        };
         candidates.push(Candidate {
             note_id: id,
             model_matches,
             compared_fields_match,
+            relation,
         });
     }
     Ok(Report {
@@ -158,7 +218,7 @@ pub fn inspect(
             .map_err(|_| "CLOCK_INVALID")?
             .as_secs(),
         candidates,
-        search_scope: "managed_v2_primary_field_only",
+        search_scope,
         collection_duplicate_check_complete: false,
         semantic_identity_verified: false,
         apply_eligible: false,

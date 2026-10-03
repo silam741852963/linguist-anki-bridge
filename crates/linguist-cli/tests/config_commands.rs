@@ -1670,21 +1670,6 @@ fn unfinished_catalogue_commands_fail_before_config_or_effects() {
             ],
         ),
         (
-            "OP-13",
-            vec![
-                "decks",
-                "map",
-                "japanese_vocab",
-                "--source-deck",
-                "Source",
-                "--source-model",
-                "Basic",
-                "--fields",
-                "/missing",
-            ],
-        ),
-        ("OP-14", vec!["decks", "unmap", "japanese_vocab"]),
-        (
             "OP-30",
             vec![
                 "plans",
@@ -3116,10 +3101,7 @@ fn duplicate_candidates_command_reads_managed_note_without_changing_plan() {
             let result = match action.as_str() {
                 "getActiveProfile" => serde_json::json!("Fixture"),
                 "findNotes" => {
-                    assert_eq!(
-                        request["params"]["query"],
-                        "note:\"Linguist Vocabulary v2\" Expression:\"eat\""
-                    );
+                    assert_eq!(request["params"]["query"], "\"eat\"");
                     serde_json::json!([123])
                 }
                 "notesInfo" => {

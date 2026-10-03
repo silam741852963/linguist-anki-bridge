@@ -106,6 +106,25 @@ fn deck_read_sends_only_profile_and_read_action_and_stringifies_ids() {
     assert!(requests.iter().all(|r| r["version"] == 6));
 }
 #[test]
+fn deck_kind_requires_pinned_valid_config_evidence() {
+    for (config, expected) in [
+        (json!({"dyn":false}), Some(false)),
+        (json!({"dyn":1}), Some(true)),
+        (json!({"dyn":"filtered"}), None),
+    ] {
+        let server = Server::new(vec![
+            response(json!("Fixture")),
+            response(config),
+            response(json!("Fixture")),
+        ]);
+        let client = Client::from_settings(&settings(&server.endpoint), &BTreeMap::new()).unwrap();
+        assert_eq!(client.deck_is_filtered("語彙 \"A\"").ok(), expected);
+        let requests = server.finish();
+        assert_eq!(requests[1]["action"], "getDeckConfig");
+        assert_eq!(requests[1]["params"]["deck"], "語彙 \"A\"");
+    }
+}
+#[test]
 fn response_errors_cannot_echo_credentials() {
     let server = Server::new(vec![(
         200,

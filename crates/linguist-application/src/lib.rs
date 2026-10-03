@@ -753,4 +753,5 @@ pub mod ollama;
 pub mod plan_diff;
 pub mod revamp;
 pub mod review;
+pub mod selector;
 pub mod source_archive;

@@ -20,6 +20,7 @@ enum Action {
     Reflect,
     Profile,
     Decks,
+    DeckConfig,
     Models,
     Fields,
     Templates,
@@ -39,6 +40,7 @@ impl Action {
             Self::Reflect => "apiReflect",
             Self::Profile => "getActiveProfile",
             Self::Decks => "deckNamesAndIds",
+            Self::DeckConfig => "getDeckConfig",
             Self::Models => "modelNamesAndIds",
             Self::Fields => "modelFieldNames",
             Self::Templates => "modelTemplates",
@@ -413,6 +415,19 @@ impl Client {
     pub fn decks(&self) -> Result<Vec<NamedId>> {
         self.check_profile()?;
         self.names(Action::Decks)
+    }
+    /// AnkiConnect returns the deck's `dyn` flag in getDeckConfig. This read is
+    /// profile pinned; callers must still treat it as time-bound observation.
+    pub fn deck_is_filtered(&self, name: &str) -> Result<bool> {
+        self.check_profile()?;
+        let value = self.call(Action::DeckConfig, json!({"deck":name}))?;
+        self.check_profile()?;
+        match value.get("dyn") {
+            Some(Value::Bool(filtered)) => Ok(*filtered),
+            Some(Value::Number(number)) if number.as_u64() == Some(0) => Ok(false),
+            Some(Value::Number(number)) if number.as_u64() == Some(1) => Ok(true),
+            _ => Err("ANKI_DECK_CONFIG_INVALID".into()),
+        }
     }
     pub fn models(&self) -> Result<Vec<NamedId>> {
         self.check_profile()?;

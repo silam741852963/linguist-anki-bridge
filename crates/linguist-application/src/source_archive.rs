@@ -66,11 +66,30 @@ pub fn capture_for_revamp(
         &read.model.model.name,
         &captured.source.fields,
     )?;
+    let task_key = format!("purposes.{purpose}.card_tasks");
+    let task_mapping = settings
+        .values
+        .get(&task_key)
+        .ok_or("SOURCE_CAPTURE_SETTING_MISSING")?;
+    registry.validate_value(&task_key, task_mapping)?;
+    let tasks = task_mapping
+        .as_object()
+        .ok_or("SOURCE_CAPTURE_TASK_MAP_INVALID")?;
+    if tasks.keys().any(|ordinal| {
+        ordinal
+            .parse::<usize>()
+            .ok()
+            .is_none_or(|index| index >= read.model.templates.len())
+    }) {
+        return Err("SOURCE_CAPTURE_TASK_MAP_CONFLICT".into());
+    }
     let old_digest = captured.source.digest.clone();
     let mut manifest: Value =
         canonical::parse(&captured.assets[&old_digest]).map_err(|e| e.to_string())?;
     manifest["repeated_reads_matched"] = json!(read.repeated_reads_matched);
     manifest["mapping_digest"] = json!(mapping.mapping_digest);
+    manifest["source_task_mapping"] = task_mapping.clone();
+    manifest["source_task_mapping_verified"] = json!(read.model.template_order_verified);
     let manifest = canonical::bytes(&manifest).map_err(|e| e.to_string())?;
     let digest = canonical::asset_digest(&manifest);
     captured.assets.remove(&old_digest);
@@ -217,8 +236,8 @@ pub fn archive_read_capture(
     let discovery = crate::capture::discover_media(&fields, max_bytes, 10000)?;
     let media_refs = discovery
         .references
-        .into_iter()
-        .map(|r| r.filename)
+        .iter()
+        .map(|r| r.filename.clone())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -236,6 +255,7 @@ pub fn archive_read_capture(
         .collect();
     let manifest=canonical::bytes(&json!({"schema_version":2,"kind":"anki_read_capture_v2","note_id":note_id,"payloads":digests,
         "template_manifest": template_digest,
+        "media_discovery": discovery,
         "native_history_verified":false,"atomic_snapshot_verified":false,"media_bytes_archived":false})).map_err(|e|e.to_string())?;
     let digest = canonical::asset_digest(&manifest);
     assets.insert(digest.clone(), manifest);

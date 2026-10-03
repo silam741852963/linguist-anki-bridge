@@ -173,6 +173,49 @@ fn jsonl_batch_preserves_order_sources_and_reports_exact_duplicates() {
     }
 }
 #[test]
+fn homographs_and_multiline_expressions_keep_distinct_identities() {
+    let f = Fixture::new();
+    let mut first = input(Kind::Vocabulary);
+    first["body"]["expression"] = serde_json::json!("橋");
+    first["body"]["reading"] = serde_json::json!("はし");
+    first["body"]["meaning"] = serde_json::json!("bridge");
+    first["body"]["sense_key"] = serde_json::json!("bridge");
+    first["body"]["examples"] = serde_json::json!([]);
+    let mut second = first.clone();
+    second["body"]["meaning"] = serde_json::json!("chopsticks");
+    second["body"]["sense_key"] = serde_json::json!("chopsticks");
+    let mut third = first.clone();
+    third["body"]["expression"] = serde_json::json!("橋\nを渡る");
+    third["body"]["sense_key"] = serde_json::json!("cross-bridge");
+    let records = [first, second, third]
+        .iter()
+        .map(|value| serde_json::to_string(value).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let prepared = prepare_authored_jsonl(
+        records.as_bytes(),
+        Kind::Vocabulary,
+        &f.settings,
+        &f.environment,
+    )
+    .unwrap();
+    assert_eq!(prepared.items.len(), 3);
+    assert!(prepared.items.iter().all(|item| {
+        !item
+            .issues
+            .iter()
+            .any(|issue| issue.code == "DUPLICATE_BATCH_ITEM")
+    }));
+    let store = linguist_store::Store::read_only(&f.state()).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    assert_eq!(
+        plan.documents[2].sources[0].fields["authored_input"]
+            .matches("\\n")
+            .count(),
+        1
+    );
+}
+#[test]
 fn jsonl_invalid_later_record_leaves_no_state() {
     let f = Fixture::new();
     let first = serde_json::to_vec(&input(Kind::Vocabulary)).unwrap();
@@ -403,17 +446,79 @@ fn managed_duplicate_candidates_remain_review_evidence_even_when_fields_match() 
             .iter()
             .map(|(key, value)| (key.clone(), serde_json::json!({"value":value})))
             .collect::<serde_json::Map<_, _>>();
-        let (name, field, term) = match kind {
-            Kind::Vocabulary => ("Linguist Vocabulary v2", "Expression", "食べる"),
-            Kind::Grammar => ("Linguist Grammar v2", "Pattern", "〜ても"),
+        let (name, term) = match kind {
+            Kind::Vocabulary => ("Linguist Vocabulary v2", "食べる"),
+            Kind::Grammar => ("Linguist Grammar v2", "〜ても"),
         };
         let reader = Reader {
-            query: format!("note:\"{name}\" {field}:\"{term}\""),
+            query: format!("\"{term}\""),
             rows: vec![serde_json::json!({"noteId":123,"modelName":name,"fields":fields})],
         };
         let report = inspect(&plan, prepared.document_id, &reader, 1, 10000).unwrap();
         assert_eq!(report.candidates.len(), 1);
         assert!(report.candidates[0].compared_fields_match);
+        assert_eq!(report.candidates[0].relation, "same_compared_fields");
+        let legacy = Reader {
+            query: reader.query.clone(),
+            rows: vec![
+                serde_json::json!({"noteId":123,"modelName":"Basic","fields":{"Front":{"value":term}}}),
+            ],
+        };
+        let legacy_report = inspect(&plan, prepared.document_id, &legacy, 1, 10000).unwrap();
+        assert_eq!(
+            legacy_report.candidates[0].relation,
+            "search_hit_unresolved"
+        );
+        assert!(!legacy_report.candidates[0].model_matches);
+        let mut other_sense = reader.rows.clone();
+        let key = if kind == Kind::Vocabulary {
+            "SenseKey"
+        } else {
+            "UseKey"
+        };
+        other_sense[0]["fields"][key]["value"] = serde_json::json!("different-use");
+        let related = Reader {
+            query: reader.query.clone(),
+            rows: other_sense,
+        };
+        let report = inspect(&plan, prepared.document_id, &related, 1, 10000).unwrap();
+        assert_eq!(
+            report.candidates[0].relation,
+            "same_primary_other_sense_or_use"
+        );
+        assert!(!report.candidates[0].compared_fields_match);
+        let mut scoped = plan.clone();
+        scoped.settings.values.insert(
+            "selection.duplicate_scope".into(),
+            serde_json::json!("target_deck"),
+        );
+        scoped.settings.values.insert(
+            format!(
+                "purposes.japanese_{}.target_deck",
+                if kind == Kind::Vocabulary {
+                    "vocab"
+                } else {
+                    "grammar"
+                }
+            ),
+            serde_json::json!("語彙 \"A\""),
+        );
+        let (semantic, execution) =
+            linguist_config::setting_fingerprints(&scoped.settings.values).unwrap();
+        scoped.settings.semantic_fingerprint = semantic;
+        scoped.settings.execution_fingerprint = execution;
+        scoped.settings.fingerprint =
+            linguist_core::canonical::digest("resolved-settings", &scoped.settings.values).unwrap();
+        let scoped_reader = Reader {
+            query: format!(
+                "{} {}",
+                linguist_anki::deck_query("語彙 \"A\"").unwrap(),
+                reader.query
+            ),
+            rows: reader.rows.clone(),
+        };
+        let report = inspect(&scoped, prepared.document_id, &scoped_reader, 1, 10000).unwrap();
+        assert_eq!(report.search_scope, "target_deck_text_candidates");
         assert!(!report.collection_duplicate_check_complete);
         assert!(!report.semantic_identity_verified);
         assert!(!report.apply_eligible);

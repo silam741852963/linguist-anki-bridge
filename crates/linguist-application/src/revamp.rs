@@ -133,6 +133,9 @@ pub fn stage_document(
         payload("cards")?,
         100 * 1024 * 1024,
     )?;
+    let rebuilt_manifest: serde_json::Value =
+        canonical::parse(&rebuilt.assets[&rebuilt.source.digest])
+            .map_err(|_| "REVAMP_CAPTURE_MANIFEST_INVALID")?;
     if rebuilt.source.fields != source.fields
         || rebuilt.source.tags != source.tags
         || rebuilt.source.model_manifest != source.model_manifest
@@ -140,6 +143,7 @@ pub fn stage_document(
             && rebuilt.source.template_manifest != source.template_manifest
         || rebuilt.source.location != source.location
         || rebuilt.source.media_refs != source.media_refs
+        || rebuilt_manifest["media_discovery"] != manifest["media_discovery"]
     {
         return Err("REVAMP_CAPTURE_SOURCE_CONFLICT".into());
     }
@@ -165,6 +169,12 @@ pub fn stage_document(
     {
         return Err("REVAMP_MAPPING_CONFLICT".into());
     }
+    if manifest.get("source_task_mapping").is_some()
+        && manifest["source_task_mapping"]
+            != settings.values[&format!("purposes.{purpose}.card_tasks")]
+    {
+        return Err("REVAMP_TASK_MAPPING_CONFLICT".into());
+    }
     let target = settings
         .values
         .get(&format!("purposes.{purpose}.target_language"))
@@ -175,6 +185,32 @@ pub fn stage_document(
         .ok_or("REVAMP_EXPLANATION_LANGUAGE_REQUIRED")?;
     let source_id = capture.captured.source.id;
     let mut issues = vec![issue("SOURCE_NATIVE_HISTORY_REVIEW", None, source_id)];
+    for field in &mapping.unmapped_fields {
+        if source.fields[field]
+            .chars()
+            .any(|character| !character.is_whitespace())
+        {
+            issues.push(issue(
+                "SOURCE_UNMAPPED_FIELD_REVIEW",
+                Some(field),
+                source_id,
+            ));
+        }
+    }
+    if let Some(discovery) = manifest["media_discovery"]["issues"].as_array() {
+        for entry in discovery {
+            let field = entry["field"]
+                .as_str()
+                .ok_or("REVAMP_MEDIA_DISCOVERY_INVALID")?;
+            let code = entry["code"]
+                .as_str()
+                .ok_or("REVAMP_MEDIA_DISCOVERY_INVALID")?;
+            let mut review = issue("SOURCE_MEDIA_DISCOVERY_REVIEW", Some(field), source_id);
+            review.message =
+                format!("Media syntax requires review: {code}. Original field remains archived.");
+            issues.push(review);
+        }
+    }
     let mut values = BTreeMap::new();
     let mut example_candidates = Vec::new();
     let mut task_candidates = Vec::new();

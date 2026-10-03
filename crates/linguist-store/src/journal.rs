@@ -172,14 +172,21 @@ fn transition(old: &OperationJournal, new: &OperationJournal) -> Result<()> {
 impl Store {
     pub fn journal(&self, id: uuid::Uuid) -> Result<JournalVersion> {
         let row:Option<(u32,String,Vec<u8>,bool,String)>=self.connection.query_row("SELECT e.sequence,e.body_digest,e.body,e.pending,e.state FROM journal_events e JOIN journal_heads h ON h.operation=e.operation AND h.sequence=e.sequence WHERE e.operation=?1",[id.to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional().map_err(sql)?;
-        let (sequence, digest, body, indexed_pending, indexed_state) = row.ok_or("JOURNAL_NOT_FOUND")?;
+        let (sequence, digest, body, indexed_pending, indexed_state) =
+            row.ok_or("JOURNAL_NOT_FOUND")?;
         if canonical::asset_digest(&body) != digest {
             return Err("JOURNAL_CORRUPT".into());
         }
         let journal: OperationJournal = canonical::parse(&body).map_err(|_| "JOURNAL_CORRUPT")?;
-        if journal.id != id || pending(&journal) != indexed_pending
+        if journal.id != id
+            || pending(&journal) != indexed_pending
             || validate(&journal).is_err()
-            || serde_json::to_value(journal.state).ok().and_then(|value| value.as_str().map(str::to_owned)).as_deref() != Some(indexed_state.as_str()) {
+            || serde_json::to_value(journal.state)
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .as_deref()
+                != Some(indexed_state.as_str())
+        {
             return Err("JOURNAL_CORRUPT".into());
         }
         Ok(JournalVersion {

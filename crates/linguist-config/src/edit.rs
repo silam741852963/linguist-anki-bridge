@@ -24,9 +24,21 @@ impl Scope {
 }
 #[derive(Clone, Debug)]
 pub enum Change {
-    Set { key: String, value: Value },
-    Unset { key: String },
-    Reset { key: Option<String>, all: bool },
+    Set {
+        key: String,
+        value: Value,
+    },
+    Unset {
+        key: String,
+    },
+    Batch {
+        sets: BTreeMap<String, Value>,
+        unsets: Vec<String>,
+    },
+    Reset {
+        key: Option<String>,
+        all: bool,
+    },
 }
 #[derive(Debug, Serialize)]
 pub struct EditReceipt {
@@ -321,6 +333,25 @@ pub fn edit(
             check_key(key)?;
             if target.remove(key).is_some() {
                 removed.push(key.clone());
+            }
+        }
+        Change::Batch { sets, unsets } => {
+            if sets.keys().any(|key| unsets.contains(key)) {
+                return Err("CONFIG_BATCH_CONFLICT".into());
+            }
+            for (key, value) in sets {
+                check_key(key)?;
+                registry.validate_value(key, value)?;
+                if value.is_null() {
+                    return Err("USE_CONFIG_UNSET_FOR_NULL".into());
+                }
+                target.insert(key.clone(), value.clone());
+            }
+            for key in unsets {
+                check_key(key)?;
+                if target.remove(key).is_some() {
+                    removed.push(key.clone());
+                }
             }
         }
         Change::Reset { key, all } => {

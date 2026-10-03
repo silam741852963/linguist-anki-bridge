@@ -142,6 +142,78 @@ fn media_attachment_is_complete_bounded_and_atomic_on_failure() {
 }
 
 #[test]
+fn picture_words_capture_retains_repeated_media_and_unmapped_explanations() {
+    let (mut note, mut model, mut cards) = fixture();
+    note["modelName"] = json!("Picture Words");
+    note["fields"] = json!({
+        "Expression":{"value":"行く\n行きます","order":0},
+        "Meaning":{"value":"to go","order":1},
+        "Picture":{"value":"<img src='photo%20one.png'><img src='photo%20one.png'>","order":2},
+        "Private":{"value":"Vietnamese note: đi học\nSecond line","order":3},
+        "Sound":{"value":"[sound:voice.mp3]","order":4}
+    });
+    note["cards"] = json!(["456", "457", "458"]);
+    model["model"]["name"] = json!("Picture Words");
+    model["fields"] = json!(["Expression", "Meaning", "Picture", "Private", "Sound"]);
+    model["templates"] = json!({
+        "Recognition":{"Front":"{{Expression}}","Back":"{{Meaning}}"},
+        "Production":{"Front":"{{Meaning}}","Back":"{{Expression}}"},
+        "Image":{"Front":"{{Picture}}","Back":"{{Expression}}"}
+    });
+    cards
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"cardId":"457","note":"123","due":20,"deckId":"99"}));
+    cards
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"cardId":"458","note":"123","due":30,"deckId":"98"}));
+    let mut captured = capture(&note, &model, &cards).unwrap();
+    let manifest: Value = canonical::parse(&captured.assets[&captured.source.digest]).unwrap();
+    assert_eq!(
+        manifest["media_discovery"]["references"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(
+        manifest["media_discovery"]["references"][0]["field"],
+        "Picture"
+    );
+    assert_eq!(
+        manifest["media_discovery"]["references"][1]["filename"],
+        "photo one.png"
+    );
+    assert_eq!(
+        captured.source.media_refs,
+        vec!["photo one.png", "voice.mp3"]
+    );
+    assert_eq!(
+        captured.archive.original_fields["Private"],
+        "Vietnamese note: đi học\nSecond line"
+    );
+    let card_digest = manifest["payloads"]["cards"].as_str().unwrap();
+    assert_eq!(
+        captured.assets[card_digest],
+        serde_json::to_vec_pretty(&cards).unwrap()
+    );
+    media::attach_original_media(
+        &mut captured,
+        std::collections::BTreeMap::from([
+            ("photo one.png".into(), Some(vec![1, 2, 3])),
+            ("voice.mp3".into(), None),
+        ]),
+        100,
+        10000,
+    )
+    .unwrap();
+    let receipt: Value = canonical::parse(&captured.assets[&captured.source.digest]).unwrap();
+    assert_eq!(receipt["media"][1]["filename"], "voice.mp3");
+    assert!(receipt["media"][1]["digest"].is_null());
+}
+
+#[test]
 fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     use linguist_config::*;
     use std::io::{BufRead, Read, Write};
@@ -227,6 +299,10 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
         "purposes.japanese_vocab.source_model".into(),
         json!("Legacy"),
     );
+    options.flags.insert(
+        "purposes.japanese_vocab.card_tasks".into(),
+        json!({"0":"comprehension"}),
+    );
     let mut settings = resolve(&Registry::builtin(), &ConfigFile::default(), &options).unwrap();
     let client = linguist_anki::Client::from_settings(&settings, &Default::default()).unwrap();
     let draft = capture_for_revamp(&client, &settings, "japanese_vocab", "123").unwrap();
@@ -238,6 +314,11 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     assert_eq!(manifest["repeated_reads_matched"], true);
     assert_eq!(manifest["native_history_verified"], false);
     assert_eq!(manifest["mapping_digest"], draft.mapping.mapping_digest);
+    assert_eq!(
+        manifest["source_task_mapping"],
+        json!({"0":"comprehension"})
+    );
+    assert_eq!(manifest["source_task_mapping_verified"], false);
     assert_eq!(manifest["media_bytes_archived"], false);
     assert_eq!(manifest["media_content_verified"], false);
     assert_eq!(manifest["media"][0]["filename"], "cat.mp3");
@@ -248,6 +329,13 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     let document =
         linguist_application::revamp::stage_document(&draft, &settings, "japanese_vocab").unwrap();
     assert_eq!(document.media.len(), 1);
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|issue| issue.code == "SOURCE_UNMAPPED_FIELD_REVIEW"
+                && issue.field.as_deref() == Some("Unused"))
+    );
     assert_eq!(
         document.media[0].role,
         linguist_core::records::MediaRole::Archive
