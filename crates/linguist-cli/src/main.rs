@@ -696,8 +696,15 @@ enum PlanCommand {
     /// Split a retained grammar source into authored units with one explicit anchor.
     SplitGrammar {
         plan: uuid::Uuid,
+        #[arg(
+            long,
+            required_unless_present = "template",
+            conflicts_with = "template"
+        )]
+        request: Option<PathBuf>,
+        /// Print an editable split request built from this item's reviewed OCR segmentation.
         #[arg(long)]
-        request: PathBuf,
+        template: Option<uuid::Uuid>,
     },
     /// Enrich a retained vocabulary draft using its frozen dictionary policy.
     Enrich {
@@ -1281,7 +1288,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 _ => None,
             };
             emit(
-                &serde_json::json!({"preparation_stage":if settings.values["dictionary.provider"] == "authored" {"source_draft"} else {"source_dictionary_draft"},"result":result,"dictionary_enrichment_completed":settings.values["dictionary.provider"] != "authored","enrichment_completed":!empty,"generation":generation,"collection_writes_enabled":false}),
+                &serde_json::json!({"preparation_stage":if settings.values["dictionary.provider"] == "authored" || !vocab_command {"source_draft"} else {"source_dictionary_draft"},"result":result,"dictionary_enrichment_completed":settings.values["dictionary.provider"] != "authored" && vocab_command,"enrichment_completed":!empty,"generation":generation,"collection_writes_enabled":false}),
             )?;
             Ok(if empty { 0 } else { 4 })
         }
@@ -1609,7 +1616,19 @@ fn run(cli: Cli) -> Result<u8, String> {
                     }
                     emit(&report)?;
                 }
-                PlanCommand::SplitGrammar { plan, request } => {
+                PlanCommand::SplitGrammar {
+                    plan,
+                    request,
+                    template,
+                } => {
+                    if let Some(item) = template {
+                        let latest = store.latest_revision(plan)?;
+                        let base = store.revision(plan, latest)?;
+                        let template = linguist_application::grammar::split_template(&base, item)?;
+                        emit(&template)?;
+                        return Ok(0);
+                    }
+                    let request = request.ok_or("GRAMMAR_SPLIT_REQUEST_REQUIRED")?;
                     let raw = read_input(&request, max_bytes, max_chars)?;
                     let request: linguist_application::grammar::SplitRequest =
                         canonical::parse(&raw).map_err(|e| e.to_string())?;

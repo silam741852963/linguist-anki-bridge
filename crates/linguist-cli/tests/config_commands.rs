@@ -4379,3 +4379,70 @@ fn vocab_add_with_generation_enabled_retains_plan_when_the_engine_is_unreachable
     assert_eq!(store.latest_revision(id).unwrap(), 1);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn split_grammar_template_requires_a_reviewed_multi_unit_segmentation() {
+    let root =
+        std::env::temp_dir().join(format!("lab-cli-split-template-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.join("state").display());
+    let base = [
+        "--set",
+        &state,
+        "--set",
+        "llm.enabled=false",
+        "--set",
+        "dictionary.provider=authored",
+        "--set",
+        "images.search_when_missing=false",
+        "--set",
+        "kanji.enabled=false",
+    ];
+    let added = cli()
+        .args(base)
+        .args([
+            "grammar",
+            "add",
+            "--pattern",
+            "used to",
+            "--meaning",
+            "past habit",
+            "--formation",
+            "used to + verb",
+            "--use-key",
+            "habit",
+            "--target-language",
+            "en",
+            "--recognition-prompt",
+            "Which habit pattern?",
+            "--example-sentence",
+            "I used to swim.",
+            "--example-translation",
+            "I used to swim.",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        added.status.success() || added.status.code() == Some(4),
+        "{added:?}"
+    );
+    let value: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
+    let plan = value["plan_id"].as_str().unwrap();
+    let item = value["document_id"].as_str().unwrap();
+    let neither = cli()
+        .args(base)
+        .args(["plans", "split-grammar", plan])
+        .output()
+        .unwrap();
+    assert_eq!(neither.status.code(), Some(2));
+    let template = cli()
+        .args(base)
+        .args(["plans", "split-grammar", plan, "--template", item])
+        .output()
+        .unwrap();
+    assert_ne!(template.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&template.stderr)
+            .contains("GRAMMAR_SEGMENTATION_DECISION_REQUIRED")
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -39,20 +39,37 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
     ] {
         // Suggestions come only from current facts and are leak-checked; the
         // reviewer still has to submit (and may edit) the text.
+        let suggestion = if task == crate::Task::Recognition {
+            crate::cues::suggest_recognition(document)
+        } else {
+            crate::cues::suggest(document, task)
+        };
         let choice = ReviewChoice::Cue {
             task,
-            text: crate::cues::suggest(document, task).unwrap_or_default(),
+            text: suggestion.unwrap_or_default(),
         };
         if cue::applicable(document, issue, &choice) {
             choices.push(choice);
         }
     }
-    let exercise = ReviewChoice::Exercise {
-        prompt: String::new(),
-        answer: String::new(),
-    };
+    let (prompt, answer) = crate::cues::suggest_exercise(document).unwrap_or_default();
+    let exercise = ReviewChoice::Exercise { prompt, answer };
     if cue::applicable(document, issue, &exercise) {
         choices.push(exercise);
+    }
+    if issue.code == "GRAMMAR_SEGMENTATION_REVIEW" && issue.severity == Severity::Review {
+        let ids: Vec<uuid::Uuid> = issue
+            .source_refs
+            .iter()
+            .filter_map(|id| uuid::Uuid::parse_str(id).ok())
+            .collect();
+        if ids.len() >= 2 {
+            choices.push(ReviewChoice::Segmentation(ids.clone()));
+        }
+        choices.extend(
+            ids.into_iter()
+                .map(|id| ReviewChoice::Segmentation(vec![id])),
+        );
     }
     for region in &document.regions {
         let choice = ReviewChoice::Expression {
@@ -264,6 +281,38 @@ pub fn resolve(
         {
             if !source_content_verified(document, issue, *source_id, evidence_ids) {
                 return Err(ContractError("REVIEW_SOURCE_EVIDENCE_MISMATCH".into()));
+            }
+        }
+        ReviewChoice::Segmentation(ids) if issue.code == "GRAMMAR_SEGMENTATION_REVIEW" => {
+            if !segmentation_valid(issue, ids) {
+                return Err(ContractError("REVIEW_SEGMENTATION_INVALID".into()));
+            }
+            if ids.len() == 1 {
+                let text = document
+                    .regions
+                    .iter()
+                    .find(|region| region.id == ids[0])
+                    .map(|region| region.text.trim().to_owned())
+                    .unwrap_or_default();
+                if let crate::LearningContent::Grammar(grammar) = &mut document.content
+                    && grammar.pattern.trim().is_empty()
+                {
+                    // The chosen region becomes the pattern verbatim (operators kept).
+                    grammar.pattern = text;
+                    let old_ids: BTreeSet<_> =
+                        document.reviews.iter().map(|review| review.id).collect();
+                    document.reviews.clear();
+                    candidate
+                        .review_decisions
+                        .retain(|decision| !old_ids.contains(&decision.id));
+                }
+            }
+        }
+        ReviewChoice::ContentVerified { evidence_ids } if issue.code == "SOURCE_CLAIM_CONFLICT" => {
+            let selected: BTreeSet<_> = evidence_ids.iter().map(|id| id.to_string()).collect();
+            let required: BTreeSet<_> = issue.source_refs.iter().cloned().collect();
+            if selected.len() != evidence_ids.len() || selected != required {
+                return Err(ContractError("REVIEW_EVIDENCE_MISMATCH".into()));
             }
         }
         ReviewChoice::ContentVerified { evidence_ids } if issue.code == "GENERATED_FACT_REVIEW" => {
@@ -603,7 +652,17 @@ fn rebindable(choice: &ReviewChoice) -> bool {
             | ReviewChoice::SenseWithReading { .. }
             | ReviewChoice::Media(_)
             | ReviewChoice::Duplicate { .. }
+            | ReviewChoice::Segmentation(_)
     )
+}
+
+/// Segmentation names one or more recorded candidate regions, in reading order.
+pub(crate) fn segmentation_valid(issue: &Issue, ids: &[uuid::Uuid]) -> bool {
+    let positions: Option<Vec<usize>> = ids
+        .iter()
+        .map(|id| issue.source_refs.iter().position(|r| *r == id.to_string()))
+        .collect();
+    !ids.is_empty() && positions.is_some_and(|positions| positions.windows(2).all(|w| w[0] < w[1]))
 }
 
 pub(crate) fn duplicate_choice_matches(

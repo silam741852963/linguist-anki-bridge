@@ -948,7 +948,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-23 \u2014 `grammar add`",
       "title": "OP-23 \u2014 `grammar add`",
-      "words": 233,
+      "words": 271,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

@@ -391,14 +391,64 @@ pub fn inspect_documents(
                 );
             }
         }
+        if let Some(issue) = segmentation_issue(document) {
+            stored.push(issue);
+        }
         document.issues = stored;
         document.issues = validation::validate(document);
     }
     Ok(archived)
 }
 
+/// Pattern markers that identify a grammar heading line in OCR text.
+const PATTERN_MARKERS: [char; 3] = ['〜', '～', '~'];
+
+/// ALG-GRAMMAR step 2–3: every OCR line that looks like a pattern is a
+/// candidate unit; without markers every line is a candidate. A reviewer
+/// chooses one unit or several (which then requires a split).
+fn segmentation_issue(document: &LearningDocument) -> Option<Issue> {
+    if !matches!(document.content, LearningContent::Grammar(_)) {
+        return None;
+    }
+    let mut regions: Vec<_> = document
+        .regions
+        .iter()
+        .filter(|r| !r.text.trim().is_empty())
+        .collect();
+    regions.sort_by_key(|r| r.reading_order);
+    let marked: Vec<_> = regions
+        .iter()
+        .copied()
+        .filter(|r| r.text.trim_start().starts_with(PATTERN_MARKERS))
+        .collect();
+    let candidates = if marked.is_empty() { regions } else { marked };
+    if candidates.is_empty() {
+        return None;
+    }
+    let mut issue = Issue::new(
+        "GRAMMAR_SEGMENTATION_REVIEW",
+        Severity::Review,
+        Some("pattern"),
+        format!(
+            "OCR found {} candidate grammar unit(s). Choose the one this note teaches, or several to split into separate notes.",
+            candidates.len()
+        ),
+    );
+    issue.id = format!("GRAMMAR_SEGMENTATION_REVIEW:{}", document.id);
+    issue.stage = "segmentation".into();
+    issue.source_refs = candidates.iter().map(|r| r.id.to_string()).collect();
+    Some(issue)
+}
+
 /// Generation gate: required OCR must exist and its reviews must be resolved.
 pub fn generation_ready(document: &LearningDocument, settings: &Effective) -> Result<(), String> {
+    // Reviewed segmentation must finish before any unit is generated.
+    if validation::validate(document).iter().any(|i| {
+        i.code == "GRAMMAR_SPLIT_PENDING"
+            || i.stage == "segmentation" && i.severity == Severity::Review
+    }) {
+        return Err("GENERATION_SEGMENTATION_REQUIRED: resolve grammar segmentation (and split) before generation".into());
+    }
     if settings
         .values
         .get("images.existing_policy")

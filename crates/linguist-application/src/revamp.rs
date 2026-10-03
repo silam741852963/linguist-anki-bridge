@@ -790,7 +790,11 @@ pub(crate) fn validate_source_revamp(
         return Err("SOURCE_MAPPING_PURPOSE_UNSUPPORTED".into());
     }
     crate::authored_capabilities(settings)?;
-    if settings.values["dictionary.provider"] != "authored" {
+    let grammar = purpose.ends_with("_grammar");
+    // Grammar has no dictionary stage; `auto` does not apply to it.
+    if settings.values["dictionary.provider"] != "authored"
+        && !(grammar && settings.values["dictionary.provider"] == "auto")
+    {
         let supported = match purpose {
             "japanese_vocab" => matches!(
                 settings.values["dictionary.provider"].as_str(),
@@ -885,7 +889,7 @@ fn prepare_ids(
     };
     let mut prepared =
         publish_selected_captures(&captures, settings, purpose, environment, Some(receipt))?;
-    if settings.values["dictionary.provider"] != "authored" {
+    if settings.values["dictionary.provider"] != "authored" && !purpose.ends_with("_grammar") {
         let first = &prepared[0];
         let frozen = crate::freeze_settings(settings, environment)?;
         let root = std::path::Path::new(frozen.values["storage.state_dir"].as_str().unwrap());

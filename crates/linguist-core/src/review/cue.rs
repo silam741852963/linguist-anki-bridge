@@ -41,7 +41,7 @@ fn field(
             },
             LearningContent::Grammar(_),
         ) if document.requested_tasks.contains(&Task::Recognition)
-            && issue.code == "REQUIRED_CONTENT"
+            && matches!(issue.code.as_str(), "REQUIRED_CONTENT" | "ANSWER_LEAK")
             && issue.field.as_deref() == Some("recognition_prompt") =>
         {
             Some("recognition_prompt")

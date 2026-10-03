@@ -59,6 +59,7 @@ pub fn reopenable(issue: &Issue) -> bool {
         "ocr" => crate::review::OCR_REVIEW_CODES.contains(&issue.code.as_str()),
         "enrichment" => crate::review::CANDIDATE_REVIEW_CODES.contains(&issue.code.as_str()),
         "duplicates" => issue.code == "COLLECTION_DUPLICATE_REVIEW",
+        "segmentation" => issue.code == "GRAMMAR_SEGMENTATION_REVIEW",
         _ => false,
     }
 }
@@ -198,6 +199,16 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                     Severity::Error,
                     Some("examples"),
                     "Grammar requires at least one validated use example.",
+                )
+            }
+            if tasks.contains(&Task::Recognition)
+                && answer_leaks(&g.recognition_prompt, &g.meaning, &doc.explanation_language)
+            {
+                add(
+                    "ANSWER_LEAK",
+                    Severity::Error,
+                    Some("recognition_prompt"),
+                    "Recognition cue exposes the meaning it asks for.",
                 )
             }
             if tasks.contains(&Task::Application) {
@@ -659,6 +670,46 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             }
         }
     }
+    // A reviewed multi-unit segmentation must be carried out by a split.
+    if doc.reviews.iter().any(|review| {
+        matches!(&review.choice, ReviewChoice::Segmentation(ids) if ids.len() > 1)
+            && review.issue_id.starts_with("GRAMMAR_SEGMENTATION_REVIEW:")
+    }) {
+        issues.push(Issue::new(
+            "GRAMMAR_SPLIT_PENDING",
+            Severity::Error,
+            Some("pattern"),
+            "The reviewed segmentation has several units; publish them with plans split-grammar.",
+        ));
+    }
+    // Independent source/user claims for one field must agree or be reviewed.
+    for field in ["pattern", "meaning", "formation", "usage", "reading"] {
+        let claims: Vec<_> = doc
+            .evidence
+            .iter()
+            .filter(|e| {
+                e.field == field && matches!(e.provenance, Provenance::Source | Provenance::User)
+            })
+            .collect();
+        let distinct: BTreeSet<String> = claims
+            .iter()
+            .map(|e| e.claim.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|claim| !claim.is_empty())
+            .collect();
+        if distinct.len() > 1 {
+            let mut issue = Issue::new(
+                "SOURCE_CLAIM_CONFLICT",
+                Severity::Review,
+                Some(field),
+                "Sources disagree about this field; verify the kept value against every claim.",
+            );
+            let mut refs: Vec<String> = claims.iter().map(|e| e.id.to_string()).collect();
+            refs.sort();
+            issue.id = format!("SOURCE_CLAIM_CONFLICT:{field}");
+            issue.source_refs = refs;
+            issues.push(issue);
+        }
+    }
     let input = doc.semantic_digest().ok();
     issues.retain(|issue| {
         if issue.severity != Severity::Review {
@@ -673,10 +724,13 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                     ReviewChoice::SourceContentVerified { source_id, evidence_ids } =>
                         crate::review::source_content_verified(doc, issue, *source_id, evidence_ids),
                     ReviewChoice::Media(digest) => crate::review::candidate_choice_matches(doc, issue, digest),
+                    ReviewChoice::Segmentation(ids) => issue.code == "GRAMMAR_SEGMENTATION_REVIEW"
+                        && crate::review::segmentation_valid(issue, ids)
+                        && (ids.len() > 1 || matches!(&doc.content, LearningContent::Grammar(g) if !g.pattern.trim().is_empty())),
                     ReviewChoice::Duplicate { note_id, action } =>
                         crate::review::duplicate_choice_matches(issue, note_id, action),
                     ReviewChoice::ContentVerified { evidence_ids } => {
-                        issue.code == "GENERATED_FACT_REVIEW"
+                        matches!(issue.code.as_str(), "GENERATED_FACT_REVIEW" | "SOURCE_CLAIM_CONFLICT")
                             && !issue.source_refs.is_empty()
                             && issue
                                 .source_refs

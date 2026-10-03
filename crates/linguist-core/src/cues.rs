@@ -52,3 +52,59 @@ pub fn suggest(document: &LearningDocument, task: Task) -> Option<String> {
         .into_iter()
         .find(|cue| !answer_leaks(cue, &vocab.expression, &document.target_language))
 }
+
+/// Recognition asks what the pattern expresses, in the explanation language.
+/// Only languages with a reviewed template are offered.
+pub fn suggest_recognition(document: &LearningDocument) -> Option<String> {
+    let LearningContent::Grammar(grammar) = &document.content else {
+        return None;
+    };
+    let pattern = grammar.pattern.trim();
+    if pattern.is_empty() || grammar.meaning.trim().is_empty() {
+        return None;
+    }
+    let prompt = match document.explanation_language.as_str().split('-').next() {
+        Some("en") => format!("What does “{pattern}” express here?"),
+        Some("vi") => format!("Mẫu “{pattern}” diễn đạt ý gì ở đây?"),
+        Some("ja") => format!("「{pattern}」はここで何を表しますか。"),
+        _ => return None,
+    };
+    (!answer_leaks(&prompt, &grammar.meaning, &document.explanation_language)).then_some(prompt)
+}
+
+/// Application blanks the pattern's first literal occurrence in an example.
+/// The answer names the completion and its meaning, so it explains itself.
+pub fn suggest_exercise(document: &LearningDocument) -> Option<(String, String)> {
+    let LearningContent::Grammar(grammar) = &document.content else {
+        return None;
+    };
+    let core = grammar
+        .pattern
+        .trim()
+        .trim_start_matches(['〜', '～', '~'])
+        .trim();
+    // Discontinuous patterns ("not only ... but also") have no single blank.
+    if core.is_empty()
+        || core.contains("...")
+        || core.contains('…')
+        || grammar.meaning.trim().is_empty()
+    {
+        return None;
+    }
+    let blank = if document.target_language.as_str().split('-').next() == Some("ja") {
+        "＿＿"
+    } else {
+        "___"
+    };
+    let example = grammar
+        .examples
+        .iter()
+        .find(|example| example.sentence.matches(core).count() == 1)?;
+    let mut prompt = example.sentence.replacen(core, blank, 1);
+    if !example.translation.trim().is_empty() {
+        prompt = format!("{}\n{prompt}", example.translation.trim());
+    }
+    let answer = format!("{core} — {}", grammar.meaning.trim());
+    (!answer_leaks(&prompt, &answer, &document.target_language) && !prompt.contains(core))
+        .then_some((prompt, answer))
+}

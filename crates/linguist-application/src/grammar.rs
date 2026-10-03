@@ -130,11 +130,24 @@ pub fn split(
         };
         document.content = LearningContent::Grammar(grammar.clone());
         if index != request.anchor_index {
-            document.requested_tasks = vec![Task::Recognition];
+            // Siblings are new notes: fresh scheduling, no inherited card state or
+            // task maps. The source archive stays linked as a reference only.
+            let mut tasks = vec![Task::Recognition];
+            if original.requested_tasks.contains(&Task::Application) {
+                tasks.push(Task::Application);
+            }
+            document.requested_tasks = tasks;
+            document.task_maps.clear();
+            for source in &mut document.sources {
+                source.cards.clear();
+            }
         }
         document.edits.clear();
         document.reviews.clear();
-        document.issues.retain(|issue| issue.stage != "validation");
+        // The split itself carries out the reviewed segmentation.
+        document
+            .issues
+            .retain(|issue| issue.stage != "validation" && issue.stage != "segmentation");
         document.sources.push(SourceRecord {
             id: request_source,
             kind: "grammar_split_request_v1".into(),
@@ -221,4 +234,61 @@ pub fn split(
     store.publish_asset(raw, limit)?;
     store.publish_revision(&child)?;
     Ok(child)
+}
+
+/// Build an editable split request from the item's reviewed multi-unit OCR
+/// segmentation. Patterns are copied verbatim from the chosen regions; every
+/// use key, meaning and formation is left empty for the reviewer to author.
+pub fn split_template(
+    plan: &PlanRevision,
+    document_id: uuid::Uuid,
+) -> Result<SplitRequest, String> {
+    let document = plan
+        .documents
+        .iter()
+        .find(|document| document.id == document_id)
+        .ok_or("PLAN_ITEM_NOT_FOUND")?;
+    if !matches!(document.content, LearningContent::Grammar(_)) {
+        return Err("GRAMMAR_SPLIT_INPUT_CONFLICT".into());
+    }
+    let ids = document
+        .reviews
+        .iter()
+        .rev()
+        .find_map(|review| match &review.choice {
+            ReviewChoice::Segmentation(ids) if ids.len() > 1 => Some(ids.clone()),
+            _ => None,
+        })
+        .ok_or("GRAMMAR_SEGMENTATION_DECISION_REQUIRED: resolve GRAMMAR_SEGMENTATION_REVIEW with several regions first")?;
+    let units = ids
+        .iter()
+        .map(|id| {
+            document
+                .regions
+                .iter()
+                .find(|region| region.id == *id)
+                .map(|region| Grammar {
+                    pattern: region.text.trim().to_owned(),
+                    use_key: String::new(),
+                    meaning: String::new(),
+                    formation: String::new(),
+                    recognition_prompt: String::new(),
+                    examples: vec![],
+                    usage: String::new(),
+                    exercise_prompt: String::new(),
+                    exercise_answer: String::new(),
+                })
+                .ok_or("GRAMMAR_SEGMENTATION_REGION_MISSING")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(SplitRequest {
+        schema_version: 2,
+        base_revision: plan.revision,
+        base_digest: plan.approval_digest().map_err(|e| e.to_string())?,
+        document_id,
+        input_digest: document.semantic_digest().map_err(|e| e.to_string())?,
+        actor: String::new(),
+        anchor_index: 0,
+        units,
+    })
 }

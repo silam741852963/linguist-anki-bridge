@@ -131,7 +131,11 @@ pub fn enrich_document(
     validate_settings(settings)?;
     let mut provider_assets = Vec::new();
     let mut document = document.clone();
-    if settings.values["dictionary.provider"] != "authored" {
+    // `auto` routes vocabulary only; no grammar dictionary adapter exists, so
+    // grammar is not a lookup target. An explicit provider still fails below.
+    let grammar_auto = matches!(document.content, LearningContent::Grammar(_))
+        && settings.values["dictionary.provider"] == "auto";
+    if settings.values["dictionary.provider"] != "authored" && !grammar_auto {
         if let LearningContent::Vocabulary(vocab) = &mut document.content {
             let japanese = document.target_language.as_str().split('-').next() == Some("ja");
             let english = document.target_language.as_str().split('-').next() == Some("en");

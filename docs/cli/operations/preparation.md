@@ -65,7 +65,7 @@ pattern,meaning,formation,use_key,target_language,recognition_prompt,example_sen
 〜ても,even if,verb te-form + も,concession,ja,What relation is expressed?,雨が降っても行きます。,I will go even if it rains
 ```
 
-Both CSV card kinds use the same bounded parser, ordered one-plan publication and exact whole-file archival described under OP-21. CSV is a simple one-unit input; structured JSON or the reviewed split workflow carries multiple examples and complex grammar units.
+Both CSV card kinds use the same bounded parser, ordered one-plan publication and exact whole-file archival described under OP-21. CSV is a simple one-unit input; structured JSON or the reviewed split workflow carries multiple examples and complex grammar units. A screenshot-based revamp offers each OCR pattern line as a segmentation candidate; after a multi-unit decision, `plans split-grammar PLAN --template ITEM` prints a split request prefilled with the verbatim patterns, which is completed and submitted with `--request FILE`.
 
 ## OP-24 — `grammar revamp`
 
