@@ -35,4 +35,5 @@ html-escape.workspace = true
 image.workspace = true
 symphonia.workspace = true
 serde_jcs.workspace = true
+linguist-provider.workspace = true
 libc = "0.2"

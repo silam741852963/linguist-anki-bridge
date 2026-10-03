@@ -4177,3 +4177,84 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn doctor_local_probes_selected_ocr_engine_without_services() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = std::env::temp_dir().join(format!("lab-doctor-ocr-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(root.join("tessdata")).unwrap();
+    std::fs::write(root.join("tessdata/eng.traineddata"), "eng").unwrap();
+    let script = root.join("tesseract");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo 'tesseract 5.9.9-fake'; exit 0; }}\n\
+             echo 'List of available languages in \"{}/tessdata/\" (1):'; echo eng\n",
+            root.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // Another test thread may briefly hold the write descriptor across fork.
+    while let Err(error) = Command::new(&script).arg("--version").output() {
+        assert_eq!(error.raw_os_error(), Some(26));
+    }
+    let run = |languages: &str| {
+        cli()
+            .args([
+                "--set",
+                &format!("ocr.executable={}", script.display()),
+                "--set",
+                &format!("ocr.languages={languages}"),
+                "--set",
+                "images.existing_policy=inspect",
+                "doctor",
+                "--local",
+                "--offline",
+            ])
+            .output()
+            .unwrap()
+    };
+    let ready = run("[\"eng\"]");
+    assert!(ready.status.success(), "{ready:?}");
+    let value: serde_json::Value = serde_json::from_slice(&ready.stdout).unwrap();
+    let ocr = &value["local_engines"][0];
+    assert_eq!(ocr["status"], "available");
+    assert_eq!(ocr["required"], true);
+    assert_eq!(ocr["identity"]["engine_version"], "tesseract 5.9.9-fake");
+    assert_eq!(ocr["identity"]["languages"][0]["code"], "eng");
+    let missing = run("[\"eng\",\"jpn\"]");
+    assert_eq!(missing.status.code(), Some(3));
+    let value: serde_json::Value = serde_json::from_slice(&missing.stdout).unwrap();
+    assert_eq!(
+        value["local_engines"][0]["status"],
+        "OCR_LANGUAGE_PACK_MISSING"
+    );
+    assert_eq!(
+        value["local_engines"][0]["error"]["missing"],
+        serde_json::json!(["jpn"])
+    );
+    assert_eq!(value["services_probed"], false);
+    let browser = cli()
+        .args([
+            "--set",
+            "browser.enabled=true",
+            "--set",
+            &format!("browser.executable={}", script.display()),
+            "doctor",
+            "--local",
+            "--offline",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(browser.status.code(), Some(3));
+    let value: serde_json::Value = serde_json::from_slice(&browser.stdout).unwrap();
+    assert!(
+        value["local_engines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["status"] == "BROWSER_HELPER_UNAVAILABLE")
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

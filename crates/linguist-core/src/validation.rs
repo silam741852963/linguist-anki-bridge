@@ -86,6 +86,8 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                     | "SOURCE_MEDIA_FORMAT_REVIEW"
                     | "SOURCE_AUDIO_COMPLETENESS_REVIEW"
             )
+            || issue.stage == "ocr"
+                && crate::review::OCR_REVIEW_CODES.contains(&issue.code.as_str())
         {
             issue.severity = Severity::Review;
         }

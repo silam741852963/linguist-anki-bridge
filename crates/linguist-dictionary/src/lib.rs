@@ -215,6 +215,7 @@ pub fn parse_jisho(
     })
 }
 
+pub mod kanji;
 pub mod transport;
 
 pub type JishoPage = DictionaryPage;

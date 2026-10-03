@@ -594,10 +594,22 @@ fn publish_selected_captures(
         }
     }
     let frozen = crate::freeze_settings(settings, environment)?;
-    let documents = captures
+    let mut documents = captures
         .iter()
         .map(|capture| stage_document(capture, settings, purpose))
         .collect::<Result<Vec<_>, _>>()?;
+    // Source images are inspected before the plan exists, so generation can
+    // depend on OCR evidence and failures leave no partial state.
+    let captured_assets: BTreeMap<String, Vec<u8>> = captures
+        .iter()
+        .flat_map(|capture| capture.captured.assets.clone())
+        .collect();
+    let ocr_assets = crate::ocr_inspection::inspect_documents(
+        &mut documents,
+        &captured_assets,
+        settings,
+        environment,
+    )?;
     let sources: Vec<_> = documents
         .iter()
         .flat_map(|document| &document.sources)
@@ -624,7 +636,11 @@ fn publish_selected_captures(
     );
     plan.approval_digest().map_err(|e| e.to_string())?;
     let mut store = linguist_store::Store::open(root)?;
-    for (expected, bytes) in captures.iter().flat_map(|capture| &capture.captured.assets) {
+    for (expected, bytes) in captures
+        .iter()
+        .flat_map(|capture| &capture.captured.assets)
+        .chain(&ocr_assets)
+    {
         if store.publish_asset(bytes, 100 * 1024 * 1024)? != *expected {
             return Err("REVAMP_CAPTURE_ASSET_CONFLICT".into());
         }
@@ -790,6 +806,7 @@ pub(crate) fn validate_source_revamp(
     if purpose == "japanese_vocab" && settings.values["kanji.enabled"] == true {
         return Err("CAPABILITY_UNAVAILABLE: revamp kanji enrichment is pending; select kanji.enabled=false for a source draft".into());
     }
+    crate::ocr_inspection::preflight(settings, environment)?;
     crate::freeze_settings(settings, environment)?;
     let registry = linguist_config::Registry::builtin();
     for key in [

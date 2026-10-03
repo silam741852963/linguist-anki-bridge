@@ -197,6 +197,8 @@ pub fn build_request(
     if !doc.target_language.is_target_supported() {
         return Err("GENERATION_TARGET_UNSUPPORTED".into());
     }
+    // ALG-OCR: required OCR and its reviews finish before dependent generation.
+    crate::ocr_inspection::generation_ready(doc, settings)?;
     let mut allowed = Vec::new();
     let mut field = |name: &str, value: &str| {
         let managed_name = match name {

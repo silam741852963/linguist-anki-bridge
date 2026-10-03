@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/linguist-core", "crates/linguist-cli", "crates/linguist-config", "crates/linguist-store", "crates/linguist-anki", "crates/linguist-application", "crates/linguist-dictionary"]
+members = ["crates/linguist-core", "crates/linguist-cli", "crates/linguist-config", "crates/linguist-store", "crates/linguist-anki", "crates/linguist-application", "crates/linguist-dictionary", "crates/linguist-provider"]
 default-members = ["crates/linguist-cli"]
 resolver = "2"
 
@@ -38,6 +38,7 @@ prost = "=0.14.4"
 sha1 = "=0.11.0"
 
 linguist-dictionary = { path = "crates/linguist-dictionary" }
+linguist-provider = { path = "crates/linguist-provider" }
 html-escape = "=0.2.15"
 httpdate = "=1.0.3"
 clap_complete = "=4.6.11"

@@ -102,7 +102,10 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
             .iter()
             .filter(|evidence| {
                 evidence.source_id == Some(source_id)
-                    && evidence.provenance == crate::Provenance::Source
+                    && matches!(
+                        evidence.provenance,
+                        crate::Provenance::Source | crate::Provenance::Ocr
+                    )
                     && Some(&evidence.field) == issue.field.as_ref()
             })
             .map(|evidence| evidence.id)
@@ -220,7 +223,7 @@ pub fn resolve(
         } if matches!(
             issue.code.as_str(),
             "SOURCE_HTML_TEXT_REVIEW" | "SOURCE_EXAMPLES_REVIEW"
-        ) =>
+        ) || OCR_REVIEW_CODES.contains(&issue.code.as_str()) =>
         {
             if !source_content_verified(document, issue, *source_id, evidence_ids) {
                 return Err(ContractError("REVIEW_SOURCE_EVIDENCE_MISMATCH".into()));
@@ -403,6 +406,14 @@ pub fn resolve(
     })
 }
 
+/// OCR observations a reviewer may confirm after inspecting the image and every
+/// recorded region; manual transcription is a separate content edit.
+pub const OCR_REVIEW_CODES: [&str; 3] = [
+    "OCR_TEXT_REVIEW",
+    "IMAGE_CLASSIFICATION_REVIEW",
+    "OCR_FAILED_REVIEW",
+];
+
 /// Only derived content review, never source task/history/identity or structural issues.
 pub(crate) fn source_content_verified(
     document: &crate::LearningDocument,
@@ -410,12 +421,19 @@ pub(crate) fn source_content_verified(
     source_id: uuid::Uuid,
     selected: &[uuid::Uuid],
 ) -> bool {
-    if issue.stage != "capture"
-        || !matches!(
-            issue.code.as_str(),
-            "SOURCE_HTML_TEXT_REVIEW" | "SOURCE_EXAMPLES_REVIEW"
-        )
-        || issue.source_refs != vec![source_id.to_string()]
+    let provenance = match issue.stage.as_str() {
+        "capture"
+            if matches!(
+                issue.code.as_str(),
+                "SOURCE_HTML_TEXT_REVIEW" | "SOURCE_EXAMPLES_REVIEW"
+            ) =>
+        {
+            crate::Provenance::Source
+        }
+        "ocr" if OCR_REVIEW_CODES.contains(&issue.code.as_str()) => crate::Provenance::Ocr,
+        _ => return false,
+    };
+    if issue.source_refs != vec![source_id.to_string()]
         || !document.sources.iter().any(|source| source.id == source_id)
     {
         return false;
@@ -425,7 +443,7 @@ pub(crate) fn source_content_verified(
         .iter()
         .filter(|e| {
             e.source_id == Some(source_id)
-                && e.provenance == crate::Provenance::Source
+                && e.provenance == provenance
                 && Some(&e.field) == issue.field.as_ref()
         })
         .map(|e| e.id)

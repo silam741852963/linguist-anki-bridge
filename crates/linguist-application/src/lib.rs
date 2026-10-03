@@ -144,13 +144,13 @@ fn authored_capabilities(settings: &linguist_config::Effective) -> Result<(), St
     if settings.values["images.search_when_missing"] == true
         && settings.values["images.provider"] != "disabled"
     {
-        return Err("CAPABILITY_UNAVAILABLE: image search is not implemented; disable images.search_when_missing or images.provider".into());
+        return Err("CAPABILITY_UNAVAILABLE: preparation does not yet stage image search candidates (the Wikimedia adapter exists, plan wiring is pending); disable images.search_when_missing or images.provider".into());
     }
     if !matches!(
         settings.values["audio.provider"].as_str(),
         Some("preserve" | "disabled")
     ) {
-        return Err("CAPABILITY_UNAVAILABLE: audio generation is not implemented; choose preserve or disabled".into());
+        return Err("CAPABILITY_UNAVAILABLE: preparation does not yet stage synthesized audio (the Piper adapter exists, plan wiring is pending); choose preserve or disabled".into());
     }
     Ok(())
 }
@@ -564,7 +564,7 @@ fn build_authored_document(
             .chars()
             .any(|c| matches!(c as u32, 0x3400..=0x9fff | 0x20000..=0x323af))
     {
-        return Err("CAPABILITY_UNAVAILABLE: kanji enrichment is not implemented; authored preparation requires kanji.enabled=false for kanji expressions".into());
+        return Err("CAPABILITY_UNAVAILABLE: preparation does not yet stage kanji enrichment (the Jisho kanji adapter exists, plan wiring is pending); authored preparation requires kanji.enabled=false for kanji expressions".into());
     }
     if version != 2 {
         return Err("UNSUPPORTED_ADD_INPUT_VERSION".into());
@@ -745,14 +745,17 @@ pub mod duplicate_candidates;
 pub mod export;
 pub mod generation;
 pub mod grammar;
+pub mod images;
 pub mod jobs;
 pub mod live_validation;
 pub mod mapping;
 pub mod media;
 pub mod ocr;
+pub mod ocr_inspection;
 pub mod ollama;
 pub mod plan_diff;
 pub mod revamp;
 pub mod review;
 pub mod selector;
 pub mod source_archive;
+pub mod speech;

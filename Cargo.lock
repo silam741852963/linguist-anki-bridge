@@ -1148,6 +1148,7 @@ dependencies = [
  "linguist-config",
  "linguist-core",
  "linguist-dictionary",
+ "linguist-provider",
  "linguist-store",
  "percent-encoding",
  "prost",
@@ -1220,12 +1221,27 @@ version = "0.1.0"
 dependencies = [
  "ammonia",
  "html-escape",
- "httpdate",
  "linguist-config",
  "linguist-core",
+ "linguist-provider",
+ "percent-encoding",
+ "scraper",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "linguist-provider"
+version = "0.1.0"
+dependencies = [
+ "httpdate",
+ "libc",
+ "linguist-config",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "url",
  "uuid",
 ]

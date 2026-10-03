@@ -1859,9 +1859,13 @@ fn run(cli: Cli) -> Result<u8, String> {
             if local {
                 let environment: BTreeMap<String, String> = std::env::vars().collect();
                 let resources = linguist_config::resources::inspect(&settings, &environment);
-                let required_missing = !resources.required_missing.is_empty();
+                let engines = local_engines(&settings, &environment);
+                let required_missing = !resources.required_missing.is_empty()
+                    || engines
+                        .iter()
+                        .any(|check| check["required"] == true && check["status"] != "available");
                 emit(
-                    &serde_json::json!({"version":2,"collection_writes_enabled":false,"native_bridge":"not_implemented","release_gates":"not_run","services_probed":false,"offline_requested":cli.offline,"local_resources":resources}),
+                    &serde_json::json!({"version":2,"collection_writes_enabled":false,"native_bridge":"not_implemented","release_gates":"not_run","services_probed":false,"offline_requested":cli.offline,"local_resources":resources,"local_engines":engines}),
                 )?;
                 return Ok(if required_missing { 3 } else { 0 });
             }
@@ -3017,4 +3021,42 @@ fn note_query(
         return Err("NOTE_SELECTOR_TOO_LARGE".into());
     }
     Ok(query)
+}
+
+/// Probe selected local helper engines (version, language packs, voice files).
+/// Only local executables run; no service or collection is contacted.
+fn local_engines(
+    settings: &linguist_config::Effective,
+    environment: &BTreeMap<String, String>,
+) -> Vec<serde_json::Value> {
+    let mut checks = Vec::new();
+    if settings.values["ocr.engine"] == "tesseract" {
+        let required = settings.values["images.existing_policy"] == "inspect";
+        checks.push(
+            match linguist_application::ocr::Engine::probe(settings, environment) {
+                Ok(engine) => {
+                    serde_json::json!({"engine":"ocr","status":"available","required":required,"identity":engine.identity()})
+                }
+                Err(error) => {
+                    serde_json::json!({"engine":"ocr","status":error.code(),"required":required,"error":error,"guidance":error.guidance()})
+                }
+            },
+        );
+    } else {
+        checks.push(serde_json::json!({"engine":"ocr","status":"OCR_ENGINE_UNAVAILABLE","required":settings.values["images.existing_policy"] == "inspect","selected":settings.values["ocr.engine"]}));
+    }
+    if settings.values["audio.provider"] == "piper" {
+        let status = match linguist_application::speech::preflight(settings, environment, None) {
+            Ok(()) => "available".to_owned(),
+            Err(error) => error.code(),
+        };
+        checks.push(serde_json::json!({"engine":"speech","provider":"piper","status":status,"required":true,"synthesis_probed":false}));
+    }
+    // The controlled browser helper is not part of this build; selecting it is a gap.
+    if settings.values["browser.enabled"] == true
+        || settings.values["dictionary.browser_fallback"] == true
+    {
+        checks.push(serde_json::json!({"engine":"browser","status":"BROWSER_HELPER_UNAVAILABLE","required":true}));
+    }
+    checks
 }

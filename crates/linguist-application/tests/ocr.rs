@@ -53,6 +53,10 @@ impl Fixture {
         settings
             .values
             .insert("ocr.languages".into(), json!(["jpn", "eng"]));
+        settings.values.insert(
+            "storage.temp_dir".into(),
+            json!(self.root.join("tmp").to_str().unwrap()),
+        );
         settings
             .values
             .insert("ocr.timeout_seconds".into(), json!(2));
@@ -358,6 +362,10 @@ fn installed_tesseract_probe_when_available() {
     settings
         .values
         .insert("ocr.executable".into(), json!("/usr/bin/tesseract"));
+    let temp = std::env::temp_dir().join(format!("lab-ocr-real-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.temp_dir".into(), json!(temp.to_str().unwrap()));
     settings
         .values
         .insert("ocr.languages".into(), json!(["eng", "zz_missing"]));
@@ -379,4 +387,34 @@ fn installed_tesseract_probe_when_available() {
         Err(OcrError::OcrLanguagePackMissing { missing }) => assert_eq!(missing, ["eng"]),
         Err(other) => panic!("{other:?}"),
     }
+    let _ = std::fs::remove_dir_all(temp);
+}
+
+#[test]
+fn nondefault_engine_mode_confidence_and_memory_limit_reach_the_child() {
+    // The fake engine reports its address-space limit as the recognized word.
+    let fixture = Fixture::new(&format!(
+        "printf '{HEADER}\\n5\\t1\\t1\\t1\\t1\\t1\\t0\\t0\\t3\\t3\\t50\\t%s\\n' \"$(ulimit -v)\""
+    ));
+    let mut settings = fixture.settings();
+    settings.values.insert("ocr.engine_mode".into(), json!(3));
+    settings
+        .values
+        .insert("helpers.memory_limit_mb".into(), json!(64));
+    settings
+        .values
+        .insert("ocr.minimum_confidence".into(), json!(0.4));
+    let result = recognize(&png(8, 8, 250), &settings, &env()).unwrap();
+    assert_eq!(result.text, "65536");
+    assert!(!result.needs_review, "0.5 confidence passes a 0.4 minimum");
+    let args = fixture.args();
+    assert_eq!(
+        args[args.len() - 3..],
+        ["--oem".to_owned(), "3".to_owned(), "tsv".to_owned()]
+    );
+    settings
+        .values
+        .insert("ocr.minimum_confidence".into(), json!(0.6));
+    let strict = recognize(&png(8, 8, 250), &settings, &env()).unwrap();
+    assert_eq!(strict.review_reasons, ["confidence_below_minimum"]);
 }
