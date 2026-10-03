@@ -45,6 +45,8 @@ Effects: Local file.
 
 Result/failure: Recoverable evidence, not claimed full collection backup. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current implementation: `snapshots export SNAPSHOT --output FILE` re-reads and revalidates the immutable snapshot. It streams a 0600 create-new bundle `{manifest, manifest_digest, asset_data}` containing the originals, archives, media, after-state receipt and status, plus every linked original asset in Base64, and publishes it with a no-overwrite link. The manifest declares `contains_private_note_content=true`, `full_collection_backup=false` and `apply_authorized=false`; the receipt gives the whole-file SHA-256.
+
 ## OP-52 — `backup create`
 
 Inputs: Explicit scope/output; --apply required for Anki export/checkpoint action.

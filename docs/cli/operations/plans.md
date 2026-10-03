@@ -13,6 +13,8 @@ Effects: Local read.
 
 Result/failure: Plan summaries. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current filters: `plans list --status ready|needs_review|invalid` and `--workflow vocab_add|vocab_revamp|grammar_add|grammar_revamp|mixed` revalidate the latest revision of each plan within `--limit` revision rows and return payload-free summaries (status, workflow, item and issue counts, digest). Without filters the revision index is returned unchanged.
+
 ## OP-26 — `plans show PLAN`
 
 Inputs: Optional revision/item.
@@ -80,6 +82,8 @@ Effects: Local new revision.
 
 Result/failure: New revision; invalid edits saved only as explicitly marked draft, never ready. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current editor mode: `plans edit PLAN --base-revision N --editor` writes a private draft `{current_values, patch}` to a 0700 directory under `storage.temp_dir`. `patch` is a no-op typed patch for every item, and `current_values` is read-only reference. The draft opens in `editing.editor_argv`, or else `VISUAL`, or else `EDITOR`, split without a shell, with the file path appended. A non-zero editor exit aborts with `PLAN_EDIT_ABORTED` and keeps the parent; an unchanged draft publishes nothing. Otherwise the edited patch goes through the same typed validation as `--patch`. The draft directory is removed afterwards.
+
 ## OP-29 — `plans resolve PLAN ISSUE`
 
 Implemented dictionary decisions use `{"decision":"sense","value":"SENSE_KEY"}`
@@ -139,6 +143,19 @@ Effects: Provider reads/local new revision.
 3. Run selected pipeline branches with new frozen fingerprint and validate/render.
 
 Result/failure: New revision; no approved outputs overwritten in place. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
+
+Current implementation: `plans regenerate PLAN --base-revision N --digest DIGEST --stage dictionary|enrichment|generation [--item-id UUID] [--overwrite FIELD ...] [--use-current-settings]`. Without `--use-current-settings` it only prints a preview per item:
+- `cleared`: stage output that will be produced again.
+- `protected`: owned non-empty values left untouched.
+- `overwritten`: owned values cleared because they were listed.
+- `invalidated_decisions` and `removed_candidate_media`.
+
+Ownership comes from provenance:
+- Generation replaces only fields and examples with generated evidence.
+- Enrichment replaces dictionary-provenance kanji and unselected picture/audio candidates. Selected media is protected.
+- Dictionary replaces entries and dictionary sources, while the reviewed meaning, sense key and reading stay protected.
+
+Overwrite names must belong to the stage. Execution freezes the current settings, requires the latest base and digest, and publishes one child. Generation runs one `--item-id` through the configured engine and keeps `GENERATION_ENGINE_UNVERIFIED`. Decisions on regenerated items are cleared; nothing is applied.
 
 Current candidate generation subset: `plans generate PLAN --item-id UUID --base-revision N --digest DIGEST --use-current-settings`. The explicit settings flag freezes the currently resolved configuration, including `--set llm.enabled=true`, into a child revision. Require an exact latest base digest, existing item, compatible state path and a valid generation request before contacting Ollama. One nonstreaming inference is validated; provider request/response and before/after model metadata are archived by digest before the child revision is published. Authored fields remain protected. The generated item's old render and review decisions are invalidated. The child always has `GENERATION_ENGINE_UNVERIFIED`, returns exit 4, and cannot be approved or applied until installed-engine parameter and input-preservation certification exists. No automatic retry follows an ambiguous inference error. This is a reviewable development candidate, not completion of OP-30's full regeneration pipeline.
 

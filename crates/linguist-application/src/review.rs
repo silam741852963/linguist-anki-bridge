@@ -114,3 +114,53 @@ pub fn resolve(
     }
     Ok(result)
 }
+
+/// Payload-free summary of a plan revision for filtered listing.
+pub fn summarize(plan: &linguist_core::records::PlanRevision) -> Result<serde_json::Value, String> {
+    use linguist_core::{LearningContent, validation::Severity};
+    let mut errors = 0usize;
+    let mut reviews = 0usize;
+    let mut warnings = 0usize;
+    let mut workflows = std::collections::BTreeSet::new();
+    for document in &plan.documents {
+        for issue in linguist_core::validation::validate(document) {
+            match issue.severity {
+                Severity::Error => errors += 1,
+                Severity::Review => reviews += 1,
+                Severity::Warning => warnings += 1,
+            }
+        }
+        let revamp = document
+            .sources
+            .iter()
+            .any(|s| s.kind == "anki_read_capture_v2");
+        workflows.insert(match (&document.content, revamp) {
+            (LearningContent::Vocabulary(_), false) => "vocab_add",
+            (LearningContent::Vocabulary(_), true) => "vocab_revamp",
+            (LearningContent::Grammar(_), false) => "grammar_add",
+            (LearningContent::Grammar(_), true) => "grammar_revamp",
+        });
+    }
+    let status = if errors > 0 {
+        "invalid"
+    } else if reviews > 0 || plan.documents.is_empty() {
+        "needs_review"
+    } else {
+        "ready"
+    };
+    let workflow = match workflows.len() {
+        1 => *workflows.iter().next().unwrap(),
+        _ => "mixed",
+    };
+    Ok(serde_json::json!({
+        "plan_id": plan.id,
+        "revision": plan.revision,
+        "digest": plan.approval_digest().map_err(|e| e.to_string())?,
+        "status": status,
+        "workflow": workflow,
+        "items": plan.documents.len(),
+        "errors": errors,
+        "reviews": reviews,
+        "warnings": warnings,
+    }))
+}

@@ -1180,6 +1180,7 @@ dependencies = [
  "linguist-application",
  "linguist-config",
  "linguist-core",
+ "linguist-provider",
  "linguist-store",
  "rusqlite",
  "serde",

@@ -21,6 +21,7 @@ uuid.workspace = true
 linguist-anki.workspace = true
 
 linguist-application.workspace = true
+linguist-provider.workspace = true
 clap_complete.workspace = true
 
 [dev-dependencies]

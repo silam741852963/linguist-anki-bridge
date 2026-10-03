@@ -657,6 +657,7 @@ enum RecoveryCommand {
 }
 #[derive(Subcommand)]
 enum PlanCommand {
+    /// Rerun one stage (dictionary|enrichment|generation); previews unless executed.
     Regenerate {
         plan: uuid::Uuid,
         #[arg(long)]
@@ -665,6 +666,14 @@ enum PlanCommand {
         digest: String,
         #[arg(long)]
         item_id: Option<uuid::Uuid>,
+        #[arg(long)]
+        stage: String,
+        /// Owned field to clear and regenerate (repeatable); default protects them.
+        #[arg(long)]
+        overwrite: Vec<String>,
+        /// Freeze the current settings and execute; without it only a preview is shown.
+        #[arg(long)]
+        use_current_settings: bool,
     },
     /// Generate one review-only supplement with explicit current settings.
     Generate {
@@ -764,8 +773,11 @@ enum PlanCommand {
         plan: uuid::Uuid,
         #[arg(long)]
         base_revision: u32,
+        #[arg(long, required_unless_present = "editor", conflicts_with = "editor")]
+        patch: Option<PathBuf>,
+        /// Edit a private typed draft in editing.editor_argv, VISUAL or EDITOR.
         #[arg(long)]
-        patch: PathBuf,
+        editor: bool,
         #[arg(long)]
         save_draft: bool,
     },
@@ -786,6 +798,12 @@ enum PlanCommand {
     List {
         #[arg(long)]
         limit: Option<u32>,
+        /// Only latest revisions in this state: ready|needs_review|invalid.
+        #[arg(long)]
+        status: Option<String>,
+        /// Only plans of this workflow: vocab_add|vocab_revamp|grammar_add|grammar_revamp|mixed.
+        #[arg(long)]
+        workflow: Option<String>,
     },
     Show {
         plan: uuid::Uuid,
@@ -959,9 +977,6 @@ fn unavailable_operation(command: &Command) -> Option<&'static str> {
         Command::Snapshots {
             command: SnapshotCommand::Restore { .. },
         } => Some("OP-50 snapshots restore"),
-        Command::Snapshots {
-            command: SnapshotCommand::Export { .. },
-        } => Some("OP-51 snapshots export"),
         Command::Cache { command } => Some(match command {
             CacheCommand::Status { .. } => "OP-55 cache status",
             CacheCommand::Prune { .. } => "OP-56 cache prune",
@@ -973,9 +988,6 @@ fn unavailable_operation(command: &Command) -> Option<&'static str> {
         Command::Config {
             command: ConfigCommand::Import { .. },
         } => Some("OP-09 config import"),
-        Command::Plans {
-            command: PlanCommand::Regenerate { .. },
-        } => Some("OP-30 plans regenerate"),
         Command::Jobs {
             command: JobCommand::Retry { .. },
         } => Some("OP-42 jobs retry"),
@@ -1129,7 +1141,16 @@ fn run(cli: Cli) -> Result<u8, String> {
                     let store = linguist_store::Store::read_only(&root)?;
                     emit(&store.snapshot(snapshot)?)?;
                 }
-                SnapshotCommand::Restore { .. } | SnapshotCommand::Export { .. } => unreachable!(),
+                SnapshotCommand::Restore { .. } => unreachable!(),
+                SnapshotCommand::Export { snapshot, output } => {
+                    if !exists {
+                        return Err("SNAPSHOT_NOT_FOUND".into());
+                    }
+                    let store = linguist_store::Store::read_only(&root)?;
+                    let receipt =
+                        linguist_application::export::export_snapshot(&store, snapshot, &output)?;
+                    emit(&receipt)?;
+                }
             }
             Ok(0)
         }
@@ -1542,7 +1563,78 @@ fn run(cli: Cli) -> Result<u8, String> {
             }
             let store = linguist_store::Store::read_only(&root)?;
             match command {
-                PlanCommand::Regenerate { .. } => unreachable!(),
+                PlanCommand::Regenerate {
+                    plan,
+                    base_revision,
+                    digest,
+                    item_id,
+                    stage,
+                    overwrite,
+                    use_current_settings,
+                } => {
+                    use linguist_application::regenerate::{self, Stage};
+                    let stage: Stage = stage.parse()?;
+                    let overwrite: std::collections::BTreeSet<String> =
+                        overwrite.into_iter().collect();
+                    let base = store.revision(plan, base_revision)?;
+                    if store.latest_revision(plan)? != base_revision
+                        || base.approval_digest().map_err(|e| e.to_string())? != digest
+                    {
+                        return Err("REGENERATE_BASE_CONFLICT".into());
+                    }
+                    let items: Vec<uuid::Uuid> = item_id.into_iter().collect();
+                    let preview = regenerate::preview(&base, &items, stage, &overwrite)?;
+                    if !use_current_settings {
+                        emit(&serde_json::json!({"preview":preview,"executed":false,
+                            "next_command":format!("linguist-anki-bridge plans regenerate {plan} --base-revision {base_revision} --digest {digest} --stage {} --use-current-settings", serde_json::to_value(stage).unwrap().as_str().unwrap())}))?;
+                        return Ok(0);
+                    }
+                    drop(store);
+                    let environment: BTreeMap<String, String> = std::env::vars().collect();
+                    let mut store = linguist_store::Store::open_existing(&root)?;
+                    if stage == Stage::Generation {
+                        let item = item_id.ok_or(
+                            "REGENERATE_ITEM_REQUIRED: generation regenerates one --item-id",
+                        )?;
+                        let client =
+                            linguist_application::ollama::transport::Client::from_settings(
+                                &settings,
+                                &environment,
+                            )?;
+                        let (result, item_preview) = regenerate::regenerate_generation(
+                            &mut store,
+                            &base,
+                            &digest,
+                            item,
+                            &overwrite,
+                            &settings,
+                            &environment,
+                            &client,
+                        )?;
+                        emit(
+                            &serde_json::json!({"result":result,"preview":item_preview,"executed":true}),
+                        )?;
+                        return Ok(4);
+                    }
+                    let (child, preview) = regenerate::regenerate(
+                        &mut store,
+                        &base,
+                        &digest,
+                        &items,
+                        stage,
+                        &overwrite,
+                        &settings,
+                        &environment,
+                        Default::default(),
+                    )?;
+                    let ready = child.documents.iter().all(linguist_core::validation::ready);
+                    emit(
+                        &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":child.revision,
+                        "digest":child.approval_digest().map_err(|e| e.to_string())?,"preview":preview,"executed":true,
+                        "ready":ready,"apply_eligible":false,"writes_enabled":false}),
+                    )?;
+                    return Ok(if ready { 0 } else { 4 });
+                }
                 PlanCommand::Generate {
                     plan,
                     item_id,
@@ -1668,11 +1760,60 @@ fn run(cli: Cli) -> Result<u8, String> {
                     )?;
                     return Ok(4);
                 }
-                PlanCommand::List { limit } => {
+                PlanCommand::List {
+                    limit,
+                    status,
+                    workflow,
+                } => {
                     let limit = limit
                         .unwrap_or(settings.values["output.page_size"].as_u64().unwrap() as u32);
+                    if status
+                        .as_deref()
+                        .is_some_and(|s| !matches!(s, "ready" | "needs_review" | "invalid"))
+                    {
+                        return Err("INVALID_PLAN_STATUS_FILTER".into());
+                    }
+                    if workflow.as_deref().is_some_and(|w| {
+                        !matches!(
+                            w,
+                            "vocab_add"
+                                | "vocab_revamp"
+                                | "grammar_add"
+                                | "grammar_revamp"
+                                | "mixed"
+                        )
+                    }) {
+                        return Err("INVALID_PLAN_WORKFLOW_FILTER".into());
+                    }
+                    let revisions = store.list_revisions(limit)?;
+                    if status.is_none() && workflow.is_none() {
+                        emit(
+                            &serde_json::json!({"version":2,"revisions":revisions,"state_exists":true}),
+                        )?;
+                        return Ok(0);
+                    }
+                    // Filters summarize latest revisions only; payloads are not emitted.
+                    let mut plans = Vec::new();
+                    let mut seen = std::collections::BTreeSet::new();
+                    for summary in &revisions {
+                        if !seen.insert(summary.id) {
+                            continue;
+                        }
+                        let latest = store.latest_revision(summary.id)?;
+                        let plan = store.revision(summary.id, latest)?;
+                        let summary = linguist_application::review::summarize(&plan)
+                            .map_err(|e| e.to_string())?;
+                        if status.as_deref().is_some_and(|s| summary["status"] != s)
+                            || workflow
+                                .as_deref()
+                                .is_some_and(|w| summary["workflow"] != w)
+                        {
+                            continue;
+                        }
+                        plans.push(summary);
+                    }
                     emit(
-                        &serde_json::json!({"version":2,"revisions":store.list_revisions(limit)?,"state_exists":true}),
+                        &serde_json::json!({"version":2,"plans":plans,"state_exists":true,"filtered":true}),
                     )?;
                 }
                 PlanCommand::Export {
@@ -1821,15 +1962,52 @@ fn run(cli: Cli) -> Result<u8, String> {
                     plan,
                     base_revision,
                     patch,
+                    editor,
                     save_draft,
                 } => {
                     if store.latest_revision(plan)? != base_revision {
                         return Err("PLAN_EDIT_BASE_CONFLICT: select the latest revision".into());
                     }
                     let base = store.revision(plan, base_revision)?;
-                    let bytes = read_input(&patch, max_bytes, max_chars)?;
-                    let patch: linguist_core::editing::PlanPatch =
-                        canonical::parse(&bytes).map_err(|e| e.to_string())?;
+                    let patch: linguist_core::editing::PlanPatch = if editor {
+                        let environment: BTreeMap<String, String> = std::env::vars().collect();
+                        let configured: Vec<String> = settings.values["editing.editor_argv"]
+                            .as_array()
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str().map(str::to_owned))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let argv =
+                            linguist_application::editor::editor_argv(&configured, &environment)?;
+                        let temp_root = linguist_config::expand_path(
+                            settings.values["storage.temp_dir"].as_str().unwrap(),
+                            &environment,
+                        )?;
+                        let workspace = linguist_provider::process::TempDir::create_in(&temp_root)
+                            .map_err(|_| "PLAN_EDIT_DRAFT_IO")?;
+                        let path = workspace.0.join("plan-edit.json");
+                        let draft = linguist_application::editor::draft(&base)?;
+                        linguist_provider::process::write_private(&path, &draft)
+                            .map_err(|_| "PLAN_EDIT_DRAFT_IO")?;
+                        linguist_application::editor::launch(&argv, &path)?;
+                        let edited = read_input(&path, max_bytes, max_chars)?;
+                        if edited == draft {
+                            emit(
+                                &serde_json::json!({"version":2,"plan_id":plan,"revision":base_revision,"changed":false,"aborted":false}),
+                            )?;
+                            return Ok(0);
+                        }
+                        linguist_application::editor::parse(&edited)?
+                    } else {
+                        let bytes = read_input(
+                            &patch.ok_or("PLAN_EDIT_PATCH_REQUIRED")?,
+                            max_bytes,
+                            max_chars,
+                        )?;
+                        canonical::parse(&bytes).map_err(|e| e.to_string())?
+                    };
                     let result = linguist_core::editing::apply_patch(&base, &patch, save_draft)
                         .map_err(|e| e.to_string())?;
                     let digest = if result.changed {

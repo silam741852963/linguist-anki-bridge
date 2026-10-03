@@ -44,7 +44,41 @@ pub fn publish_candidate(
         .documents
         .iter()
         .find(|document| document.id == document_id)
-        .ok_or("PLAN_ITEM_NOT_FOUND")?;
+        .ok_or("PLAN_ITEM_NOT_FOUND")?
+        .clone();
+    publish_candidate_from(
+        store,
+        base,
+        &parent,
+        expected_digest,
+        settings,
+        environment,
+        client,
+    )
+}
+
+/// As [`publish_candidate`], generating from a caller-prepared copy of the item
+/// (for example with regenerable fields cleared). The base revision and digest
+/// are still checked against the store before any provider call.
+pub fn publish_candidate_from(
+    store: &mut linguist_store::Store,
+    base: &linguist_core::records::PlanRevision,
+    parent: &LearningDocument,
+    expected_digest: &str,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    client: &crate::ollama::transport::Client,
+) -> Result<Value, String> {
+    if base.approval_digest().map_err(|e| e.to_string())? != expected_digest
+        || store.latest_revision(base.id)? != base.revision
+        || !base
+            .documents
+            .iter()
+            .any(|document| document.id == parent.id)
+    {
+        return Err("GENERATION_BASE_CONFLICT".into());
+    }
+    let document_id = parent.id;
     let frozen = crate::freeze_settings(settings, environment)?;
     if frozen.values["storage.state_dir"] != base.settings.values["storage.state_dir"] {
         return Err("GENERATION_STORAGE_CONFLICT".into());

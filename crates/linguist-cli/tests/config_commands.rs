@@ -1670,18 +1670,6 @@ fn unfinished_catalogue_commands_fail_before_config_or_effects() {
             ],
         ),
         (
-            "OP-30",
-            vec![
-                "plans",
-                "regenerate",
-                id,
-                "--base-revision",
-                "1",
-                "--digest",
-                "abc",
-            ],
-        ),
-        (
             "OP-34",
             vec!["apply", id, "--revision", "1", "--digest", "abc", "--apply"],
         ),
@@ -1689,10 +1677,6 @@ fn unfinished_catalogue_commands_fail_before_config_or_effects() {
         ("OP-44", vec!["jobs", "rollback", id, "--apply"]),
         ("OP-45", vec!["jobs", "delete", id, "--execute"]),
         ("OP-50", vec!["snapshots", "restore", id, "--apply"]),
-        (
-            "OP-51",
-            vec!["snapshots", "export", id, "--output", "/missing-out"],
-        ),
         (
             "OP-52",
             vec![
@@ -4444,5 +4428,376 @@ fn split_grammar_template_requires_a_reviewed_multi_unit_segmentation() {
         String::from_utf8_lossy(&template.stderr)
             .contains("GRAMMAR_SEGMENTATION_DECISION_REQUIRED")
     );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// Drive a plan to readiness with ordinary commands: list unresolved issues,
+/// submit each offered decision template, then approve the final revision.
+fn review_to_ready(base: &[String], plan: &str) -> serde_json::Value {
+    let dir = std::env::temp_dir().join(format!("lab-review-loop-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for _ in 0..10 {
+        let page = cli()
+            .args(base)
+            .args(["plans", "show", plan, "--issues-only"])
+            .output()
+            .unwrap();
+        assert!(page.status.success(), "{page:?}");
+        let page: serde_json::Value = serde_json::from_slice(&page.stdout).unwrap();
+        let issues = page["issues"].as_array().unwrap();
+        if issues.is_empty() {
+            let revision = page["revision"].to_string();
+            let digest = page["digest"].as_str().unwrap().to_owned();
+            let approved = cli()
+                .args(base)
+                .args([
+                    "plans",
+                    "approve",
+                    plan,
+                    "--revision",
+                    &revision,
+                    "--digest",
+                    &digest,
+                    "--actor",
+                    "reviewer",
+                ])
+                .output()
+                .unwrap();
+            assert!(approved.status.success(), "{approved:?}");
+            std::fs::remove_dir_all(&dir).unwrap();
+            return serde_json::from_slice(&approved.stdout).unwrap();
+        }
+        let entry = &issues[0];
+        let choice = entry["templates"][0]["choice"].clone();
+        assert!(!choice.is_null(), "no actionable template: {entry}");
+        let mut request = entry["request_identity"].clone();
+        request["actor"] = serde_json::json!("reviewer");
+        request["choice"] = choice;
+        let file = dir.join("decision.json");
+        std::fs::write(&file, serde_json::to_vec(&request).unwrap()).unwrap();
+        let issue = entry["issue"]["id"].as_str().unwrap();
+        let resolved = cli()
+            .args(base)
+            .args([
+                "plans",
+                "resolve",
+                plan,
+                issue,
+                "--decision",
+                file.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            matches!(resolved.status.code(), Some(0 | 4)),
+            "{resolved:?}"
+        );
+    }
+    panic!("plan did not reach readiness");
+}
+
+#[test]
+fn vocabulary_and_grammar_adds_review_to_readiness_with_ordinary_commands() {
+    let root = std::env::temp_dir().join(format!("lab-cli-review-ready-{}", uuid::Uuid::new_v4()));
+    let base: Vec<String> = [
+        "--set",
+        &format!("storage.state_dir={}", root.join("state").display()),
+        "--set",
+        "llm.enabled=false",
+        "--set",
+        "dictionary.provider=authored",
+        "--set",
+        "images.search_when_missing=false",
+        "--set",
+        "kanji.enabled=false",
+        "--set",
+        "learning.vocabulary.production=true",
+        "--set",
+        "learning.vocabulary.spelling=true",
+        "--set",
+        "learning.grammar.application=true",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let vocab = cli()
+        .args(&base)
+        .args([
+            "vocab",
+            "add",
+            "--expression",
+            "食べる",
+            "--meaning",
+            "to eat",
+            "--sense-key",
+            "eat",
+            "--reading",
+            "たべる",
+            "--target-language",
+            "ja",
+            "--explanation-language",
+            "en",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(vocab.status.code(), Some(4), "{vocab:?}");
+    let value: serde_json::Value = serde_json::from_slice(&vocab.stdout).unwrap();
+    assert!(
+        value["next_commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c.as_str().unwrap().contains("plans"))
+    );
+    let approval = review_to_ready(&base, value["plan_id"].as_str().unwrap());
+    assert!(!approval["apply_authorized"].as_bool().unwrap_or(false));
+
+    let grammar = cli()
+        .args(&base)
+        .args([
+            "grammar",
+            "add",
+            "--pattern",
+            "used to",
+            "--meaning",
+            "past habit",
+            "--formation",
+            "used to + base verb",
+            "--use-key",
+            "past-habit",
+            "--target-language",
+            "en",
+            "--example-sentence",
+            "I used to swim every day.",
+            "--example-translation",
+            "Formerly I swam daily.",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(grammar.status.code(), Some(4), "{grammar:?}");
+    let value: serde_json::Value = serde_json::from_slice(&grammar.stdout).unwrap();
+    let plan = value["plan_id"].as_str().unwrap().to_owned();
+    review_to_ready(&base, &plan);
+
+    // Filters list the approved plans; regenerate previews without writing.
+    let listed = cli()
+        .args(&base)
+        .args([
+            "plans",
+            "list",
+            "--status",
+            "ready",
+            "--workflow",
+            "grammar_add",
+        ])
+        .output()
+        .unwrap();
+    assert!(listed.status.success(), "{listed:?}");
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert_eq!(listed["plans"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["plans"][0]["plan_id"], plan);
+    let bad = cli()
+        .args(&base)
+        .args(["plans", "list", "--status", "done"])
+        .output()
+        .unwrap();
+    assert_ne!(bad.status.code(), Some(0));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn editor_mode_applies_a_typed_draft_and_abort_keeps_the_parent() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = std::env::temp_dir().join(format!("lab-cli-editor-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let editor = root.join("editor.sh");
+    std::fs::write(
+        &editor,
+        "#!/bin/sh\nexec /usr/bin/sed -i 's/\"fields\": {}/\"fields\": {\"Usage\": {\"intent\": \"set\", \"value\": \"Edited usage\"}}/' \"$1\"\n",
+    )
+    .unwrap();
+    let abort = root.join("abort.sh");
+    std::fs::write(&abort, "#!/bin/sh\nexit 1\n").unwrap();
+    for script in [&editor, &abort] {
+        std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        while let Err(error) = Command::new(script).arg("/dev/null").output() {
+            assert_eq!(error.raw_os_error(), Some(26));
+        }
+    }
+    let base: Vec<String> = [
+        "--set",
+        &format!("storage.state_dir={}", root.join("state").display()),
+        "--set",
+        &format!("storage.temp_dir={}", root.join("tmp").display()),
+        "--set",
+        "llm.enabled=false",
+        "--set",
+        "dictionary.provider=authored",
+        "--set",
+        "images.search_when_missing=false",
+        "--set",
+        "kanji.enabled=false",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let added = cli()
+        .args(&base)
+        .args([
+            "vocab",
+            "add",
+            "--expression",
+            "eat",
+            "--meaning",
+            "consume food",
+            "--sense-key",
+            "food",
+            "--target-language",
+            "en",
+        ])
+        .output()
+        .unwrap();
+    let plan = serde_json::from_slice::<serde_json::Value>(&added.stdout).unwrap()["plan_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let edit = |script: &std::path::Path, revision: &str| {
+        cli()
+            .args(&base)
+            .args([
+                "--set",
+                &format!("editing.editor_argv=[\"{}\"]", script.display()),
+            ])
+            .args([
+                "plans",
+                "edit",
+                &plan,
+                "--base-revision",
+                revision,
+                "--editor",
+            ])
+            .output()
+            .unwrap()
+    };
+    let aborted = edit(&abort, "1");
+    assert_ne!(aborted.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&aborted.stderr).contains("PLAN_EDIT_ABORTED"));
+    let edited = edit(&editor, "1");
+    assert!(matches!(edited.status.code(), Some(0 | 4)), "{edited:?}");
+    let value: serde_json::Value = serde_json::from_slice(&edited.stdout).unwrap();
+    assert_eq!(value["revision"], 2);
+    assert_eq!(value["changed"], true);
+    // A stale base revision is a conflict, never a silent overwrite.
+    let stale = edit(&editor, "1");
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("PLAN_EDIT_BASE_CONFLICT"));
+    let store = linguist_store::Store::read_only(&root.join("state")).unwrap();
+    let id = uuid::Uuid::parse_str(&plan).unwrap();
+    assert_eq!(
+        store.revision(id, 2).unwrap().documents[0].edits["Usage"],
+        linguist_core::FieldIntent::Set("Edited usage".into())
+    );
+    // The private draft directory is removed.
+    assert_eq!(
+        std::fs::read_dir(root.join("tmp"))
+            .map(|d| d.count())
+            .unwrap_or(0),
+        0
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn regenerate_previews_by_default_and_snapshot_export_requires_a_snapshot() {
+    let root = std::env::temp_dir().join(format!("lab-cli-regenerate-{}", uuid::Uuid::new_v4()));
+    let base: Vec<String> = [
+        "--set",
+        &format!("storage.state_dir={}", root.join("state").display()),
+        "--set",
+        "llm.enabled=false",
+        "--set",
+        "dictionary.provider=authored",
+        "--set",
+        "images.search_when_missing=false",
+        "--set",
+        "kanji.enabled=false",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let added = cli()
+        .args(&base)
+        .args([
+            "vocab",
+            "add",
+            "--expression",
+            "eat",
+            "--meaning",
+            "consume food",
+            "--sense-key",
+            "food",
+            "--target-language",
+            "en",
+        ])
+        .output()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
+    let plan = value["plan_id"].as_str().unwrap();
+    let digest = value["digest"].as_str().unwrap();
+    let regenerate = |stage: &str, digest: &str| {
+        cli()
+            .args(&base)
+            .args([
+                "plans",
+                "regenerate",
+                plan,
+                "--base-revision",
+                "1",
+                "--digest",
+                digest,
+                "--stage",
+                stage,
+            ])
+            .output()
+            .unwrap()
+    };
+    let preview = regenerate("generation", digest);
+    assert!(preview.status.success(), "{preview:?}");
+    let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(preview["executed"], false);
+    assert_eq!(preview["preview"]["writes_enabled"], false);
+    assert!(
+        preview["next_command"]
+            .as_str()
+            .unwrap()
+            .contains("--use-current-settings")
+    );
+    assert!(
+        String::from_utf8_lossy(&regenerate("generation", "stale").stderr)
+            .contains("REGENERATE_BASE_CONFLICT")
+    );
+    assert!(
+        String::from_utf8_lossy(&regenerate("everything", digest).stderr)
+            .contains("REGENERATE_STAGE_UNKNOWN")
+    );
+    let store = linguist_store::Store::read_only(&root.join("state")).unwrap();
+    assert_eq!(
+        store
+            .latest_revision(uuid::Uuid::parse_str(plan).unwrap())
+            .unwrap(),
+        1
+    );
+    let missing = cli()
+        .args(&base)
+        .args([
+            "snapshots",
+            "export",
+            &uuid::Uuid::new_v4().to_string(),
+            "--output",
+            root.join("s.json").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_ne!(missing.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("SNAPSHOT_NOT_FOUND"));
     std::fs::remove_dir_all(root).unwrap();
 }

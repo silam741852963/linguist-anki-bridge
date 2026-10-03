@@ -1003,3 +1003,102 @@ fn pending_generation_runs_eligible_items_and_reports_the_rest() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+#[test]
+fn generation_regeneration_replaces_generated_usage_and_keeps_authored_fields() {
+    use linguist_application::{
+        freeze_settings, generation::publish_candidate, regenerate::regenerate_generation,
+    };
+    use linguist_core::{LearningContent, records::PlanRevision};
+    let output = |usage: &str| {
+        let mut output = completion_response();
+        output["message"]["content"] = json!(format!(
+            r#"{{"kind":"vocabulary","body":{{"usage":"{usage}","examples":[],"production_prompt":"","spelling_prompt":""}}}}"#
+        ));
+        output
+    };
+    let mut replies = Vec::new();
+    for usage in ["Meal context.", "Fresh context."] {
+        replies.extend([
+            reply(inventory()),
+            reply(show()),
+            reply(inventory()),
+            reply(output(usage)),
+            reply(inventory()),
+            reply(show()),
+            reply(inventory()),
+        ]);
+    }
+    let server = FixtureServer::new(replies);
+    let root = std::env::temp_dir().join(format!(
+        "lab-regenerate-generation-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let environment =
+        std::collections::BTreeMap::from([("HOME".into(), root.to_str().unwrap().into())]);
+    let mut current = settings();
+    current
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    current
+        .values
+        .insert("llm.endpoint".into(), json!(server.endpoint));
+    current
+        .values
+        .insert("services.ollama.min_interval_seconds".into(), json!(0));
+    let document = generation_document();
+    let plan = PlanRevision {
+        grammar_groups: vec![],
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: freeze_settings(&current, &environment).unwrap(),
+        binding: None,
+        source_digest: canonical::digest("source-capture", &document.sources).unwrap(),
+        selection: None,
+        documents: vec![document.clone()],
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let digest = store.publish_revision(&plan).unwrap();
+    let client = transport::Client::from_settings(&current, &environment).unwrap();
+    publish_candidate(
+        &mut store,
+        &plan,
+        document.id,
+        &digest,
+        &current,
+        &environment,
+        &client,
+    )
+    .unwrap();
+    let generated = store.revision(plan.id, 2).unwrap();
+    let LearningContent::Vocabulary(before) = &generated.documents[0].content else {
+        panic!()
+    };
+    assert_eq!(before.usage, "Meal context.");
+    let (result, preview) = regenerate_generation(
+        &mut store,
+        &generated,
+        &generated.approval_digest().unwrap(),
+        document.id,
+        &Default::default(),
+        &current,
+        &environment,
+        &client,
+    )
+    .unwrap();
+    assert_eq!(result["revision"], 3);
+    assert_eq!(preview.cleared, ["usage"]);
+    let regenerated = store.revision(plan.id, 3).unwrap();
+    let LearningContent::Vocabulary(after) = &regenerated.documents[0].content else {
+        panic!()
+    };
+    assert_eq!(after.usage, "Fresh context.");
+    assert_eq!(after.meaning, before.meaning);
+    assert_eq!(after.expression, before.expression);
+    assert_eq!(server.worker.join().unwrap().len(), 14);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

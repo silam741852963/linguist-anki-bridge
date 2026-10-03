@@ -544,7 +544,7 @@
       "path": "operations/history.md",
       "heading": "## OP-51 \u2014 `snapshots export SNAPSHOT`",
       "title": "OP-51 \u2014 `snapshots export SNAPSHOT`",
-      "words": 55,
+      "words": 113,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -821,7 +821,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-25 \u2014 `plans list`",
       "title": "OP-25 \u2014 `plans list`",
-      "words": 42,
+      "words": 81,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -854,7 +854,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-28 \u2014 `plans edit PLAN`",
       "title": "OP-28 \u2014 `plans edit PLAN`",
-      "words": 105,
+      "words": 194,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -876,7 +876,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-30 \u2014 `plans regenerate PLAN`",
       "title": "OP-30 \u2014 `plans regenerate PLAN`",
-      "words": 197,
+      "words": 338,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
