@@ -1381,3 +1381,95 @@ fn grammar_split_records_one_anchor_and_fresh_siblings_with_recoverable_archives
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn revamp_enrichment_child_preserves_source_tasks_cards_and_parent() {
+    use linguist_application::vocab::{KanjiPort, Providers, enrich_revision, requested};
+    struct Kanji;
+    impl KanjiPort for Kanji {
+        fn lookup(
+            &self,
+            character: char,
+        ) -> std::result::Result<Option<linguist_dictionary::kanji::KanjiEntry>, String> {
+            let raw = format!("<h1>{character}</h1>").into_bytes();
+            Ok(Some(linguist_dictionary::kanji::KanjiEntry {
+                character: character.to_string(),
+                meanings: vec!["eat".into()],
+                kun_readings: vec![],
+                on_readings: vec!["ショク".into()],
+                strokes: None,
+                radical: None,
+                parts: vec![],
+                grade: None,
+                jlpt: None,
+                frequency: None,
+                schema: linguist_dictionary::kanji::SCHEMA,
+                source_url: "https://jisho.org/search/x".into(),
+                raw_digest: String::new(),
+                fetched_at: 1,
+                from_cache: false,
+                raw_bytes: raw,
+            }))
+        }
+    }
+    let (capture, mut settings) = setup(
+        "japanese_vocab",
+        &[
+            ("Word", "食べる"),
+            ("Meaning", "to eat"),
+            ("Reading", "たべる"),
+        ],
+        &[
+            ("expression", "Word"),
+            ("meaning", "Meaning"),
+            ("reading", "Reading"),
+        ],
+    );
+    let root = std::env::temp_dir().join(format!("lab-revamp-enrich-{}", uuid::Uuid::new_v4()));
+    for (key, value) in [
+        ("storage.state_dir", json!(root)),
+        ("kanji.enabled", json!(true)),
+        ("images.search_when_missing", json!(false)),
+        ("audio.provider", json!("preserve")),
+    ] {
+        settings.values.insert(key.into(), value);
+    }
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-revamp-enrich".into())]);
+    let prepared =
+        publish_capture_draft(&capture, &settings, "japanese_vocab", &environment).unwrap();
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let base = store.revision(prepared.plan_id, 1).unwrap();
+    assert!(requested(&settings, &base));
+    let child = enrich_revision(
+        &mut store,
+        &base,
+        &environment,
+        Providers {
+            kanji: Some(&Kanji),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(child.revision, 2);
+    assert_eq!(
+        child.parent_digest.as_deref(),
+        Some(prepared.digest.as_str())
+    );
+    let (before, after) = (&base.documents[0], &child.documents[0]);
+    assert_eq!(after.requested_tasks, before.requested_tasks);
+    assert_eq!(after.task_maps, before.task_maps);
+    assert_eq!(after.sources[0], before.sources[0]);
+    assert_eq!(after.sources[0].cards, before.sources[0].cards);
+    let LearningContent::Vocabulary(vocab) = &after.content else {
+        panic!()
+    };
+    assert!(vocab.kanji.starts_with("食 — eat"));
+    assert_eq!(vocab.meaning, "to eat");
+    // The source-only parent remains intact and the enrichment ran once.
+    assert_eq!(store.revision(prepared.plan_id, 1).unwrap(), base);
+    let mut frozen = settings.clone();
+    frozen.values = child.settings.values.clone();
+    assert!(!requested(&frozen, &child));
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

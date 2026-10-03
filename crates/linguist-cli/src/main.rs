@@ -686,6 +686,12 @@ enum PlanCommand {
         item_id: uuid::Uuid,
         #[arg(long)]
         revision: Option<u32>,
+        /// Record found candidates as a duplicate review in a new revision.
+        #[arg(long, requires = "digest")]
+        record: bool,
+        /// Exact digest of the latest revision being extended (with --record).
+        #[arg(long)]
+        digest: Option<String>,
     },
     /// Split a retained grammar source into authored units with one explicit anchor.
     SplitGrammar {
@@ -1155,8 +1161,13 @@ fn run(cli: Cli) -> Result<u8, String> {
                     &settings,
                     &environment,
                 )?;
-                emit(&result)?;
-                return Ok(if result.ready { 0 } else { 4 });
+                return emit_prepared(
+                    &settings,
+                    &environment,
+                    &result,
+                    result.plan_id,
+                    result.ready,
+                );
             };
             if inline.present() {
                 return Err("INPUT_MODE_CONFLICT: --document and inline card fields".into());
@@ -1179,8 +1190,13 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &settings,
                         &environment,
                     )?;
-                    emit(&result)?;
-                    Ok(if result.ready { 0 } else { 4 })
+                    emit_prepared(
+                        &settings,
+                        &environment,
+                        &result,
+                        result.plan_id,
+                        result.ready,
+                    )
                 }
                 AddFormat::Jsonl => {
                     let result = linguist_application::prepare_authored_jsonl(
@@ -1189,8 +1205,13 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &settings,
                         &environment,
                     )?;
-                    emit(&result)?;
-                    Ok(if result.ready { 0 } else { 4 })
+                    emit_prepared(
+                        &settings,
+                        &environment,
+                        &result,
+                        result.plan_id,
+                        result.ready,
+                    )
                 }
                 AddFormat::Csv => {
                     let result = linguist_application::prepare_authored_csv(
@@ -1199,8 +1220,13 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &settings,
                         &environment,
                     )?;
-                    emit(&result)?;
-                    Ok(if result.ready { 0 } else { 4 })
+                    emit_prepared(
+                        &settings,
+                        &environment,
+                        &result,
+                        result.plan_id,
+                        result.ready,
+                    )
                 }
             }
         }
@@ -1247,8 +1273,15 @@ fn run(cli: Cli) -> Result<u8, String> {
             } else {
                 serde_json::json!({"items":results,"item_count":results.len()})
             };
+            let environment: BTreeMap<String, String> = std::env::vars().collect();
+            let generation = match results.first() {
+                Some(first) if settings.values["llm.enabled"] == true => Some(
+                    generate_after_preparation(&settings, &environment, first.plan_id),
+                ),
+                _ => None,
+            };
             emit(
-                &serde_json::json!({"preparation_stage":if settings.values["dictionary.provider"] == "authored" {"source_draft"} else {"source_dictionary_draft"},"result":result,"dictionary_enrichment_completed":settings.values["dictionary.provider"] != "authored","enrichment_completed":false,"collection_writes_enabled":false}),
+                &serde_json::json!({"preparation_stage":if settings.values["dictionary.provider"] == "authored" {"source_draft"} else {"source_dictionary_draft"},"result":result,"dictionary_enrichment_completed":settings.values["dictionary.provider"] != "authored","enrichment_completed":!empty,"generation":generation,"collection_writes_enabled":false}),
             )?;
             Ok(if empty { 0 } else { 4 })
         }
@@ -1539,6 +1572,8 @@ fn run(cli: Cli) -> Result<u8, String> {
                     plan,
                     item_id,
                     revision,
+                    record,
+                    digest,
                 } => {
                     let revision = revision
                         .map(Ok)
@@ -1552,6 +1587,26 @@ fn run(cli: Cli) -> Result<u8, String> {
                         settings.values["selection.max_notes"].as_u64().unwrap() as usize,
                         max_chars,
                     )?;
+                    if record {
+                        drop(store);
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        let child = linguist_application::duplicate_candidates::record(
+                            &mut linguist_store::Store::open_existing(&root)?,
+                            &base,
+                            digest.as_deref().unwrap_or_default(),
+                            &report,
+                            now,
+                        )?;
+                        let recorded = child.as_ref().map(|child| {
+                            serde_json::json!({"revision":child.revision,"digest":child.approval_digest().ok(),
+                                "issue_id":format!("COLLECTION_DUPLICATE_REVIEW:{item_id}")})
+                        });
+                        emit(&serde_json::json!({"report":report,"recorded":recorded}))?;
+                        return Ok(if child.is_some() { 4 } else { 0 });
+                    }
                     emit(&report)?;
                 }
                 PlanCommand::SplitGrammar { plan, request } => {
@@ -3059,4 +3114,46 @@ fn local_engines(
         checks.push(serde_json::json!({"engine":"browser","status":"BROWSER_HELPER_UNAVAILABLE","required":true}));
     }
     checks
+}
+
+/// Run requested generation after a published preparation; failures are
+/// reported with the retained plan, never discarding it.
+fn generate_after_preparation(
+    settings: &linguist_config::Effective,
+    environment: &BTreeMap<String, String>,
+    plan_id: uuid::Uuid,
+) -> serde_json::Value {
+    let client =
+        match linguist_application::ollama::transport::Client::from_settings(settings, environment)
+        {
+            Ok(client) => client,
+            Err(error) => return serde_json::json!({"error":error,"plan_id":plan_id}),
+        };
+    match linguist_application::generation::generate_pending(
+        plan_id,
+        settings,
+        environment,
+        &client,
+    ) {
+        Ok(items) => serde_json::json!({"items":items}),
+        Err(error) => serde_json::json!({"error":error,"plan_id":plan_id}),
+    }
+}
+
+/// Emit a preparation receipt, adding inline generation when `llm.enabled`.
+fn emit_prepared<T: serde::Serialize>(
+    settings: &linguist_config::Effective,
+    environment: &BTreeMap<String, String>,
+    result: &T,
+    plan_id: uuid::Uuid,
+    ready: bool,
+) -> Result<u8, String> {
+    if settings.values["llm.enabled"] == true {
+        let generation = generate_after_preparation(settings, environment, plan_id);
+        emit(&serde_json::json!({"preparation":result,"generation":generation}))?;
+        // Generated content always needs review before readiness.
+        return Ok(4);
+    }
+    emit(result)?;
+    Ok(if ready { 0 } else { 4 })
 }

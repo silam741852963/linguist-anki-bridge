@@ -225,6 +225,102 @@ pub fn inspect(
     })
 }
 
+/// Record a candidate report as a reviewable duplicate decision point in a new
+/// revision. Only the plan's latest revision with the given digest may be
+/// extended. With no candidates nothing is recorded: an empty search is not
+/// proof of absence.
+pub fn record(
+    store: &mut linguist_store::Store,
+    base: &PlanRevision,
+    digest: &str,
+    report: &Report,
+    created_at: u64,
+) -> Result<Option<PlanRevision>, String> {
+    use linguist_core::{
+        Provenance, canonical,
+        records::Evidence,
+        validation::{self, Issue, Severity},
+    };
+    if store.latest_revision(base.id)? != base.revision
+        || base.approval_digest().map_err(|e| e.to_string())? != digest
+        || report.plan_id != base.id
+        || report.revision != base.revision
+        || report.plan_digest != digest
+    {
+        return Err("DUPLICATE_RECORD_BASE_CONFLICT".into());
+    }
+    if report.candidates.is_empty() {
+        return Ok(None);
+    }
+    let mut child = base.clone();
+    let document = child
+        .documents
+        .iter_mut()
+        .find(|document| document.id == report.document_id)
+        .ok_or("PLAN_ITEM_NOT_FOUND")?;
+    let issue_id = format!("COLLECTION_DUPLICATE_REVIEW:{}", document.id);
+    document
+        .issues
+        .retain(|issue| issue.id != issue_id && issue.stage != "validation");
+    document
+        .evidence
+        .retain(|evidence| evidence.field != "duplicates");
+    document
+        .reviews
+        .retain(|review| review.issue_id != issue_id);
+    document.evidence.push(Evidence {
+        id: Uuid::new_v4(),
+        field: "duplicates".into(),
+        provenance: Provenance::Provider,
+        source_id: None,
+        region_id: None,
+        target: None,
+        source_span: None,
+        language: document.target_language.clone(),
+        claim: serde_json::to_string(&serde_json::json!({
+            "candidates": report.candidates,
+            "search_scope": report.search_scope,
+            "observed_at_unix_seconds": report.observed_at_unix_seconds,
+            "recorded_at_unix_seconds": created_at,
+            "collection_duplicate_check_complete": false,
+        }))
+        .map_err(|e| e.to_string())?,
+        source_url: None,
+        ambiguous: true,
+    });
+    let mut issue = Issue::new(
+        "COLLECTION_DUPLICATE_REVIEW",
+        Severity::Review,
+        Some("duplicates"),
+        "Existing notes may duplicate this item; choose create_new or skip for a candidate note.",
+    );
+    issue.id = issue_id;
+    issue.stage = "duplicates".into();
+    issue.source_refs = report
+        .candidates
+        .iter()
+        .map(|c| c.note_id.clone())
+        .collect();
+    document.issues.push(issue);
+    document.issues = validation::validate(document);
+    child.revision = base
+        .revision
+        .checked_add(1)
+        .ok_or("DUPLICATE_REVISION_LIMIT")?;
+    child.parent_digest = Some(digest.into());
+    child.binding = None;
+    // The item is no longer ready; resolve re-renders it after the decision.
+    child
+        .rendered
+        .retain(|rendered| rendered.document_id != report.document_id);
+    let sources: Vec<_> = child.documents.iter().flat_map(|d| &d.sources).collect();
+    child.source_digest =
+        canonical::digest("source-capture", &sources).map_err(|e| e.to_string())?;
+    child.approval_digest().map_err(|e| e.to_string())?;
+    store.publish_revision(&child)?;
+    Ok(Some(child))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

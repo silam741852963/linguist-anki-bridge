@@ -555,7 +555,7 @@ fn invalid_content_is_persisted_for_review_without_a_render() {
 }
 #[test]
 fn schema_kind_and_provider_failures_do_not_initialize_state() {
-    let mut f = Fixture::new();
+    let f = Fixture::new();
     let bytes = serde_json::to_vec(&input(Kind::Vocabulary)).unwrap();
     assert!(prepare_authored(&bytes, Kind::Grammar, &f.settings, &f.environment).is_err());
     let mut value = input(Kind::Vocabulary);
@@ -569,14 +569,29 @@ fn schema_kind_and_provider_failures_do_not_initialize_state() {
         )
         .is_err()
     );
-    f.settings
-        .values
-        .insert("llm.enabled".into(), serde_json::json!(true));
-    assert!(
-        prepare_authored(&bytes, Kind::Vocabulary, &f.settings, &f.environment)
-            .unwrap_err()
-            .contains("UNAVAILABLE")
-    );
+    for (key, value) in [
+        ("images.provider", serde_json::json!("custom")),
+        ("audio.provider", serde_json::json!("custom")),
+        ("audio.provider", serde_json::json!("dictionary")),
+    ] {
+        let mut settings = f.settings.clone();
+        settings
+            .values
+            .insert("images.search_when_missing".into(), serde_json::json!(true));
+        settings.values.insert(key.into(), value);
+        if key == "images.provider" {
+            settings.values.insert(
+                "images.custom_endpoint".into(),
+                serde_json::json!("https://images.example/search"),
+            );
+        }
+        assert!(
+            prepare_authored(&bytes, Kind::Vocabulary, &settings, &f.environment)
+                .unwrap_err()
+                .contains("UNAVAILABLE"),
+            "{key}"
+        );
+    }
     assert!(!f.root.exists());
 }
 #[test]

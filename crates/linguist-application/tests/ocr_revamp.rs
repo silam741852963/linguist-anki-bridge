@@ -47,7 +47,10 @@ impl Fixture {
             .unwrap_or(0)
     }
     fn capture(&self, state: &str) -> (RevampCapture, Effective) {
-        let values = [("Word", "ながら"), ("Media", "<img src=\"screen.png\">")];
+        self.capture_word(state, "ながら")
+    }
+    fn capture_word(&self, state: &str, word: &str) -> (RevampCapture, Effective) {
+        let values = [("Word", word), ("Media", "<img src=\"screen.png\">")];
         let fields = values
             .iter()
             .enumerate()
@@ -308,4 +311,55 @@ fn unavailable_ocr_configuration_fails_before_state_creation() {
         );
     }
     assert_eq!(fixture.runs(), 0);
+}
+
+#[test]
+fn missing_expression_is_chosen_from_one_reviewed_ocr_region() {
+    let fixture = Fixture::new();
+    let (capture, settings) = fixture.capture_word("state", "");
+    let prepared = publish_capture_draft(&capture, &settings, "english_vocab", &env()).unwrap();
+    let store = linguist_store::Store::read_only(&fixture.root.join("state")).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let doc = &plan.documents[0];
+    let missing = validation::validate(doc)
+        .into_iter()
+        .find(|i| i.code == "REQUIRED_CONTENT" && i.field.as_deref() == Some("expression"))
+        .unwrap();
+    let choices = review::decision_templates(doc, &missing);
+    assert_eq!(choices.len(), 2);
+    let ReviewChoice::Expression { region_id } = choices[0] else {
+        panic!()
+    };
+    let request = review::ResolutionRequest {
+        schema_version: 2,
+        base_revision: 1,
+        base_digest: plan.approval_digest().unwrap(),
+        document_id: doc.id,
+        issue_id: missing.id.clone(),
+        input_digest: doc.semantic_digest().unwrap(),
+        actor: "reviewer".into(),
+        choice: ReviewChoice::Expression {
+            region_id: uuid::Uuid::new_v4(),
+        },
+    };
+    assert!(review::resolve(&plan, &request, "unix-seconds:1".into()).is_err());
+    let chosen = review::resolve(
+        &plan,
+        &review::ResolutionRequest {
+            choice: ReviewChoice::Expression { region_id },
+            ..request
+        },
+        "unix-seconds:1".into(),
+    )
+    .unwrap()
+    .revision;
+    let linguist_core::LearningContent::Vocabulary(vocab) = &chosen.documents[0].content else {
+        panic!()
+    };
+    assert_eq!(vocab.expression, "〜ながら");
+    assert!(
+        !validation::validate(&chosen.documents[0])
+            .iter()
+            .any(|i| i.code == "REQUIRED_CONTENT" && i.field.as_deref() == Some("expression"))
+    );
 }

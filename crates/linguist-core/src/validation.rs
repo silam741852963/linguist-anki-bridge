@@ -44,6 +44,25 @@ impl Issue {
     }
 }
 
+/// Stored stage observations that stay in the document after resolution and
+/// reopen as review unless a decision still matches the current content.
+pub fn reopenable(issue: &Issue) -> bool {
+    match issue.stage.as_str() {
+        "capture" => matches!(
+            issue.code.as_str(),
+            "SOURCE_HTML_TEXT_REVIEW"
+                | "SOURCE_EXAMPLES_REVIEW"
+                | "SOURCE_MEDIA_CONTENT_REVIEW"
+                | "SOURCE_MEDIA_FORMAT_REVIEW"
+                | "SOURCE_AUDIO_COMPLETENESS_REVIEW"
+        ),
+        "ocr" => crate::review::OCR_REVIEW_CODES.contains(&issue.code.as_str()),
+        "enrichment" => crate::review::CANDIDATE_REVIEW_CODES.contains(&issue.code.as_str()),
+        "duplicates" => issue.code == "COLLECTION_DUPLICATE_REVIEW",
+        _ => false,
+    }
+}
+
 pub fn safe_media_name(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 240
@@ -73,22 +92,18 @@ pub fn answer_leaks(prompt: &str, answer: &str, language: &Language) -> bool {
     })
 }
 pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
-    let mut issues = doc.issues.clone();
+    // Validation-stage issues are always recomputed; only stage observations
+    // (capture, OCR, dictionary, enrichment, generation, ...) are stored input.
+    let mut issues: Vec<Issue> = doc
+        .issues
+        .iter()
+        .filter(|issue| issue.stage != "validation")
+        .cloned()
+        .collect();
     // Resolved capture observations remain in the document as warning records.
     // Re-open them unless a decision still proves the exact current content/evidence.
     for issue in &mut issues {
-        if issue.stage == "capture"
-            && matches!(
-                issue.code.as_str(),
-                "SOURCE_HTML_TEXT_REVIEW"
-                    | "SOURCE_EXAMPLES_REVIEW"
-                    | "SOURCE_MEDIA_CONTENT_REVIEW"
-                    | "SOURCE_MEDIA_FORMAT_REVIEW"
-                    | "SOURCE_AUDIO_COMPLETENESS_REVIEW"
-            )
-            || issue.stage == "ocr"
-                && crate::review::OCR_REVIEW_CODES.contains(&issue.code.as_str())
-        {
+        if reopenable(issue) {
             issue.severity = Severity::Review;
         }
     }
@@ -657,6 +672,9 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                     ReviewChoice::SourceMediaRole { .. } => crate::review::source_media_matches(doc, issue, &r.choice, true),
                     ReviewChoice::SourceContentVerified { source_id, evidence_ids } =>
                         crate::review::source_content_verified(doc, issue, *source_id, evidence_ids),
+                    ReviewChoice::Media(digest) => crate::review::candidate_choice_matches(doc, issue, digest),
+                    ReviewChoice::Duplicate { note_id, action } =>
+                        crate::review::duplicate_choice_matches(issue, note_id, action),
                     ReviewChoice::ContentVerified { evidence_ids } => {
                         issue.code == "GENERATED_FACT_REVIEW"
                             && !issue.source_refs.is_empty()

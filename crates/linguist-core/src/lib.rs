@@ -1,6 +1,7 @@
 //! CLI domain contracts. No transport, UI, Anki database or filesystem mutation.
 pub mod approval;
 pub mod canonical;
+pub mod cues;
 pub mod document;
 pub mod editing;
 pub mod inspection;

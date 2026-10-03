@@ -930,3 +930,76 @@ fn truncated_tool_bearing_malformed_or_over_budget_completions_are_rejected() {
         "OLLAMA_RESPONSE_LIMIT"
     );
 }
+#[test]
+fn pending_generation_runs_eligible_items_and_reports_the_rest() {
+    use linguist_application::{freeze_settings, generation::generate_pending};
+    use linguist_core::{LearningContent, records::PlanRevision};
+    let mut output = completion_response();
+    output["message"]["content"] = json!(
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"production_prompt":"","spelling_prompt":""}}"#
+    );
+    let server = FixtureServer::new(vec![
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+        reply(output),
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+    ]);
+    let root =
+        std::env::temp_dir().join(format!("lab-pending-generation-{}", uuid::Uuid::new_v4()));
+    let environment =
+        std::collections::BTreeMap::from([("HOME".into(), root.to_str().unwrap().into())]);
+    let mut current = settings();
+    current
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    current
+        .values
+        .insert("llm.endpoint".into(), json!(server.endpoint));
+    current
+        .values
+        .insert("services.ollama.min_interval_seconds".into(), json!(0));
+    let eligible = generation_document();
+    // No accepted meaning yet: generation must wait for review, not guess.
+    let mut pending = generation_document();
+    pending.id = uuid::Uuid::new_v4();
+    if let LearningContent::Vocabulary(v) = &mut pending.content {
+        v.meaning.clear();
+    }
+    let plan = PlanRevision {
+        grammar_groups: vec![],
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: freeze_settings(&current, &environment).unwrap(),
+        binding: None,
+        source_digest: canonical::digest(
+            "source-capture",
+            &[&eligible.sources[..], &pending.sources[..]].concat(),
+        )
+        .unwrap(),
+        selection: None,
+        documents: vec![eligible.clone(), pending.clone()],
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    linguist_store::Store::open(&root)
+        .unwrap()
+        .publish_revision(&plan)
+        .unwrap();
+    let client = transport::Client::from_settings(&current, &environment).unwrap();
+    let results = generate_pending(plan.id, &current, &environment, &client).unwrap();
+    assert_eq!(results[0]["document_id"], json!(eligible.id));
+    assert_eq!(results[0]["generated"], true);
+    assert_eq!(results[0]["result"]["revision"], 2);
+    assert_eq!(results[1]["generated"], false);
+    assert_eq!(results[1]["skipped"], "GENERATION_ACCEPTED_ANSWER_REQUIRED");
+    assert_eq!(server.worker.join().unwrap().len(), 7);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    assert_eq!(store.latest_revision(plan.id).unwrap(), 2);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

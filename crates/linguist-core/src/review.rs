@@ -4,7 +4,7 @@ mod media;
 use crate::{
     Issue, Severity,
     canonical::ContractError,
-    records::{PlanRevision, ReviewChoice, ReviewDecision},
+    records::{MediaRole, PlanRevision, ReviewChoice, ReviewDecision},
 };
 pub(crate) use media::source_media_matches;
 use schemars::JsonSchema;
@@ -37,9 +37,11 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
         crate::Task::Spelling,
         crate::Task::Recognition,
     ] {
+        // Suggestions come only from current facts and are leak-checked; the
+        // reviewer still has to submit (and may edit) the text.
         let choice = ReviewChoice::Cue {
             task,
-            text: String::new(),
+            text: crate::cues::suggest(document, task).unwrap_or_default(),
         };
         if cue::applicable(document, issue, &choice) {
             choices.push(choice);
@@ -51,6 +53,30 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
     };
     if cue::applicable(document, issue, &exercise) {
         choices.push(exercise);
+    }
+    for region in &document.regions {
+        let choice = ReviewChoice::Expression {
+            region_id: region.id,
+        };
+        if expression_applicable(document, issue, &choice) {
+            choices.push(choice);
+        }
+    }
+    if CANDIDATE_REVIEW_CODES.contains(&issue.code.as_str()) && issue.severity == Severity::Review {
+        choices.extend(issue.source_refs.iter().cloned().map(ReviewChoice::Media));
+        choices.push(ReviewChoice::Media(String::new()));
+    }
+    if issue.code == "COLLECTION_DUPLICATE_REVIEW" && issue.severity == Severity::Review {
+        for note_id in &issue.source_refs {
+            if let Ok(note_id) = crate::AnkiId::try_from(note_id.clone()) {
+                for action in DUPLICATE_ACTIONS {
+                    choices.push(ReviewChoice::Duplicate {
+                        note_id: note_id.clone(),
+                        action: action.into(),
+                    });
+                }
+            }
+        }
     }
     if issue.code == "DICTIONARY_SENSE_REVIEW"
         && issue.severity == Severity::Review
@@ -167,14 +193,25 @@ pub fn resolve(
         .iter()
         .find(|issue| issue.id == request.issue_id)
         .ok_or_else(|| ContractError("REVIEW_ISSUE_NOT_UNRESOLVED".into()))?;
-    if issue.severity != Severity::Review && !cue::applicable(document, issue, &request.choice) {
+    if issue.severity != Severity::Review
+        && !cue::applicable(document, issue, &request.choice)
+        && !expression_applicable(document, issue, &request.choice)
+    {
         return Err(ContractError("ISSUE_CANNOT_BE_WAIVED".into()));
     }
     match &request.choice {
         ReviewChoice::Cue { .. } | ReviewChoice::Exercise { .. } => {
             cue::repair(document, issue, &request.choice)?;
-            let old_ids: BTreeSet<_> = document.reviews.iter().map(|review| review.id).collect();
-            document.reviews.clear();
+            // State-checked decisions are revalidated below; all others are invalidated.
+            let old_ids: BTreeSet<_> = document
+                .reviews
+                .iter()
+                .filter(|review| !rebindable(&review.choice))
+                .map(|review| review.id)
+                .collect();
+            document
+                .reviews
+                .retain(|review| !old_ids.contains(&review.id));
             candidate
                 .review_decisions
                 .retain(|decision| !old_ids.contains(&decision.id));
@@ -312,10 +349,77 @@ pub fn resolve(
                 .review_decisions
                 .retain(|decision| !old_ids.contains(&decision.id));
         }
+        ReviewChoice::Expression { region_id } => {
+            if !expression_applicable(document, issue, &request.choice) {
+                return Err(ContractError("REVIEW_EXPRESSION_REGION_INVALID".into()));
+            }
+            let text = document
+                .regions
+                .iter()
+                .find(|region| region.id == *region_id)
+                .map(|region| region.text.trim().to_owned())
+                .unwrap_or_default();
+            if let crate::LearningContent::Vocabulary(vocab) = &mut document.content {
+                vocab.expression = text;
+            }
+            // Identity changed: every earlier decision is invalidated.
+            let old_ids: BTreeSet<_> = document.reviews.iter().map(|review| review.id).collect();
+            document.reviews.clear();
+            candidate
+                .review_decisions
+                .retain(|decision| !old_ids.contains(&decision.id));
+        }
+        ReviewChoice::Media(digest) if CANDIDATE_REVIEW_CODES.contains(&issue.code.as_str()) => {
+            select_candidate(document, issue, digest)?;
+        }
+        ReviewChoice::Duplicate { note_id, action }
+            if issue.code == "COLLECTION_DUPLICATE_REVIEW" =>
+        {
+            if !duplicate_choice_matches(issue, note_id, action) {
+                return Err(ContractError("REVIEW_DUPLICATE_CHOICE_INVALID".into()));
+            }
+        }
         _ => {
             return Err(ContractError(
                 "CAPABILITY_UNAVAILABLE: this issue/decision pipeline is not implemented".into(),
             ));
+        }
+    }
+    // A typed cue/media/duplicate decision does not change the facts that sense,
+    // media and duplicate decisions are checked against. Rebind those that still
+    // validate to the new content digest; drop any that no longer hold.
+    if !matches!(
+        request.choice,
+        ReviewChoice::Sense(_) | ReviewChoice::SenseWithReading { .. }
+    ) {
+        let current = document.semantic_digest()?;
+        let mut rebound = BTreeSet::new();
+        for review in &mut document.reviews {
+            if rebindable(&review.choice) && review.input_digest != current {
+                review.input_digest = current.clone();
+                rebound.insert(review.id);
+            }
+        }
+        let open: BTreeSet<_> = crate::validation::validate(document)
+            .into_iter()
+            .map(|issue| issue.id)
+            .collect();
+        let stale: BTreeSet<_> = document
+            .reviews
+            .iter()
+            .filter(|review| rebound.contains(&review.id) && open.contains(&review.issue_id))
+            .map(|review| review.id)
+            .collect();
+        document
+            .reviews
+            .retain(|review| !stale.contains(&review.id));
+        candidate
+            .review_decisions
+            .retain(|decision| !stale.contains(&decision.id));
+        for decision in &mut candidate.review_decisions {
+            if let Some(review) = document.reviews.iter().find(|r| r.id == decision.id) {
+                decision.input_digest = review.input_digest.clone();
+            }
         }
     }
     let decision = ReviewDecision {
@@ -346,17 +450,7 @@ pub fn resolve(
         let observations: Vec<_> = document
             .issues
             .iter()
-            .filter(|issue| {
-                issue.stage == "capture"
-                    && matches!(
-                        issue.code.as_str(),
-                        "SOURCE_HTML_TEXT_REVIEW"
-                            | "SOURCE_EXAMPLES_REVIEW"
-                            | "SOURCE_MEDIA_CONTENT_REVIEW"
-                            | "SOURCE_MEDIA_FORMAT_REVIEW"
-                            | "SOURCE_AUDIO_COMPLETENESS_REVIEW"
-                    )
-            })
+            .filter(|issue| crate::validation::reopenable(issue))
             .cloned()
             .collect();
         document.issues = crate::validation::validate(document);
@@ -404,6 +498,121 @@ pub fn resolve(
         decision_id: decision.id,
         ready,
     })
+}
+
+/// Staged provider media candidates: a reviewer picks one digest or declines ("").
+pub const CANDIDATE_REVIEW_CODES: [&str; 2] = ["IMAGE_CANDIDATE_REVIEW", "AUDIO_CANDIDATE_REVIEW"];
+/// Duplicate decisions are recorded intent; apply enforces them separately.
+pub const DUPLICATE_ACTIONS: [&str; 2] = ["create_new", "skip"];
+
+fn candidate_role(issue: &Issue) -> MediaRole {
+    if issue.code == "AUDIO_CANDIDATE_REVIEW" {
+        MediaRole::Audio
+    } else {
+        MediaRole::Picture
+    }
+}
+
+/// Exactly the chosen candidate renders in the issue's role; every other
+/// candidate stays archive-only. "" declines all candidates.
+pub(crate) fn candidate_choice_matches(
+    document: &crate::LearningDocument,
+    issue: &Issue,
+    digest: &str,
+) -> bool {
+    let role = candidate_role(issue);
+    (digest.is_empty() || issue.source_refs.iter().any(|d| d == digest))
+        && issue.source_refs.iter().all(|candidate| {
+            document.media.iter().any(|asset| {
+                asset.digest == *candidate
+                    && asset.source_id.is_none()
+                    && if candidate == digest {
+                        asset.role == role
+                    } else {
+                        asset.role == MediaRole::Archive
+                    }
+            })
+        })
+}
+
+fn select_candidate(
+    document: &mut crate::LearningDocument,
+    issue: &Issue,
+    digest: &str,
+) -> Result<(), ContractError> {
+    if !digest.is_empty() && !issue.source_refs.iter().any(|d| d == digest) {
+        return Err(ContractError("REVIEW_CANDIDATE_UNKNOWN".into()));
+    }
+    let role = candidate_role(issue);
+    // Rendering roles require a decoded-inspection receipt for that candidate.
+    if !digest.is_empty()
+        && !document.evidence.iter().any(|e| {
+            e.target
+                == Some(crate::records::EvidenceTarget::MediaAsset {
+                    digest: digest.into(),
+                })
+                && serde_json::from_str::<serde_json::Value>(&e.claim)
+                    .is_ok_and(|claim| claim["inspection"]["mime"].is_string())
+        })
+    {
+        return Err(ContractError("REVIEW_CANDIDATE_UNINSPECTED".into()));
+    }
+    for candidate in &issue.source_refs {
+        let asset = document
+            .media
+            .iter_mut()
+            .find(|asset| asset.digest == *candidate && asset.source_id.is_none())
+            .ok_or_else(|| ContractError("REVIEW_CANDIDATE_MISSING".into()))?;
+        if candidate == digest {
+            asset.filename =
+                media::role_filename(&asset.digest, &asset.mime, &asset.filename, role)
+                    .ok_or_else(|| ContractError("REVIEW_MEDIA_TYPE_CONFLICT".into()))?;
+            asset.role = role;
+        } else {
+            asset.role = MediaRole::Archive;
+        }
+    }
+    Ok(())
+}
+
+/// An empty vocabulary expression may be taken from one single-line OCR region.
+fn expression_applicable(
+    document: &crate::LearningDocument,
+    issue: &Issue,
+    choice: &ReviewChoice,
+) -> bool {
+    let ReviewChoice::Expression { region_id } = choice else {
+        return false;
+    };
+    issue.code == "REQUIRED_CONTENT"
+        && issue.field.as_deref() == Some("expression")
+        && matches!(&document.content, crate::LearningContent::Vocabulary(v) if v.expression.trim().is_empty())
+        && document.regions.iter().any(|region| {
+            region.id == *region_id
+                && !region.text.trim().is_empty()
+                && !region.text.contains('\n')
+                && region.text.chars().count() <= 200
+        })
+}
+
+/// Decisions whose validity is fully re-checked against document state.
+fn rebindable(choice: &ReviewChoice) -> bool {
+    matches!(
+        choice,
+        ReviewChoice::Sense(_)
+            | ReviewChoice::SenseWithReading { .. }
+            | ReviewChoice::Media(_)
+            | ReviewChoice::Duplicate { .. }
+    )
+}
+
+pub(crate) fn duplicate_choice_matches(
+    issue: &Issue,
+    note_id: &crate::AnkiId,
+    action: &str,
+) -> bool {
+    let note_id = String::from(note_id.clone());
+    DUPLICATE_ACTIONS.contains(&action) && issue.source_refs.contains(&note_id)
 }
 
 /// OCR observations a reviewer may confirm after inspecting the image and every

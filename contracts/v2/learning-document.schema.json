@@ -655,7 +655,8 @@
         "dictionary",
         "ocr",
         "generated",
-        "user"
+        "user",
+        "provider"
       ]
     },
     "ReviewChoice": {
@@ -785,6 +786,33 @@
             },
             "value": {
               "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "expression"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "region_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "region_id"
+              ]
             }
           },
           "additionalProperties": false,

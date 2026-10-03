@@ -206,6 +206,10 @@ pub enum ReviewChoice {
         action: String,
     },
     Media(String),
+    // Take a missing vocabulary expression from one recorded OCR region.
+    Expression {
+        region_id: Uuid,
+    },
     Cue {
         task: Task,
         text: String,

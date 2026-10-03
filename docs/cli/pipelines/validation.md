@@ -21,5 +21,5 @@ but legacy models, HTML search behavior, context and concurrent changes mean
 even matching returned fields do not prove semantic identity or absence of
 other duplicates. The report always says collection duplicate checking is
 incomplete and cannot authorize `selection.duplicate_policy=skip_exact`.
-Complete native duplicate inspection and explicit skip outcomes remain pending.
+With `--record --digest D`, found candidates become a `COLLECTION_DUPLICATE_REVIEW` issue resolved per candidate note with `create_new` or `skip`. The decision is recorded intent only; an empty search records nothing, and complete native duplicate inspection plus enforcement of skip outcomes at apply remain pending.
 Query escaping and exact-field behavior follow the [Anki search manual](https://docs.ankiweb.net/searching.html#limiting-to-a-field).

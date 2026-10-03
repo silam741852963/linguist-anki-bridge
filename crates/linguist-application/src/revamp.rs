@@ -662,9 +662,17 @@ fn publish_selected_captures(
                 original_input_digest: capture.captured.source.digest.clone(),
                 apply_eligible: false,
                 duplicate_check_performed: false,
+                next_commands: vec![],
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()
+        .map(|mut receipts| {
+            let llm = settings.values["llm.enabled"] == true;
+            for receipt in &mut receipts {
+                receipt.refresh_next_commands(llm);
+            }
+            receipts
+        })
 }
 
 /// Initial CLI preparation path. Explicitly selected unavailable enrichment never gets skipped.
@@ -803,9 +811,6 @@ pub(crate) fn validate_source_revamp(
             return Err("CAPABILITY_UNAVAILABLE: this revamp dictionary/language adapter is not implemented".into());
         }
     }
-    if purpose == "japanese_vocab" && settings.values["kanji.enabled"] == true {
-        return Err("CAPABILITY_UNAVAILABLE: revamp kanji enrichment is pending; select kanji.enabled=false for a source draft".into());
-    }
     crate::ocr_inspection::preflight(settings, environment)?;
     crate::freeze_settings(settings, environment)?;
     let registry = linguist_config::Registry::builtin();
@@ -900,6 +905,41 @@ fn prepare_ids(
             receipt.input_digest = document.semantic_digest().map_err(|e| e.to_string())?;
             receipt.issues = document.issues.clone();
         }
+    }
+    // Optional kanji, picture and audio enrichment follows OCR and dictionary
+    // lookup as its own child, so a failure leaves earlier revisions intact.
+    let first = &prepared[0];
+    let frozen = crate::freeze_settings(settings, environment)?;
+    let root = std::path::Path::new(frozen.values["storage.state_dir"].as_str().unwrap());
+    let mut store = linguist_store::Store::open_existing(root)?;
+    let latest = store.latest_revision(first.plan_id)?;
+    let base = store.revision(first.plan_id, latest)?;
+    let mut effective = settings.clone();
+    effective.values = base.settings.values.clone();
+    if crate::vocab::requested(&effective, &base) {
+        let child = crate::vocab::enrich_revision(
+            &mut store,
+            &base,
+            environment,
+            crate::vocab::Providers::default(),
+        )
+        .map_err(|error| {
+            format!(
+                "{error}; retained_plan={} revision={} digest={}",
+                first.plan_id, latest, first.digest
+            )
+        })?;
+        let digest = child.approval_digest().map_err(|e| e.to_string())?;
+        for (receipt, document) in prepared.iter_mut().zip(&child.documents) {
+            receipt.revision = child.revision;
+            receipt.digest = digest.clone();
+            receipt.input_digest = document.semantic_digest().map_err(|e| e.to_string())?;
+            receipt.issues = document.issues.clone();
+        }
+    }
+    let llm = settings.values["llm.enabled"] == true;
+    for receipt in &mut prepared {
+        receipt.refresh_next_commands(llm);
     }
     Ok(prepared)
 }

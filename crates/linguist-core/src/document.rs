@@ -141,6 +141,8 @@ pub enum Provenance {
     Ocr,
     Generated,
     User,
+    // Non-dictionary external provider evidence, such as image search results.
+    Provider,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

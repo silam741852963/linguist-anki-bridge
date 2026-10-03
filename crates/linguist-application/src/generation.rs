@@ -612,3 +612,60 @@ fn merge_checked_output(
         assets,
     })
 }
+
+/// ALG-VOCAB step 5 after preparation: generate supplements for every item whose
+/// request is currently buildable, one child revision per item. Ineligible items
+/// (pending sense review, OCR review, nothing to fill) are reported, not forced.
+/// A failure for one item leaves earlier revisions and other items intact.
+pub fn generate_pending(
+    plan_id: uuid::Uuid,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    client: &crate::ollama::transport::Client,
+) -> Result<Vec<Value>, String> {
+    let frozen = crate::freeze_settings(settings, environment)?;
+    let root = std::path::PathBuf::from(
+        frozen.values["storage.state_dir"]
+            .as_str()
+            .ok_or("GENERATION_STATE_PATH_MISSING")?,
+    );
+    let ids: Vec<uuid::Uuid> = {
+        let store = linguist_store::Store::read_only(&root)?;
+        let latest = store.latest_revision(plan_id)?;
+        store
+            .revision(plan_id, latest)?
+            .documents
+            .iter()
+            .map(|document| document.id)
+            .collect()
+    };
+    let mut results = Vec::new();
+    for id in ids {
+        let mut store = linguist_store::Store::open_existing(&root)?;
+        let latest = store.latest_revision(plan_id)?;
+        let base = store.revision(plan_id, latest)?;
+        let document = base
+            .documents
+            .iter()
+            .find(|document| document.id == id)
+            .ok_or("PLAN_ITEM_NOT_FOUND")?;
+        match build_request(document, settings) {
+            Err(reason) => {
+                results.push(json!({"document_id":id,"generated":false,"skipped":reason}));
+                continue;
+            }
+            Ok(request) if request.allowed_fields.is_empty() => {
+                results.push(json!({"document_id":id,"generated":false,"skipped":"GENERATION_NOTHING_TO_FILL"}));
+                continue;
+            }
+            Ok(_) => {}
+        }
+        let digest = base.approval_digest().map_err(|e| e.to_string())?;
+        match publish_candidate(&mut store, &base, id, &digest, settings, environment, client) {
+            Ok(result) => results.push(json!({"document_id":id,"generated":true,"result":result})),
+            Err(error) => results.push(json!({"document_id":id,"generated":false,"error":error,
+                "next_command":format!("linguist-anki-bridge plans generate {plan_id} --item-id {id} --base-revision {latest} --digest {digest} --use-current-settings")})),
+        }
+    }
+    Ok(results)
+}

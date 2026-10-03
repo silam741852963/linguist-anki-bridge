@@ -104,6 +104,43 @@ pub struct Prepared {
     pub original_input_digest: String,
     pub apply_eligible: bool,
     pub duplicate_check_performed: bool,
+    /// Exact follow-up commands for unresolved issues; preparation never applies.
+    pub next_commands: Vec<String>,
+}
+impl Prepared {
+    /// Recompute follow-up commands from the item's current issues.
+    pub fn refresh_next_commands(&mut self, llm_enabled: bool) {
+        let plan = self.plan_id;
+        let revision = self.revision;
+        let digest = &self.digest;
+        let mut commands = Vec::new();
+        for issue in &self.issues {
+            match issue.severity {
+                Severity::Review => commands.push(format!(
+                    "linguist-anki-bridge plans resolve {plan} {} --decision FILE",
+                    issue.id
+                )),
+                Severity::Error if issue.code == "MISSING_CUE" && llm_enabled => commands.push(format!(
+                    "linguist-anki-bridge plans generate {plan} --item-id {} --base-revision {revision} --digest {digest} --use-current-settings",
+                    self.document_id
+                )),
+                Severity::Error => commands.push(format!(
+                    "linguist-anki-bridge plans edit {plan} --base-revision {revision} --patch FILE"
+                )),
+                Severity::Warning => {}
+            }
+        }
+        commands.dedup();
+        commands.push(format!(
+            "linguist-anki-bridge plans show {plan} --revision {revision}"
+        ));
+        if self.ready {
+            commands.push(format!(
+                "linguist-anki-bridge plans approve {plan} --revision {revision} --digest {digest} --actor NAME"
+            ));
+        }
+        self.next_commands = commands;
+    }
 }
 #[derive(Debug, Serialize)]
 pub struct PreparedBatch {
@@ -136,23 +173,10 @@ impl<'a> PreparedRecord<'a> {
         }
     }
 }
-/// Initial authored path; requested adapters must never be silently skipped.
-fn authored_capabilities(settings: &linguist_config::Effective) -> Result<(), String> {
-    if settings.values["llm.enabled"] != false {
-        return Err("CAPABILITY_UNAVAILABLE: generation is not implemented; authored preparation requires llm.enabled=false".into());
-    }
-    if settings.values["images.search_when_missing"] == true
-        && settings.values["images.provider"] != "disabled"
-    {
-        return Err("CAPABILITY_UNAVAILABLE: preparation does not yet stage image search candidates (the Wikimedia adapter exists, plan wiring is pending); disable images.search_when_missing or images.provider".into());
-    }
-    if !matches!(
-        settings.values["audio.provider"].as_str(),
-        Some("preserve" | "disabled")
-    ) {
-        return Err("CAPABILITY_UNAVAILABLE: preparation does not yet stage synthesized audio (the Piper adapter exists, plan wiring is pending); choose preserve or disabled".into());
-    }
-    Ok(())
+/// Requested adapters must never be silently skipped.
+pub(crate) fn authored_capabilities(settings: &linguist_config::Effective) -> Result<(), String> {
+    // Selected adapters without an implementation fail before any read or state.
+    vocab::preflight(settings)
 }
 /// Freeze filesystem values at preparation time. Credentials stay environment references.
 pub fn freeze_settings(
@@ -243,8 +267,14 @@ pub fn prepare_authored_inline(
         model_manifest: "authored-inline-v1",
         fields: Some(BTreeMap::from([("inline_input".into(), text)])),
     };
-    let mut batch =
-        publish_authored_records(&[record], expected_kind, settings, environment, None, false)?;
+    let mut batch = publish_authored_records(
+        &[record],
+        expected_kind,
+        settings,
+        environment,
+        vocab::Providers::default(),
+        false,
+    )?;
     Ok(batch.items.remove(0))
 }
 pub trait DictionaryPort {
@@ -261,12 +291,31 @@ pub fn prepare_with_dictionary(
     environment: &BTreeMap<String, String>,
     dictionary: Option<&dyn DictionaryPort>,
 ) -> Result<Prepared, String> {
+    prepare_with_providers(
+        bytes,
+        expected_kind,
+        settings,
+        environment,
+        vocab::Providers {
+            dictionary,
+            ..Default::default()
+        },
+    )
+}
+/// Authored JSON with injected provider ports (tests and alternative adapters).
+pub fn prepare_with_providers(
+    bytes: &[u8],
+    expected_kind: Kind,
+    settings: &linguist_config::Effective,
+    environment: &BTreeMap<String, String>,
+    providers: vocab::Providers<'_>,
+) -> Result<Prepared, String> {
     let mut batch = publish_authored_records(
         &[PreparedRecord::json(bytes)],
         expected_kind,
         settings,
         environment,
-        dictionary,
+        providers,
         false,
     )?;
     Ok(batch.items.remove(0))
@@ -298,7 +347,14 @@ pub fn prepare_authored_jsonl(
         }
     }
     let records: Vec<_> = records.into_iter().map(PreparedRecord::json).collect();
-    publish_authored_records(&records, expected_kind, settings, environment, None, true)
+    publish_authored_records(
+        &records,
+        expected_kind,
+        settings,
+        environment,
+        vocab::Providers::default(),
+        true,
+    )
 }
 
 /// Explicit simple authored-card CSV; the whole original file is retained as
@@ -456,14 +512,22 @@ pub fn prepare_authored_csv(
             fields: Some(fields),
         });
     }
-    publish_authored_records(&records, expected_kind, settings, environment, None, true)
+    publish_authored_records(
+        &records,
+        expected_kind,
+        settings,
+        environment,
+        vocab::Providers::default(),
+        true,
+    )
 }
 
 fn build_authored_document(
     record: &PreparedRecord<'_>,
     expected_kind: Kind,
     settings: &linguist_config::Effective,
-    dictionary: Option<&dyn DictionaryPort>,
+    environment: &BTreeMap<String, String>,
+    providers: vocab::Providers<'_>,
 ) -> Result<(LearningDocument, Vec<Vec<u8>>), String> {
     let bytes = record.structured.as_ref();
     if bytes.len() as u64 > settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024 {
@@ -556,16 +620,6 @@ fn build_authored_document(
             )
         }
     };
-    if let LearningContent::Vocabulary(vocab) = &content
-        && target_language.as_str().starts_with("ja")
-        && settings.values["kanji.enabled"] == true
-        && vocab
-            .expression
-            .chars()
-            .any(|c| matches!(c as u32, 0x3400..=0x9fff | 0x20000..=0x323af))
-    {
-        return Err("CAPABILITY_UNAVAILABLE: preparation does not yet stage kanji enrichment (the Jisho kanji adapter exists, plan wiring is pending); authored preparation requires kanji.enabled=false for kanji expressions".into());
-    }
     if version != 2 {
         return Err("UNSUPPORTED_ADD_INPUT_VERSION".into());
     }
@@ -625,7 +679,12 @@ fn build_authored_document(
         reviews: vec![],
         issues: vec![],
     };
-    let (enriched, provider_assets) = dictionary::enrich_document(&document, settings, dictionary)?;
+    let (enriched, mut provider_assets) =
+        dictionary::enrich_document(&document, settings, providers.dictionary)?;
+    // Optional enrichment runs after dictionary lookup on the same staged item.
+    let (enriched, enrichment_assets) =
+        vocab::enrich_document(&enriched, settings, environment, providers)?;
+    provider_assets.extend(enrichment_assets);
     document = enriched;
     document.issues = validation::validate(&document);
     Ok((document, provider_assets))
@@ -636,7 +695,7 @@ fn publish_authored_records(
     expected_kind: Kind,
     settings: &linguist_config::Effective,
     environment: &BTreeMap<String, String>,
-    dictionary: Option<&dyn DictionaryPort>,
+    providers: vocab::Providers<'_>,
     line_numbered: bool,
 ) -> Result<PreparedBatch, String> {
     if records.is_empty() {
@@ -649,15 +708,14 @@ fn publish_authored_records(
     // Complete all parsing, enrichment and validation before opening state.
     for (index, record) in records.iter().enumerate() {
         let (document, provider_assets) =
-            build_authored_document(record, expected_kind, settings, dictionary).map_err(
-                |error| {
+            build_authored_document(record, expected_kind, settings, environment, providers)
+                .map_err(|error| {
                     if line_numbered {
                         format!("INPUT_RECORD_{}: {error}", index + 1)
                     } else {
                         error
                     }
-                },
-            )?;
+                })?;
         if let Ok(card) = render::render(&document, &document.sources[0].fields) {
             rendered.push(card);
         }
@@ -698,11 +756,14 @@ fn publish_authored_records(
             )?;
         }
     }
+    let asset_cap = settings.values["network.max_response_mb"]
+        .as_u64()
+        .unwrap()
+        .max(settings.values["media.max_asset_mb"].as_u64().unwrap())
+        * 1024
+        * 1024;
     for asset in assets {
-        store.publish_asset(
-            &asset,
-            settings.values["network.max_response_mb"].as_u64().unwrap() * 1024 * 1024,
-        )?;
+        store.publish_asset(&asset, asset_cap)?;
     }
     let digest = store.publish_revision(&plan)?;
     let items = plan
@@ -722,9 +783,15 @@ fn publish_authored_records(
                 original_input_digest: document.sources[0].digest.clone(),
                 apply_eligible: false,
                 duplicate_check_performed: false,
+                next_commands: vec![],
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let llm = settings.values["llm.enabled"] == true;
+    let mut items = items;
+    for item in &mut items {
+        item.refresh_next_commands(llm);
+    }
     Ok(PreparedBatch {
         schema_version: 2,
         plan_id: plan.id,
@@ -759,3 +826,4 @@ pub mod review;
 pub mod selector;
 pub mod source_archive;
 pub mod speech;
+pub mod vocab;

@@ -283,7 +283,8 @@
         "dictionary",
         "ocr",
         "generated",
-        "user"
+        "user",
+        "provider"
       ]
     },
     "Sense": {

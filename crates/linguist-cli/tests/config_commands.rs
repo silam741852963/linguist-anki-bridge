@@ -3942,13 +3942,25 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
     }
 }
 #[test]
-fn revamp_missing_wrong_purpose_and_requested_generation_fail_before_state_creation() {
+fn revamp_missing_wrong_purpose_and_unavailable_adapters_fail_before_state_creation() {
     let root =
         std::env::temp_dir().join(format!("lab-cli-revamp-rejected-{}", uuid::Uuid::new_v4()));
     for (extra, exit) in [
         (vec![], 2),
         (vec!["--purpose", "japanese_grammar"], 2),
-        (vec!["--purpose", "english_vocab"], 3),
+        (
+            vec![
+                "--purpose",
+                "english_vocab",
+                "--set",
+                "audio.provider=custom",
+                "--set",
+                "audio.endpoint=https://tts.example/speak",
+                "--set",
+                "network.allowed_remote_service_hosts=[\"tts.example\"]",
+            ],
+            3,
+        ),
     ] {
         let out = cli()
             .arg("--set")
@@ -4256,5 +4268,114 @@ fn doctor_local_probes_selected_ocr_engine_without_services() {
             .iter()
             .any(|check| check["status"] == "BROWSER_HELPER_UNAVAILABLE")
     );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn offline_vocab_add_degrades_optional_enrichment_to_warnings_with_next_commands() {
+    let root = std::env::temp_dir().join(format!("lab-cli-vocab-enrich-{}", uuid::Uuid::new_v4()));
+    let out = cli()
+        .args([
+            "--offline",
+            "--set",
+            &format!("storage.state_dir={}", root.join("state").display()),
+            "--set",
+            &format!("storage.cache_dir={}", root.join("cache").display()),
+            "--set",
+            "llm.enabled=false",
+            "--set",
+            "dictionary.provider=authored",
+            "vocab",
+            "add",
+            "--expression",
+            "食べる",
+            "--meaning",
+            "to eat",
+            "--sense-key",
+            "eat",
+            "--reading",
+            "たべる",
+            "--target-language",
+            "ja",
+            "--explanation-language",
+            "en",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(value["ready"], true);
+    let codes: Vec<_> = value["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|issue| {
+            (
+                issue["code"].as_str().unwrap(),
+                issue["severity"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert!(
+        codes.contains(&("KANJI_ENRICHMENT_FAILED", "warning")),
+        "{codes:?}"
+    );
+    assert!(
+        codes.contains(&("IMAGE_SEARCH_FAILED", "warning")),
+        "{codes:?}"
+    );
+    let next = value["next_commands"].as_array().unwrap();
+    assert!(
+        next.iter()
+            .any(|c| c.as_str().unwrap().contains("plans approve"))
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn vocab_add_with_generation_enabled_retains_plan_when_the_engine_is_unreachable() {
+    let root =
+        std::env::temp_dir().join(format!("lab-cli-vocab-generate-{}", uuid::Uuid::new_v4()));
+    let out = cli()
+        .args([
+            "--set",
+            &format!("storage.state_dir={}", root.join("state").display()),
+            "--set",
+            "llm.enabled=true",
+            "--set",
+            "llm.endpoint=http://127.0.0.1:9",
+            "--set",
+            "dictionary.provider=authored",
+            "--set",
+            "images.search_when_missing=false",
+            "--set",
+            "kanji.enabled=false",
+            "vocab",
+            "add",
+            "--expression",
+            "eat",
+            "--meaning",
+            "consume food",
+            "--sense-key",
+            "food",
+            "--target-language",
+            "en",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(4), "{out:?}");
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let plan = value["preparation"]["plan_id"].as_str().unwrap();
+    let item = &value["generation"]["items"][0];
+    assert_eq!(item["generated"], false, "{value}");
+    assert!(
+        item["next_command"]
+            .as_str()
+            .unwrap()
+            .contains("plans generate")
+    );
+    let store = linguist_store::Store::read_only(&root.join("state")).unwrap();
+    let id = uuid::Uuid::parse_str(plan).unwrap();
+    assert_eq!(store.latest_revision(id).unwrap(), 1);
     std::fs::remove_dir_all(root).unwrap();
 }
