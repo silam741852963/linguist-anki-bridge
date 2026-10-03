@@ -1,6 +1,7 @@
 use crate::{
+    canonical,
     document::*,
-    records::{MediaRole, ReviewChoice},
+    records::{EvidenceTarget, MediaOwner, MediaRole, ReviewChoice, TargetModelKind},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -327,16 +328,53 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
         }
     }
     for source in &doc.sources {
-        if !doc
-            .archives
-            .iter()
-            .any(|a| a.source_id == source.id && a.original_fields == source.fields)
-        {
+        if source.text.as_ref().is_some_and(|text| {
+            let digest = canonical::asset_digest(text.as_bytes());
+            !doc.archives.iter().any(|archive| {
+                archive.source_id == source.id && archive.asset_digests.contains(&digest)
+            })
+        }) {
+            add(
+                "SOURCE_TEXT_ASSET_REQUIRED",
+                Severity::Error,
+                Some("archives"),
+                "Full source text requires its exact bytes in the source archive.",
+            );
+        }
+        if source.captured_at_unix_seconds == Some(0) {
+            add(
+                "SOURCE_CAPTURE_TIME_INVALID",
+                Severity::Error,
+                Some("sources"),
+                "Capture time must be a positive Unix timestamp when present.",
+            );
+        }
+        if source.template_manifest.as_ref().is_some_and(|digest| {
+            digest.len() != 64
+                || !digest
+                    .bytes()
+                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+                || !doc.archives.iter().any(|archive| {
+                    archive.source_id == source.id && archive.asset_digests.contains(digest)
+                })
+        }) {
+            add(
+                "SOURCE_TEMPLATE_ARCHIVE_REQUIRED",
+                Severity::Error,
+                Some("archives"),
+                "Template manifest requires a valid digest retained in its source archive.",
+            );
+        }
+        if !doc.archives.iter().any(|a| {
+            a.source_id == source.id
+                && a.original_fields == source.fields
+                && a.original_text == source.text
+        }) {
             add(
                 "SOURCE_ARCHIVE_REQUIRED",
                 Severity::Error,
                 Some("archives"),
-                "Every captured source requires a matching full original-field archive.",
+                "Every captured source requires a matching full original-text and field archive.",
             )
         }
         for name in &source.media_refs {
@@ -361,6 +399,66 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                     "Existing task/history cannot be removed to satisfy new-note defaults.",
                 )
             }
+        }
+    }
+    let mut mapped_sources = BTreeSet::new();
+    for map in &doc.task_maps {
+        let source = doc.sources.iter().find(|source| source.id == map.source_id);
+        let kind_matches = matches!(
+            (&doc.content, map.target_model),
+            (LearningContent::Vocabulary(_), TargetModelKind::Vocabulary)
+                | (LearningContent::Grammar(_), TargetModelKind::Grammar)
+        );
+        if map.validate().is_err()
+            || !mapped_sources.insert(map.source_id)
+            || !kind_matches
+            || !source.is_some_and(|source| {
+                source.kind == "anki_read_capture_v2"
+                    && source.model_manifest == map.source_model_digest
+                    && source.cards.iter().all(|card| {
+                        map.entries
+                            .iter()
+                            .any(|entry| entry.target_task == card.task)
+                    })
+            })
+            || map
+                .entries
+                .iter()
+                .any(|entry| !tasks.contains(&entry.target_task))
+        {
+            add(
+                "SOURCE_TASK_MAP_INVALID",
+                Severity::Error,
+                Some("task_maps"),
+                "Task map must bind one captured source model to unique, requested target tasks and fixed template ordinals.",
+            );
+        }
+    }
+    for asset in &doc.media {
+        if asset
+            .source_id
+            .is_some_and(|id| !doc.sources.iter().any(|source| source.id == id))
+        {
+            add(
+                "MEDIA_SOURCE_MISSING",
+                Severity::Error,
+                Some("media"),
+                "Media references a source absent from this document.",
+            );
+        }
+        if asset.owner == MediaOwner::Source
+            && !asset.source_id.is_some_and(|id| {
+                doc.archives.iter().any(|archive| {
+                    archive.source_id == id && archive.asset_digests.contains(&asset.digest)
+                })
+            })
+        {
+            add(
+                "SOURCE_MEDIA_ARCHIVE_REQUIRED",
+                Severity::Error,
+                Some("media"),
+                "Source-owned media requires its source and retained bytes in that source's archive.",
+            );
         }
     }
     let examples = match &doc.content {
@@ -424,6 +522,61 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                 Severity::Error,
                 Some("evidence"),
                 "Evidence references a missing source or region.",
+            );
+        }
+        if let Some(span) = &evidence.source_span {
+            let valid = evidence.source_id.is_some_and(|source_id| {
+                doc.sources
+                    .iter()
+                    .find(|source| source.id == source_id)
+                    .and_then(|source| source.text.as_deref())
+                    .is_some_and(|text| {
+                        let start = span.start_byte as usize;
+                        let end = span.end_byte as usize;
+                        start < end
+                            && end <= text.len()
+                            && text.is_char_boundary(start)
+                            && text.is_char_boundary(end)
+                    })
+            });
+            if !valid {
+                add(
+                    "EVIDENCE_SOURCE_SPAN_INVALID",
+                    Severity::Error,
+                    Some("evidence"),
+                    "Source span must select complete UTF-8 characters within retained source text.",
+                );
+            }
+        }
+        let target_valid = match &evidence.target {
+            None => true,
+            Some(EvidenceTarget::DictionarySense {
+                entry_index,
+                sense_index,
+            }) => matches!(&doc.content, LearningContent::Vocabulary(v)
+                if evidence.provenance == Provenance::Dictionary
+                    && v.dictionary.get(*entry_index).is_some_and(|entry| entry.senses.get(*sense_index).is_some())),
+            Some(EvidenceTarget::Example { index }) => match &doc.content {
+                LearningContent::Vocabulary(v) => v.examples.get(*index),
+                LearningContent::Grammar(g) => g.examples.get(*index),
+            }
+            .is_some_and(|example| {
+                example.provenance == evidence.provenance
+                    && example.evidence_ids.contains(&evidence.id)
+            }),
+            Some(EvidenceTarget::GrammarFormation) => {
+                evidence.field == "formation" && matches!(&doc.content, LearningContent::Grammar(_))
+            }
+            Some(EvidenceTarget::MediaAsset { digest }) => doc.media.iter().any(|asset| {
+                asset.digest == digest.as_str() && asset.source_id == evidence.source_id
+            }),
+        };
+        if !target_valid {
+            add(
+                "EVIDENCE_TARGET_INVALID",
+                Severity::Error,
+                Some("evidence"),
+                "Evidence target must match a current sense, example, formation or media asset.",
             );
         }
     }

@@ -1400,7 +1400,7 @@ class DictionaryParsingTests(unittest.TestCase):
         result = format_dictionary_meaning_html(self.parsed_entries(), "俳優", "", [])
         self.assertIn("margin-top:2px", result)
         self.assertNotIn("RELATED DICTIONARY RESULT", result)
-        self.assertIn("<hr style='border:0;border-top:2px solid #888", result)
+        self.assertIn("<hr style='border:0;border-top:2px solid currentColor", result)
 
     def test_kanji_preview_abbreviates_embedded_stroke_image(self):
         result = kanji_summary_for_tui(

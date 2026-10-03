@@ -44,6 +44,8 @@ pub struct MediaAsset {
 pub struct LogicalFields {
     pub meaning_image: Option<String>,
     pub meaning_text: Option<String>,
+    #[serde(default)]
+    pub examples: Option<String>,
     pub kanji_construction: Option<String>,
     pub audio: Option<String>,
 }
@@ -239,6 +241,11 @@ impl CardDocument {
         );
         append(
             &mut result,
+            mapping.examples.as_deref(),
+            self.values.examples.as_deref(),
+        );
+        append(
+            &mut result,
             mapping.kanji_construction.as_deref(),
             self.values.kanji_construction.as_deref(),
         );
@@ -263,8 +270,9 @@ pub fn build_card_document(input: CardBuildInput) -> CardDocument {
     }
     .to_owned();
 
+    let grammar = input.language_key.ends_with("grammar");
     let mut meaning = source.meaning_override.unwrap_or_else(|| {
-        if input.language_key.ends_with("grammar") {
+        if grammar {
             format_grammar_html(
                 source
                     .llm_response
@@ -273,7 +281,6 @@ pub fn build_card_document(input: CardBuildInput) -> CardDocument {
                     .unwrap_or(&expression),
                 &source.llm_response.meaning,
                 &source.llm_response.rules,
-                &source.llm_response.examples,
             )
         } else {
             format_dictionary_html(
@@ -400,6 +407,7 @@ pub fn build_card_document(input: CardBuildInput) -> CardDocument {
         values: LogicalFields {
             meaning_image: Some(images.concat()),
             meaning_text: Some(meaning),
+            examples: grammar.then(|| format_examples_html(&source.llm_response.examples)),
             kanji_construction: Some(source.kanji_construction),
             audio,
         },
@@ -416,6 +424,8 @@ pub struct FieldMapping {
     pub expression: Option<String>,
     pub meaning_image: Option<String>,
     pub meaning_text: Option<String>,
+    #[serde(default)]
+    pub examples: Option<String>,
     pub kanji_construction: Option<String>,
     pub audio: Option<String>,
 }
@@ -493,14 +503,9 @@ fn format_dictionary_html(
     )
 }
 
-fn format_grammar_html(
-    grammar_point: &str,
-    meaning: &str,
-    rules: &str,
-    examples: &[ExamplePair],
-) -> String {
+fn format_grammar_html(grammar_point: &str, meaning: &str, rules: &str) -> String {
     let mut output = format!(
-        "<div><b>Grammar Point:</b> <span style='font-size:1.2em;color:#e68e0d'>{}</span></div>",
+        "<div><b>Grammar Point:</b> <span style='font-size:1.2em'>{}</span></div>",
         escape_html(grammar_point)
     );
     output.push_str(&format!(
@@ -513,9 +518,6 @@ fn format_grammar_html(
             escape_html(rules)
         ));
     }
-    if !examples.is_empty() {
-        output.push_str(&format_llm_annotations("", examples));
-    }
     output
 }
 
@@ -523,10 +525,21 @@ fn format_llm_annotations(nuances: &str, examples: &[ExamplePair]) -> String {
     let mut output = String::new();
     if !nuances.is_empty() {
         output.push_str(&format!(
-            "<div data-source='llm' style='margin-top:6px;font-style:italic;color:#888'><b>Nuance:</b> {}</div>",
+            "<div data-source='llm' style='margin-top:6px;font-style:italic'><b>Nuance:</b> {}</div>",
             escape_html(nuances)
         ));
     }
+    let example_rows = format_examples_html(examples);
+    if example_rows.is_empty() {
+        return output;
+    }
+    output.push_str("<div data-source='llm' style='margin-top:10px'><b>Examples:</b><div style='margin-top:5px'>");
+    output.push_str(&example_rows);
+    output.push_str("</div></div>");
+    output
+}
+
+fn format_examples_html(examples: &[ExamplePair]) -> String {
     let valid_examples = examples
         .iter()
         .map(|example| {
@@ -537,10 +550,7 @@ fn format_llm_annotations(nuances: &str, examples: &[ExamplePair]) -> String {
         })
         .filter(|(sentence, translation)| !sentence.is_empty() || !translation.is_empty())
         .collect::<Vec<_>>();
-    if valid_examples.is_empty() {
-        return output;
-    }
-    output.push_str("<div data-source='llm' style='margin-top:10px'><b>Examples:</b><div style='margin-top:5px'>");
+    let mut output = String::new();
     for (index, (sentence, translation)) in valid_examples.iter().enumerate() {
         let separator = if !sentence.is_empty() && !translation.is_empty() {
             " — "
@@ -548,13 +558,12 @@ fn format_llm_annotations(nuances: &str, examples: &[ExamplePair]) -> String {
             ""
         };
         output.push_str(&format!(
-            "<div style='margin-bottom:4px'><b>{}. {}</b>{separator}<span style='color:#666;font-size:.9em'>{}</span></div>",
+            "<div style='margin-bottom:4px'><b>{}. {}</b>{separator}<span style='font-size:.9em'>{}</span></div>",
             index + 1,
             escape_html(sentence),
             escape_html(translation)
         ));
     }
-    output.push_str("</div></div>");
     output
 }
 
@@ -576,7 +585,7 @@ fn format_injection_context(type_tag: &str, source_note: &str) -> String {
         String::new()
     } else {
         format!(
-            "<aside data-source='user' style='margin-top:12px;border-top:1px dashed #888;padding-top:8px'>{rows}</aside>"
+            "<aside data-source='user' style='margin-top:12px;border-top:1px dashed currentColor;padding-top:8px'>{rows}</aside>"
         )
     }
 }

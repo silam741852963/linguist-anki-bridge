@@ -48,14 +48,12 @@ impl Default for ViewState {
     }
 }
 
+#[allow(dead_code)] // Synchronous fake boundary remains for focused controller tests.
 pub trait DesktopPort {
     fn anki_available(&self) -> Result<(), String>;
     fn ollama_available(&self) -> Result<(), String>;
     fn active_deck(&self) -> Result<String, String>;
     fn review_queue(&self) -> Result<ReviewQueueData, String>;
-}
-pub trait DraftNotePort {
-    fn note(&self, note_id: i64) -> Result<NoteInfo, String>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -131,6 +129,7 @@ impl ApplicationController {
         self.active_draft()?.pending().get(index)
     }
 
+    #[allow(dead_code)] // Native runtime uses the non-blocking load completion path.
     pub fn refresh<P: DesktopPort>(&mut self, port: &P) {
         self.state.busy = true;
         self.state.error.clear();
@@ -157,6 +156,53 @@ impl ApplicationController {
 
     pub fn begin_queue_loading(&mut self) {
         self.queue.begin_loading();
+    }
+
+    pub fn begin_refresh(&mut self) {
+        self.state.busy = true;
+        self.state.error.clear();
+        self.state.anki = ServiceState::Checking;
+        self.state.ollama = ServiceState::Checking;
+        self.queue.begin_loading();
+    }
+
+    pub fn begin_deck_loading(&mut self, index: usize) {
+        let Some(deck) = self.queue.select_deck_index(index).map(str::to_owned) else {
+            return;
+        };
+        self.queue.clear_for_loading();
+        self.drafts.deactivate();
+        self.commit.invalidate_preview();
+        self.state.active_deck = deck;
+        self.state.selection.clear();
+        self.state.busy = true;
+    }
+
+    pub fn hydrate_selected_note(&mut self, note: NoteInfo) {
+        let selected = self
+            .queue
+            .selected_index()
+            .and_then(|index| self.queue.rows().get(index))
+            .map(|row| row.note_id);
+        if selected == Some(note.note_id) {
+            self.drafts.hydrate(&note, &mut self.draft_persistence);
+        }
+    }
+
+    pub fn finish_queue_load(&mut self, active_deck: String, data: ReviewQueueData) {
+        self.state.active_deck = active_deck;
+        self.replace_queue(data);
+        self.state.busy = false;
+    }
+
+    pub fn finish_service_checks(&mut self, anki: Result<(), String>, ollama: Result<(), String>) {
+        self.state.anki = service_state(anki);
+        self.state.ollama = service_state(ollama);
+    }
+
+    pub fn finish_queue_error(&mut self, error: impl Into<String>) {
+        self.fail_queue(error);
+        self.state.busy = false;
     }
 
     pub fn replace_queue(&mut self, data: ReviewQueueData) {
@@ -197,25 +243,6 @@ impl ApplicationController {
         let _ = self.queue.select_index(index);
         self.state.selection = selection;
     }
-    pub fn hydrate_selected<P: DraftNotePort>(&mut self, port: &P) {
-        let Some(note_id) = self
-            .queue
-            .selected_index()
-            .and_then(|index| self.queue.rows().get(index))
-            .map(|row| row.note_id)
-        else {
-            return;
-        };
-        match port.note(note_id) {
-            Ok(note) => self.drafts.hydrate(&note, &mut self.draft_persistence),
-            Err(error) => self.report_error(error),
-        }
-    }
-
-    pub fn select_deck_index(&mut self, index: usize) {
-        let _ = self.queue.select_deck_index(index);
-    }
-
     pub fn report_error(&mut self, error: impl Into<String>) {
         self.state.error = error.into();
     }
@@ -317,12 +344,16 @@ impl ApplicationController {
     }
 
     fn sync_queue_selection(&mut self) {
-        self.state.selection = self
+        let visible_selection = self
             .queue
             .selected_index()
             .and_then(|index| self.queue.rows().get(index))
-            .map(selection_label)
-            .unwrap_or_default();
+            .map(selection_label);
+        if let Some(selection) = visible_selection {
+            self.state.selection = selection;
+        } else if !self.queue.has_selection() {
+            self.state.selection.clear();
+        }
     }
     fn report_batch_error(&mut self) {
         if !self.batch.error.is_empty() {
@@ -581,5 +612,35 @@ mod tests {
             controller.state().error,
             "Preview changes before applying them"
         );
+    }
+
+    #[test]
+    fn deck_switch_clears_stale_card_before_async_page_arrives() {
+        let mut controller = ApplicationController::default();
+        controller.replace_queue(ReviewQueueData {
+            decks: vec!["Japanese".into(), "German".into()],
+            rows: vec![ReviewRow {
+                note_id: 42,
+                expression: "猫".into(),
+                detail: "Japanese".into(),
+                state: ReviewState::Ready,
+            }],
+        });
+        controller.select_queue_index(0);
+        controller.hydrate_selected_note(NoteInfo {
+            note_id: 42,
+            model_name: linguist_application::ModelName("Japanese".into()),
+            deck_names: vec![linguist_application::DeckName("Japanese".into())],
+            fields: BTreeMap::from([("Word".into(), "猫".into())]),
+            tags: Vec::new(),
+        });
+        assert_eq!(controller.active_draft().unwrap().expression, "猫");
+
+        controller.begin_deck_loading(1);
+
+        assert!(controller.active_draft().is_none());
+        assert!(controller.queue().rows().is_empty());
+        assert_eq!(controller.state().active_deck, "German");
+        assert!(controller.state().selection.is_empty());
     }
 }

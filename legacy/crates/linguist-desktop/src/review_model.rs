@@ -97,6 +97,10 @@ impl ReviewQueueModel {
             .and_then(|note_id| self.rows.iter().position(|row| row.note_id == note_id))
     }
 
+    pub fn has_selection(&self) -> bool {
+        self.selected_note_id.is_some()
+    }
+
     pub fn selected_deck_index(&self) -> Option<usize> {
         self.selected_deck
             .as_ref()
@@ -105,6 +109,12 @@ impl ReviewQueueModel {
 
     pub fn begin_loading(&mut self) {
         self.state = QueueState::Loading;
+    }
+
+    pub fn clear_for_loading(&mut self) {
+        self.state = QueueState::Loading;
+        self.rows.clear();
+        self.selected_note_id = None;
     }
 
     pub fn replace(&mut self, mut data: ReviewQueueData) {
@@ -121,9 +131,9 @@ impl ReviewQueueModel {
         } else {
             QueueState::Ready
         };
-        self.selected_note_id = old_selection
-            .filter(|note_id| self.rows.iter().any(|row| row.note_id == *note_id))
-            .or_else(|| self.rows.first().map(|row| row.note_id));
+        // A page can hide the selected note. Preserve explicit user choice so
+        // the editor remains stable and the note is highlighted on return.
+        self.selected_note_id = old_selection;
         self.selected_deck = self
             .selected_deck
             .take()
@@ -138,10 +148,8 @@ impl ReviewQueueModel {
             self.selected_note_id = None;
         } else {
             self.state = QueueState::Ready;
-            self.selected_note_id = self
-                .selected_note_id
-                .filter(|note_id| self.rows.iter().any(|row| row.note_id == *note_id))
-                .or_else(|| self.rows.first().map(|row| row.note_id));
+            // Pending imported rows may remain while the selected Anki note is
+            // temporarily unavailable. Never replace it with the first row.
         }
     }
 
@@ -201,6 +209,32 @@ mod tests {
         });
         assert_eq!(model.selected_index(), Some(0));
         assert_eq!(model.rows()[0].note_id, 2);
+    }
+
+    #[test]
+    fn loading_pages_never_selects_first_card_and_keeps_hidden_selection() {
+        let mut model = ReviewQueueModel::default();
+        model.replace(ReviewQueueData {
+            decks: vec!["Japanese".into()],
+            rows: vec![row(1, ReviewState::Ready), row(2, ReviewState::Ready)],
+        });
+        assert_eq!(model.selected_index(), None);
+        assert!(!model.has_selection());
+
+        model.select_index(1);
+        model.begin_loading();
+        model.replace(ReviewQueueData {
+            decks: vec!["Japanese".into()],
+            rows: vec![row(101, ReviewState::Ready), row(102, ReviewState::Ready)],
+        });
+        assert_eq!(model.selected_index(), None);
+        assert!(model.has_selection());
+
+        model.replace(ReviewQueueData {
+            decks: vec!["Japanese".into()],
+            rows: vec![row(1, ReviewState::Ready), row(2, ReviewState::Ready)],
+        });
+        assert_eq!(model.selected_index(), Some(1));
     }
 
     #[test]

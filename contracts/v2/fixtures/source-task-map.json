@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "source_id": "3b23972d-751b-4d27-a12d-4719c7572b9e",
+  "source_model_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "target_model": "vocabulary",
+  "entries": [
+    {"source_ordinal": 0, "target_task": "comprehension", "target_ordinal": 0},
+    {"source_ordinal": 1, "target_task": "production", "target_ordinal": 1}
+  ]
+}

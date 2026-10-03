@@ -253,6 +253,12 @@ fn source_audio_receipt_and_archive_role_survive_restart() {
         .settings
         .values
         .insert("audio.provider".into(), json!("disabled"));
+    (
+        disabled.settings.semantic_fingerprint,
+        disabled.settings.execution_fingerprint,
+    ) = setting_fingerprints(&disabled.settings.values).unwrap();
+    disabled.settings.fingerprint =
+        linguist_core::canonical::digest("resolved-settings", &disabled.settings.values).unwrap();
     request.base_digest = disabled.approval_digest().unwrap();
     request.input_digest = doc.semantic_digest().unwrap();
     assert_eq!(
@@ -306,6 +312,12 @@ fn decoded_source_image_has_digest_linked_evidence_but_remains_archive_only() {
         .iter()
         .find(|e| e.field == "media_format")
         .unwrap();
+    assert_eq!(
+        evidence.target,
+        Some(linguist_core::records::EvidenceTarget::MediaAsset {
+            digest: digest.clone(),
+        })
+    );
     let receipt: serde_json::Value = serde_json::from_str(&evidence.claim).unwrap();
     assert_eq!(receipt["asset_digest"], digest);
     assert_eq!(receipt["inspection"]["height"], 3);
@@ -365,6 +377,12 @@ fn decoded_source_image_has_digest_linked_evidence_but_remains_archive_only() {
         .settings
         .values
         .insert("images.existing_policy".into(), json!("omit_reference"));
+    (
+        omitted.settings.semantic_fingerprint,
+        omitted.settings.execution_fingerprint,
+    ) = setting_fingerprints(&omitted.settings.values).unwrap();
+    omitted.settings.fingerprint =
+        linguist_core::canonical::digest("resolved-settings", &omitted.settings.values).unwrap();
     let mut conflict = request;
     conflict.base_digest = omitted.approval_digest().unwrap();
     assert_eq!(
@@ -1124,7 +1142,13 @@ fn dictionary_enrichment_retains_source_revision_and_requires_sense_review() {
         child.documents[0]
             .evidence
             .iter()
-            .any(|e| e.provenance == Provenance::Dictionary && e.claim == "Consume food")
+            .any(|e| e.provenance == Provenance::Dictionary
+                && e.claim == "Consume food"
+                && e.target
+                    == Some(linguist_core::records::EvidenceTarget::DictionarySense {
+                        entry_index: 0,
+                        sense_index: 0,
+                    }))
     );
     assert_eq!(store.revision(base.id, 1).unwrap(), base);
     assert!(

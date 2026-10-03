@@ -12,6 +12,7 @@ fn write<T: JsonSchema>(name: &str) {
 }
 fn main() {
     write::<linguist_core::model::ModelComparison>("model-comparison");
+    write::<SourceTaskMap>("source-task-map");
     write::<linguist_core::editing::PlanPatch>("plan-patch");
     write::<LearningDocument>("learning-document");
     write::<RenderedNote>("rendered-note");
@@ -21,6 +22,10 @@ fn main() {
     write::<linguist_core::review::ResolutionRequest>("resolution-request");
     write::<Approval>("approval");
     write::<OperationJournal>("operation-journal");
+    write::<NativeOperationReceipt>("native-operation-receipt");
+    write::<ResumeBindingDecision>("resume-binding-decision");
+    write::<GateEvidence>("gate-evidence");
+    write::<CapabilityReport>("capability-report");
     write::<Snapshot>("snapshot");
     write::<BackupReceipt>("backup-receipt");
     write::<Job>("job");

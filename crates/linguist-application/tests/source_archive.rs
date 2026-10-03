@@ -24,7 +24,20 @@ fn raw_note_model_and_card_assets_survive_publication_without_native_history_cla
     assert_eq!(captured.source.fields["Extra"], "  original\n");
     assert_eq!(captured.source.media_refs, vec!["cat.mp3"]);
     assert!(captured.source.cards.is_empty()); // No fabricated native CardState/history.
+    assert!(
+        captured
+            .source
+            .captured_at_unix_seconds
+            .is_some_and(|time| time > 0)
+    );
+    let template_digest = captured.source.template_manifest.as_ref().unwrap();
+    assert_eq!(
+        captured.assets[template_digest],
+        canonical::bytes(&m["templates"]).unwrap()
+    );
+    assert!(captured.archive.asset_digests.contains(template_digest));
     let manifest: Value = canonical::parse(&captured.assets[&captured.source.digest]).unwrap();
+    assert_eq!(manifest["template_manifest"], *template_digest);
     assert_eq!(manifest["atomic_snapshot_verified"], false);
     assert_eq!(manifest["native_history_verified"], false);
     let root = std::env::temp_dir().join(format!("lab-source-archive-{}", uuid::Uuid::new_v4()));

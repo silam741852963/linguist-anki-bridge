@@ -38,6 +38,8 @@ pub fn enrich_revision(
         values: base.settings.values.clone(),
         provenance: base.settings.provenance.clone(),
         fingerprint: base.settings.fingerprint.clone(),
+        semantic_fingerprint: base.settings.semantic_fingerprint.clone(),
+        execution_fingerprint: base.settings.execution_fingerprint.clone(),
     };
     validate_settings(&settings)?;
     if settings.values["dictionary.provider"] == "authored" {
@@ -218,6 +220,7 @@ pub fn enrich_document(
                 .into(),
                 location: page.request_url.clone(),
                 digest: page.raw_digest.clone(),
+                text: fields.get("provider_response").cloned(),
                 fields: fields.clone(),
                 model_manifest: if japanese {
                     "jisho-api-v1"
@@ -225,6 +228,8 @@ pub fn enrich_document(
                     "wiktionary-definition-v0.8"
                 }
                 .into(),
+                template_manifest: None,
+                captured_at_unix_seconds: None,
                 tags: vec![],
                 cards: vec![],
                 media_refs: vec![],
@@ -233,17 +238,23 @@ pub fn enrich_document(
                 id: uuid::Uuid::new_v4(),
                 source_id,
                 digest: page.raw_digest.clone(),
+                original_text: fields.get("provider_response").cloned(),
                 original_fields: fields,
                 asset_digests: vec![page.raw_digest.clone()],
             });
-            for entry in &vocab.dictionary {
-                for sense in &entry.senses {
+            for (entry_index, entry) in vocab.dictionary.iter().enumerate() {
+                for (sense_index, sense) in entry.senses.iter().enumerate() {
                     document.evidence.push(Evidence {
                         id: uuid::Uuid::new_v4(),
                         field: "meaning".into(),
                         provenance: Provenance::Dictionary,
                         source_id: Some(source_id),
                         region_id: None,
+                        target: Some(EvidenceTarget::DictionarySense {
+                            entry_index,
+                            sense_index,
+                        }),
+                        source_span: None,
                         language: "en".to_owned().try_into()?,
                         claim: sense.definitions.join("; "),
                         source_url: Some(entry.source_url.clone()),

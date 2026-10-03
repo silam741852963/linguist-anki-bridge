@@ -3,7 +3,7 @@ use crate::{mapping::SourceKind, source_archive::RevampCapture};
 use linguist_config::Effective;
 use linguist_core::{
     LearningDocument, Provenance, canonical,
-    records::{Evidence, SelectionInput, SelectionReceipt},
+    records::{Evidence, EvidenceTarget, SelectionInput, SelectionReceipt},
     validation::{self, Issue, Severity},
 };
 use serde_json::json;
@@ -91,6 +91,10 @@ pub fn stage_document(
     if archive.source_id != source.id
         || archive.digest != source.digest
         || archive.original_fields != source.fields
+        || archive.original_text != source.text
+        || source.template_manifest.as_ref().is_some_and(|digest| {
+            !archive.asset_digests.contains(digest) || !capture.captured.assets.contains_key(digest)
+        })
     {
         return Err("REVAMP_CAPTURE_ARCHIVE_CONFLICT".into());
     }
@@ -102,6 +106,13 @@ pub fn stage_document(
             .ok_or("REVAMP_CAPTURE_MANIFEST_MISSING")?,
     )
     .map_err(|_| "REVAMP_CAPTURE_MANIFEST_INVALID")?;
+    if source
+        .template_manifest
+        .as_ref()
+        .is_some_and(|digest| manifest["template_manifest"].as_str() != Some(digest.as_str()))
+    {
+        return Err("REVAMP_CAPTURE_MANIFEST_CONFLICT".into());
+    }
     let payload = |name: &str| -> Result<&[u8], String> {
         let digest = manifest["payloads"][name]
             .as_str()
@@ -125,6 +136,8 @@ pub fn stage_document(
     if rebuilt.source.fields != source.fields
         || rebuilt.source.tags != source.tags
         || rebuilt.source.model_manifest != source.model_manifest
+        || source.template_manifest.is_some()
+            && rebuilt.source.template_manifest != source.template_manifest
         || rebuilt.source.location != source.location
         || rebuilt.source.media_refs != source.media_refs
     {
@@ -325,6 +338,10 @@ pub fn stage_document(
                                     provenance: Provenance::Source,
                                     source_id: Some(source_id),
                                     region_id: None,
+                                    target: Some(EvidenceTarget::MediaAsset {
+                                        digest: digest.clone(),
+                                    }),
+                                    source_span: None,
                                     language: doc.target_language.clone(),
                                     claim: serde_json::to_string(&json!({
                                         "asset_digest": digest,
@@ -345,6 +362,10 @@ pub fn stage_document(
                                     provenance: Provenance::Source,
                                     source_id: Some(source_id),
                                     region_id: None,
+                                    target: Some(EvidenceTarget::MediaAsset {
+                                        digest: digest.clone(),
+                                    }),
+                                    source_span: None,
                                     language: doc.target_language.clone(),
                                     claim: serde_json::to_string(&json!({
                                         "asset_digest": digest,
@@ -396,12 +417,20 @@ pub fn stage_document(
     }
     for pair in example_candidates {
         let evidence_id = uuid::Uuid::new_v4();
+        let example_index = match &doc.content {
+            linguist_core::LearningContent::Vocabulary(v) => v.examples.len(),
+            linguist_core::LearningContent::Grammar(g) => g.examples.len(),
+        };
         doc.evidence.push(Evidence {
             id: evidence_id,
             field: "examples".into(),
             provenance: Provenance::Source,
             source_id: Some(source_id),
             region_id: None,
+            target: Some(EvidenceTarget::Example {
+                index: example_index,
+            }),
+            source_span: None,
             language: doc.target_language.clone(),
             claim: serde_json::to_string(&pair).map_err(|_| "REVAMP_EXAMPLES_ENCODING")?,
             source_url: None,
@@ -419,6 +448,7 @@ pub fn stage_document(
         }
     }
     for (field, claim) in values {
+        let target = (field == "formation").then_some(EvidenceTarget::GrammarFormation);
         let language = if [
             "expression",
             "reading",
@@ -443,6 +473,8 @@ pub fn stage_document(
             provenance: Provenance::Source,
             source_id: Some(source_id),
             region_id: None,
+            target,
+            source_span: None,
             language,
             claim,
             source_url: None,

@@ -3,7 +3,8 @@
   "expression": "食べる",
   "values": {
     "meaning_image": "<img src='linguist-taberu.jpg'/>",
-    "meaning_text": "<section><div><b>たべる / 食べる</b></div><div style='margin-top:7px'>to eat; to consume</div><div data-source='llm' style='margin-top:6px;font-style:italic;color:#888'><b>Nuance:</b> An everyday verb for eating food.</div><div data-source='llm' style='margin-top:10px'><b>Examples:</b><div style='margin-top:5px'><div style='margin-bottom:4px'><b>1. 朝ご飯を食べる。</b> — <span style='color:#666;font-size:.9em'>I eat breakfast.</span></div></div></div></section>",
+    "meaning_text": "<section><div><b>たべる / 食べる</b></div><div style='margin-top:7px'>to eat; to consume</div><div data-source='llm' style='margin-top:6px;font-style:italic'><b>Nuance:</b> An everyday verb for eating food.</div><div data-source='llm' style='margin-top:10px'><b>Examples:</b><div style='margin-top:5px'><div style='margin-bottom:4px'><b>1. 朝ご飯を食べる。</b> — <span style='font-size:.9em'>I eat breakfast.</span></div></div></div></section>",
+    "examples": null,
     "kanji_construction": "食 · eat, food",
     "audio": "たべる [sound:linguist-taberu.mp3]"
   },

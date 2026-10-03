@@ -13,11 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from linguist_bridge.lineage import LineageStore
 from linguist_bridge.operations import OperationLedger
 from linguist_bridge.payloads import VOCAB_FIELDS
+from linguist_bridge import registration
 
 PACKAGE = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("bridge_registration", PACKAGE / "registration.py")
-registration = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(registration)
 
 UTIL = '''def api(*versions):
     def decorate(function):
@@ -153,6 +151,9 @@ class RegistrationTest(unittest.TestCase):
             self.module.ac.handler({"action": "labCapabilities"})
         advertised["mutation_variants"] = []
         self.assertEqual(self.module.ac.handler({"action": "labCapabilities"}), advertised)
+        advertised["collection_session"] = {"lineage_id": "forged"}
+        with self.assertRaisesRegex(registration.RegistrationError, "BRIDGE_MANIFEST_INVALID"):
+            self.module.ac.handler({"action": "labCapabilities"})
 
     def test_unknown_sources_collision_and_unexpected_decorator_are_rejected(self):
         (self.root / 'util.py').write_text(UTIL + '\n# changed source\n')

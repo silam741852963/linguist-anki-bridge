@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResumeBindingDecision",
+  "description": "Records an explicit decision about one existing operation after a collection\nsession change. Validation is structural; live identity and safe continuation\nstill require the recovery algorithm and current `--apply` authorization.",
+  "type": "object",
+  "properties": {
+    "actor": {
+      "type": "string"
+    },
+    "approval_digest": {
+      "type": "string",
+      "pattern": "^lab-jcs-v1:plan:[0-9a-f]{64}$"
+    },
+    "decided_at": {
+      "type": "string"
+    },
+    "new_binding": {
+      "$ref": "#/$defs/CollectionBinding"
+    },
+    "observed_state_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "old_binding": {
+      "$ref": "#/$defs/CollectionBinding"
+    },
+    "operation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 1,
+      "minimum": 1
+    },
+    "scope": {
+      "$ref": "#/$defs/ResumeBindingScope"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "approval_digest",
+    "old_binding",
+    "new_binding",
+    "observed_state_digest",
+    "actor",
+    "decided_at",
+    "scope"
+  ],
+  "$defs": {
+    "CollectionBinding": {
+      "type": "object",
+      "properties": {
+        "bridge_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "capability_digest": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "lineage_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "path_fingerprint": {
+          "type": "string"
+        },
+        "profile_fingerprint": {
+          "type": "string"
+        },
+        "session_epoch": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "endpoint",
+        "profile_fingerprint",
+        "path_fingerprint",
+        "bridge_id",
+        "lineage_id",
+        "session_epoch",
+        "capability_digest"
+      ]
+    },
+    "ResumeBindingScope": {
+      "type": "string",
+      "enum": [
+        "continue_operation"
+      ]
+    }
+  }
+}

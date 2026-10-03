@@ -50,6 +50,23 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(manifest["mutation_variants"], [])
         self.assertIsNone(manifest["collection_session"])
 
+    def test_observed_session_is_copied_and_invalid_shapes_fail(self):
+        session = {
+            "lineage_id": "c17625b0-7a88-4aab-a8a5-c1d993c72a00",
+            "session_epoch": "fd0f8a16-5963-47e0-a056-f23bb1dac742",
+            "profile_fingerprint": "a" * 64,
+            "path_fingerprint": "b" * 64,
+        }
+        manifest = protocol.build_capabilities(**self.arguments(), collection_session=session)
+        self.assertEqual(manifest["collection_session"], session)
+        self.assertEqual(manifest["mutation_variants"], [])
+        session["path_fingerprint"] = "forged"
+        self.assertEqual(manifest["collection_session"]["path_fingerprint"], "b" * 64)
+        for broken in (session, {**manifest["collection_session"], "extra": 1},
+                       {**manifest["collection_session"], "session_epoch": "bad"}):
+            with self.assertRaisesRegex(ValueError, "NATIVE_MANIFEST_SESSION_INVALID"):
+                protocol.build_capabilities(**self.arguments(), collection_session=broken)
+
     def test_import_does_not_register_or_initialize_services(self):
         package_spec = importlib.util.spec_from_file_location("bridge_scaffold", PACKAGE / "__init__.py")
         package = importlib.util.module_from_spec(package_spec)

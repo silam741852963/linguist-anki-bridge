@@ -12,16 +12,17 @@ ApplicationWindow {
     minimumWidth: 360
     minimumHeight: 360
     title: qsTr("Linguist Anki Bridge")
-    color: backend.theme_background
+    color: appBackground
     palette.window: appBackground
     palette.windowText: foreground
     palette.base: surface
     palette.text: foreground
     palette.button: surface
     palette.buttonText: foreground
-    palette.highlight: accent
+    palette.highlight: selection
     palette.highlightedText: appBackground
 
+    SystemPalette { id: systemColors }
     AppBackend { id: backend }
     Component.onCompleted: backend.refreshState()
     Timer {
@@ -36,12 +37,25 @@ ApplicationWindow {
         repeat: true
         onTriggered: backend.runBatchTick()
     }
+    Timer {
+        interval: 40
+        running: root.visible
+        repeat: true
+        onTriggered: backend.pollReviewLoad()
+    }
 
-    readonly property color appBackground: backend.theme_background
-    readonly property color surface: backend.theme_surface
-    readonly property color foreground: backend.theme_foreground
-    readonly property color muted: backend.theme_muted
-    readonly property color accent: backend.theme_accent
+    readonly property color appBackground: backend.theme_background.length > 0 ? backend.theme_background : systemColors.window
+    readonly property color surface: backend.theme_surface.length > 0 ? backend.theme_surface : systemColors.base
+    readonly property color foreground: backend.theme_foreground.length > 0 ? backend.theme_foreground : systemColors.text
+    readonly property color muted: backend.theme_muted.length > 0 ? backend.theme_muted : systemColors.mid
+    readonly property color accent: backend.theme_accent.length > 0 ? backend.theme_accent : systemColors.highlight
+    readonly property color selection: backend.theme_selection.length > 0 ? backend.theme_selection : systemColors.highlight
+    readonly property color danger: backend.theme_red.length > 0 ? backend.theme_red : accent
+    readonly property color warning: backend.theme_yellow.length > 0 ? backend.theme_yellow : accent
+    readonly property color success: backend.theme_green.length > 0 ? backend.theme_green : accent
+    readonly property color info: backend.theme_cyan.length > 0 ? backend.theme_cyan : accent
+    readonly property color link: backend.theme_blue.length > 0 ? backend.theme_blue : accent
+    readonly property color generated: backend.theme_magenta.length > 0 ? backend.theme_magenta : accent
     readonly property bool narrowMode: width < 1000
     property bool showQueue: true
     readonly property string connectionWarning: [
@@ -49,6 +63,7 @@ ApplicationWindow {
         backend.ollama_status === "Ready" ? "" : qsTr("Ollama: %1").arg(backend.ollama_status)
     ].filter(Boolean).join(" · ")
     readonly property string headerWarning: backend.error_message.length > 0 ? backend.error_message : connectionWarning
+    readonly property color headerWarningColor: backend.error_message.length > 0 ? root.danger : root.warning
     // Qt Quick units follow display scale. Keep motion absent unless user-triggered.
     readonly property bool reducedMotion: Qt.application.arguments.indexOf("--reduce-motion") >= 0
 
@@ -73,8 +88,8 @@ ApplicationWindow {
         background: Rectangle { color: root.appBackground }
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: root.narrowMode ? 8 : 18
-            anchors.rightMargin: root.narrowMode ? 8 : 18
+            anchors.leftMargin: root.narrowMode ? 8 : 16
+            anchors.rightMargin: root.narrowMode ? 8 : 16
             spacing: root.narrowMode ? 8 : 16
 
             ToolButton {
@@ -161,7 +176,7 @@ ApplicationWindow {
                 visible: root.headerWarning.length > 0 && root.width >= 720
                 Layout.maximumWidth: Math.max(100, root.width * 0.32)
                 text: root.headerWarning
-                color: root.accent
+                color: root.headerWarningColor
                 elide: Text.ElideRight
                 Accessible.name: text
             }
@@ -169,7 +184,7 @@ ApplicationWindow {
                 visible: root.headerWarning.length > 0
                 text: qsTr("Warnings and errors")
                 icon.source: "icons/triangle-alert.svg"
-                icon.color: root.accent
+                icon.color: root.headerWarningColor
                 display: AbstractButton.IconOnly
                 Accessible.name: root.headerWarning
                 ToolTip.visible: hovered
@@ -199,6 +214,9 @@ ApplicationWindow {
             foregroundColor: root.foreground
             mutedColor: root.muted
             accentColor: root.accent
+            successColor: root.success
+            warningColor: root.warning
+            dangerColor: root.danger
             onCardSelected: if (root.narrowMode) root.showQueue = false
         }
         ReviewWorkspace {
@@ -212,6 +230,12 @@ ApplicationWindow {
             foregroundColor: root.foreground
             mutedColor: root.muted
             accentColor: root.accent
+            successColor: root.success
+            warningColor: root.warning
+            dangerColor: root.danger
+            infoColor: root.info
+            linkColor: root.link
+            generatedColor: root.generated
         }
     }
 
@@ -231,39 +255,62 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
+    ThemedDialog {
         id: batchDialog
-        modal: true
+        backgroundColor: root.appBackground
+        surfaceColor: root.surface
+        foregroundColor: root.foreground
+        mutedColor: root.muted
+        accentColor: root.accent
         title: qsTr("Batch management")
         width: Math.min(root.width * 0.82, 980)
         height: Math.min(root.height * 0.8, 700)
         standardButtons: Dialog.Close
         contentItem: BatchWorkspace {
             backend: backend
+            backgroundColor: root.appBackground
+            surfaceColor: root.surface
             foregroundColor: root.foreground
             mutedColor: root.muted
             accentColor: root.accent
         }
     }
 
-    Dialog {
+    ThemedDialog {
         id: manualDialog
+        backgroundColor: root.appBackground
+        surfaceColor: root.surface
+        foregroundColor: root.foreground
+        mutedColor: root.muted
+        accentColor: root.accent
         function remapCsv() {
             backend.remapCsvInput(csvExpression.currentIndex, csvLanguage.currentIndex - 1,
                                   csvType.currentIndex - 1, csvContext.currentIndex - 1)
         }
-        modal: true
         title: qsTr("Import words")
         width: Math.min(root.width * 0.76, 900)
         height: Math.min(root.height * 0.8, 700)
         standardButtons: Dialog.Close
-        onOpened: Qt.callLater(function() { importDeck.forceActiveFocus() })
+        onOpened: Qt.callLater(function() {
+            importDeck.editText = backend.active_deck
+            importDeck.forceActiveFocus()
+        })
         contentItem: ColumnLayout {
-            spacing: 10
+            spacing: 12
             RowLayout {
-                TextField { id: importDeck; Accessible.name: qsTr("Target deck"); Layout.fillWidth: true; text: backend.active_deck; placeholderText: qsTr("Deck") }
-                TextField { id: importLanguage; Accessible.name: qsTr("Language key"); Layout.fillWidth: true; text: "japanese_vocab"; placeholderText: qsTr("Language") }
-                TextField { id: importType; Accessible.name: qsTr("Card type"); Layout.fillWidth: true; text: "vocab"; placeholderText: qsTr("Type") }
+                ComboBox {
+                    id: importDeck
+                    Accessible.name: qsTr("Target deck")
+                    Layout.fillWidth: true
+                    editable: true
+                    model: {
+                        let names = []
+                        for (let index = 0; index < backend.deck_count; index++) names.push(backend.deckName(index))
+                        return names
+                    }
+                }
+                ComboBox { id: importLanguage; Accessible.name: qsTr("Language key"); Layout.fillWidth: true; editable: true; model: ["japanese_vocab", "japanese_grammar", "english_vocab", "english_grammar", "taiwanese_vocab", "taiwanese_grammar", "german_vocab", "german_grammar"]; currentIndex: 0 }
+                ComboBox { id: importType; Accessible.name: qsTr("Card type"); Layout.fillWidth: true; editable: true; model: ["vocab", "grammar"]; currentIndex: 0 }
             }
             TextArea {
                 id: manualRows
@@ -288,10 +335,10 @@ ApplicationWindow {
                     anchors.fill: parent
                     onDropped: function(drop) {
                         if (drop.urls.length > 0)
-                            backend.previewCsvFile(drop.urls[0], importDeck.text, importLanguage.text, importType.text)
+                            backend.previewCsvFile(drop.urls[0], importDeck.editText, importLanguage.editText, importType.editText)
                         else if (drop.text.length > 0) {
                             csvRows.text = drop.text
-                            backend.previewCsvInput(csvRows.text, importDeck.text, importLanguage.text, importType.text)
+                            backend.previewCsvInput(csvRows.text, importDeck.editText, importLanguage.editText, importType.editText)
                         }
                     }
                 }
@@ -300,8 +347,8 @@ ApplicationWindow {
                 Button {
                     text: qsTr("Preview CSV")
                     Accessible.name: text
-                    enabled: csvRows.text.trim().length > 0 && importDeck.text.trim().length > 0
-                    onClicked: backend.previewCsvInput(csvRows.text, importDeck.text, importLanguage.text, importType.text)
+                    enabled: csvRows.text.trim().length > 0 && importDeck.editText.trim().length > 0
+                    onClicked: backend.previewCsvInput(csvRows.text, importDeck.editText, importLanguage.editText, importType.editText)
                 }
                 Button { text: qsTr("Choose CSV file"); Accessible.name: text; onClicked: csvFileDialog.open() }
                 Item { Layout.fillWidth: true }
@@ -367,8 +414,8 @@ ApplicationWindow {
                 Button {
                     text: qsTr("Preview import")
                     Accessible.name: text
-                    enabled: manualRows.text.trim().length > 0 && importDeck.text.trim().length > 0
-                    onClicked: backend.previewManualInput(manualRows.text, importDeck.text, importLanguage.text, importType.text)
+                    enabled: manualRows.text.trim().length > 0 && importDeck.editText.trim().length > 0
+                    onClicked: backend.previewManualInput(manualRows.text, importDeck.editText, importLanguage.editText, importType.editText)
                 }
                 Button {
                     text: qsTr("Enqueue preview")
@@ -415,48 +462,25 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
-        id: settingsDialog
-        modal: true
-        title: qsTr("Native settings")
-        width: Math.min(root.width * 0.62, 720)
-        height: Math.min(root.height * 0.84, 760)
+    ThemedDialog {
+        id: mappingDialog
+        backgroundColor: root.appBackground
+        surfaceColor: root.surface
+        foregroundColor: root.foreground
+        mutedColor: root.muted
+        accentColor: root.accent
+        title: qsTr("Deck and field mapping")
+        width: Math.min(root.width * 0.92, 1180)
+        height: Math.min(root.height * 0.9, 820)
         standardButtons: Dialog.Close
-        function loadDeckMapping() {
-            if (!settingsPurpose || !settingsDeck || !settingsDeckModel || !settingsPurpose.currentValue) return
-            settingsDeck.editText = backend.mappedDeckName(settingsPurpose.currentValue)
-            settingsDeckModel.text = backend.mappedModelName(settingsPurpose.currentValue)
-        }
-        onOpened: {
-            settingsAnki.text = backend.settings_anki_url
-            settingsOllama.text = backend.settings_ollama_url
-            settingsModel.text = backend.settings_ollama_model
-            settingsDictionary.text = backend.settings_dictionary_preset
-            settingsDryRun.checked = backend.settings_dry_run
-            loadDeckMapping()
-            settingsAnki.forceActiveFocus()
-        }
-        contentItem: ScrollView {
-            clip: true
-            contentWidth: availableWidth
-        ColumnLayout {
-            width: parent.width
-            spacing: 10
-            Label { text: qsTr("AnkiConnect URL"); color: root.foreground }
-            TextField { id: settingsAnki; Accessible.name: qsTr("AnkiConnect URL"); Layout.fillWidth: true; placeholderText: "http://127.0.0.1:8765" }
-            Label { text: qsTr("Ollama URL"); color: root.foreground }
-            TextField { id: settingsOllama; Accessible.name: qsTr("Ollama URL"); Layout.fillWidth: true; placeholderText: "http://127.0.0.1:11434" }
-            Label { text: qsTr("Ollama model"); color: root.foreground }
-            TextField { id: settingsModel; Accessible.name: qsTr("Ollama model"); Layout.fillWidth: true; placeholderText: qsTr("Optional model override") }
-            Label { text: qsTr("Dictionary preset"); color: root.foreground }
-            TextField { id: settingsDictionary; Accessible.name: qsTr("Dictionary preset"); Layout.fillWidth: true; placeholderText: qsTr("Dictionary preset") }
-            Label { text: qsTr("Deck purpose mapping"); color: root.foreground; font.weight: Font.DemiBold }
+        contentItem: ColumnLayout {
+            spacing: 12
             RowLayout {
                 Layout.fillWidth: true
                 ComboBox {
-                    id: settingsPurpose
+                    id: mappingPurpose
+                    Layout.preferredWidth: 230
                     Accessible.name: qsTr("Deck purpose")
-                    Layout.fillWidth: true
                     textRole: "label"
                     valueRole: "key"
                     model: [
@@ -469,36 +493,116 @@ ApplicationWindow {
                         { label: qsTr("German vocabulary"), key: "german_vocab" },
                         { label: qsTr("German grammar"), key: "german_grammar" }
                     ]
-                    onCurrentIndexChanged: settingsDialog.loadDeckMapping()
+                    onActivated: {
+                        backend.setMappingPurpose(currentValue)
+                        mappingDeck.editText = backend.mappedDeckName(currentValue)
+                    }
                 }
                 ComboBox {
-                    id: settingsDeck
-                    Accessible.name: qsTr("Anki deck for selected purpose")
+                    id: mappingDeck
                     Layout.fillWidth: true
                     editable: true
-                    model: {
-                        let names = []
-                        for (let index = 0; index < backend.deck_count; index++)
-                            names.push(backend.deckName(index))
-                        return names
+                    Accessible.name: qsTr("Anki deck to inspect")
+                    model: backend.deck_count
+                    delegate: ItemDelegate {
+                        required property int index
+                        width: mappingDeck.width
+                        text: backend.deckName(index)
+                        onClicked: {
+                            mappingDeck.editText = text
+                            mappingDeck.popup.close()
+                        }
                     }
-                    onActivated: editText = currentText
+                    onAccepted: backend.inspectDeckMapping(mappingPurpose.currentValue, editText)
+                }
+                ToolButton {
+                    text: qsTr("Inspect selected deck")
+                    icon.source: "icons/search.svg"
+                    icon.color: root.accent
+                    display: AbstractButton.IconOnly
+                    enabled: mappingDeck.editText.trim().length > 0 && !backend.mapping_busy
+                    Accessible.name: text
+                    ToolTip.visible: hovered
+                    ToolTip.text: text
+                    onClicked: backend.inspectDeckMapping(mappingPurpose.currentValue, mappingDeck.editText)
                 }
             }
-            TextField {
-                id: settingsDeckModel
-                Accessible.name: qsTr("Anki note type for mapped deck")
+            ScrollView {
                 Layout.fillWidth: true
-                placeholderText: qsTr("Note type for new cards (optional)")
+                Layout.fillHeight: true
+                contentWidth: availableWidth
+                MappingWorkspace {
+                    width: parent.width
+                    backend: backend
+                    backgroundColor: root.appBackground
+                    surfaceColor: root.surface
+                    foregroundColor: root.foreground
+                    mutedColor: root.muted
+                    accentColor: root.accent
+                    infoColor: root.info
+                    generatedColor: root.generated
+                    showPurposePicker: false
+                }
             }
+        }
+    }
+
+    ThemedDialog {
+        id: settingsDialog
+        backgroundColor: root.appBackground
+        surfaceColor: root.surface
+        foregroundColor: root.foreground
+        mutedColor: root.muted
+        accentColor: root.accent
+        title: qsTr("Native settings")
+        width: Math.min(root.width * 0.62, 720)
+        height: Math.min(root.height * 0.84, 760)
+        standardButtons: Dialog.Close
+        onOpened: {
+            settingsAnki.text = backend.settings_anki_url
+            settingsOllama.text = backend.settings_ollama_url
+            settingsModel.text = backend.settings_ollama_model
+            settingsDictionary.text = backend.settings_dictionary_preset
+            settingsDryRun.checked = backend.settings_dry_run
+            settingsAnki.forceActiveFocus()
+        }
+        contentItem: ScrollView {
+            clip: true
+            contentWidth: availableWidth
+        ColumnLayout {
+            width: parent.width
+            spacing: 12
+            Label { text: qsTr("AnkiConnect URL"); color: root.foreground }
+            TextField { id: settingsAnki; Accessible.name: qsTr("AnkiConnect URL"); Layout.fillWidth: true; placeholderText: "http://127.0.0.1:8765" }
+            Label { text: qsTr("Ollama URL"); color: root.foreground }
+            TextField { id: settingsOllama; Accessible.name: qsTr("Ollama URL"); Layout.fillWidth: true; placeholderText: "http://127.0.0.1:11434" }
+            Label { text: qsTr("Ollama model"); color: root.foreground }
+            TextField { id: settingsModel; Accessible.name: qsTr("Ollama model"); Layout.fillWidth: true; placeholderText: qsTr("Optional model override") }
+            Label { text: qsTr("Dictionary preset"); color: root.foreground }
+            TextField { id: settingsDictionary; Accessible.name: qsTr("Dictionary preset"); Layout.fillWidth: true; placeholderText: qsTr("Dictionary preset") }
+            Label { text: qsTr("Deck and field mapping"); color: root.foreground; font.weight: Font.DemiBold }
             RowLayout {
                 Layout.fillWidth: true
-                Button {
-                    text: qsTr("Save deck mapping")
-                    Accessible.name: text
-                    onClicked: backend.saveDeckMapping(settingsPurpose.currentValue, settingsDeck.editText, settingsDeckModel.text)
+                Label {
+                    Layout.fillWidth: true
+                    text: qsTr("Inspect a deck, generate an Ollama-assisted mapping, then review every connection before saving.")
+                    color: root.muted
+                    wrapMode: Text.Wrap
                 }
-                Label { Layout.fillWidth: true; text: qsTr("Empty deck clears mapping"); color: root.muted }
+                ToolButton {
+                    text: qsTr("Open mapping workspace")
+                    icon.source: "icons/database.svg"
+                    icon.color: root.accent
+                    display: AbstractButton.IconOnly
+                    Accessible.name: text
+                    ToolTip.visible: hovered
+                    ToolTip.text: text
+                    onClicked: {
+                        settingsDialog.close()
+                        mappingDeck.editText = backend.mappedDeckName(mappingPurpose.currentValue)
+                        mappingDialog.open()
+                    }
+                }
             }
             CheckBox { id: settingsDryRun; text: qsTr("Default to dry run"); Accessible.name: text }
             RowLayout {
@@ -536,7 +640,7 @@ ApplicationWindow {
         id: csvFileDialog
         title: qsTr("Choose CSV file")
         nameFilters: [qsTr("CSV files (*.csv)"), qsTr("All files (*)")]
-        onAccepted: backend.previewCsvFile(selectedFile, importDeck.text, importLanguage.text, importType.text)
+        onAccepted: backend.previewCsvFile(selectedFile, importDeck.editText, importLanguage.editText, importType.editText)
     }
     FileDialog {
         id: legacyConfigDialog

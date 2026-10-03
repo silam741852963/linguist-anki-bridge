@@ -183,14 +183,38 @@ pub fn freeze_settings(
             secret_refs.insert(key.clone(), name.into());
         }
     }
+    let mut resource_hashes = BTreeMap::new();
+    if values["llm.enabled"] == true {
+        for (key, reference, prompt) in [
+            (
+                "llm.prompts.vocabulary",
+                "builtin:vocabulary-v2",
+                generation::VOCABULARY_PROMPT_V2,
+            ),
+            (
+                "llm.prompts.grammar",
+                "builtin:grammar-v2",
+                generation::GRAMMAR_PROMPT_V2,
+            ),
+        ] {
+            if values[key] == reference {
+                resource_hashes
+                    .insert(reference.into(), canonical::asset_digest(prompt.as_bytes()));
+            }
+        }
+    }
     let fingerprint = canonical::digest("resolved-settings", &values).map_err(|e| e.to_string())?;
+    let (semantic_fingerprint, execution_fingerprint) =
+        linguist_config::setting_fingerprints(&values)?;
     Ok(ResolvedSettings {
         version: 2,
         values,
         provenance: settings.provenance.clone(),
-        resource_hashes: BTreeMap::new(),
+        resource_hashes,
         secret_refs,
         fingerprint,
+        semantic_fingerprint,
+        execution_fingerprint,
     })
 }
 pub fn prepare_authored(
@@ -277,41 +301,64 @@ pub fn prepare_authored_jsonl(
     publish_authored_records(&records, expected_kind, settings, environment, None, true)
 }
 
-/// Explicit simple-vocabulary CSV; the whole original file is retained as the
-/// shared source asset, while every record keeps its decoded column evidence.
+/// Explicit simple authored-card CSV; the whole original file is retained as
+/// shared source evidence, while each record keeps decoded column evidence.
 pub fn prepare_authored_csv(
     bytes: &[u8],
     expected_kind: Kind,
     settings: &linguist_config::Effective,
     environment: &BTreeMap<String, String>,
 ) -> Result<PreparedBatch, String> {
-    if expected_kind != Kind::Vocabulary {
-        return Err("INPUT_CSV_VOCABULARY_ONLY".into());
-    }
     if bytes.len() as u64 > settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024 {
         return Err("INPUT_TOO_LARGE".into());
     }
     std::str::from_utf8(bytes).map_err(|_| "INPUT_ENCODING")?;
+    let content = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .flexible(false)
-        .from_reader(bytes);
+        .from_reader(content);
     let headers = reader
         .headers()
         .map_err(|_| "INPUT_CSV_HEADER_INVALID")?
         .clone();
-    let required = ["expression", "meaning", "target_language", "sense_key"];
-    let optional = [
-        "reading",
-        "pronunciation",
-        "usage",
-        "context",
-        "personal_notes",
-        "source_summary",
-        "explanation_language",
-        "production_prompt",
-        "spelling_prompt",
-    ];
+    let required: &[&str] = match expected_kind {
+        Kind::Vocabulary => &["expression", "meaning", "target_language", "sense_key"],
+        Kind::Grammar => &[
+            "pattern",
+            "meaning",
+            "formation",
+            "use_key",
+            "target_language",
+        ],
+    };
+    let optional: &[&str] = match expected_kind {
+        Kind::Vocabulary => &[
+            "reading",
+            "pronunciation",
+            "usage",
+            "context",
+            "personal_notes",
+            "source_summary",
+            "explanation_language",
+            "production_prompt",
+            "spelling_prompt",
+            "example_sentence",
+            "example_translation",
+        ],
+        Kind::Grammar => &[
+            "recognition_prompt",
+            "usage",
+            "exercise_prompt",
+            "exercise_answer",
+            "context",
+            "personal_notes",
+            "source_summary",
+            "explanation_language",
+            "example_sentence",
+            "example_translation",
+        ],
+    };
     let names: std::collections::BTreeSet<_> = headers.iter().collect();
     if headers.is_empty()
         || names.len() != headers.len()
@@ -319,8 +366,9 @@ pub fn prepare_authored_csv(
         || names
             .iter()
             .any(|name| !required.contains(name) && !optional.contains(name))
+        || names.contains("example_sentence") != names.contains("example_translation")
     {
-        return Err("INPUT_CSV_HEADER_INVALID: require unique known vocabulary columns".into());
+        return Err("INPUT_CSV_HEADER_INVALID: require unique known columns for the selected card kind and paired example columns".into());
     }
     let header_json =
         serde_json::to_string(&headers.iter().collect::<Vec<_>>()).map_err(|e| e.to_string())?;
@@ -333,19 +381,52 @@ pub fn prepare_authored_csv(
         }
         let cells: BTreeMap<_, _> = headers.iter().zip(row.iter()).collect();
         let value = |name: &str| cells.get(name).copied().unwrap_or_default();
-        let mut body = serde_json::json!({"expression":value("expression"),"meaning":value("meaning"),"sense_key":value("sense_key")});
-        for field in [
-            "reading",
-            "pronunciation",
-            "usage",
-            "production_prompt",
-            "spelling_prompt",
-        ] {
+        let mut body = match expected_kind {
+            Kind::Vocabulary => {
+                serde_json::json!({"expression":value("expression"),"meaning":value("meaning"),"sense_key":value("sense_key")})
+            }
+            Kind::Grammar => {
+                serde_json::json!({"pattern":value("pattern"),"meaning":value("meaning"),"formation":value("formation"),"use_key":value("use_key"),"examples":[]})
+            }
+        };
+        let fields: &[&str] = match expected_kind {
+            Kind::Vocabulary => &[
+                "reading",
+                "pronunciation",
+                "usage",
+                "production_prompt",
+                "spelling_prompt",
+            ],
+            Kind::Grammar => &[
+                "recognition_prompt",
+                "usage",
+                "exercise_prompt",
+                "exercise_answer",
+            ],
+        };
+        for &field in fields {
             if names.contains(field) {
                 body[field] = serde_json::json!(value(field));
             }
         }
-        let mut input = serde_json::json!({"schema_version":2,"kind":"vocabulary","target_language":value("target_language"),"body":body});
+        if names.contains("example_sentence") {
+            let sentence = value("example_sentence");
+            let translation = value("example_translation");
+            if sentence.is_empty() != translation.is_empty() {
+                return Err(format!(
+                    "INPUT_CSV_EXAMPLE_PAIR_INVALID: record {}",
+                    index + 1
+                ));
+            }
+            if !sentence.is_empty() {
+                body["examples"] = serde_json::json!([{"sentence":sentence,"translation":translation,"provenance":"user"}]);
+            }
+        }
+        let kind = match expected_kind {
+            Kind::Vocabulary => "vocabulary",
+            Kind::Grammar => "grammar",
+        };
+        let mut input = serde_json::json!({"schema_version":2,"kind":kind,"target_language":value("target_language"),"body":body});
         for field in [
             "context",
             "personal_notes",
@@ -495,6 +576,9 @@ fn build_authored_document(
             .to_owned(),
     )?);
     let original_input_digest = canonical::asset_digest(record.archive);
+    let original_text = std::str::from_utf8(record.archive)
+        .map_err(|_| "INPUT_ENCODING")?
+        .to_owned();
     let source_id = uuid::Uuid::new_v4();
     let fields = record
         .fields
@@ -507,6 +591,7 @@ fn build_authored_document(
         explanation_language,
         content,
         requested_tasks: tasks,
+        task_maps: vec![],
         tags,
         context,
         personal_notes,
@@ -516,8 +601,11 @@ fn build_authored_document(
             kind: record.source_kind.into(),
             location: record.location.clone(),
             digest: original_input_digest.clone(),
+            text: Some(original_text.clone()),
             fields: fields.clone(),
             model_manifest: record.model_manifest.into(),
+            template_manifest: None,
+            captured_at_unix_seconds: None,
             tags: vec![],
             cards: vec![],
             media_refs: vec![],
@@ -526,6 +614,7 @@ fn build_authored_document(
             id: uuid::Uuid::new_v4(),
             source_id,
             digest: original_input_digest.clone(),
+            original_text: Some(original_text),
             original_fields: fields,
             asset_digests: vec![original_input_digest.clone()],
         }],

@@ -18,6 +18,50 @@ fn every_registry_default_validates_and_example_resolves() {
     resolve(&r, &config, &ResolveOptions::default()).unwrap();
 }
 #[test]
+fn execution_settings_change_only_execution_fingerprint() {
+    let registry = Registry::builtin();
+    let config = ConfigFile::default();
+    let base = resolve(&registry, &config, &ResolveOptions::default()).unwrap();
+    let mut options = ResolveOptions::default();
+    options.flags.extend([
+        ("output.format".into(), json!("json")),
+        ("retry.read_attempts".into(), json!(4)),
+    ]);
+    let execution = resolve(&registry, &config, &options).unwrap();
+    assert_eq!(base.semantic_fingerprint, execution.semantic_fingerprint);
+    assert_ne!(base.execution_fingerprint, execution.execution_fingerprint);
+    assert_ne!(base.fingerprint, execution.fingerprint);
+    options.flags.clear();
+    options.flags.insert("llm.temperature".into(), json!(0.4));
+    let semantic = resolve(&registry, &config, &options).unwrap();
+    assert_ne!(base.semantic_fingerprint, semantic.semantic_fingerprint);
+    assert_eq!(base.execution_fingerprint, semantic.execution_fingerprint);
+}
+#[test]
+fn describe_rule_metadata_and_nearby_keys_track_the_resolver() {
+    let registry = Registry::builtin();
+    assert_eq!(registry.suggestions("llm.modle")[0], "llm.model");
+    assert_eq!(
+        registry.suggestions("purposes.study.fileds")[0],
+        "purposes.study.fields"
+    );
+    assert!(
+        cross_field_checks("llm.model")
+            .iter()
+            .any(|rule| rule["kind"] == "required_when" && rule["selector"] == "llm.enabled")
+    );
+    assert!(
+        cross_field_checks("jobs.heartbeat_seconds")
+            .iter()
+            .any(|rule| rule["operator"] == "less_than_one_third_of")
+    );
+    assert!(
+        cross_field_checks("anki.endpoint")
+            .iter()
+            .any(|rule| rule["kind"] == "remote_host_policy")
+    );
+}
+#[test]
 fn purpose_presets_inherit_but_explicit_base_wins() {
     let r = Registry::builtin();
     let options = ResolveOptions {
@@ -88,6 +132,48 @@ fn rejects_unknown_duplicate_coercion_and_illegal_scope() {
     );
 }
 #[test]
+fn url_templates_accept_only_declared_path_or_query_placeholders() {
+    let registry = Registry::builtin();
+    for (key, value) in [
+        (
+            "dictionary.url_template",
+            "https://example.org/search/{word}",
+        ),
+        ("dictionary.url_template", "https://example.org/?q={word}"),
+        (
+            "kanji.url_template",
+            "https://jisho.org/search/{char}%23kanji",
+        ),
+    ] {
+        registry.validate_value(key, &json!(value)).unwrap();
+    }
+    for (key, value) in [
+        ("dictionary.url_template", "https://example.org/search/term"),
+        (
+            "dictionary.url_template",
+            "https://example.org/search/{char}",
+        ),
+        (
+            "dictionary.url_template",
+            "https://example.org/{word}/{other}",
+        ),
+        (
+            "dictionary.url_template",
+            "https://{word}.example.org/search",
+        ),
+        ("kanji.url_template", "https://jisho.org/search/{word}"),
+        (
+            "kanji.url_template",
+            "https://jisho.org/search/{char}/{secret}",
+        ),
+    ] {
+        assert!(
+            registry.validate_value(key, &json!(value)).is_err(),
+            "{key}: {value}"
+        );
+    }
+}
+#[test]
 fn endpoint_policy_rejects_credentials_remote_and_offline_opt_in() {
     let r = Registry::builtin();
     let config = ConfigFile::default();
@@ -108,6 +194,54 @@ fn endpoint_policy_rejects_credentials_remote_and_offline_opt_in() {
     assert!(resolve(&r, &config, &options).is_err());
 }
 #[test]
+fn custom_template_hosts_require_explicit_network_permission() {
+    let registry = Registry::builtin();
+    let config = ConfigFile::default();
+    let mut options = ResolveOptions::default();
+    options.flags.extend([
+        ("dictionary.provider".into(), json!("custom")),
+        (
+            "dictionary.url_template".into(),
+            json!("https://example.org/search/{word}"),
+        ),
+        ("dictionary.schema_path".into(), json!("/tmp/schema.json")),
+    ]);
+    assert!(
+        resolve(&registry, &config, &options)
+            .unwrap_err()
+            .contains("REMOTE_ENDPOINT_NOT_ALLOWED: dictionary.url_template")
+    );
+    options.flags.insert(
+        "network.allowed_remote_service_hosts".into(),
+        json!(["example.org"]),
+    );
+    resolve(&registry, &config, &options).unwrap();
+    options.flags.insert("network.offline".into(), json!(true));
+    assert!(resolve(&registry, &config, &options).is_err());
+
+    options.flags.clear();
+    options.flags.insert(
+        "kanji.url_template".into(),
+        json!("https://example.org/kanji/{char}"),
+    );
+    assert!(
+        resolve(&registry, &config, &options)
+            .unwrap_err()
+            .contains("REMOTE_ENDPOINT_NOT_ALLOWED: kanji.url_template")
+    );
+    options.flags.insert(
+        "network.allowed_remote_service_hosts".into(),
+        json!(["example.org"]),
+    );
+    resolve(&registry, &config, &options).unwrap();
+    options.flags.insert("network.offline".into(), json!(true));
+    options.flags.insert(
+        "kanji.url_template".into(),
+        json!("http://127.0.0.1:1234/kanji/{char}"),
+    );
+    resolve(&registry, &config, &options).unwrap();
+}
+#[test]
 fn cross_field_settings_and_env_errors_are_not_ignored() {
     let r = Registry::builtin();
     let mut options = ResolveOptions::default();
@@ -120,6 +254,70 @@ fn cross_field_settings_and_env_errors_are_not_ignored() {
         .environment
         .insert("LAB_UNKNOWN__SETTING".into(), "secret".into());
     assert!(resolve(&r, &ConfigFile::default(), &options).is_err());
+}
+#[test]
+fn selected_providers_require_their_declared_settings() {
+    let registry = Registry::builtin();
+    for (selector, selected, required) in [
+        ("llm.enabled", json!(true), "llm.model"),
+        (
+            "dictionary.provider",
+            json!("custom"),
+            "dictionary.url_template",
+        ),
+        (
+            "dictionary.provider",
+            json!("custom"),
+            "dictionary.schema_path",
+        ),
+        ("images.provider", json!("custom"), "images.custom_endpoint"),
+        ("audio.provider", json!("custom"), "audio.endpoint"),
+        ("audio.provider", json!("piper"), "audio.executable"),
+        ("audio.provider", json!("piper"), "audio.voice_resource"),
+        ("ocr.engine", json!("ollama"), "llm.vision_model"),
+        ("ocr.engine", json!("paddleocr"), "ocr.resource_path"),
+        ("browser.enabled", json!(true), "browser.executable"),
+    ] {
+        let mut options = ResolveOptions::default();
+        options.flags.insert(selector.into(), selected);
+        if required == "dictionary.schema_path" {
+            options.flags.insert(
+                "dictionary.url_template".into(),
+                json!("http://127.0.0.1:1234/{word}"),
+            );
+        }
+        if required == "audio.voice_resource" {
+            options
+                .flags
+                .insert("audio.executable".into(), json!("piper"));
+        }
+        options.flags.insert(required.into(), json!(null));
+        let error = resolve(&registry, &ConfigFile::default(), &options).unwrap_err();
+        assert!(error.starts_with("PROVIDER_SETTING_REQUIRED"), "{error}");
+        assert!(error.contains(required), "{error}");
+    }
+    let mut options = ResolveOptions::default();
+    options.flags.extend([
+        ("dictionary.provider".into(), json!("custom")),
+        (
+            "dictionary.url_template".into(),
+            json!("http://127.0.0.1:1234/{word}"),
+        ),
+        ("dictionary.schema_path".into(), json!("/tmp/schema.json")),
+        ("images.provider".into(), json!("custom")),
+        (
+            "images.custom_endpoint".into(),
+            json!("http://127.0.0.1:1234"),
+        ),
+        ("audio.provider".into(), json!("piper")),
+        ("audio.executable".into(), json!("piper")),
+        ("audio.voice_resource".into(), json!("/tmp/voice.onnx")),
+        ("ocr.engine".into(), json!("ollama")),
+        ("llm.vision_model".into(), json!("vision:model")),
+        ("browser.enabled".into(), json!(true)),
+        ("browser.executable".into(), json!("firefox")),
+    ]);
+    resolve(&registry, &ConfigFile::default(), &options).unwrap();
 }
 #[test]
 fn config_init_is_private_atomic_and_never_replaces() {

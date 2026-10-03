@@ -561,6 +561,55 @@ fn native_declarations_are_profile_pinned_read_evidence_and_never_enable_writes(
     server.finish();
 }
 #[test]
+fn declared_read_only_session_remains_unverified() {
+    use linguist_anki::native::inspect_native_manifest;
+    let mut manifest = native_manifest();
+    manifest["collection_session"] = json!({
+        "lineage_id": "c17625b0-7a88-4aab-a8a5-c1d993c72a01",
+        "session_epoch": "c17625b0-7a88-4aab-a8a5-c1d993c72a02",
+        "profile_fingerprint": "b".repeat(64),
+        "path_fingerprint": "c".repeat(64),
+    });
+    let inspected = inspect_native_manifest(manifest).unwrap();
+    assert!(inspected.declaration.collection_session.is_some());
+    assert!(!inspected.compatibility_verified);
+    assert!(!inspected.collection_identity_verified);
+    assert!(!inspected.collection_writes_enabled);
+}
+#[test]
+fn native_session_profile_claim_must_match_profile_reads() {
+    let mut manifest = native_manifest();
+    manifest["collection_session"] = json!({
+        "lineage_id": "c17625b0-7a88-4aab-a8a5-c1d993c72a01",
+        "session_epoch": "c17625b0-7a88-4aab-a8a5-c1d993c72a02",
+        "profile_fingerprint": linguist_core::canonical::asset_digest(b"lab-profile-v1\0Fixture"),
+        "path_fingerprint": "c".repeat(64),
+    });
+    let server = Server::new(vec![
+        response(json!("Fixture")),
+        response(manifest.clone()),
+        response(json!("Fixture")),
+    ]);
+    let client = Client::from_settings(&settings(&server.endpoint), &BTreeMap::new()).unwrap();
+    let inspected = client.native_capabilities().unwrap();
+    assert!(inspected.declaration.collection_session.is_some());
+    assert!(!inspected.collection_writes_enabled);
+    server.finish();
+
+    manifest["collection_session"]["profile_fingerprint"] = json!("d".repeat(64));
+    let server = Server::new(vec![
+        response(json!("Fixture")),
+        response(manifest),
+        response(json!("Fixture")),
+    ]);
+    let client = Client::from_settings(&settings(&server.endpoint), &BTreeMap::new()).unwrap();
+    assert_eq!(
+        client.native_capabilities().unwrap_err(),
+        "ANKI_NATIVE_PROFILE_FINGERPRINT_CONFLICT"
+    );
+    server.finish();
+}
+#[test]
 fn malformed_native_declarations_and_unimplemented_effects_are_rejected() {
     use linguist_anki::native::inspect_native_manifest;
     for (pointer, value) in [

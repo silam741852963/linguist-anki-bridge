@@ -4,6 +4,7 @@
   "values": {
     "meaning_image": "<img src='dictionary.png'/>",
     "meaning_text": "<div>Not found in standard dictionary.</div>",
+    "examples": null,
     "kanji_construction": "",
     "audio": null
   },

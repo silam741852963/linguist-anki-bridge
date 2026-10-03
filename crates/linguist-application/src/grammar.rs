@@ -97,6 +97,7 @@ pub fn split(
     }
     let source_id = sources[0].id;
     let raw_digest = canonical::asset_digest(raw);
+    let request_text = String::from_utf8(raw.to_vec()).map_err(|_| "INPUT_ENCODING")?;
     let request_source = uuid::Uuid::new_v4();
     let fields = std::collections::BTreeMap::from([(
         "split_request".into(),
@@ -139,8 +140,11 @@ pub fn split(
             kind: "grammar_split_request_v1".into(),
             location: "local_split_request".into(),
             digest: raw_digest.clone(),
+            text: Some(request_text.clone()),
             fields: fields.clone(),
             model_manifest: "grammar-split-request-v1".into(),
+            template_manifest: None,
+            captured_at_unix_seconds: None,
             tags: vec![],
             cards: vec![],
             media_refs: vec![],
@@ -149,6 +153,7 @@ pub fn split(
             id: uuid::Uuid::new_v4(),
             source_id: request_source,
             digest: raw_digest.clone(),
+            original_text: Some(request_text.clone()),
             original_fields: fields.clone(),
             asset_digests: vec![raw_digest.clone()],
         });

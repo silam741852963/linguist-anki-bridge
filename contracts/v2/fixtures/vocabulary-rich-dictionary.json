@@ -1,0 +1,62 @@
+{
+  "schema_version": 2,
+  "id": "b53f60ec-987d-4db1-9edb-1296f11409c0",
+  "target_language": "en",
+  "explanation_language": "en",
+  "content": {
+    "kind": "vocabulary",
+    "body": {
+      "expression": "eat",
+      "meaning": "consume food",
+      "sense_key": "consume-food",
+      "examples": [
+        {"sentence": "I eat bread.", "translation": "", "provenance": "user"}
+      ],
+      "dictionary": [
+        {
+          "provider": "Wiktionary contributors",
+          "source_url": "https://en.wiktionary.org/wiki/eat?x=<script>",
+          "language": "en",
+          "forms": ["eat", "eats", "<img src=x onerror=alert(1)>"],
+          "readings": [],
+          "senses": [
+            {
+              "key": "consume-food",
+              "definitions": ["consume food"],
+              "labels": ["verb", "transitive"],
+              "examples": [
+                {"sentence": "We eat rice.", "translation": "", "provenance": "dictionary"}
+              ]
+            },
+            {
+              "key": "erode",
+              "definitions": ["wear away"],
+              "labels": ["figurative"],
+              "examples": []
+            }
+          ],
+          "metadata": {
+            "sense:consume-food:raw_json": ["{\"restrictions\":[\"food\"],\"antonyms\":[\"fast\"]}"],
+            "provider_extensions_json": ["{\"nested\":{\"source\":\"retained\"}}"]
+          },
+          "related_entries": ["edible", "meal"]
+        }
+      ]
+    }
+  },
+  "evidence": [
+    {
+      "id": "8e1780e6-108a-4870-8a45-a6c941b1a607",
+      "field": "meaning",
+      "provenance": "dictionary",
+      "source_id": null,
+      "region_id": null,
+      "target": {"kind": "dictionary_sense", "entry_index": 0, "sense_index": 0},
+      "language": "en",
+      "claim": "consume food",
+      "source_url": "https://en.wiktionary.org/wiki/eat?x=<script>",
+      "ambiguous": true
+    }
+  ],
+  "requested_tasks": ["comprehension"]
+}

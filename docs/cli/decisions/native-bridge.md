@@ -36,6 +36,8 @@ Network request returns an accepted operation ID promptly; CLI polls labOperatio
 
 Binding includes bridge installation UUID, sidecar lineage UUID, canonical profile/path fingerprint, and a fresh collection-session epoch on every load/import/restore. Epoch is execution identity; stable lineage/source manifests are approval identity. A copied UUID/profile alone is not a trustworthy collection incarnation. Hooks plus backend/path identity detect session replacement; source/post-state comparisons remain mandatory.
 
+The read-only companion computes profile/path fingerprints as lowercase SHA-256 over UTF-8 `lab-profile-v1\0` + exact Anki profile name and `lab-path-v1\0` + canonical absolute collection path, respectively. The Rust read port compares the reported profile fingerprint with its surrounding `getActiveProfile` reads. It cannot verify the path from the HTTP endpoint, and neither hash proves collection contents or authorizes writes.
+
 Session change stops dispatch. `--rebind` requires current --apply, matching sidecar lineage, trustworthy current manifests and a recorded ResumeBindingDecision; it changes execution binding without regenerating approved content. Unknown replacement/lost lineage remains needs_recovery. Native collection restore can replace contents without a unique external identity; never claim immunity to all replacement scenarios.
 
 Bridge sidecar uses durable unique `(lineage, operation_uuid)` rows: intent/queued before acceptance; running before native effect; actual read-back before verified. Duplicate UUID+digest returns the existing state/receipt, including queued work, rather than dispatching again. A pending/unknown row after crash is reconciled, not blindly replayed. Owner expiry cannot authorize a new write while prior queued/running work is unresolved; stale fenced requests must not execute after owner replacement. Reconciliation may take ownership only with worker-liveness and state evidence. Server and collection commits are **not** one distributed transaction. A missing marker or lost sidecar cannot prove no write.
@@ -45,6 +47,8 @@ CLI ledger remains the source of immutable snapshots/intended effects; server le
 ## Failure gate
 
 Test delayed duplicate requests, restart after each ledger/native boundary, copied/removed markers, profile switch, same-profile import, lost sidecar, UI edits/reviews and source CAS conflicts. Scheduler-only reviews before the native critical section are permitted: capture current scheduler/history into fsynced native pre-effect evidence, preserve it through mutation and attach that supplementary evidence to the receipt without replacing the original immutable source snapshot. Content/model/task/deck drift still conflicts. Later append-only study after a verified native receipt is preserved and distinguished from migration-induced changes; ambiguous history changes enter recovery. If serialization or retained-card preservation fails, the affected mutation variant stays unavailable. No bridge is installed or exercised on the user's collection by this planning task.
+
+A disposable Anki 25.09.2 probe found that a direct grammar-to-Basic note-type change deletes a studied Application child card while leaving its review row orphaned. Reverse planning must inspect every disappearing task's current card/history and reject this path for studied children until an alternative is proven. Retaining raw review rows without the card does not meet the history-preservation gate.
 
 ## Initial capability declaration wire shape
 

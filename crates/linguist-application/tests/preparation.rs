@@ -79,6 +79,14 @@ fn both_authored_workflows_preserve_raw_input_and_freeze_settings() {
             vec![result.original_input_digest]
         );
         assert_eq!(
+            plan.documents[0].sources[0].text.as_deref(),
+            Some(std::str::from_utf8(&bytes).unwrap())
+        );
+        assert_eq!(
+            plan.documents[0].archives[0].original_text,
+            plan.documents[0].sources[0].text
+        );
+        assert_eq!(
             plan.documents[0].requested_tasks,
             vec![match kind {
                 Kind::Vocabulary => linguist_core::Task::Comprehension,
@@ -94,6 +102,10 @@ fn both_authored_workflows_preserve_raw_input_and_freeze_settings() {
             plan.settings.fingerprint,
             linguist_core::canonical::digest("resolved-settings", &plan.settings.values).unwrap()
         );
+        let (semantic, execution) =
+            linguist_config::setting_fingerprints(&plan.settings.values).unwrap();
+        assert_eq!(plan.settings.semantic_fingerprint, semantic);
+        assert_eq!(plan.settings.execution_fingerprint, execution);
     }
 }
 #[test]
@@ -280,7 +292,7 @@ fn vocabulary_csv_rejects_header_shape_and_later_row_before_state() {
     let valid = b"expression,meaning,target_language,sense_key\ncat,animal,en,animal\n";
     assert_eq!(
         prepare_authored_csv(valid, Kind::Grammar, &f.settings, &f.environment).unwrap_err(),
-        "INPUT_CSV_VOCABULARY_ONLY"
+        "INPUT_CSV_HEADER_INVALID: require unique known columns for the selected card kind and paired example columns"
     );
     f.settings
         .values
@@ -296,6 +308,57 @@ fn vocabulary_csv_rejects_header_shape_and_later_row_before_state() {
         .starts_with("INPUT_BATCH_TOO_LARGE")
     );
     assert!(!f.state().exists());
+}
+
+#[test]
+fn grammar_csv_archives_bom_crlf_and_quoted_examples_in_one_plan() {
+    let f = Fixture::new();
+    let csv = "\u{feff}pattern,meaning,formation,use_key,target_language,recognition_prompt,example_sentence,example_translation,explanation_language\r\n\"〜ても, 〜でも\",even if,verb te-form + も,concession,ja,What relation is expressed?,\"雨が降っても、\n行きます。\",Even if it rains I will go,en\r\nif,conditional,if + clause,condition,en,What relation is expressed?,If it rains we stay,We stay when it rains,en\r\n";
+    let bytes = csv.as_bytes();
+    let result = prepare_authored_csv(bytes, Kind::Grammar, &f.settings, &f.environment).unwrap();
+    assert_eq!(result.items.len(), 2);
+    let store = linguist_store::Store::read_only(&f.state()).unwrap();
+    let plan = store.revision(result.plan_id, 1).unwrap();
+    assert_eq!(plan.documents.len(), 2);
+    for (index, document) in plan.documents.iter().enumerate() {
+        assert!(matches!(
+            document.content,
+            linguist_core::LearningContent::Grammar(_)
+        ));
+        assert_eq!(document.sources[0].kind, "authored_csv_v1");
+        assert_eq!(
+            document.sources[0].fields["csv_record_index"],
+            (index + 1).to_string()
+        );
+        assert_eq!(
+            store
+                .asset(&document.sources[0].digest, 1024 * 1024)
+                .unwrap(),
+            bytes
+        );
+    }
+    let linguist_core::LearningContent::Grammar(first) = &plan.documents[0].content else {
+        unreachable!()
+    };
+    assert_eq!(first.pattern, "〜ても, 〜でも");
+    assert_eq!(first.examples[0].sentence, "雨が降っても、\n行きます。");
+    assert_eq!(
+        first.examples[0].provenance,
+        linguist_core::Provenance::User
+    );
+}
+
+#[test]
+fn grammar_csv_rejects_unpaired_examples_and_bad_later_row_before_state() {
+    let f = Fixture::new();
+    for bytes in [
+        b"pattern,meaning,formation,use_key,target_language,example_sentence\nif,conditional,if + clause,condition,en,If it rains\n".as_slice(),
+        b"pattern,meaning,formation,use_key,target_language,example_sentence,example_translation\nif,conditional,if + clause,condition,en,If it rains,When it rains\nunless,except if,unless + clause,exception,en,Unless it rains,\n",
+        b"pattern,meaning,formation,use_key,target_language\nif,conditional,if + clause,condition,en\nunless,except if,unless + clause,exception\n",
+    ] {
+        assert!(prepare_authored_csv(bytes, Kind::Grammar, &f.settings, &f.environment).is_err());
+        assert!(!f.state().exists());
+    }
 }
 #[test]
 fn managed_duplicate_candidates_remain_review_evidence_even_when_fields_match() {

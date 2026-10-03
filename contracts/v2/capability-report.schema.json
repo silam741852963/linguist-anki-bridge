@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CapabilityReport",
+  "description": "An inspection summary, never a substitute for checking the referenced gate\nevidence, current collection binding, or native preconditions before a write.",
+  "type": "object",
+  "properties": {
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ActionCapability"
+      }
+    },
+    "anki_connect_source_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "anki_version": {
+      "type": "string"
+    },
+    "auth_constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "companion_version": {
+      "type": "string"
+    },
+    "identity_constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "protocol": {
+      "type": "string"
+    },
+    "resource_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 1,
+      "minimum": 1
+    },
+    "serialization_constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "protocol",
+    "anki_version",
+    "anki_connect_source_digest",
+    "companion_version",
+    "resource_versions",
+    "actions",
+    "auth_constraints",
+    "identity_constraints",
+    "serialization_constraints"
+  ],
+  "$defs": {
+    "ActionCapability": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "failure_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gate_evidence_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gate_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/ActionCapabilityState"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "state"
+      ]
+    },
+    "ActionCapabilityState": {
+      "type": "string",
+      "enum": [
+        "unavailable",
+        "declared",
+        "gate_tested"
+      ]
+    }
+  }
+}

@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub enum DraftField {
     Expression,
     Meaning,
+    Examples,
     Kanji,
 }
 
@@ -33,8 +34,11 @@ pub struct ReviewDraft {
     pub type_tag: String,
     pub source_context: String,
     pub target_model: String,
+    pub source_fields: BTreeMap<String, String>,
+    pub source_tags: Vec<String>,
     pub expression: String,
     pub meaning: String,
+    pub examples: String,
     pub kanji: String,
     pub images: Vec<String>,
     pub audio: Vec<String>,
@@ -59,7 +63,7 @@ impl ReviewDraft {
             .cloned()
             .or_else(|| note.fields.values().next().cloned())
             .unwrap_or_default();
-        let meaning = ["Meaning", "Definition", "Back"]
+        let meaning = ["Explanation", "Meaning", "Definition", "Back", "Mặt sau"]
             .into_iter()
             .find_map(|name| note.fields.get(name))
             .cloned()
@@ -88,11 +92,14 @@ impl ReviewDraft {
                 .map(|deck| deck.0.clone())
                 .unwrap_or_default(),
             target_model: note.model_name.0.clone(),
+            source_fields: note.fields.clone(),
+            source_tags: note.tags.clone(),
             language_key: None,
             type_tag: String::new(),
             source_context: meaning.clone(),
             expression,
             meaning,
+            examples: note.fields.get("Examples").cloned().unwrap_or_default(),
             kanji,
             images,
             audio,
@@ -117,8 +124,11 @@ impl ReviewDraft {
             type_tag: String::new(),
             source_context: String::new(),
             target_model: String::new(),
+            source_fields: BTreeMap::new(),
+            source_tags: Vec::new(),
             expression: String::new(),
             meaning: String::new(),
+            examples: String::new(),
             kanji: String::new(),
             images: Vec::new(),
             audio: Vec::new(),
@@ -243,8 +253,20 @@ impl ReviewDraft {
             return None;
         }
         document.values.meaning_text = Some(self.meaning.clone());
+        document.values.examples = document
+            .values
+            .examples
+            .as_ref()
+            .map(|_| self.examples.clone());
         document.values.kanji_construction = Some(self.kanji.clone());
         Some(document)
+    }
+
+    /// Pending provider output is visible for comparison before acceptance.
+    pub fn generated_document(&self) -> Option<CardDocument> {
+        self.pending_document
+            .clone()
+            .or_else(|| self.accepted_document())
     }
 
     pub fn accept(&mut self, index: usize) -> bool {
@@ -255,7 +277,7 @@ impl ReviewDraft {
         if self.locked(change.field) {
             return false;
         }
-        let accepts_document = change.field == DraftField::Meaning;
+        let accepts_document = matches!(change.field, DraftField::Meaning | DraftField::Examples);
         self.edit(change.field, change.value);
         if accepts_document {
             if let Some(document) = self.pending_document.take() {
@@ -298,6 +320,7 @@ impl ReviewDraft {
         match field {
             DraftField::Expression => &self.expression,
             DraftField::Meaning => &self.meaning,
+            DraftField::Examples => &self.examples,
             DraftField::Kanji => &self.kanji,
         }
     }
@@ -306,6 +329,7 @@ impl ReviewDraft {
         match field {
             DraftField::Expression => self.expression = value,
             DraftField::Meaning => self.meaning = value,
+            DraftField::Examples => self.examples = value,
             DraftField::Kanji => self.kanji = value,
         }
     }
@@ -353,6 +377,10 @@ impl DraftStore {
     }
     pub fn active_mut(&mut self) -> Option<&mut ReviewDraft> {
         self.active_note_id.and_then(|id| self.drafts.get_mut(&id))
+    }
+
+    pub fn deactivate(&mut self) {
+        self.active_note_id = None;
     }
 
     pub fn switch_to<P: DraftPersistence>(
@@ -502,6 +530,7 @@ mod tests {
             values: linguist_core::LogicalFields {
                 meaning_image: Some("<img src=\"cat.jpg\">".into()),
                 meaning_text: Some("generated meaning".into()),
+                examples: None,
                 kanji_construction: Some("猫: cat".into()),
                 audio: Some("[sound:cat.mp3]".into()),
             },
@@ -562,5 +591,80 @@ mod tests {
             store.active().unwrap().source_context,
             "parent-child example"
         );
+    }
+
+    #[test]
+    fn grammar_examples_survive_review_edits_and_note_reload() {
+        let note = NoteInfo {
+            note_id: 42,
+            model_name: linguist_application::ModelName("Linguist Japanese Grammar".into()),
+            deck_names: vec![],
+            fields: BTreeMap::from([
+                ("Expression".into(), "V辞書形 + ことにする".into()),
+                ("Explanation".into(), "Decide to do something".into()),
+                ("Examples".into(), "Existing example".into()),
+            ]),
+            tags: vec![],
+        };
+        for examples_first in [false, true] {
+            let mut draft = ReviewDraft::from_note(&note);
+            assert_eq!(draft.meaning, "Decide to do something");
+            assert_eq!(draft.examples, "Existing example");
+            let document = CardDocument {
+                schema_version: linguist_core::CONTRACT_VERSION,
+                expression: draft.expression.clone(),
+                values: linguist_core::LogicalFields {
+                    meaning_text: Some("New explanation".into()),
+                    examples: Some("New example".into()),
+                    ..Default::default()
+                },
+                media: vec![],
+                obsolete_media: vec![],
+                issues: vec![],
+                tags: vec![],
+                provenance: Default::default(),
+            };
+            draft.regenerate_document(
+                document,
+                [
+                    GeneratedChange {
+                        field: DraftField::Meaning,
+                        value: "New explanation".into(),
+                        provenance: "test".into(),
+                    },
+                    GeneratedChange {
+                        field: DraftField::Examples,
+                        value: "New example".into(),
+                        provenance: "test".into(),
+                    },
+                ],
+            );
+            assert!(draft.accept(usize::from(examples_first)));
+            assert!(draft.accept(0));
+            draft.edit(DraftField::Examples, "Corrected example");
+            assert!(draft.undo());
+            assert_eq!(draft.examples, "New example");
+            assert!(draft.redo());
+            let accepted = draft.accepted_document().unwrap();
+            assert_eq!(
+                accepted.values.examples.as_deref(),
+                Some("Corrected example")
+            );
+            let fields = accepted
+                .map_fields(&linguist_core::FieldMapping {
+                    expression: Some("Expression".into()),
+                    meaning_text: Some("Explanation".into()),
+                    examples: Some("Examples".into()),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(fields.len(), 3);
+            let reloaded = ReviewDraft::from_note(&NoteInfo {
+                fields,
+                ..note.clone()
+            });
+            assert_eq!(reloaded.examples, "Corrected example");
+            assert_eq!(reloaded.meaning, "New explanation");
+        }
     }
 }

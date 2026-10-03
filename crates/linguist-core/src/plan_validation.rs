@@ -17,6 +17,7 @@ pub struct ItemValidation {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ValidationEvidence {
+    #[schemars(range(min = 2, max = 2))]
     pub schema_version: u16,
     pub id: uuid::Uuid,
     pub plan_id: uuid::Uuid,

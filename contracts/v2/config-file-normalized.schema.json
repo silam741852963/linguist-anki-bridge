@@ -1,0 +1,3727 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Validates ConfigFile.values after TOML flattening; the Rust resolver additionally validates cross-field relationships, URL details, language tags, and selected provider resources.",
+  "patternProperties": {
+    "^profiles\\.[A-Za-z][A-Za-z0-9_-]{0,63}\\.overrides$": {
+      "additionalProperties": false,
+      "default": {},
+      "description": "Named overrides reuse typed entries; no extra arbitrary settings.",
+      "maxProperties": 4096,
+      "properties": {
+        "audio.api_key_env": {
+          "default": null,
+          "description": "Environment variable credential name.",
+          "maxLength": 1048576,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "env_name",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.endpoint": {
+          "default": null,
+          "description": "Explicit custom TTS service endpoint.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.executable": {
+          "default": null,
+          "description": "Piper executable; argument array only.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.provider": {
+          "default": "preserve",
+          "description": "New audio source; preserve available source recording.",
+          "enum": [
+            "preserve",
+            "dictionary",
+            "piper",
+            "custom",
+            "disabled"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "audio adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.speed": {
+          "default": 1.0,
+          "description": "Supported provider speech-rate option.",
+          "maximum": 2.0,
+          "minimum": 0.5,
+          "type": "number",
+          "x-consumer": "audio adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.timeout_seconds": {
+          "default": 60,
+          "description": "Synthesis/download deadline.",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "audio adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.voice": {
+          "default": null,
+          "description": "Explicit voice for synthesis.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.voice_resource": {
+          "default": null,
+          "description": "Pinned voice resource with license evidence.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "path",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "browser.enabled": {
+          "default": false,
+          "description": "Optional controlled scraping fallback.",
+          "type": "boolean",
+          "x-consumer": "browser helper",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "browser.executable": {
+          "default": null,
+          "description": "Explicit supported installed browser binary.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "browser helper",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "browser.max_pages": {
+          "default": 3,
+          "description": "Bound pagination.",
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "browser helper",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "browser.timeout_seconds": {
+          "default": 30,
+          "description": "Per-navigation deadline.",
+          "maximum": 180,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "browser helper",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "cache.policy": {
+          "default": "prefer_fresh",
+          "description": "Offline overrides external refresh.",
+          "enum": [
+            "prefer_fresh",
+            "prefer_cache",
+            "cache_only"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "cache.ttl_hours": {
+          "default": 168,
+          "description": "Provider evidence expiration; pinned accepted plan assets never expire.",
+          "maximum": 8760,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "classification.confirmation_margin": {
+          "default": 0.12,
+          "description": "Near-threshold score requires review.",
+          "maximum": 0.5,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "classification.decision_threshold": {
+          "default": 0.5,
+          "description": "Classifier score threshold.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "classification.vision_accept_confidence": {
+          "default": 0.95,
+          "description": "Model score is uncalibrated; evidence conflicts still review.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "classification.vision_adjudication": {
+          "default": false,
+          "description": "Optional additional evidence, never silently erases ambiguity.",
+          "type": "boolean",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.browser_fallback": {
+          "default": false,
+          "description": "Explicit optional browser dependency.",
+          "type": "boolean",
+          "x-consumer": "dictionary adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.provider": {
+          "default": "auto",
+          "description": "Auto routes by supported target language; never Japanese fallback.",
+          "enum": [
+            "auto",
+            "jisho",
+            "wiktionary",
+            "custom",
+            "authored"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-VOCAB",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.schema_path": {
+          "default": null,
+          "description": "Versioned extraction schema resource.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "dictionary adapter",
+          "x-runtime-format": "path",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.url_template": {
+          "default": null,
+          "description": "Only custom provider; validated placeholders/host.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "dictionary adapter",
+          "x-runtime-format": "url_template",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.user_agent": {
+          "default": "LinguistAnkiBridge/CLI",
+          "description": "Identify client; site limits/terms still apply.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": "string",
+          "x-consumer": "dictionary adapter",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "filters.clean_word_only": {
+          "default": false,
+          "description": "Optional reviewed lookup cleanup.",
+          "type": "boolean",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "filters.normalize_unicode": {
+          "default": true,
+          "description": "NFC semantic identity only; raw fields preserved.",
+          "type": "boolean",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "filters.remove_parentheses": {
+          "default": false,
+          "description": "Optional lookup normalization, never source archive mutation.",
+          "type": "boolean",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.candidate_limit": {
+          "default": 5,
+          "description": "Bound search result set.",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "image adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.custom_endpoint": {
+          "default": null,
+          "description": "Required for custom provider.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "image adapter",
+          "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.existing_policy": {
+          "default": "preserve",
+          "description": "No policy physically deletes source media.",
+          "enum": [
+            "preserve",
+            "inspect",
+            "review_replace",
+            "omit_reference"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.provider": {
+          "default": "wikimedia",
+          "description": "Provider attribution retained.",
+          "enum": [
+            "wikimedia",
+            "custom",
+            "disabled"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "image adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.query_suffix": {
+          "default": "",
+          "description": "Extra query text.",
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "image adapter",
+          "x-runtime-format": "text",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.search_when_missing": {
+          "default": true,
+          "description": "Search candidates; rights/relevance review before acceptance.",
+          "type": "boolean",
+          "x-consumer": "image adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "kanji.enabled": {
+          "default": true,
+          "description": "Applicable Japanese kanji only.",
+          "type": "boolean",
+          "x-consumer": "ALG-VOCAB",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "kanji.explanation_language": {
+          "default": "en",
+          "description": "Language used for optional kanji explanation.",
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "kanji adapter",
+          "x-runtime-format": "language",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "kanji.schema": {
+          "default": "builtin:jisho-kanji-v2",
+          "description": "Pinned extraction schema.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": "string",
+          "x-consumer": "kanji adapter",
+          "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "kanji.url_template": {
+          "default": "https://jisho.org/search/{char}%23kanji",
+          "description": "Validated URL template.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": "string",
+          "x-consumer": "kanji adapter",
+          "x-runtime-format": "url_template",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.examples_min": {
+          "default": 3,
+          "description": "Generation supplement target; not an unconditional readiness minimum; preserve source examples.",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "generation/ALG-VALIDATE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.explanation_language": {
+          "default": "en",
+          "description": "Supported BCP47 explanation language; separate from target.",
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-CAPTURE",
+          "x-runtime-format": "language",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.generated_examples_max": {
+          "default": 5,
+          "description": "Limits new examples, never discards archival source examples.",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.grammar.application": {
+          "default": false,
+          "description": "Default for new notes; exercise validation needed.",
+          "type": "boolean",
+          "x-consumer": "ALG-RENDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.vocabulary.production": {
+          "default": false,
+          "description": "Default for new notes; retained tasks unaffected.",
+          "type": "boolean",
+          "x-consumer": "ALG-RENDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.vocabulary.spelling": {
+          "default": false,
+          "description": "Default for new notes; valid cue needed.",
+          "type": "boolean",
+          "x-consumer": "ALG-RENDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.api_key_env": {
+          "default": null,
+          "description": "Credential environment reference.",
+          "maxLength": 1048576,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "Ollama adapter",
+          "x-runtime-format": "env_name",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.context_tokens": {
+          "default": 8192,
+          "description": "Validate model limits; no silent truncation.",
+          "maximum": 131072,
+          "minimum": 512,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.enabled": {
+          "default": true,
+          "description": "Enable requested generated annotations; false uses source/dictionary/authored material only.",
+          "type": "boolean",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.endpoint": {
+          "default": "http://127.0.0.1:11434",
+          "description": "Local Ollama default.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": "string",
+          "x-consumer": "Ollama adapter",
+          "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.keep_alive": {
+          "default": "5m",
+          "description": "Validated provider duration.",
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "Ollama adapter",
+          "x-runtime-format": "duration",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.max_output_tokens": {
+          "default": 2048,
+          "description": "Must fit context with input.",
+          "maximum": 32768,
+          "minimum": 128,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.model": {
+          "default": "gemma4:12b",
+          "description": "Selected baseline candidate; require installed capability/digest, never pull or silently substitute.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.prompts.grammar": {
+          "default": "builtin:grammar-v2",
+          "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.prompts.kanji": {
+          "default": "builtin:kanji-v2",
+          "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.prompts.vocabulary": {
+          "default": "builtin:vocabulary-v2",
+          "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.repair_attempts": {
+          "default": 2,
+          "description": "Structural output repairs inside the shared read attempt budget; no factual fabrication.",
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.seed": {
+          "default": 0,
+          "description": "Best effort reproducibility, not a deterministic guarantee.",
+          "maximum": 2147483647,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.temperature": {
+          "default": 0.0,
+          "description": "Provider must advertise support; preserve resolved parameter.",
+          "maximum": 2,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.timeout_seconds": {
+          "default": 180,
+          "description": "Generation deadline.",
+          "maximum": 1800,
+          "minimum": 10,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.vision_model": {
+          "default": null,
+          "description": "Explicit installed model with vision capability.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "vision",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.engine": {
+          "default": "tesseract",
+          "description": "Optional engines require installed pinned resources.",
+          "enum": [
+            "tesseract",
+            "ollama",
+            "paddleocr"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.engine_mode": {
+          "default": 1,
+          "description": "Installed training data must support selected mode.",
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "Tesseract",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.executable": {
+          "default": "tesseract",
+          "description": "Resolved executable path/hash; no shell command string.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": "string",
+          "x-consumer": "Tesseract",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.languages": {
+          "default": [
+            "jpn",
+            "eng",
+            "vie"
+          ],
+          "description": "Purpose mappings should narrow packs; absent pack blocks required OCR.",
+          "items": {
+            "maxLength": 1048576,
+            "pattern": "\\S",
+            "type": "string",
+            "x-runtime-format": "nonempty"
+          },
+          "maxItems": 4096,
+          "type": "array",
+          "uniqueItems": true,
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.max_regions": {
+          "default": 100,
+          "description": "Bound segmentation complexity.",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.minimum_confidence": {
+          "default": 0.7,
+          "description": "Normalized adapter score triggers review, not proof.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.page_segmentation_mode": {
+          "default": 3,
+          "description": "Validate mode supported by installed engine.",
+          "maximum": 13,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "Tesseract",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.preprocess": {
+          "default": true,
+          "description": "Derivative only; preserves source bytes.",
+          "type": "boolean",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.resource_path": {
+          "default": null,
+          "description": "Optional pinned language/engine resource directory.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "ALG-OCR",
+          "x-runtime-format": "path",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.timeout_seconds": {
+          "default": 60,
+          "description": "Child process deadline.",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "selection.duplicate_policy": {
+          "default": "review",
+          "description": "Skip only exact proven duplicate with reported outcome.",
+          "enum": [
+            "review",
+            "skip_exact"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "selection.duplicate_scope": {
+          "default": "collection",
+          "description": "Semantic duplicate candidate scope.",
+          "enum": [
+            "collection",
+            "target_deck"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "selection.max_notes": {
+          "default": 1000,
+          "description": "Default selector safety bound; larger explicit limit is validated.",
+          "maximum": 100000,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "selection.order": {
+          "default": "note_id",
+          "description": "Deterministic frozen order.",
+          "enum": [
+            "note_id",
+            "input"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.dictionary.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.dictionary.min_interval_seconds": {
+          "default": 1.0,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.image.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.image.min_interval_seconds": {
+          "default": 1.0,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.kanji.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.kanji.min_interval_seconds": {
+          "default": 1.0,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.ollama.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.ollama.min_interval_seconds": {
+          "default": 0.25,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.tts.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.tts.min_interval_seconds": {
+          "default": 0.5,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        }
+      },
+      "type": "object",
+      "x-consumer": "ALG-CONFIG",
+      "x-scope": "profile",
+      "x-sensitive": false
+    },
+    "^purposes\\.[A-Za-z][A-Za-z0-9_-]{0,63}\\.card_tasks$": {
+      "additionalProperties": false,
+      "default": {},
+      "description": "Explicit reviewed source task map; cannot assume arbitrary ordinals.",
+      "maxProperties": 4096,
+      "patternProperties": {
+        "^(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$": {
+          "enum": [
+            "comprehension",
+            "production",
+            "spelling",
+            "recognition",
+            "application"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "x-consumer": "ALG-MIGRATE",
+      "x-runtime-constraint": "target task values must be unique",
+      "x-scope": "mapping",
+      "x-sensitive": false
+    },
+    "^purposes\\.[A-Za-z][A-Za-z0-9_-]{0,63}\\.fields$": {
+      "additionalProperties": false,
+      "default": {},
+      "description": "Only source mapping; target v2 fields are fixed.",
+      "maxProperties": 4096,
+      "properties": {
+        "audio": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "enable_application": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "enable_production": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "enable_spelling": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "examples": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "exercise_answer": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "exercise_prompt": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "explanation_language": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "expression": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "formation": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "kanji": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "language": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "meaning": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "pattern": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "personal_notes": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "picture": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "production_prompt": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "pronunciation": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "reading": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "recognition_prompt": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "sense_key": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "source": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "spelling_prompt": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "usage": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "use_key": {
+          "not": {
+            "pattern": "\\u0000"
+          },
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "mapping",
+      "x-sensitive": false
+    },
+    "^purposes\\.[A-Za-z][A-Za-z0-9_-]{0,63}\\.ocr_languages$": {
+      "default": [],
+      "description": "Empty inherits ocr.languages; explicit mapping validated.",
+      "items": {
+        "maxLength": 1048576,
+        "pattern": "\\S",
+        "type": "string",
+        "x-runtime-format": "nonempty"
+      },
+      "maxItems": 4096,
+      "type": "array",
+      "uniqueItems": true,
+      "x-consumer": "ALG-OCR",
+      "x-scope": "mapping",
+      "x-sensitive": false
+    },
+    "^purposes\\.[A-Za-z][A-Za-z0-9_-]{0,63}\\.overrides$": {
+      "additionalProperties": false,
+      "default": {},
+      "description": "Per-purpose overrides reuse typed entries.",
+      "maxProperties": 4096,
+      "properties": {
+        "audio.api_key_env": {
+          "default": null,
+          "description": "Environment variable credential name.",
+          "maxLength": 1048576,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "env_name",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.endpoint": {
+          "default": null,
+          "description": "Explicit custom TTS service endpoint.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.executable": {
+          "default": null,
+          "description": "Piper executable; argument array only.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.provider": {
+          "default": "preserve",
+          "description": "New audio source; preserve available source recording.",
+          "enum": [
+            "preserve",
+            "dictionary",
+            "piper",
+            "custom",
+            "disabled"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "audio adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.speed": {
+          "default": 1.0,
+          "description": "Supported provider speech-rate option.",
+          "maximum": 2.0,
+          "minimum": 0.5,
+          "type": "number",
+          "x-consumer": "audio adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.timeout_seconds": {
+          "default": 60,
+          "description": "Synthesis/download deadline.",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "audio adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.voice": {
+          "default": null,
+          "description": "Explicit voice for synthesis.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "audio.voice_resource": {
+          "default": null,
+          "description": "Pinned voice resource with license evidence.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "audio adapter",
+          "x-runtime-format": "path",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "browser.enabled": {
+          "default": false,
+          "description": "Optional controlled scraping fallback.",
+          "type": "boolean",
+          "x-consumer": "browser helper",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "browser.executable": {
+          "default": null,
+          "description": "Explicit supported installed browser binary.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "browser helper",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "browser.max_pages": {
+          "default": 3,
+          "description": "Bound pagination.",
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "browser helper",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "browser.timeout_seconds": {
+          "default": 30,
+          "description": "Per-navigation deadline.",
+          "maximum": 180,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "browser helper",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "cache.policy": {
+          "default": "prefer_fresh",
+          "description": "Offline overrides external refresh.",
+          "enum": [
+            "prefer_fresh",
+            "prefer_cache",
+            "cache_only"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "cache.ttl_hours": {
+          "default": 168,
+          "description": "Provider evidence expiration; pinned accepted plan assets never expire.",
+          "maximum": 8760,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "classification.confirmation_margin": {
+          "default": 0.12,
+          "description": "Near-threshold score requires review.",
+          "maximum": 0.5,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "classification.decision_threshold": {
+          "default": 0.5,
+          "description": "Classifier score threshold.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "classification.vision_accept_confidence": {
+          "default": 0.95,
+          "description": "Model score is uncalibrated; evidence conflicts still review.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "classification.vision_adjudication": {
+          "default": false,
+          "description": "Optional additional evidence, never silently erases ambiguity.",
+          "type": "boolean",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.browser_fallback": {
+          "default": false,
+          "description": "Explicit optional browser dependency.",
+          "type": "boolean",
+          "x-consumer": "dictionary adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.provider": {
+          "default": "auto",
+          "description": "Auto routes by supported target language; never Japanese fallback.",
+          "enum": [
+            "auto",
+            "jisho",
+            "wiktionary",
+            "custom",
+            "authored"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-VOCAB",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.schema_path": {
+          "default": null,
+          "description": "Versioned extraction schema resource.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "dictionary adapter",
+          "x-runtime-format": "path",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.url_template": {
+          "default": null,
+          "description": "Only custom provider; validated placeholders/host.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "dictionary adapter",
+          "x-runtime-format": "url_template",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.user_agent": {
+          "default": "LinguistAnkiBridge/CLI",
+          "description": "Identify client; site limits/terms still apply.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": "string",
+          "x-consumer": "dictionary adapter",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "filters.clean_word_only": {
+          "default": false,
+          "description": "Optional reviewed lookup cleanup.",
+          "type": "boolean",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "filters.normalize_unicode": {
+          "default": true,
+          "description": "NFC semantic identity only; raw fields preserved.",
+          "type": "boolean",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "filters.remove_parentheses": {
+          "default": false,
+          "description": "Optional lookup normalization, never source archive mutation.",
+          "type": "boolean",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.candidate_limit": {
+          "default": 5,
+          "description": "Bound search result set.",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "image adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.custom_endpoint": {
+          "default": null,
+          "description": "Required for custom provider.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "image adapter",
+          "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.existing_policy": {
+          "default": "preserve",
+          "description": "No policy physically deletes source media.",
+          "enum": [
+            "preserve",
+            "inspect",
+            "review_replace",
+            "omit_reference"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.provider": {
+          "default": "wikimedia",
+          "description": "Provider attribution retained.",
+          "enum": [
+            "wikimedia",
+            "custom",
+            "disabled"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "image adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.query_suffix": {
+          "default": "",
+          "description": "Extra query text.",
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "image adapter",
+          "x-runtime-format": "text",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.search_when_missing": {
+          "default": true,
+          "description": "Search candidates; rights/relevance review before acceptance.",
+          "type": "boolean",
+          "x-consumer": "image adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "kanji.enabled": {
+          "default": true,
+          "description": "Applicable Japanese kanji only.",
+          "type": "boolean",
+          "x-consumer": "ALG-VOCAB",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "kanji.explanation_language": {
+          "default": "en",
+          "description": "Language used for optional kanji explanation.",
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "kanji adapter",
+          "x-runtime-format": "language",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "kanji.schema": {
+          "default": "builtin:jisho-kanji-v2",
+          "description": "Pinned extraction schema.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": "string",
+          "x-consumer": "kanji adapter",
+          "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "kanji.url_template": {
+          "default": "https://jisho.org/search/{char}%23kanji",
+          "description": "Validated URL template.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": "string",
+          "x-consumer": "kanji adapter",
+          "x-runtime-format": "url_template",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.examples_min": {
+          "default": 3,
+          "description": "Generation supplement target; not an unconditional readiness minimum; preserve source examples.",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "generation/ALG-VALIDATE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.explanation_language": {
+          "default": "en",
+          "description": "Supported BCP47 explanation language; separate from target.",
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-CAPTURE",
+          "x-runtime-format": "language",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.generated_examples_max": {
+          "default": 5,
+          "description": "Limits new examples, never discards archival source examples.",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.grammar.application": {
+          "default": false,
+          "description": "Default for new notes; exercise validation needed.",
+          "type": "boolean",
+          "x-consumer": "ALG-RENDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.vocabulary.production": {
+          "default": false,
+          "description": "Default for new notes; retained tasks unaffected.",
+          "type": "boolean",
+          "x-consumer": "ALG-RENDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "learning.vocabulary.spelling": {
+          "default": false,
+          "description": "Default for new notes; valid cue needed.",
+          "type": "boolean",
+          "x-consumer": "ALG-RENDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.api_key_env": {
+          "default": null,
+          "description": "Credential environment reference.",
+          "maxLength": 1048576,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "Ollama adapter",
+          "x-runtime-format": "env_name",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.context_tokens": {
+          "default": 8192,
+          "description": "Validate model limits; no silent truncation.",
+          "maximum": 131072,
+          "minimum": 512,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.enabled": {
+          "default": true,
+          "description": "Enable requested generated annotations; false uses source/dictionary/authored material only.",
+          "type": "boolean",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.endpoint": {
+          "default": "http://127.0.0.1:11434",
+          "description": "Local Ollama default.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": "string",
+          "x-consumer": "Ollama adapter",
+          "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.keep_alive": {
+          "default": "5m",
+          "description": "Validated provider duration.",
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "Ollama adapter",
+          "x-runtime-format": "duration",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.max_output_tokens": {
+          "default": 2048,
+          "description": "Must fit context with input.",
+          "maximum": 32768,
+          "minimum": 128,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.model": {
+          "default": "gemma4:12b",
+          "description": "Selected baseline candidate; require installed capability/digest, never pull or silently substitute.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.prompts.grammar": {
+          "default": "builtin:grammar-v2",
+          "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.prompts.kanji": {
+          "default": "builtin:kanji-v2",
+          "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.prompts.vocabulary": {
+          "default": "builtin:vocabulary-v2",
+          "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.repair_attempts": {
+          "default": 2,
+          "description": "Structural output repairs inside the shared read attempt budget; no factual fabrication.",
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.seed": {
+          "default": 0,
+          "description": "Best effort reproducibility, not a deterministic guarantee.",
+          "maximum": 2147483647,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.temperature": {
+          "default": 0.0,
+          "description": "Provider must advertise support; preserve resolved parameter.",
+          "maximum": 2,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.timeout_seconds": {
+          "default": 180,
+          "description": "Generation deadline.",
+          "maximum": 1800,
+          "minimum": 10,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.vision_model": {
+          "default": null,
+          "description": "Explicit installed model with vision capability.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "vision",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.engine": {
+          "default": "tesseract",
+          "description": "Optional engines require installed pinned resources.",
+          "enum": [
+            "tesseract",
+            "ollama",
+            "paddleocr"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.engine_mode": {
+          "default": 1,
+          "description": "Installed training data must support selected mode.",
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "Tesseract",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.executable": {
+          "default": "tesseract",
+          "description": "Resolved executable path/hash; no shell command string.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": "string",
+          "x-consumer": "Tesseract",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.languages": {
+          "default": [
+            "jpn",
+            "eng",
+            "vie"
+          ],
+          "description": "Purpose mappings should narrow packs; absent pack blocks required OCR.",
+          "items": {
+            "maxLength": 1048576,
+            "pattern": "\\S",
+            "type": "string",
+            "x-runtime-format": "nonempty"
+          },
+          "maxItems": 4096,
+          "type": "array",
+          "uniqueItems": true,
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.max_regions": {
+          "default": 100,
+          "description": "Bound segmentation complexity.",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.minimum_confidence": {
+          "default": 0.7,
+          "description": "Normalized adapter score triggers review, not proof.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.page_segmentation_mode": {
+          "default": 3,
+          "description": "Validate mode supported by installed engine.",
+          "maximum": 13,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "Tesseract",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.preprocess": {
+          "default": true,
+          "description": "Derivative only; preserves source bytes.",
+          "type": "boolean",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.resource_path": {
+          "default": null,
+          "description": "Optional pinned language/engine resource directory.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "ALG-OCR",
+          "x-runtime-format": "path",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "ocr.timeout_seconds": {
+          "default": 60,
+          "description": "Child process deadline.",
+          "maximum": 600,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "selection.duplicate_policy": {
+          "default": "review",
+          "description": "Skip only exact proven duplicate with reported outcome.",
+          "enum": [
+            "review",
+            "skip_exact"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "selection.duplicate_scope": {
+          "default": "collection",
+          "description": "Semantic duplicate candidate scope.",
+          "enum": [
+            "collection",
+            "target_deck"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "selection.max_notes": {
+          "default": 1000,
+          "description": "Default selector safety bound; larger explicit limit is validated.",
+          "maximum": 100000,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "selection.order": {
+          "default": "note_id",
+          "description": "Deterministic frozen order.",
+          "enum": [
+            "note_id",
+            "input"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "ALG-CAPTURE",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.dictionary.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.dictionary.min_interval_seconds": {
+          "default": 1.0,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.image.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.image.min_interval_seconds": {
+          "default": 1.0,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.kanji.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.kanji.min_interval_seconds": {
+          "default": 1.0,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.ollama.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.ollama.min_interval_seconds": {
+          "default": 0.25,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.tts.concurrency": {
+          "default": 1,
+          "description": "Shared semaphore per endpoint.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "services.tts.min_interval_seconds": {
+          "default": 0.5,
+          "description": "Provider rate limit.",
+          "maximum": 60,
+          "minimum": 0,
+          "type": "number",
+          "x-consumer": "ALG-PROVIDER",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        }
+      },
+      "type": "object",
+      "x-consumer": "ALG-CONFIG",
+      "x-scope": "mapping",
+      "x-sensitive": false
+    },
+    "^purposes\\.[A-Za-z][A-Za-z0-9_-]{0,63}\\.source_deck$": {
+      "default": null,
+      "description": "Revamp selector default; never destination inference.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "ALG-CAPTURE",
+      "x-runtime-format": "nonempty",
+      "x-scope": "mapping",
+      "x-sensitive": false
+    },
+    "^purposes\\.[A-Za-z][A-Za-z0-9_-]{0,63}\\.source_model$": {
+      "default": null,
+      "description": "Expected model, still inspect manifest.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "ALG-CAPTURE",
+      "x-runtime-format": "nonempty",
+      "x-scope": "mapping",
+      "x-sensitive": false
+    },
+    "^purposes\\.[A-Za-z][A-Za-z0-9_-]{0,63}\\.target_deck$": {
+      "default": null,
+      "description": "Destination must exist or have an explicit reviewed creation action.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "ALG-CAPTURE",
+      "x-runtime-format": "nonempty",
+      "x-scope": "mapping",
+      "x-sensitive": false
+    },
+    "^purposes\\.[A-Za-z][A-Za-z0-9_-]{0,63}\\.target_language$": {
+      "default": null,
+      "description": "BCP47 target language.",
+      "maxLength": 1048576,
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "ALG-CAPTURE",
+      "x-runtime-format": "language",
+      "x-scope": "mapping",
+      "x-sensitive": false
+    }
+  },
+  "properties": {
+    "anki.api_key_env": {
+      "default": null,
+      "description": "Name of environment variable containing API key; never the key.",
+      "maxLength": 1048576,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "Anki adapter",
+      "x-runtime-format": "env_name",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "anki.commit_interval_seconds": {
+      "default": 0.25,
+      "description": "Minimum gap between note mutations.",
+      "maximum": 60,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-APPLY",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "anki.endpoint": {
+      "default": "http://127.0.0.1:8765",
+      "description": "Remote allowlisted reads supported; baseline managed writes require same-host loopback bridge.",
+      "maxLength": 1048576,
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+      "type": "string",
+      "x-consumer": "Anki adapter",
+      "x-runtime-format": "url",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "anki.expected_profile": {
+      "default": null,
+      "description": "Expected Anki profile name, checked but not a strong collection identity.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "ALG-IDENTITY",
+      "x-runtime-format": "nonempty",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "anki.native_adapter": {
+      "default": "lab-native-v1",
+      "description": "Mandatory verified companion protocol for all managed collection writes.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": "string",
+      "x-consumer": "ALG-MIGRATE",
+      "x-runtime-format": "nonempty",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "anki.read_batch_size": {
+      "default": 100,
+      "description": "Bound read payload.",
+      "maximum": 1000,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "anki.request_timeout_seconds": {
+      "default": 30,
+      "description": "Timeout enters reconciliation when a mutation was sent.",
+      "maximum": 600,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "Anki adapter",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "audio.api_key_env": {
+      "default": null,
+      "description": "Environment variable credential name.",
+      "maxLength": 1048576,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "audio adapter",
+      "x-runtime-format": "env_name",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "audio.endpoint": {
+      "default": null,
+      "description": "Explicit custom TTS service endpoint.",
+      "maxLength": 1048576,
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "audio adapter",
+      "x-runtime-format": "url",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "audio.executable": {
+      "default": null,
+      "description": "Piper executable; argument array only.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\s$`;&|]+$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "audio adapter",
+      "x-runtime-format": "executable",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "audio.provider": {
+      "default": "preserve",
+      "description": "New audio source; preserve available source recording.",
+      "enum": [
+        "preserve",
+        "dictionary",
+        "piper",
+        "custom",
+        "disabled"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "audio adapter",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "audio.speed": {
+      "default": 1.0,
+      "description": "Supported provider speech-rate option.",
+      "maximum": 2.0,
+      "minimum": 0.5,
+      "type": "number",
+      "x-consumer": "audio adapter",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "audio.timeout_seconds": {
+      "default": 60,
+      "description": "Synthesis/download deadline.",
+      "maximum": 600,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "audio adapter",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "audio.voice": {
+      "default": null,
+      "description": "Explicit voice for synthesis.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "audio adapter",
+      "x-runtime-format": "nonempty",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "audio.voice_resource": {
+      "default": null,
+      "description": "Pinned voice resource with license evidence.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "audio adapter",
+      "x-runtime-format": "path",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "backup.max_collection_gb": {
+      "default": 64,
+      "description": "Maximum decoded collection bytes accepted from a package.",
+      "maximum": 1024,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-BACKUP",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "backup.max_entries": {
+      "default": 100000,
+      "description": "Maximum ZIP entries accepted by package inspection.",
+      "maximum": 1000000,
+      "minimum": 4,
+      "type": "integer",
+      "x-consumer": "ALG-BACKUP",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "backup.max_media_gb": {
+      "default": 64,
+      "description": "Maximum aggregate decoded media bytes accepted from a package.",
+      "maximum": 1024,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-BACKUP",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "backup.max_media_map_mb": {
+      "default": 64,
+      "description": "Maximum decoded media index bytes accepted from a package.",
+      "maximum": 1024,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-BACKUP",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "backup.max_package_gb": {
+      "default": 64,
+      "description": "Maximum collection package file size accepted by read-only inspection.",
+      "maximum": 1024,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-BACKUP",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "backup.reuse_max_age_seconds": {
+      "default": 0,
+      "description": "Zero creates a fresh checkpoint; unchanged manifests still required.",
+      "maximum": 3600,
+      "minimum": 0,
+      "type": "integer",
+      "x-consumer": "ALG-BACKUP",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "backup.scope": {
+      "default": "affected",
+      "description": "Schema migration escalates coverage regardless of preference.",
+      "enum": [
+        "affected",
+        "collection"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-BACKUP",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "backup.verify_scratch_dir": {
+      "default": "/tmp",
+      "description": "Existing directory for private, automatically removed decoded collection files during package inspection.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "ALG-BACKUP",
+      "x-runtime-format": "path",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "backup.verify_timeout_seconds": {
+      "default": 120,
+      "description": "Package verification deadline.",
+      "maximum": 3600,
+      "minimum": 10,
+      "type": "integer",
+      "x-consumer": "ALG-BACKUP",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "browser.enabled": {
+      "default": false,
+      "description": "Optional controlled scraping fallback.",
+      "type": "boolean",
+      "x-consumer": "browser helper",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "browser.executable": {
+      "default": null,
+      "description": "Explicit supported installed browser binary.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\s$`;&|]+$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "browser helper",
+      "x-runtime-format": "executable",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "browser.max_pages": {
+      "default": 3,
+      "description": "Bound pagination.",
+      "maximum": 10,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "browser helper",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "browser.timeout_seconds": {
+      "default": 30,
+      "description": "Per-navigation deadline.",
+      "maximum": 180,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "browser helper",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "cache.max_size_mb": {
+      "default": 2048,
+      "description": "Target cache budget; reachable evidence cannot be pruned.",
+      "maximum": 1048576,
+      "minimum": 64,
+      "type": "integer",
+      "x-consumer": "ALG-GC",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "cache.policy": {
+      "default": "prefer_fresh",
+      "description": "Offline overrides external refresh.",
+      "enum": [
+        "prefer_fresh",
+        "prefer_cache",
+        "cache_only"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "cache.ttl_hours": {
+      "default": 168,
+      "description": "Provider evidence expiration; pinned accepted plan assets never expire.",
+      "maximum": 8760,
+      "minimum": 0,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "cache.unreferenced_retention_days": {
+      "default": 30,
+      "description": "Unreferenced cache only.",
+      "maximum": 3650,
+      "minimum": 0,
+      "type": "integer",
+      "x-consumer": "ALG-GC",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "classification.confirmation_margin": {
+      "default": 0.12,
+      "description": "Near-threshold score requires review.",
+      "maximum": 0.5,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "classification.decision_threshold": {
+      "default": 0.5,
+      "description": "Classifier score threshold.",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "classification.vision_accept_confidence": {
+      "default": 0.95,
+      "description": "Model score is uncalibrated; evidence conflicts still review.",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "classification.vision_adjudication": {
+      "default": false,
+      "description": "Optional additional evidence, never silently erases ambiguity.",
+      "type": "boolean",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "config.default_profile": {
+      "default": null,
+      "description": "Explicit named settings profile, never an Anki profile.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "ALG-CONFIG",
+      "x-runtime-format": "nonempty",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "config.version": {
+      "default": 2,
+      "description": "Target TOML format version; distinct from Python YAML/native JSON versions.",
+      "maximum": 2,
+      "minimum": 2,
+      "type": "integer",
+      "x-consumer": "ALG-CONFIG",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "dictionary.browser_fallback": {
+      "default": false,
+      "description": "Explicit optional browser dependency.",
+      "type": "boolean",
+      "x-consumer": "dictionary adapter",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "dictionary.provider": {
+      "default": "auto",
+      "description": "Auto routes by supported target language; never Japanese fallback.",
+      "enum": [
+        "auto",
+        "jisho",
+        "wiktionary",
+        "custom",
+        "authored"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-VOCAB",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "dictionary.schema_path": {
+      "default": null,
+      "description": "Versioned extraction schema resource.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "dictionary adapter",
+      "x-runtime-format": "path",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "dictionary.url_template": {
+      "default": null,
+      "description": "Only custom provider; validated placeholders/host.",
+      "maxLength": 1048576,
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "dictionary adapter",
+      "x-runtime-format": "url_template",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "dictionary.user_agent": {
+      "default": "LinguistAnkiBridge/CLI",
+      "description": "Identify client; site limits/terms still apply.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": "string",
+      "x-consumer": "dictionary adapter",
+      "x-runtime-format": "nonempty",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "editing.editor_argv": {
+      "default": [],
+      "description": "Explicit executable/argument vector; empty uses VISUAL/EDITOR only in requested --editor mode.",
+      "items": {
+        "maxLength": 1048576,
+        "type": "string",
+        "x-runtime-format": "text"
+      },
+      "maxItems": 4096,
+      "type": "array",
+      "x-consumer": "OP-28",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "filters.clean_word_only": {
+      "default": false,
+      "description": "Optional reviewed lookup cleanup.",
+      "type": "boolean",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "filters.normalize_unicode": {
+      "default": true,
+      "description": "NFC semantic identity only; raw fields preserved.",
+      "type": "boolean",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "filters.remove_parentheses": {
+      "default": false,
+      "description": "Optional lookup normalization, never source archive mutation.",
+      "type": "boolean",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "helpers.max_output_mb": {
+      "default": 20,
+      "description": "Bound helper stdout/protocol output; excess is typed error, never truncate valid evidence.",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "helpers.memory_limit_mb": {
+      "default": 2048,
+      "description": "Per-subprocess memory limit on supported Linux helper processes; not external Ollama.",
+      "maximum": 65536,
+      "minimum": 64,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "images.candidate_limit": {
+      "default": 5,
+      "description": "Bound search result set.",
+      "maximum": 20,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "image adapter",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "images.custom_endpoint": {
+      "default": null,
+      "description": "Required for custom provider.",
+      "maxLength": 1048576,
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "image adapter",
+      "x-runtime-format": "url",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "images.existing_policy": {
+      "default": "preserve",
+      "description": "No policy physically deletes source media.",
+      "enum": [
+        "preserve",
+        "inspect",
+        "review_replace",
+        "omit_reference"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "images.provider": {
+      "default": "wikimedia",
+      "description": "Provider attribution retained.",
+      "enum": [
+        "wikimedia",
+        "custom",
+        "disabled"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "image adapter",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "images.query_suffix": {
+      "default": "",
+      "description": "Extra query text.",
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "image adapter",
+      "x-runtime-format": "text",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "images.search_when_missing": {
+      "default": true,
+      "description": "Search candidates; rights/relevance review before acceptance.",
+      "type": "boolean",
+      "x-consumer": "image adapter",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "input.max_file_mb": {
+      "default": 20,
+      "description": "Input body limit.",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "input.max_record_chars": {
+      "default": 100000,
+      "description": "Per-record limit.",
+      "maximum": 1000000,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "jobs.heartbeat_seconds": {
+      "default": 10,
+      "description": "Must be less than lease/3.",
+      "maximum": 60,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-JOB",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "jobs.lease_seconds": {
+      "default": 60,
+      "description": "Lease expires only with worker-liveness check.",
+      "maximum": 600,
+      "minimum": 10,
+      "type": "integer",
+      "x-consumer": "ALG-JOB",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "jobs.max_item_attempts": {
+      "default": 3,
+      "description": "Count only retry-eligible classified failures.",
+      "maximum": 10,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-JOB",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "jobs.on_item_error": {
+      "default": "continue",
+      "description": "Shared identity/schema/recovery faults always halt affected group.",
+      "enum": [
+        "continue",
+        "stop"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-JOB",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "jobs.pause_poll_ms": {
+      "default": 250,
+      "description": "Control polling; cannot skip durable step completion.",
+      "maximum": 5000,
+      "minimum": 50,
+      "type": "integer",
+      "x-consumer": "ALG-JOB",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "jobs.prepare_workers": {
+      "default": 2,
+      "description": "Parallel read/preparation workers; Anki writer always one.",
+      "maximum": 16,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-JOB",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "kanji.enabled": {
+      "default": true,
+      "description": "Applicable Japanese kanji only.",
+      "type": "boolean",
+      "x-consumer": "ALG-VOCAB",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "kanji.explanation_language": {
+      "default": "en",
+      "description": "Language used for optional kanji explanation.",
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "kanji adapter",
+      "x-runtime-format": "language",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "kanji.schema": {
+      "default": "builtin:jisho-kanji-v2",
+      "description": "Pinned extraction schema.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "kanji adapter",
+      "x-runtime-format": "resource_ref",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "kanji.url_template": {
+      "default": "https://jisho.org/search/{char}%23kanji",
+      "description": "Validated URL template.",
+      "maxLength": 1048576,
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+      "type": "string",
+      "x-consumer": "kanji adapter",
+      "x-runtime-format": "url_template",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "learning.examples_min": {
+      "default": 3,
+      "description": "Generation supplement target; not an unconditional readiness minimum; preserve source examples.",
+      "maximum": 20,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "generation/ALG-VALIDATE",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "learning.explanation_language": {
+      "default": "en",
+      "description": "Supported BCP47 explanation language; separate from target.",
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-CAPTURE",
+      "x-runtime-format": "language",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "learning.generated_examples_max": {
+      "default": 5,
+      "description": "Limits new examples, never discards archival source examples.",
+      "maximum": 30,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "learning.grammar.application": {
+      "default": false,
+      "description": "Default for new notes; exercise validation needed.",
+      "type": "boolean",
+      "x-consumer": "ALG-RENDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "learning.vocabulary.production": {
+      "default": false,
+      "description": "Default for new notes; retained tasks unaffected.",
+      "type": "boolean",
+      "x-consumer": "ALG-RENDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "learning.vocabulary.spelling": {
+      "default": false,
+      "description": "Default for new notes; valid cue needed.",
+      "type": "boolean",
+      "x-consumer": "ALG-RENDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.api_key_env": {
+      "default": null,
+      "description": "Credential environment reference.",
+      "maxLength": 1048576,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "Ollama adapter",
+      "x-runtime-format": "env_name",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.context_tokens": {
+      "default": 8192,
+      "description": "Validate model limits; no silent truncation.",
+      "maximum": 131072,
+      "minimum": 512,
+      "type": "integer",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.enabled": {
+      "default": true,
+      "description": "Enable requested generated annotations; false uses source/dictionary/authored material only.",
+      "type": "boolean",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.endpoint": {
+      "default": "http://127.0.0.1:11434",
+      "description": "Local Ollama default.",
+      "maxLength": 1048576,
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+      "type": "string",
+      "x-consumer": "Ollama adapter",
+      "x-runtime-format": "url",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.keep_alive": {
+      "default": "5m",
+      "description": "Validated provider duration.",
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "Ollama adapter",
+      "x-runtime-format": "duration",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.max_output_tokens": {
+      "default": 2048,
+      "description": "Must fit context with input.",
+      "maximum": 32768,
+      "minimum": 128,
+      "type": "integer",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.model": {
+      "default": "gemma4:12b",
+      "description": "Selected baseline candidate; require installed capability/digest, never pull or silently substitute.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "generation",
+      "x-runtime-format": "nonempty",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.prompts.grammar": {
+      "default": "builtin:grammar-v2",
+      "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "generation",
+      "x-runtime-format": "resource_ref",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.prompts.kanji": {
+      "default": "builtin:kanji-v2",
+      "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "generation",
+      "x-runtime-format": "resource_ref",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.prompts.vocabulary": {
+      "default": "builtin:vocabulary-v2",
+      "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "generation",
+      "x-runtime-format": "resource_ref",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.repair_attempts": {
+      "default": 2,
+      "description": "Structural output repairs inside the shared read attempt budget; no factual fabrication.",
+      "maximum": 3,
+      "minimum": 0,
+      "type": "integer",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.seed": {
+      "default": 0,
+      "description": "Best effort reproducibility, not a deterministic guarantee.",
+      "maximum": 2147483647,
+      "minimum": 0,
+      "type": "integer",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.temperature": {
+      "default": 0.0,
+      "description": "Provider must advertise support; preserve resolved parameter.",
+      "maximum": 2,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.timeout_seconds": {
+      "default": 180,
+      "description": "Generation deadline.",
+      "maximum": 1800,
+      "minimum": 10,
+      "type": "integer",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.vision_model": {
+      "default": null,
+      "description": "Explicit installed model with vision capability.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "vision",
+      "x-runtime-format": "nonempty",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "logging.file_enabled": {
+      "default": true,
+      "description": "Private local structured diagnostic file.",
+      "type": "boolean",
+      "x-consumer": "logging",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "logging.include_private_payloads": {
+      "default": false,
+      "description": "Explicit local debugging opt-in; never emits secrets.",
+      "type": "boolean",
+      "x-consumer": "logging",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "logging.level": {
+      "default": "info",
+      "description": "Default private payload redaction at every level.",
+      "enum": [
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "trace"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "logging",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "logging.max_file_mb": {
+      "default": 20,
+      "description": "Rotation size.",
+      "maximum": 1000,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "logging",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "logging.retained_files": {
+      "default": 5,
+      "description": "Diagnostic rotation count, not recovery-history retention.",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "logging",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "media.allowed_audio_types": {
+      "default": [
+        "audio/mpeg",
+        "audio/ogg",
+        "audio/wav"
+      ],
+      "description": "Decoded MIME whitelist.",
+      "items": {
+        "maxLength": 1048576,
+        "pattern": "\\S",
+        "type": "string",
+        "x-runtime-format": "nonempty"
+      },
+      "maxItems": 4096,
+      "type": "array",
+      "uniqueItems": true,
+      "x-consumer": "media adapter",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "media.allowed_image_types": {
+      "default": [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif"
+      ],
+      "description": "Decoded MIME whitelist.",
+      "items": {
+        "maxLength": 1048576,
+        "pattern": "\\S",
+        "type": "string",
+        "x-runtime-format": "nonempty"
+      },
+      "maxItems": 4096,
+      "type": "array",
+      "uniqueItems": true,
+      "x-consumer": "media adapter",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "media.max_asset_mb": {
+      "default": 10,
+      "description": "Decoded media bytes limit.",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "media adapter",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "network.allowed_remote_service_hosts": {
+      "default": [],
+      "description": "Opt-in hosts for non-loopback Anki/Ollama/custom services.",
+      "items": {
+        "maxLength": 1048576,
+        "type": "string",
+        "x-runtime-format": "host"
+      },
+      "maxItems": 4096,
+      "type": "array",
+      "uniqueItems": true,
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "network.connect_timeout_seconds": {
+      "default": 5,
+      "description": "Connection deadline.",
+      "maximum": 120,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "network.max_redirects": {
+      "default": 3,
+      "description": "Every redirected destination is revalidated.",
+      "maximum": 10,
+      "minimum": 0,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "network.max_response_mb": {
+      "default": 20,
+      "description": "Encoded response body limit.",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "network.offline": {
+      "default": false,
+      "description": "Block external traffic/downloads; explicitly allowed loopback services remain usable.",
+      "type": "boolean",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "network.proxy_env": {
+      "default": null,
+      "description": "Proxy URL environment variable reference; proxy obeys destination policy.",
+      "maxLength": 1048576,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "ALG-PROVIDER",
+      "x-runtime-format": "env_name",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "network.request_timeout_seconds": {
+      "default": 30,
+      "description": "Default service request deadline.",
+      "maximum": 600,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "ocr.engine": {
+      "default": "tesseract",
+      "description": "Optional engines require installed pinned resources.",
+      "enum": [
+        "tesseract",
+        "ollama",
+        "paddleocr"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "ocr.engine_mode": {
+      "default": 1,
+      "description": "Installed training data must support selected mode.",
+      "maximum": 3,
+      "minimum": 0,
+      "type": "integer",
+      "x-consumer": "Tesseract",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "ocr.executable": {
+      "default": "tesseract",
+      "description": "Resolved executable path/hash; no shell command string.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\s$`;&|]+$",
+      "type": "string",
+      "x-consumer": "Tesseract",
+      "x-runtime-format": "executable",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "ocr.languages": {
+      "default": [
+        "jpn",
+        "eng",
+        "vie"
+      ],
+      "description": "Purpose mappings should narrow packs; absent pack blocks required OCR.",
+      "items": {
+        "maxLength": 1048576,
+        "pattern": "\\S",
+        "type": "string",
+        "x-runtime-format": "nonempty"
+      },
+      "maxItems": 4096,
+      "type": "array",
+      "uniqueItems": true,
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "ocr.max_pixels": {
+      "default": 40000000,
+      "description": "Decode bomb protection.",
+      "maximum": 100000000,
+      "minimum": 1000000,
+      "type": "integer",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "ocr.max_regions": {
+      "default": 100,
+      "description": "Bound segmentation complexity.",
+      "maximum": 1000,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "ocr.minimum_confidence": {
+      "default": 0.7,
+      "description": "Normalized adapter score triggers review, not proof.",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "ocr.page_segmentation_mode": {
+      "default": 3,
+      "description": "Validate mode supported by installed engine.",
+      "maximum": 13,
+      "minimum": 0,
+      "type": "integer",
+      "x-consumer": "Tesseract",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "ocr.preprocess": {
+      "default": true,
+      "description": "Derivative only; preserves source bytes.",
+      "type": "boolean",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "ocr.resource_path": {
+      "default": null,
+      "description": "Optional pinned language/engine resource directory.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "ALG-OCR",
+      "x-runtime-format": "path",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "ocr.timeout_seconds": {
+      "default": 60,
+      "description": "Child process deadline.",
+      "maximum": 600,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "output.color": {
+      "default": "auto",
+      "description": "Auto disabled on pipes/NO_COLOR.",
+      "enum": [
+        "auto",
+        "always",
+        "never"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "OP wrapper",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "output.format": {
+      "default": "text",
+      "description": "Machine output is versioned.",
+      "enum": [
+        "text",
+        "json",
+        "jsonl"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "OP wrapper",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "output.language": {
+      "default": "en",
+      "description": "Initial CLI message locale.",
+      "enum": [
+        "en"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "OP wrapper",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "output.page_size": {
+      "default": 100,
+      "description": "Bounded pagination; counts remain exact.",
+      "maximum": 10000,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "OP read commands",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "output.progress": {
+      "default": true,
+      "description": "Progress only on stderr; JSON stdout stays clean.",
+      "type": "boolean",
+      "x-consumer": "OP wrapper",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "output.quiet": {
+      "default": false,
+      "description": "Hide routine progress, retain errors.",
+      "type": "boolean",
+      "x-consumer": "OP wrapper",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "resources.max_download_mb": {
+      "default": 16384,
+      "description": "Manifest-bounded explicit resource/model installation size cap.",
+      "maximum": 32768,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "OP-58",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "resources.max_unpacked_mb": {
+      "default": 32768,
+      "description": "Total extracted resource size cap; paths/symlinks/expansion checked.",
+      "maximum": 65536,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "OP-58",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "retry.initial_backoff_seconds": {
+      "default": 0.6,
+      "description": "First transient-read delay.",
+      "maximum": 60,
+      "minimum": 0.1,
+      "type": "number",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "retry.jitter_fraction": {
+      "default": 0.2,
+      "description": "Randomized bounded backoff.",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "retry.max_backoff_seconds": {
+      "default": 15,
+      "description": "Must be >= initial backoff.",
+      "maximum": 300,
+      "minimum": 0.1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "retry.read_attempts": {
+      "default": 3,
+      "description": "No blind mutation retry.",
+      "maximum": 10,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "selection.duplicate_policy": {
+      "default": "review",
+      "description": "Skip only exact proven duplicate with reported outcome.",
+      "enum": [
+        "review",
+        "skip_exact"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "selection.duplicate_scope": {
+      "default": "collection",
+      "description": "Semantic duplicate candidate scope.",
+      "enum": [
+        "collection",
+        "target_deck"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "selection.max_notes": {
+      "default": 1000,
+      "description": "Default selector safety bound; larger explicit limit is validated.",
+      "maximum": 100000,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "selection.order": {
+      "default": "note_id",
+      "description": "Deterministic frozen order.",
+      "enum": [
+        "note_id",
+        "input"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "ALG-CAPTURE",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.dictionary.concurrency": {
+      "default": 1,
+      "description": "Shared semaphore per endpoint.",
+      "maximum": 8,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.dictionary.min_interval_seconds": {
+      "default": 1.0,
+      "description": "Provider rate limit.",
+      "maximum": 60,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.image.concurrency": {
+      "default": 1,
+      "description": "Shared semaphore per endpoint.",
+      "maximum": 8,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.image.min_interval_seconds": {
+      "default": 1.0,
+      "description": "Provider rate limit.",
+      "maximum": 60,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.kanji.concurrency": {
+      "default": 1,
+      "description": "Shared semaphore per endpoint.",
+      "maximum": 8,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.kanji.min_interval_seconds": {
+      "default": 1.0,
+      "description": "Provider rate limit.",
+      "maximum": 60,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.ollama.concurrency": {
+      "default": 1,
+      "description": "Shared semaphore per endpoint.",
+      "maximum": 8,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.ollama.min_interval_seconds": {
+      "default": 0.25,
+      "description": "Provider rate limit.",
+      "maximum": 60,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.tts.concurrency": {
+      "default": 1,
+      "description": "Shared semaphore per endpoint.",
+      "maximum": 8,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "services.tts.min_interval_seconds": {
+      "default": 0.5,
+      "description": "Provider rate limit.",
+      "maximum": 60,
+      "minimum": 0,
+      "type": "number",
+      "x-consumer": "ALG-PROVIDER",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "storage.backup_dir": {
+      "default": "${XDG_STATE_HOME}/linguist-anki-bridge/backups",
+      "description": "Verified package files.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "storage",
+      "x-runtime-format": "path",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "storage.cache_dir": {
+      "default": "${XDG_CACHE_HOME}/linguist-anki-bridge",
+      "description": "Disposable provider cache.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "storage",
+      "x-runtime-format": "path",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "storage.free_space_reserve_mb": {
+      "default": 512,
+      "description": "Preflight minimum free space, not durability waiver.",
+      "maximum": 1048576,
+      "minimum": 64,
+      "type": "integer",
+      "x-consumer": "ALG-APPLY/backup",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "storage.resource_dir": {
+      "default": "${XDG_DATA_HOME}/linguist-anki-bridge/resources",
+      "description": "Installed pinned resources.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "storage",
+      "x-runtime-format": "path",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "storage.sqlite_busy_timeout_ms": {
+      "default": 5000,
+      "description": "Bound lock contention.",
+      "maximum": 60000,
+      "minimum": 100,
+      "type": "integer",
+      "x-consumer": "storage",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "storage.state_dir": {
+      "default": "${XDG_STATE_HOME}/linguist-anki-bridge",
+      "description": "Plans, journals, snapshots, SQLite state.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "storage",
+      "x-runtime-format": "path",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
+    "storage.temp_dir": {
+      "default": "${XDG_CACHE_HOME}/linguist-anki-bridge/tmp",
+      "description": "Bounded temporary derivatives.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": "string",
+      "x-consumer": "storage",
+      "x-runtime-format": "path",
+      "x-scope": "global",
+      "x-sensitive": false
+    }
+  },
+  "required": [
+    "config.version"
+  ],
+  "title": "Linguist normalized TOML v2 configuration",
+  "type": "object",
+  "x-runtime-cross-field-rules": [
+    "jobs.heartbeat_seconds < jobs.lease_seconds / 3",
+    "retry.initial_backoff_seconds <= retry.max_backoff_seconds",
+    "learning.examples_min <= learning.generated_examples_max",
+    "llm.max_output_tokens < llm.context_tokens"
+  ]
+}

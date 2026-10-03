@@ -125,7 +125,8 @@ pub fn render(
                 fields.insert(key.into(), block(value));
             }
             fields.insert("Examples".into(), examples(&v.examples));
-            let reference = dictionary::reference(&v.dictionary);
+            let reference =
+                dictionary::reference(&v.dictionary, &v.expression, &v.sense_key, &v.meaning);
             if !reference.is_empty() {
                 fields.get_mut("Meaning").unwrap().push_str(&format!(
                     "<section class=\"lab-reference\">{reference}</section>"

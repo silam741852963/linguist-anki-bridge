@@ -18,6 +18,7 @@ SNAPSHOT_VERSION = 1
 LOGICAL_FIELDS = (
     "meaning_image",
     "meaning_text",
+    "examples",
     "kanji_construction",
     "audio",
 )
@@ -93,7 +94,7 @@ def import_card_document(payload: dict[str, Any]) -> CardDocument:
     values = payload["values"]
     return CardDocument(
         expression=payload["expression"],
-        values={name: values[name] for name in LOGICAL_FIELDS},
+        values={name: values.get(name) for name in LOGICAL_FIELDS},
         media=[MediaAsset(item["filename"], item["data_base64"]) for item in payload["media"]],
         obsolete_media=list(payload["obsolete_media"]),
         issues=list(payload["issues"]),
@@ -111,8 +112,13 @@ def validate_card_document(payload: dict[str, Any]) -> None:
         raise ValueError("Card expression must be a string")
 
     values = payload.get("values")
-    if not isinstance(values, dict) or set(values) != set(LOGICAL_FIELDS):
-        raise ValueError("Card values must contain exactly the four logical fields")
+    required_values = set(LOGICAL_FIELDS) - {"examples"}
+    if (
+        not isinstance(values, dict)
+        or not required_values.issubset(values)
+        or not set(values).issubset(LOGICAL_FIELDS)
+    ):
+        raise ValueError("Card values must contain the known logical fields")
     if any(value is not None and not isinstance(value, str) for value in values.values()):
         raise ValueError("Logical field values must be strings or null")
 

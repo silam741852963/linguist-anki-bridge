@@ -14,6 +14,8 @@ Effects: Local config file only.
 
 Result/failure: Path and next config/deck commands; no service calls. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+The current receipt includes per-purpose missing add/revamp mapping keys, language, model candidate and required local resource gaps. Candidate settings are checked before writing; model/resource verification is still pending. The planned deck mapping command is labelled separately from commands currently available.
+
 ## OP-03 — `config show`
 
 Inputs: --defaults, --effective, --provenance, optional KEY.
@@ -36,6 +38,8 @@ Effects: Read-only.
 2. Print type/default/range/scope/consumer and required cross-field checks.
 
 Result/failure: Unknown key gives usage error and nearest valid names. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
+
+Current output retains the registered type/default/range/scope/consumer fields and adds `resolved_key` plus `cross_field_checks`. The checks cover current numeric relations, provider prerequisites and remote-host policy. Typo suggestions are bounded to three names and do not load the selected config.
 
 ## OP-05 — `config validate`
 
@@ -84,6 +88,8 @@ Effects: Local config edit only.
 3. With --execute validate/save backup atomically; never delete state/jobs/secrets resources.
 
 Result/failure: Preview or receipt; configuration reset does not grant apply permission. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
+
+Current edit receipts include `changes` for every override changed by set, unset or reset. Each entry gives old/new override, old/new effective value and provenance. A reset preview calculates inherited replacement values and leaves the config bytes untouched; `--execute` publishes the same validated candidate with a backup.
 
 ## OP-09 — `config import`
 

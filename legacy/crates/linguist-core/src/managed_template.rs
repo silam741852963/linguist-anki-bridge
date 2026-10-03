@@ -29,12 +29,14 @@ pub enum ManagedTemplatePlan {
         spec: ManagedModelSpec,
     },
     UpgradeLegacy {
+        spec: ManagedModelSpec,
         rename: (String, String),
         add: Vec<ModelTemplate>,
         refresh_templates: bool,
         refresh_css: bool,
     },
     Refresh {
+        spec: ManagedModelSpec,
         templates: bool,
         css: bool,
     },
@@ -126,6 +128,70 @@ pub fn japanese_vocab_spec() -> ManagedModelSpec {
     }
 }
 
+pub fn english_vocab_spec() -> ManagedModelSpec {
+    ManagedModelSpec {
+        model_name: "Linguist English Vocabulary".into(),
+        fields: ["Expression", "Picture", "Meaning", "Audio"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        templates: vec![
+            template(
+                "Comprehension",
+                include_str!(
+                    "../../../src/linguist_anki_bridge/templates/english_vocab/front.html"
+                ),
+                include_str!("../../../src/linguist_anki_bridge/templates/english_vocab/back.html"),
+            ),
+            template(
+                "Spelling",
+                include_str!(
+                    "../../../src/linguist_anki_bridge/templates/english_vocab/spelling_front.html"
+                ),
+                include_str!(
+                    "../../../src/linguist_anki_bridge/templates/english_vocab/spelling_back.html"
+                ),
+            ),
+            template(
+                "Production",
+                include_str!(
+                    "../../../src/linguist_anki_bridge/templates/english_vocab/production_front.html"
+                ),
+                include_str!("../../../src/linguist_anki_bridge/templates/english_vocab/back.html"),
+            ),
+        ],
+        css: include_str!("../../../src/linguist_anki_bridge/templates/japanese_vocab/style.css")
+            .trim()
+            .into(),
+    }
+}
+
+pub fn japanese_grammar_spec() -> ManagedModelSpec {
+    ManagedModelSpec {
+        model_name: "Linguist Japanese Grammar".into(),
+        fields: ["Expression", "Explanation", "Examples"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        templates: vec![template(
+            "Recognition",
+            include_str!("../../../src/linguist_anki_bridge/templates/japanese_grammar/front.html"),
+            include_str!("../../../src/linguist_anki_bridge/templates/japanese_grammar/back.html"),
+        )],
+        css: include_str!("../../../src/linguist_anki_bridge/templates/japanese_vocab/style.css")
+            .trim()
+            .into(),
+    }
+}
+
+pub fn managed_vocab_spec(purpose: &str) -> ManagedModelSpec {
+    match purpose {
+        "english_vocab" => english_vocab_spec(),
+        "japanese_grammar" => japanese_grammar_spec(),
+        _ => japanese_vocab_spec(),
+    }
+}
+
 pub fn plan_japanese_vocab_template(
     observed: Option<&ObservedModel>,
 ) -> Result<ManagedTemplatePlan, ManagedTemplateError> {
@@ -157,6 +223,7 @@ pub fn plan_japanese_vocab_template(
         .collect::<Vec<_>>();
     if actual_names == ["Japanese Recognition"] {
         return Ok(ManagedTemplatePlan::UpgradeLegacy {
+            spec: spec.clone(),
             rename: ("Japanese Recognition".into(), "Comprehension".into()),
             add: spec.templates[1..].to_vec(),
             refresh_templates: true,
@@ -172,7 +239,79 @@ pub fn plan_japanese_vocab_template(
     let templates = observed.templates != spec.templates;
     let css = observed.css != spec.css;
     Ok(if templates || css {
-        ManagedTemplatePlan::Refresh { templates, css }
+        ManagedTemplatePlan::Refresh {
+            spec,
+            templates,
+            css,
+        }
+    } else {
+        ManagedTemplatePlan::NoChange
+    })
+}
+
+pub fn plan_english_vocab_template(
+    observed: Option<&ObservedModel>,
+) -> Result<ManagedTemplatePlan, ManagedTemplateError> {
+    plan_current_template(english_vocab_spec(), observed)
+}
+
+pub fn plan_japanese_grammar_template(
+    observed: Option<&ObservedModel>,
+) -> Result<ManagedTemplatePlan, ManagedTemplateError> {
+    plan_current_template(japanese_grammar_spec(), observed)
+}
+
+pub fn plan_managed_vocab_template(
+    purpose: &str,
+    observed: Option<&ObservedModel>,
+) -> Result<ManagedTemplatePlan, ManagedTemplateError> {
+    match purpose {
+        "english_vocab" => plan_english_vocab_template(observed),
+        "japanese_grammar" => plan_japanese_grammar_template(observed),
+        _ => plan_japanese_vocab_template(observed),
+    }
+}
+
+fn plan_current_template(
+    spec: ManagedModelSpec,
+    observed: Option<&ObservedModel>,
+) -> Result<ManagedTemplatePlan, ManagedTemplateError> {
+    let Some(observed) = observed else {
+        return Ok(ManagedTemplatePlan::Create { spec });
+    };
+    if observed.model_name != spec.model_name {
+        return Err(ManagedTemplateError::ForeignModel {
+            expected: spec.model_name,
+            actual: observed.model_name.clone(),
+        });
+    }
+    if observed.fields != spec.fields {
+        return Err(ManagedTemplateError::UnsafeFieldOrder {
+            expected: spec.fields,
+            actual: observed.fields.clone(),
+        });
+    }
+    let actual = observed
+        .templates
+        .iter()
+        .map(|template| template.name.clone())
+        .collect::<Vec<_>>();
+    let expected = spec
+        .templates
+        .iter()
+        .map(|template| template.name.clone())
+        .collect::<Vec<_>>();
+    if actual != expected {
+        return Err(ManagedTemplateError::UnexpectedTemplates { expected, actual });
+    }
+    let templates = observed.templates != spec.templates;
+    let css = observed.css != spec.css;
+    Ok(if templates || css {
+        ManagedTemplatePlan::Refresh {
+            spec,
+            templates,
+            css,
+        }
     } else {
         ManagedTemplatePlan::NoChange
     })
@@ -244,12 +383,39 @@ mod tests {
     fn changed_template_produces_refresh_only_plan() {
         let mut changed = current();
         changed.templates[1].front.push_str(" changed");
-        assert_eq!(
+        assert!(matches!(
             plan_japanese_vocab_template(Some(&changed)).unwrap(),
             ManagedTemplatePlan::Refresh {
                 templates: true,
-                css: false
+                css: false,
+                ..
             }
-        );
+        ));
+    }
+
+    #[test]
+    fn english_vocabulary_schema_has_no_kanji_field_or_template_reference() {
+        let spec = english_vocab_spec();
+        assert_eq!(spec.fields, ["Expression", "Picture", "Meaning", "Audio"]);
+        assert!(spec.templates.iter().all(|template| {
+            !template.front.contains("{{Kanji") && !template.back.contains("{{Kanji")
+        }));
+        assert!(matches!(
+            plan_english_vocab_template(None).unwrap(),
+            ManagedTemplatePlan::Create { spec: created } if created == spec
+        ));
+    }
+
+    #[test]
+    fn japanese_grammar_has_dedicated_explanation_schema() {
+        let spec = japanese_grammar_spec();
+        assert_eq!(spec.fields, ["Expression", "Explanation", "Examples"]);
+        assert_eq!(spec.templates.len(), 1);
+        assert!(spec.templates[0].back.contains("{{Explanation}}"));
+        assert!(!spec.templates[0].back.contains("{{Kanji"));
+        assert!(matches!(
+            plan_managed_vocab_template("japanese_grammar", None).unwrap(),
+            ManagedTemplatePlan::Create { spec: created } if created == spec
+        ));
     }
 }

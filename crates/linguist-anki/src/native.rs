@@ -335,10 +335,17 @@ pub fn inspect_native_operation_status(
 impl Client {
     /// Profile-pinned read only. A declaration cannot bypass the compatibility/disposable-test gate.
     pub fn native_capabilities(&self) -> Result<NativeInspection> {
-        self.check_profile()?;
+        let profile = self.checked_profile()?;
         let value = self.call(Action::NativeCapabilities, json!({}))?;
-        self.check_profile()?;
-        inspect_native_manifest(value)
+        self.checked_profile()?;
+        let inspected = inspect_native_manifest(value)?;
+        if let Some(session) = &inspected.declaration.collection_session {
+            let expected = canonical::asset_digest(format!("lab-profile-v1\0{profile}").as_bytes());
+            if session.profile_fingerprint != expected {
+                return Err("ANKI_NATIVE_PROFILE_FINGERPRINT_CONFLICT".into());
+            }
+        }
+        Ok(inspected)
     }
 
     /// Profile-pinned observation only; callers must reconcile it with the CLI journal.

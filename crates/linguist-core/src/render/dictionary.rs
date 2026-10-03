@@ -18,7 +18,7 @@ fn list(label: &str, values: &[String]) -> String {
 }
 fn structured(value: &serde_json::Value) -> String {
     match value {
-        serde_json::Value::Null => String::new(),
+        serde_json::Value::Null => "null".into(),
         serde_json::Value::Object(values) => {
             let entries: String = values
                 .iter()
@@ -32,7 +32,7 @@ fn structured(value: &serde_json::Value) -> String {
                 })
                 .collect();
             if entries.is_empty() {
-                entries
+                "{}".into()
             } else {
                 format!("<dl>{entries}</dl>")
             }
@@ -45,11 +45,12 @@ fn structured(value: &serde_json::Value) -> String {
                 .map(|body| format!("<li>{body}</li>"))
                 .collect();
             if entries.is_empty() {
-                entries
+                "[]".into()
             } else {
                 format!("<ul>{entries}</ul>")
             }
         }
+        serde_json::Value::String(text) if text.is_empty() => "&quot;&quot;".into(),
         serde_json::Value::String(text) => escape(text),
         value => escape(&value.to_string()),
     }
@@ -79,7 +80,12 @@ fn metadata(label: &str, values: &[String]) -> String {
         escape(&label)
     )
 }
-pub(super) fn reference(entries: &[DictionaryEntry]) -> String {
+pub(super) fn reference(
+    entries: &[DictionaryEntry],
+    expression: &str,
+    selected_sense_key: &str,
+    selected_meaning: &str,
+) -> String {
     entries
         .iter()
         .map(|entry| {
@@ -102,8 +108,18 @@ pub(super) fn reference(entries: &[DictionaryEntry]) -> String {
             }
             body.push_str("<ol>");
             for sense in &entry.senses {
+                let selected = !selected_sense_key.is_empty()
+                    && sense.key == selected_sense_key
+                    && sense.definitions.join("; ") == selected_meaning
+                    && entry
+                        .forms
+                        .iter()
+                        .chain(&entry.readings)
+                        .any(|form| form == expression);
                 body.push_str(&format!(
-                    "<li><p>{}</p>{}{}",
+                    "<li><p class=\"lab-label\">Sense: {}{}</p><p>{}</p>{}{}",
+                    escape(&sense.key),
+                    if selected { " (selected)" } else { "" },
                     sense
                         .definitions
                         .iter()
@@ -137,14 +153,23 @@ mod tests {
             "senses":[
                 {"key":"first", "definitions":["life", "<script>alert(1)</script>"], "labels":["Noun"],
                  "examples":[{"sentence":"生きる。", "translation":"Live.", "provenance":"dictionary"}]},
-                {"key":"second", "definitions":["raw"], "labels":[]}
+                {"key":"second", "definitions":["raw"], "labels":[]},
+                {"key":"<img src=x onerror=alert(1)>", "definitions":["unsafe key"], "labels":[]}
             ],
             "metadata":{"jlpt":["jlpt-n5"],"sense:first:raw_json":["{\"restrictions\":[\"なま\"],\"antonyms\":[\"<iframe>\"]}"],
-                "provider_extensions_json":["{\"unknown_field\":{\"value\":\"retained\"}}"],
+                "provider_extensions_json":["{\"unknown_field\":{\"value\":\"retained\",\"missing\":null,\"empty_list\":[],\"empty_object\":{},\"empty_text\":\"\"}}"],
                 "malformed_json":["<svg onload=alert(1)>"]},
             "related_entries":["related word"]
         })).unwrap();
-        let html = reference(&[entry]);
+        let mut decoy = entry.clone();
+        decoy.forms = vec!["other".into()];
+        let html = reference(
+            &[decoy, entry],
+            "生",
+            "first",
+            "life; <script>alert(1)</script>",
+        );
+        assert_eq!(html.matches("(selected)").count(), 1);
         for text in [
             "生",
             "なま",
@@ -160,6 +185,13 @@ mod tests {
             "related word",
             "unknown field",
             "retained",
+            "Sense: first (selected)",
+            "Sense: second",
+            "&lt;img src=x onerror=alert(1)&gt;",
+            "<dt>missing</dt><dd>null</dd>",
+            "<dt>empty list</dt><dd>[]</dd>",
+            "<dt>empty object</dt><dd>{}</dd>",
+            "<dt>empty text</dt><dd>&quot;&quot;</dd>",
         ] {
             assert!(html.contains(text), "missing {text}: {html}");
         }
@@ -169,6 +201,6 @@ mod tests {
         assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
         assert!(html.contains("&lt;svg onload=alert(1)&gt;"));
         assert!(html.find("life").unwrap() < html.find("raw</p>").unwrap());
-        assert!(reference(&[]).is_empty());
+        assert!(reference(&[], "生", "first", "life").is_empty());
     }
 }

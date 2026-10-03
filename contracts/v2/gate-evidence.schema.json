@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateEvidence",
+  "description": "A scoped release-gate result. A parsed record is not proof that its commands\nran; the referenced artifacts and fixture hashes must be independently checked.",
+  "type": "object",
+  "properties": {
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GateAssertion"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GateCommandResult"
+      }
+    },
+    "failure_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fixture_hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "gate_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 1,
+      "minimum": 1
+    },
+    "status": {
+      "$ref": "#/$defs/GateStatus"
+    },
+    "version_matrix": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "gate_id",
+    "status",
+    "version_matrix",
+    "fixture_hashes",
+    "commands",
+    "assertions",
+    "artifact_refs"
+  ],
+  "$defs": {
+    "GateAssertion": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "observed": {
+          "description": "Redacted observation summary; raw private evidence belongs in controlled artifacts.",
+          "type": "string"
+        },
+        "passed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "passed",
+        "observed"
+      ]
+    },
+    "GateCommandResult": {
+      "type": "object",
+      "properties": {
+        "exit_code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "invocation_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "output_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "redacted_argv": {
+          "description": "Human-readable command with credentials and private inputs removed.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "redacted_argv",
+        "invocation_digest",
+        "exit_code",
+        "output_digest"
+      ]
+    },
+    "GateStatus": {
+      "type": "string",
+      "enum": [
+        "not_run",
+        "pass",
+        "fail",
+        "blocked"
+      ]
+    }
+  }
+}

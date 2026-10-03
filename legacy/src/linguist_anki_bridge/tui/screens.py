@@ -332,7 +332,7 @@ def format_dictionary_meaning_html(scraped: dict, target_word: str,
     return _format_dictionary_meaning_html(scraped, target_word, nuances, examples)
 
 def format_anki_grammar_html(grammar_point: str, meaning: str, rules: str, examples: list) -> str:
-    return _format_anki_grammar_html(grammar_point, meaning, rules, examples)
+    return _format_anki_grammar_html(grammar_point, meaning, rules) + _format_llm_annotations_html("", examples)
 
 
 def format_injection_context_html(type_tag: str = "", note: str = "") -> str:

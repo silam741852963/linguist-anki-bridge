@@ -3,6 +3,9 @@
   "title": "ResolvedSettings",
   "type": "object",
   "properties": {
+    "execution_fingerprint": {
+      "type": "string"
+    },
     "fingerprint": {
       "type": "string"
     },
@@ -23,6 +26,9 @@
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "semantic_fingerprint": {
+      "type": "string"
     },
     "values": {
       "type": "object",

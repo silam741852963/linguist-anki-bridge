@@ -149,6 +149,17 @@ fn historical_events_cannot_be_updated_or_deleted() {
             .is_err()
     );
 }
+
+#[test]
+fn journal_read_rejects_state_index_that_disagrees_with_body() {
+    let f = Fixture::new();
+    let mut store = f.store();
+    let current = start(&mut store);
+    let db = rusqlite::Connection::open(f.root.join("state.sqlite3")).unwrap();
+    db.execute_batch("DROP TRIGGER journal_events_no_update").unwrap();
+    db.execute("UPDATE journal_events SET state='committed' WHERE operation=?1 AND sequence=2", [current.journal.id.to_string()]).unwrap();
+    assert_eq!(store.journal(current.journal.id).unwrap_err(), "JOURNAL_CORRUPT");
+}
 #[test]
 fn schema_one_migration_has_verified_private_backup() {
     let f = Fixture::new();

@@ -177,6 +177,8 @@ pub fn run(
         values: frozen.values.clone(),
         provenance: frozen.provenance.clone(),
         fingerprint: frozen.fingerprint.clone(),
+        semantic_fingerprint: frozen.semantic_fingerprint.clone(),
+        execution_fingerprint: frozen.execution_fingerprint.clone(),
     };
     if settings.values["dictionary.provider"] != "authored" {
         return Err("CAPABILITY_UNAVAILABLE: durable jobs currently capture source drafts only; dictionary enrichment checkpoints are pending".into());

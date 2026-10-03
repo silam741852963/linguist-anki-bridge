@@ -21,14 +21,14 @@ Direct authored mode omits `--document` and supplies one card through flags. Voc
 
 For example, `vocab add --expression eat --meaning 'consume food' --sense-key food --target-language en` prepares one reviewable plan. `grammar add --pattern '〜ために' --meaning 'in order to' --formation 'verb dictionary form + ために' --use-key purpose --target-language ja --explanation-language en --recognition-prompt 'What purpose does this express?' --example-sentence '学ぶために行く。' --example-translation 'I go to learn.'` prepares one grammar plan. Inline values are normalized into strict v2 input and archived as canonical UTF-8 JSON under source kind `authored_inline_v1`; the archive preserves typed field values after language normalization, while shell quote spelling and argument order are not captured. The same file/record limits, validation, plan storage and read-only write policy apply as for authored JSON. One inline invocation creates at most one card candidate.
 
-Explicit `vocab add --format csv --document FILE|-` accepts a UTF-8 CSV file with one header row and at least one data row. Required, unique headers are `expression`, `meaning`, `target_language`, and `sense_key`. The only optional headers are `reading`, `pronunciation`, `usage`, `context`, `personal_notes`, `source_summary`, `explanation_language`, `production_prompt`, and `spelling_prompt`; any unknown or duplicate header fails before state creation. Columns may appear in any order. Standard CSV quoting permits commas and newlines inside a cell. For example:
+Explicit `vocab add --format csv --document FILE|-` accepts a UTF-8 CSV file with one header row and at least one data row. Required, unique headers are `expression`, `meaning`, `target_language`, and `sense_key`. The only optional headers are `reading`, `pronunciation`, `usage`, `context`, `personal_notes`, `source_summary`, `explanation_language`, `production_prompt`, `spelling_prompt`, `example_sentence`, and `example_translation`; any unknown or duplicate header fails before state creation. Columns may appear in any order. Standard CSV quoting permits commas and newlines inside a cell. For example:
 
 ```csv
 expression,meaning,target_language,sense_key,reading
 食べる,to eat,ja,eat-food,たべる
 ```
 
-Each row becomes one strict authored vocabulary input and follows the same ordered, single-plan validation as JSONL. The configured file, per-record, and row limits apply; malformed CSV or a later row with the wrong number of cells aborts the entire batch before state creation. An empty batch fails. Every item identifies its record number and retains decoded header/row values as source evidence; the exact original CSV file is one shared content-addressed archive asset, including quotes, line endings, and header. Blank physical lines are ignored by the CSV reader. `grammar add --format csv` fails explicitly because grammar requires structured input. The parser follows the pinned [Rust csv crate](https://docs.rs/csv/1.4.0/csv/) behavior. This mode does not authorize native writes or claim collection duplicate checks.
+Each vocabulary row becomes one strict authored vocabulary input and follows the same ordered, single-plan validation as JSONL. The configured file, per-record, and row limits apply; malformed CSV or a later row with the wrong number of cells aborts the entire batch before state creation. An empty batch fails. Every item identifies its record number and retains decoded header/row values as source evidence; the exact original CSV file is one shared content-addressed archive asset, including a UTF-8 BOM, quotes, line endings, and header. Blank physical lines are ignored by the CSV reader. Optional `example_sentence` and `example_translation` headers must appear together; each row must provide both values or neither, and a supplied pair is user-authored evidence. The parser follows the pinned [Rust csv crate](https://docs.rs/csv/1.4.0/csv/) behavior. This mode does not authorize native writes or claim collection duplicate checks.
 
 Current read-only candidate command: `plans duplicate-candidates PLAN --item-id UUID [--revision N]` requires a rendered authored add item. It searches the matching managed v2 note type by its primary field using Anki field search, rejects oversized queries or candidate sets, fetches returned notes with profile checks, and compares selected managed field values. The output contains note IDs and match flags, while `collection_duplicate_check_complete`, `semantic_identity_verified` and `apply_eligible` remain false. Older note types and concurrent changes are outside this search. No empty result or matching candidate authorizes an automatic skip.
 
@@ -57,6 +57,15 @@ Effects: Anki/provider reads; local immutable plan/assets.
 4. Report readiness, review issue IDs and exact next commands; never applies even if legacy dry_run=false.
 
 Result/failure: Plan ID/revision/digest; needs_review has actionable exit, ready is not committed. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
+
+`grammar add --format csv --document FILE|-` accepts one or more simple authored grammar records. Required unique headers are `pattern`, `meaning`, `formation`, `use_key`, and `target_language`. Optional headers are `recognition_prompt`, `usage`, `exercise_prompt`, `exercise_answer`, `context`, `personal_notes`, `source_summary`, `explanation_language`, and the paired `example_sentence`/`example_translation`. Unknown, duplicate, missing or unpaired example headers fail before state opens; a row with only one example value fails the whole batch. A supplied example is attributed to the user. Omitted examples become an empty list and may leave the plan in review under ordinary grammar validation. For example:
+
+```csv
+pattern,meaning,formation,use_key,target_language,recognition_prompt,example_sentence,example_translation
+〜ても,even if,verb te-form + も,concession,ja,What relation is expressed?,雨が降っても行きます。,I will go even if it rains
+```
+
+Both CSV card kinds use the same bounded parser, ordered one-plan publication and exact whole-file archival described under OP-21. CSV is a simple one-unit input; structured JSON or the reviewed split workflow carries multiple examples and complex grammar units.
 
 ## OP-24 — `grammar revamp`
 

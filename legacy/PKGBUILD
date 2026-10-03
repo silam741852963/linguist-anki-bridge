@@ -32,16 +32,16 @@ source=("git+$url.git")
 md5sums=('SKIP')
 
 pkgver() {
-    cd "$srcdir/$_pkgname"
+    cd "$srcdir/$_pkgname/legacy"
     git describe --long --tags | sed 's/\([^-]*-g\)/r\1/;s/-/./g' || echo "0.0.1"
 }
 
 build() {
-    cd "$srcdir/$_pkgname"
+    cd "$srcdir/$_pkgname/legacy"
     python -m build --wheel --no-isolation
 }
 
 package() {
-    cd "$srcdir/$_pkgname"
+    cd "$srcdir/$_pkgname/legacy"
     python -m installer --destdir="$pkgdir" dist/*.whl
 }

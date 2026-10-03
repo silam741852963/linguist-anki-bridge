@@ -32,6 +32,8 @@ fn plan() -> PlanRevision {
         revision: 1,
         parent_digest: None,
         settings: ResolvedSettings {
+            semantic_fingerprint: String::new(),
+            execution_fingerprint: String::new(),
             version: 2,
             values: BTreeMap::new(),
             provenance: BTreeMap::new(),
@@ -177,6 +179,7 @@ fn archive_only_assets_are_required_and_checked_after_reopen() {
         id: uuid::Uuid::new_v4(),
         source_id: uuid::Uuid::new_v4(),
         digest: digest.clone(),
+        original_text: None,
         original_fields: BTreeMap::new(),
         asset_digests: vec![digest.clone()],
     });
@@ -194,6 +197,48 @@ fn archive_only_assets_are_required_and_checked_after_reopen() {
 }
 
 #[test]
+fn revision_read_rejects_missing_or_extra_asset_index_references() {
+    let f = Fixture::new();
+    let mut store = f.open();
+    let mut plan = plan();
+    let digest = store.publish_asset(b"original", 1024).unwrap();
+    let extra = store.publish_asset(b"unrelated", 1024).unwrap();
+    plan.documents[0].archives.push(SourceArchive {
+        id: uuid::Uuid::new_v4(),
+        source_id: uuid::Uuid::new_v4(),
+        digest: digest.clone(),
+        original_text: None,
+        original_fields: BTreeMap::new(),
+        asset_digests: vec![digest.clone()],
+    });
+    store.publish_revision(&plan).unwrap();
+    let db = rusqlite::Connection::open(f.root.join("state.sqlite3")).unwrap();
+    db.execute(
+        "DELETE FROM revision_assets WHERE id=?1 AND revision=1 AND digest=?2",
+        rusqlite::params![plan.id.to_string(), digest],
+    )
+    .unwrap();
+    assert_eq!(
+        store.revision(plan.id, 1).unwrap_err(),
+        "REVISION_ASSET_INDEX_CORRUPT"
+    );
+    db.execute(
+        "INSERT INTO revision_assets(id,revision,digest) VALUES(?1,1,?2)",
+        rusqlite::params![plan.id.to_string(), digest],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO revision_assets(id,revision,digest) VALUES(?1,1,?2)",
+        rusqlite::params![plan.id.to_string(), extra],
+    )
+    .unwrap();
+    assert_eq!(
+        store.revision(plan.id, 1).unwrap_err(),
+        "REVISION_ASSET_INDEX_CORRUPT"
+    );
+}
+
+#[test]
 fn revision_reads_reject_media_manifest_size_mismatch() {
     let f = Fixture::new();
     let mut store = f.open();
@@ -205,7 +250,7 @@ fn revision_reads_reject_media_manifest_size_mismatch() {
         original_filename: None,
         size_bytes: 13,
         mime: "application/octet-stream".into(),
-        owner: MediaOwner::Source,
+        owner: MediaOwner::External,
         role: MediaRole::Archive,
         source_id: None,
         attribution: "fixture".into(),
@@ -665,6 +710,8 @@ fn resolving_generated_claim_creates_ready_child_and_preserves_parent() {
         provenance: Provenance::Generated,
         source_id: None,
         region_id: None,
+        target: None,
+        source_span: None,
         language,
         claim: "eat means consume food".into(),
         source_url: None,

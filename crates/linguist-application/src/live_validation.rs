@@ -289,8 +289,13 @@ where
                     archive.source_id == source.id
                         && archive.digest == source.digest
                         && archive.original_fields == source.fields
+                        && archive.original_text == source.text
                         && archive.asset_digests.contains(&source.digest)
                         && archive.asset_digests.contains(&source.model_manifest)
+                        && source
+                            .template_manifest
+                            .as_ref()
+                            .is_none_or(|digest| archive.asset_digests.contains(digest))
                 })
                 .ok_or("LIVE_SOURCE_ARCHIVE_CONFLICT")?;
             let assets: BTreeSet<_> = archive.asset_digests.iter().cloned().collect();
@@ -363,7 +368,11 @@ where
         let saved_note = payload("note")?;
         let saved_model = payload("model")?;
         let saved_cards = payload("cards")?;
-        if source.model_manifest != manifest["payloads"]["model"] {
+        if source.model_manifest != manifest["payloads"]["model"]
+            || source.template_manifest.as_ref().is_some_and(|digest| {
+                manifest["template_manifest"].as_str() != Some(digest.as_str())
+            })
+        {
             return Err("LIVE_SOURCE_MODEL_CONFLICT".into());
         }
         let saved_fields = saved_note["fields"]
@@ -474,8 +483,11 @@ mod tests {
             kind: "anki_read_capture_v2".into(),
             location: "anki_note:123".into(),
             digest: "archive".into(),
+            text: None,
             fields: BTreeMap::from([("Expression".into(), "猫".into())]),
             model_manifest: "model".into(),
+            template_manifest: None,
+            captured_at_unix_seconds: None,
             tags: vec!["source".into()],
             cards: vec![],
             media_refs: vec![],
@@ -581,6 +593,8 @@ mod tests {
             revision: 1,
             parent_digest: None,
             settings: ResolvedSettings {
+                semantic_fingerprint: String::new(),
+                execution_fingerprint: String::new(),
                 version: 2,
                 values: BTreeMap::from([("input.max_file_mb".into(), json!(1))]),
                 provenance: BTreeMap::new(),
@@ -696,6 +710,8 @@ mod tests {
             revision: 1,
             parent_digest: None,
             settings: ResolvedSettings {
+                semantic_fingerprint: String::new(),
+                execution_fingerprint: String::new(),
                 version: 2,
                 values: BTreeMap::from([
                     ("input.max_file_mb".into(), json!(1)),

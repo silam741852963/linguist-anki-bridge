@@ -711,6 +711,8 @@ fn inference_draft_archives_wire_and_model_evidence_and_recovers_after_restart()
         revision: 1,
         parent_digest: None,
         settings: ResolvedSettings {
+            semantic_fingerprint: config.semantic_fingerprint,
+            execution_fingerprint: config.execution_fingerprint,
             version: 2,
             values: config.values,
             provenance: config.provenance,

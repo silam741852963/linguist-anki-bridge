@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "protocol": "lab-native-v1",
+  "anki_version": "fixture",
+  "anki_connect_source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "companion_version": "0.1.0",
+  "resource_versions": {},
+  "actions": [
+    {
+      "action": "labCapabilities",
+      "state": "declared",
+      "gate_id": null,
+      "gate_evidence_digest": null,
+      "failure_code": null
+    },
+    {
+      "action": "labMutate",
+      "state": "unavailable",
+      "gate_id": null,
+      "gate_evidence_digest": null,
+      "failure_code": "NATIVE_WRITE_UNVERIFIED"
+    }
+  ],
+  "auth_constraints": ["AnkiConnect endpoint policy applies to reads"],
+  "identity_constraints": ["Collection incarnation not verified"],
+  "serialization_constraints": ["Native mutation worker not verified"]
+}

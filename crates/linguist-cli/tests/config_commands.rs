@@ -37,6 +37,8 @@ fn live_plan_validation_reports_no_revamp_sources_without_claiming_apply() {
         revision: 1,
         parent_digest: None,
         settings: ResolvedSettings {
+            semantic_fingerprint: String::new(),
+            execution_fingerprint: String::new(),
             version: 2,
             values: BTreeMap::from([("input.max_file_mb".into(), serde_json::json!(1))]),
             provenance: BTreeMap::new(),
@@ -258,9 +260,149 @@ fn model_install_preview_distinguishes_create_and_name_collision_without_writes(
 }
 fn cli() -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"));
+    c.args(["--output", "json"]);
     c.env_clear();
     c.env("HOME", "/tmp/lab-command-tests-no-config");
     c
+}
+#[test]
+fn output_modes_follow_setting_and_explicit_top_level_choice() {
+    let binary = env!("CARGO_BIN_EXE_linguist-anki-bridge");
+    let human = Command::new(binary)
+        .env_clear()
+        .env("HOME", "/tmp/lab-command-tests-no-config")
+        .args(["config", "show", "--defaults", "output.format"])
+        .output()
+        .unwrap();
+    assert!(human.status.success(), "{human:?}");
+    let text = String::from_utf8(human.stdout).unwrap();
+    assert!(
+        text.contains("result.values.output.format: \"text\""),
+        "{text}"
+    );
+    assert!(human.stderr.is_empty());
+
+    let jsonl = Command::new(binary)
+        .env_clear()
+        .env("HOME", "/tmp/lab-command-tests-no-config")
+        .args([
+            "--set",
+            "output.format=jsonl",
+            "config",
+            "show",
+            "output.format",
+        ])
+        .output()
+        .unwrap();
+    assert!(jsonl.status.success(), "{jsonl:?}");
+    let line = String::from_utf8(jsonl.stdout).unwrap();
+    assert_eq!(line.lines().count(), 1);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&line).unwrap()["values"]["output.format"],
+        "jsonl"
+    );
+
+    let explicit = Command::new(binary)
+        .env_clear()
+        .env("HOME", "/tmp/lab-command-tests-no-config")
+        .args([
+            "--output",
+            "json",
+            "--set",
+            "output.format=jsonl",
+            "config",
+            "show",
+            "output.format",
+        ])
+        .output()
+        .unwrap();
+    assert!(explicit.status.success(), "{explicit:?}");
+    let text = String::from_utf8(explicit.stdout).unwrap();
+    assert!(text.contains("\n  \"values\""), "{text}");
+}
+#[cfg(unix)]
+#[test]
+fn closed_stdout_pipe_does_not_emit_diagnostic() {
+    use std::{
+        os::{fd::OwnedFd, unix::net::UnixStream},
+        process::Stdio,
+    };
+    for args in [
+        vec!["--output", "json", "config", "show", "--defaults"],
+        vec!["completions", "bash"],
+    ] {
+        let (reader, writer) = UnixStream::pair().unwrap();
+        drop(reader);
+        let output = Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"))
+            .env_clear()
+            .env("HOME", "/tmp/lab-command-tests-no-config")
+            .args(&args)
+            .stdout(Stdio::from(OwnedFd::from(writer)))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        assert!(output.stderr.is_empty(), "{args:?}: {output:?}");
+    }
+}
+#[test]
+fn global_offline_flag_resolves_before_any_service_request() {
+    let shown = cli()
+        .args(["config", "show", "network.offline", "--offline"])
+        .output()
+        .unwrap();
+    assert!(shown.status.success(), "{shown:?}");
+    let value: serde_json::Value = serde_json::from_slice(&shown.stdout).unwrap();
+    assert_eq!(value["values"]["network.offline"], true);
+    assert_eq!(
+        value["provenance"]["network.offline"],
+        serde_json::Value::Null
+    );
+
+    let conflicting = cli()
+        .args([
+            "--offline",
+            "--set",
+            "network.offline=false",
+            "config",
+            "validate",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(conflicting.status.code(), Some(2));
+    assert!(conflicting.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&conflicting.stderr).contains("OFFLINE_OVERRIDE_CONFLICT"));
+
+    let remote = cli()
+        .args([
+            "--offline",
+            "--set",
+            "anki.endpoint=https://example.org",
+            "--set",
+            "network.allowed_remote_service_hosts=[\"example.org\"]",
+            "config",
+            "validate",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(remote.status.code(), Some(2));
+    assert!(remote.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&remote.stderr).contains("REMOTE_ENDPOINT_NOT_ALLOWED"));
+
+    let ocr = fixture_ocr_executable();
+    let local = cli()
+        .args(["--set", &ocr, "doctor", "--local", "--offline"])
+        .output()
+        .unwrap();
+    assert!(local.status.success(), "{local:?}");
+    let value: serde_json::Value = serde_json::from_slice(&local.stdout).unwrap();
+    assert_eq!(value["offline_requested"], true);
+    assert_eq!(value["services_probed"], false);
+}
+fn fixture_ocr_executable() -> String {
+    format!(
+        "ocr.executable={}",
+        std::env::current_exe().unwrap().display()
+    )
 }
 #[test]
 fn queued_job_controls_resume_cancel_and_explicit_migration_preserve_state() {
@@ -1213,6 +1355,414 @@ fn structured_errors_stay_on_stderr_and_config_errors_exit_two() {
     );
 }
 #[test]
+fn clap_syntax_errors_are_structured_and_do_not_echo_argument_values() {
+    for args in [
+        vec!["--output", "private-token", "config", "show"],
+        vec!["--set", "llm.model=private-token", "unknown-command"],
+        vec!["config", "set", "llm.model"],
+    ] {
+        let out = cli().args(&args).output().unwrap();
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {out:?}");
+        assert!(out.stdout.is_empty(), "{args:?}: {out:?}");
+        let error: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
+        assert_eq!(
+            error["error"],
+            "USAGE: invalid command syntax; run linguist-anki-bridge --help"
+        );
+        assert!(!String::from_utf8_lossy(&out.stderr).contains("private-token"));
+    }
+    let help = cli().arg("--help").output().unwrap();
+    assert!(help.status.success());
+    assert!(help.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&help.stdout).contains("Usage:"));
+    let version = cli().arg("--version").output().unwrap();
+    assert!(version.status.success());
+    assert!(version.stderr.is_empty());
+}
+#[test]
+fn config_describe_shows_cross_field_rules_and_nearest_names_without_loading_config() {
+    let described = cli()
+        .args([
+            "--config",
+            "/does/not/exist",
+            "--set",
+            "made.up=secret",
+            "config",
+            "describe",
+            "llm.model",
+        ])
+        .output()
+        .unwrap();
+    assert!(described.status.success(), "{described:?}");
+    let value: serde_json::Value = serde_json::from_slice(&described.stdout).unwrap();
+    assert_eq!(value["key"], "llm.model");
+    assert_eq!(value["resolved_key"], "llm.model");
+    assert!(
+        value["cross_field_checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|rule| rule["selector"] == "llm.enabled" && rule["required"] == "llm.model")
+    );
+
+    let unknown = cli()
+        .args(["config", "describe", "llm.modle"])
+        .output()
+        .unwrap();
+    assert_eq!(unknown.status.code(), Some(2));
+    assert!(unknown.stdout.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&unknown.stderr).unwrap();
+    assert!(error["error"].as_str().unwrap().contains("llm.model"));
+}
+#[cfg(unix)]
+#[test]
+fn config_reads_reject_symlinks_and_nonregular_paths() {
+    use std::os::unix::fs::symlink;
+    let root = std::env::temp_dir().join(format!("lab-config-read-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).unwrap();
+    let real = root.join("real.toml");
+    std::fs::write(&real, "[config]\nversion = 2\n").unwrap();
+    let link = root.join("link.toml");
+    symlink(&real, &link).unwrap();
+    for (path, command, exit) in [(link.as_path(), "show", 6), (root.as_path(), "validate", 2)] {
+        let out = cli()
+            .arg("--config")
+            .arg(path)
+            .args(["config", command])
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(exit), "{out:?}");
+        assert!(out.stdout.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
+        assert!(error["error"].as_str().unwrap().starts_with("CONFIG_"));
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn config_migrate_current_version_is_idempotent_and_unknown_version_is_rejected() {
+    let root = std::env::temp_dir().join(format!("lab-config-migrate-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).unwrap();
+    let source = root.join("source.toml");
+    let output = root.join("candidate.toml");
+    let original = b"# keep this exact source\n[config]\nversion = 2\n";
+    std::fs::write(&source, original).unwrap();
+    for execute in [false, true] {
+        let mut command = cli();
+        command
+            .arg("--config")
+            .arg(&source)
+            .args(["config", "migrate", "--output"])
+            .arg(&output);
+        if execute {
+            command.arg("--execute");
+        }
+        let out = command.output().unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(report["source_version"], 2);
+        assert_eq!(report["changed"], false);
+        assert_eq!(report["candidate_written"], false);
+        assert_eq!(report["requested_execute"], execute);
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        assert!(!output.exists());
+    }
+    std::fs::write(&source, b"[config]\nversion = 3\n").unwrap();
+    let out = cli()
+        .arg("--config")
+        .arg(&source)
+        .args(["config", "migrate", "--output"])
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    assert!(!output.exists());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("UNSUPPORTED_CONFIG_VERSION"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn config_validate_reports_local_resource_gaps_separately_from_settings_errors() {
+    let root = std::env::temp_dir().join(format!("lab-config-resource-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).unwrap();
+    let resource = root.join("schema.json");
+    let setting = format!("dictionary.schema_path={}", resource.display());
+    let ocr = fixture_ocr_executable();
+    let run = || {
+        cli()
+            .args(["--set", &setting, "--set", &ocr, "config", "validate"])
+            .output()
+            .unwrap()
+    };
+    let missing = run();
+    assert_eq!(missing.status.code(), Some(3), "{missing:?}");
+    assert!(missing.stderr.is_empty());
+    let report: serde_json::Value = serde_json::from_slice(&missing.stdout).unwrap();
+    assert_eq!(report["valid"], true);
+    assert_eq!(
+        report["local_resources"]["missing"][0],
+        "dictionary.schema_path"
+    );
+    assert_eq!(report["runtime_resources_checked"], false);
+
+    std::fs::write(&resource, b"{}").unwrap();
+    let available = run();
+    assert!(available.status.success(), "{available:?}");
+    let report: serde_json::Value = serde_json::from_slice(&available.stdout).unwrap();
+    assert!(
+        report["local_resources"]["missing"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(report["local_resources"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|check| check["key"] == "dictionary.schema_path" && check["status"] == "available"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let link = root.join("schema-link.json");
+        symlink(&resource, &link).unwrap();
+        let linked = cli()
+            .args([
+                "--set",
+                &format!("dictionary.schema_path={}", link.display()),
+                "config",
+                "validate",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(linked.status.code(), Some(3));
+        let report: serde_json::Value = serde_json::from_slice(&linked.stdout).unwrap();
+        assert!(
+            report["local_resources"]["checks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|check| check["key"] == "dictionary.schema_path"
+                    && check["status"] == "symlink")
+        );
+    }
+    let unknown_builtin = cli()
+        .args([
+            "--set",
+            "llm.prompts.vocabulary=builtin:unknown",
+            "config",
+            "validate",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(unknown_builtin.status.code(), Some(3));
+    let report: serde_json::Value = serde_json::from_slice(&unknown_builtin.stdout).unwrap();
+    assert!(
+        report["local_resources"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["key"] == "llm.prompts.vocabulary"
+                && check["status"] == "unknown_builtin")
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn config_validate_rejects_selected_provider_without_required_setting() {
+    let out = cli()
+        .args(["--set", "images.provider=custom", "config", "validate"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    assert!(out.stdout.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
+    assert!(
+        error["error"]
+            .as_str()
+            .unwrap()
+            .contains("images.custom_endpoint")
+    );
+}
+#[cfg(unix)]
+#[test]
+fn config_validate_inspects_configured_helper_without_running_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = std::env::temp_dir().join(format!("lab-config-exec-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).unwrap();
+    let executable = root.join("lab-browser-helper");
+    let run = || {
+        cli()
+            .env("PATH", &root)
+            .args([
+                "--set",
+                "browser.enabled=true",
+                "--set",
+                "browser.executable=lab-browser-helper",
+                "--set",
+                "ocr.executable=lab-browser-helper",
+                "config",
+                "validate",
+            ])
+            .output()
+            .unwrap()
+    };
+    let missing = run();
+    assert_eq!(missing.status.code(), Some(3), "{missing:?}");
+    let report: serde_json::Value = serde_json::from_slice(&missing.stdout).unwrap();
+    assert!(
+        report["local_resources"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["key"] == "browser.executable" && check["status"] == "missing")
+    );
+    assert!(
+        report["local_resources"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["key"] == "ocr.executable"
+                && check["status"] == "missing"
+                && check["required"] == true)
+    );
+
+    std::fs::write(&executable, b"#!/bin/sh\nexit 99\n").unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let not_executable = run();
+    assert_eq!(not_executable.status.code(), Some(3));
+    let report: serde_json::Value = serde_json::from_slice(&not_executable.stdout).unwrap();
+    assert!(
+        report["local_resources"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(
+                |check| check["key"] == "browser.executable" && check["status"] == "not_executable"
+            )
+    );
+
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let available = run();
+    assert!(available.status.success(), "{available:?}");
+    assert!(available.stderr.is_empty());
+    let report: serde_json::Value = serde_json::from_slice(&available.stdout).unwrap();
+    assert!(
+        report["local_resources"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["key"] == "ocr.executable" && check["status"] == "available")
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn unfinished_catalogue_commands_fail_before_config_or_effects() {
+    let id = "11111111-1111-4111-8111-111111111111";
+    let cases: Vec<(&str, Vec<&str>)> = vec![
+        (
+            "OP-09",
+            vec![
+                "config",
+                "import",
+                "--file",
+                "/missing",
+                "--output",
+                "/missing-out",
+                "--replace",
+            ],
+        ),
+        (
+            "OP-13",
+            vec![
+                "decks",
+                "map",
+                "japanese_vocab",
+                "--source-deck",
+                "Source",
+                "--source-model",
+                "Basic",
+                "--fields",
+                "/missing",
+            ],
+        ),
+        ("OP-14", vec!["decks", "unmap", "japanese_vocab"]),
+        (
+            "OP-30",
+            vec![
+                "plans",
+                "regenerate",
+                id,
+                "--base-revision",
+                "1",
+                "--digest",
+                "abc",
+            ],
+        ),
+        (
+            "OP-34",
+            vec!["apply", id, "--revision", "1", "--digest", "abc", "--apply"],
+        ),
+        ("OP-42", vec!["jobs", "retry", id, "--failed"]),
+        ("OP-44", vec!["jobs", "rollback", id, "--apply"]),
+        ("OP-45", vec!["jobs", "delete", id, "--execute"]),
+        ("OP-50", vec!["snapshots", "restore", id, "--apply"]),
+        (
+            "OP-51",
+            vec!["snapshots", "export", id, "--output", "/missing-out"],
+        ),
+        (
+            "OP-52",
+            vec![
+                "backup",
+                "create",
+                "--scope",
+                "collection",
+                "--output",
+                "/missing-out",
+                "--apply",
+            ],
+        ),
+        ("OP-53", vec!["backup", "list"]),
+        ("OP-54", vec!["backup", "verify", "/missing"]),
+        ("OP-55", vec!["cache", "status"]),
+        ("OP-56", vec!["cache", "prune", "--execute"]),
+        ("OP-57", vec!["resources", "list"]),
+        (
+            "OP-58",
+            vec![
+                "resources",
+                "install",
+                "model",
+                "--source",
+                "https://example.org/x",
+                "--version",
+                "1",
+                "--sha256",
+                "abc",
+                "--license",
+                "CC0",
+                "--destination",
+                "/missing-out",
+            ],
+        ),
+        (
+            "OP-60",
+            vec!["recover", "reconcile", id, "--apply", "--rebind"],
+        ),
+    ];
+    for (operation, args) in cases {
+        let out = cli()
+            .args(["--config", "/does/not/exist", "--set", "made.up=secret"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(3), "{operation}: {out:?}");
+        assert!(out.stdout.is_empty(), "{operation}");
+        let error: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
+        let message = error["error"].as_str().unwrap();
+        assert!(message.contains(operation), "{message}");
+        assert!(!message.contains("secret"));
+    }
+}
+#[test]
 fn effective_purpose_and_typed_flags_are_visible_with_provenance() {
     let out = cli()
         .args([
@@ -1307,6 +1857,12 @@ fn config_edit_commands_backup_and_reset_requires_execute() {
         .output()
         .unwrap();
     assert!(out.status.success());
+    let preview: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(preview["executed"], false);
+    assert_eq!(preview["changes"][0]["key"], "llm.temperature");
+    assert_eq!(preview["changes"][0]["before_effective"], 0.6);
+    assert_eq!(preview["changes"][0]["after_effective"], 0.0);
+    assert_eq!(preview["changes"][0]["after_provenance"], "builtin");
     assert_eq!(std::fs::read(&path).unwrap(), before);
     let out = cli()
         .arg("--config")
@@ -1316,6 +1872,80 @@ fn config_edit_commands_backup_and_reset_requires_execute() {
         .unwrap();
     assert!(out.status.success());
     assert_ne!(std::fs::read(&path).unwrap(), before);
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn config_init_replace_saves_exact_prior_file_and_reports_backup() {
+    let root = std::env::temp_dir().join(format!("lab-init-replace-cli-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).unwrap();
+    let path = root.join("config.toml");
+    let original = b"# authored comment\n[config]\nversion=2\n[llm]\nmodel='chosen:model'\n";
+    std::fs::write(&path, original).unwrap();
+    let protected = cli()
+        .arg("--config")
+        .arg(&path)
+        .args(["config", "init"])
+        .output()
+        .unwrap();
+    assert!(!protected.status.success());
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    let replaced = cli()
+        .arg("--config")
+        .arg(&path)
+        .args(["config", "init", "--replace"])
+        .output()
+        .unwrap();
+    assert!(replaced.status.success(), "{:?}", replaced);
+    let receipt: serde_json::Value = serde_json::from_slice(&replaced.stdout).unwrap();
+    assert_eq!(receipt["created"], false);
+    assert_eq!(receipt["replaced"], true);
+    assert_eq!(
+        std::fs::read(receipt["backup"].as_str().unwrap()).unwrap(),
+        original
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), b"[config]\nversion = 2\n");
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn config_init_prevalidates_and_reports_purpose_setup_without_installing() {
+    let root = std::env::temp_dir().join(format!("lab-init-setup-{}", uuid::Uuid::new_v4()));
+    let path = root.join("config.toml");
+    let invalid = cli()
+        .env("LAB_JOBS__HEARTBEAT_SECONDS", "30")
+        .arg("--config")
+        .arg(&path)
+        .args(["config", "init"])
+        .output()
+        .unwrap();
+    assert_eq!(invalid.status.code(), Some(2));
+    assert!(invalid.stdout.is_empty());
+    assert!(!root.exists());
+
+    let initialized = cli()
+        .arg("--config")
+        .arg(&path)
+        .args(["config", "init"])
+        .output()
+        .unwrap();
+    assert!(initialized.status.success(), "{initialized:?}");
+    let receipt: serde_json::Value = serde_json::from_slice(&initialized.stdout).unwrap();
+    let setup = receipt["purpose_setup"].as_array().unwrap();
+    assert_eq!(setup.len(), 4);
+    let japanese = setup
+        .iter()
+        .find(|row| row["purpose"] == "japanese_vocab")
+        .unwrap();
+    assert_eq!(japanese["target_language"], "ja");
+    assert_eq!(japanese["model_candidate"], "gemma4:12b");
+    assert_eq!(japanese["model_verified"], false);
+    assert!(
+        japanese["add_missing_mapping_keys"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("purposes.japanese_vocab.target_deck"))
+    );
+    assert_eq!(japanese["runtime_resources_checked"], false);
+    assert_eq!(std::fs::read(&path).unwrap(), b"[config]\nversion = 2\n");
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
@@ -1411,12 +2041,129 @@ fn note_selector_conflicts_and_invalid_ids_fail_before_anki_requests() {
 }
 #[test]
 fn local_doctor_and_builtin_models_need_no_anki_service() {
+    let ocr = fixture_ocr_executable();
     for args in [vec!["doctor", "--local"], vec!["models", "builtin"]] {
-        let out = cli().args(args).output().unwrap();
+        let out = cli().args(["--set", &ocr]).args(args).output().unwrap();
         assert!(out.status.success(), "{:?}", out);
         assert!(out.stderr.is_empty());
         serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap();
     }
+}
+#[test]
+fn local_doctor_distinguishes_optional_and_required_resource_gaps() {
+    let root = std::env::temp_dir().join(format!("lab-local-doctor-{}", uuid::Uuid::new_v4()));
+    let state = format!("storage.state_dir={}", root.display());
+    let ocr = fixture_ocr_executable();
+    let optional = cli()
+        .args([
+            "--set",
+            &state,
+            "--set",
+            &ocr,
+            "--set",
+            "dictionary.schema_path=/does/not/exist/schema.json",
+            "doctor",
+            "--local",
+        ])
+        .output()
+        .unwrap();
+    assert!(optional.status.success(), "{optional:?}");
+    let report: serde_json::Value = serde_json::from_slice(&optional.stdout).unwrap();
+    assert_eq!(report["services_probed"], false);
+    assert!(
+        report["local_resources"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["key"] == "storage.free_space_reserve_mb"
+                && check["status"] == "available"
+                && check["available_bytes"].as_u64().unwrap()
+                    >= check["required_bytes"].as_u64().unwrap())
+    );
+    assert_eq!(
+        report["local_resources"]["missing"][0],
+        "dictionary.schema_path"
+    );
+    assert!(
+        report["local_resources"]["required_missing"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    let required = cli()
+        .env("PATH", "/does/not/exist")
+        .args([
+            "--set",
+            &state,
+            "--set",
+            &ocr,
+            "--set",
+            "browser.enabled=true",
+            "--set",
+            "browser.executable=lab-browser-helper",
+            "doctor",
+            "--local",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(required.status.code(), Some(3), "{required:?}");
+    assert!(required.stderr.is_empty());
+    let report: serde_json::Value = serde_json::from_slice(&required.stdout).unwrap();
+    assert_eq!(report["services_probed"], false);
+    assert_eq!(
+        report["local_resources"]["required_missing"][0],
+        "browser.executable"
+    );
+    assert!(!root.exists());
+}
+
+#[test]
+fn local_doctor_requires_tesseract_candidate_only_for_selected_engine() {
+    let required = cli()
+        .env("PATH", "/does/not/exist")
+        .args(["doctor", "--local"])
+        .output()
+        .unwrap();
+    assert_eq!(required.status.code(), Some(3), "{required:?}");
+    let report: serde_json::Value = serde_json::from_slice(&required.stdout).unwrap();
+    assert_eq!(
+        report["local_resources"]["required_missing"][0],
+        "ocr.executable"
+    );
+    assert!(
+        report["local_resources"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["key"] == "ocr.executable"
+                && check["status"] == "missing"
+                && check["required"] == true)
+    );
+
+    let optional = cli()
+        .env("PATH", "/does/not/exist")
+        .args([
+            "--set",
+            "ocr.engine=ollama",
+            "--set",
+            "llm.vision_model=vision:model",
+            "doctor",
+            "--local",
+        ])
+        .output()
+        .unwrap();
+    assert!(optional.status.success(), "{optional:?}");
+    let report: serde_json::Value = serde_json::from_slice(&optional.stdout).unwrap();
+    assert!(
+        report["local_resources"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["key"] == "ocr.executable"
+                && check["status"] == "missing"
+                && check["required"] == false)
+    );
 }
 
 #[test]
@@ -1432,6 +2179,8 @@ fn plan_diff_loads_exact_immutable_revisions_and_reports_unavailable_live_transp
         revision: 1,
         parent_digest: None,
         settings: ResolvedSettings {
+            semantic_fingerprint: String::new(),
+            execution_fingerprint: String::new(),
             version: 2,
             values: BTreeMap::from([("input.max_file_mb".into(), serde_json::json!(1))]),
             provenance: BTreeMap::new(),
@@ -1520,6 +2269,8 @@ fn plan_edit_cli_creates_child_and_rejects_stale_base() {
         revision: 1,
         parent_digest: None,
         settings: ResolvedSettings {
+            semantic_fingerprint: String::new(),
+            execution_fingerprint: String::new(),
             version: 2,
             values: BTreeMap::new(),
             provenance: BTreeMap::new(),
@@ -2234,7 +2985,7 @@ fn explicit_jsonl_add_publishes_one_ordered_plan_and_rejects_bad_second_line() {
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
-fn explicit_vocabulary_csv_prepares_one_plan_and_grammar_csv_fails() {
+fn explicit_csv_prepares_vocabulary_and_grammar_plans() {
     let root = std::env::temp_dir().join(format!("lab-csv-add-{}", uuid::Uuid::new_v4()));
     let state = format!("storage.state_dir={}", root.display());
     let bytes = b"expression,meaning,target_language,sense_key\neat,consume food,en,food\ndrink,consume liquid,en,liquid\n";
@@ -2260,7 +3011,7 @@ fn explicit_vocabulary_csv_prepares_one_plan_and_grammar_csv_fails() {
     };
     let grammar = piped(make_command("grammar"), bytes);
     assert!(!grammar.status.success());
-    assert!(String::from_utf8_lossy(&grammar.stderr).contains("INPUT_CSV_VOCABULARY_ONLY"));
+    assert!(String::from_utf8_lossy(&grammar.stderr).contains("INPUT_CSV_HEADER_INVALID"));
     assert!(!root.exists());
     let output = piped(make_command("vocab"), bytes);
     assert!(output.status.success(), "{output:?}");
@@ -2277,6 +3028,25 @@ fn explicit_vocabulary_csv_prepares_one_plan_and_grammar_csv_fails() {
             .asset(&plan.documents[1].sources[0].digest, 10000)
             .unwrap(),
         bytes
+    );
+    drop(store);
+    let grammar_csv = b"pattern,meaning,formation,use_key,target_language,recognition_prompt,example_sentence,example_translation\nif,conditional,if + clause,condition,en,What relation is expressed?,If it rains we stay,We stay when it rains\n";
+    let grammar = piped(make_command("grammar"), grammar_csv);
+    assert!(grammar.status.success(), "{grammar:?}");
+    let result: serde_json::Value = serde_json::from_slice(&grammar.stdout).unwrap();
+    assert_eq!(result["items"].as_array().unwrap().len(), 1);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan_id = uuid::Uuid::parse_str(result["plan_id"].as_str().unwrap()).unwrap();
+    let plan = store.revision(plan_id, 1).unwrap();
+    assert!(matches!(
+        plan.documents[0].content,
+        linguist_core::LearningContent::Grammar(_)
+    ));
+    assert_eq!(
+        store
+            .asset(&plan.documents[0].sources[0].digest, 10000)
+            .unwrap(),
+        grammar_csv
     );
     drop(store);
     std::fs::remove_dir_all(root).unwrap();

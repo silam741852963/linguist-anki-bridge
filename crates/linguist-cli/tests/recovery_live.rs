@@ -11,7 +11,9 @@ use std::{
 use uuid::Uuid;
 
 fn cli() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"));
+    command.args(["--output", "json"]);
+    command
 }
 
 struct Server {
@@ -96,7 +98,7 @@ fn pending_journal(endpoint: String) -> OperationJournal {
         approval_digest: format!("lab-jcs-v1:plan:{}", "b".repeat(64)),
         binding: CollectionBinding {
             endpoint,
-            profile_fingerprint: "e".repeat(64),
+            profile_fingerprint: linguist_core::canonical::asset_digest(b"lab-profile-v1\0Fixture"),
             path_fingerprint: "f".repeat(64),
             bridge_id: Uuid::new_v4(),
             lineage_id: Uuid::new_v4(),

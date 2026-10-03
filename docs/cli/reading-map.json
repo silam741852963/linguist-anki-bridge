@@ -26,7 +26,7 @@
       "path": "implementation/wp-01.md",
       "heading": "## WP-01 \u2014 explicit domain and resources",
       "title": "WP-01 \u2014 explicit domain and resources",
-      "words": 105,
+      "words": 126,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
@@ -394,7 +394,7 @@
       "path": "operations/configuration.md",
       "heading": "## OP-02 \u2014 `config init`",
       "title": "OP-02 \u2014 `config init`",
-      "words": 85,
+      "words": 125,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -418,7 +418,7 @@
       "path": "operations/configuration.md",
       "heading": "## OP-04 \u2014 `config describe KEY`",
       "title": "OP-04 \u2014 `config describe KEY`",
-      "words": 55,
+      "words": 92,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -463,7 +463,7 @@
       "path": "operations/configuration.md",
       "heading": "## OP-08 \u2014 `config reset`",
       "title": "OP-08 \u2014 `config reset`",
-      "words": 69,
+      "words": 115,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -496,7 +496,7 @@
       "path": "operations/doctor.md",
       "heading": "## OP-01 \u2014 `doctor`",
       "title": "OP-01 \u2014 `doctor`",
-      "words": 297,
+      "words": 422,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -922,7 +922,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-21 \u2014 `vocab add`",
       "title": "OP-21 \u2014 `vocab add`",
-      "words": 722,
+      "words": 740,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -948,7 +948,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-23 \u2014 `grammar add`",
       "title": "OP-23 \u2014 `grammar add`",
-      "words": 89,
+      "words": 233,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

@@ -12,8 +12,14 @@ pub struct SourceRecord {
     pub kind: String,
     pub location: String,
     pub digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
     pub fields: BTreeMap<String, String>,
     pub model_manifest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_manifest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captured_at_unix_seconds: Option<u64>,
     pub tags: Vec<String>,
     pub cards: Vec<CardState>,
     pub media_refs: Vec<String>,
@@ -28,12 +34,75 @@ pub struct CardState {
     pub scheduler: BTreeMap<String, String>,
     pub history_digest: String,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetModelKind {
+    Vocabulary,
+    Grammar,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SourceTaskMapEntry {
+    pub source_ordinal: u16,
+    pub target_task: Task,
+    pub target_ordinal: u16,
+}
+/// A declared source-template mapping. Native ordinal/history verification belongs to WP-03.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SourceTaskMap {
+    #[schemars(range(min = 1, max = 1))]
+    pub schema_version: u16,
+    pub source_id: Uuid,
+    #[schemars(regex(pattern = "^[0-9a-f]{64}$"))]
+    pub source_model_digest: String,
+    pub target_model: TargetModelKind,
+    pub entries: Vec<SourceTaskMapEntry>,
+}
+impl SourceTaskMap {
+    pub fn validate(&self) -> Result<(), String> {
+        let invalid = || "SOURCE_TASK_MAP_INVALID".to_owned();
+        if self.schema_version != 1
+            || self.source_id.is_nil()
+            || self.source_model_digest.len() != 64
+            || !self
+                .source_model_digest
+                .bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            || self.entries.is_empty()
+            || self.entries.len() > 3
+        {
+            return Err(invalid());
+        }
+        let mut source_ordinals = std::collections::BTreeSet::new();
+        let mut target_tasks = std::collections::BTreeSet::new();
+        for entry in &self.entries {
+            let expected = match (self.target_model, entry.target_task) {
+                (TargetModelKind::Vocabulary, Task::Comprehension) => 0,
+                (TargetModelKind::Vocabulary, Task::Production) => 1,
+                (TargetModelKind::Vocabulary, Task::Spelling) => 2,
+                (TargetModelKind::Grammar, Task::Recognition) => 0,
+                (TargetModelKind::Grammar, Task::Application) => 1,
+                _ => return Err(invalid()),
+            };
+            if entry.target_ordinal != expected
+                || !source_ordinals.insert(entry.source_ordinal)
+                || !target_tasks.insert(entry.target_task)
+            {
+                return Err(invalid());
+            }
+        }
+        Ok(())
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceArchive {
     pub id: Uuid,
     pub source_id: Uuid,
     pub digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_text: Option<String>,
     pub original_fields: BTreeMap<String, String>,
     pub asset_digests: Vec<String>,
 }
@@ -59,10 +128,35 @@ pub struct Evidence {
     pub provenance: Provenance,
     pub source_id: Option<Uuid>,
     pub region_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<EvidenceTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_span: Option<SourceTextSpan>,
     pub language: Language,
     pub claim: String,
     pub source_url: Option<String>,
     pub ambiguous: bool,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum EvidenceTarget {
+    DictionarySense {
+        entry_index: usize,
+        sense_index: usize,
+    },
+    Example {
+        index: usize,
+    },
+    GrammarFormation,
+    MediaAsset {
+        digest: String,
+    },
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SourceTextSpan {
+    pub start_byte: u32,
+    pub end_byte: u32,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -156,6 +250,32 @@ pub struct ResolvedSettings {
     pub resource_hashes: BTreeMap<String, String>,
     pub secret_refs: BTreeMap<String, String>,
     pub fingerprint: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub semantic_fingerprint: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub execution_fingerprint: String,
+}
+/// Settings allowed to vary in a new execution envelope without changing
+/// content approval. New keys are semantic until explicitly reviewed here.
+pub fn execution_setting(key: &str) -> bool {
+    key.starts_with("output.") || key.starts_with("logging.") || key.starts_with("retry.")
+}
+pub fn setting_fingerprints(
+    values: &BTreeMap<String, serde_json::Value>,
+) -> Result<(String, String), crate::canonical::ContractError> {
+    let mut semantic = BTreeMap::new();
+    let mut execution = BTreeMap::new();
+    for (key, value) in values {
+        if execution_setting(key) {
+            execution.insert(key, value);
+        } else {
+            semantic.insert(key, value);
+        }
+    }
+    Ok((
+        crate::canonical::digest("semantic-settings", &semantic)?,
+        crate::canonical::digest("execution-settings", &execution)?,
+    ))
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -184,6 +304,7 @@ pub enum PlanStatus {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlanRevision {
+    #[schemars(range(min = 2, max = 2))]
     pub schema_version: u16,
     pub id: Uuid,
     pub revision: u32,
@@ -207,17 +328,20 @@ pub struct PlanRevision {
     deny_unknown_fields
 )]
 pub enum SelectionInput {
-    NoteIds(Vec<String>),
+    NoteIds(#[schemars(with = "Vec<AnkiId>")] Vec<String>),
     Query(String),
     Deck { name: String, query: String },
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SelectionReceipt {
+    #[schemars(range(min = 1, max = 1))]
     pub schema_version: u16,
     pub purpose: String,
     pub selector: SelectionInput,
+    #[schemars(with = "Vec<AnkiId>")]
     pub matched_note_ids: Vec<String>,
+    #[schemars(with = "Vec<AnkiId>")]
     pub selected_note_ids: Vec<String>,
     pub order: String,
     pub max_notes: u64,
@@ -308,6 +432,20 @@ impl GrammarGroup {
 }
 impl PlanRevision {
     pub fn approval_digest(&self) -> Result<String, crate::canonical::ContractError> {
+        if !self.settings.semantic_fingerprint.is_empty()
+            || !self.settings.execution_fingerprint.is_empty()
+        {
+            let (semantic, execution) = setting_fingerprints(&self.settings.values)?;
+            if self.settings.semantic_fingerprint != semantic
+                || self.settings.execution_fingerprint != execution
+                || self.settings.fingerprint
+                    != crate::canonical::digest("resolved-settings", &self.settings.values)?
+            {
+                return Err(crate::canonical::ContractError(
+                    "SETTINGS_FINGERPRINT_INVALID".into(),
+                ));
+            }
+        }
         let mut grouped = std::collections::BTreeSet::new();
         let mut group_sources = std::collections::BTreeSet::new();
         for group in &self.grammar_groups {
@@ -335,6 +473,23 @@ impl PlanRevision {
             .and_then(|v| v.as_object_mut())
         {
             binding.remove("session_epoch");
+        }
+        if !self.settings.semantic_fingerprint.is_empty()
+            && let Some(settings) = projection
+                .get_mut("settings")
+                .and_then(|value| value.as_object_mut())
+        {
+            settings.remove("fingerprint");
+            settings.remove("execution_fingerprint");
+            if let Some(values) = settings.get_mut("values").and_then(|v| v.as_object_mut()) {
+                values.retain(|key, _| !execution_setting(key));
+            }
+            if let Some(provenance) = settings
+                .get_mut("provenance")
+                .and_then(|v| v.as_object_mut())
+            {
+                provenance.retain(|key, _| !execution_setting(key));
+            }
         }
         if let Some(documents) = projection
             .get_mut("documents")
@@ -510,6 +665,427 @@ pub struct OperationJournal {
     pub steps: Vec<JournalStep>,
     pub issues: Vec<Issue>,
 }
+/// Application-side evidence contract. A queued/running/unknown companion status
+/// is an observation, not proof that an Anki effect occurred or completed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeReceiptState {
+    Queued,
+    Running,
+    Unknown,
+    FailedBeforeWrite,
+    Verified,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NativeReadback {
+    #[schemars(pattern(r"^[0-9a-f]{64}$"))]
+    pub observed_state_digest: String,
+    pub note_ids: Vec<AnkiId>,
+    pub card_ids: Vec<AnkiId>,
+    pub history_digest: Option<String>,
+    pub manifest_digests: Vec<String>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NativeOperationReceipt {
+    #[schemars(range(min = 1, max = 1))]
+    pub schema_version: u16,
+    pub lineage_id: Uuid,
+    pub operation_id: Uuid,
+    pub session_epoch: Uuid,
+    #[schemars(pattern(r"^[0-9a-f]{64}$"))]
+    pub payload_digest: String,
+    #[schemars(pattern(r"^lab-jcs-v1:plan:[0-9a-f]{64}$"))]
+    pub approved_digest: String,
+    pub state: NativeReceiptState,
+    pub readback: Option<NativeReadback>,
+    #[schemars(pattern(r"^[0-9a-f]{64}$"))]
+    pub evidence_digest: String,
+}
+impl NativeOperationReceipt {
+    pub fn validate(&self) -> Result<(), crate::canonical::ContractError> {
+        let invalid = || crate::canonical::ContractError("NATIVE_RECEIPT_INVALID".into());
+        let raw_digest = |value: &str| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        };
+        if self.schema_version != 1
+            || self.lineage_id.is_nil()
+            || self.operation_id.is_nil()
+            || self.session_epoch.is_nil()
+            || !raw_digest(&self.payload_digest)
+            || !raw_digest(&self.evidence_digest)
+            || !self
+                .approved_digest
+                .strip_prefix("lab-jcs-v1:plan:")
+                .is_some_and(raw_digest)
+            || (self.state == NativeReceiptState::Verified) != self.readback.is_some()
+        {
+            return Err(invalid());
+        }
+        if let Some(readback) = &self.readback
+            && (!raw_digest(&readback.observed_state_digest)
+                || readback
+                    .history_digest
+                    .as_deref()
+                    .is_some_and(|digest| !raw_digest(digest))
+                || readback
+                    .manifest_digests
+                    .iter()
+                    .any(|digest| !raw_digest(digest))
+                || readback
+                    .note_ids
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>()
+                    .len()
+                    != readback.note_ids.len()
+                || readback
+                    .card_ids
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>()
+                    .len()
+                    != readback.card_ids.len())
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResumeBindingScope {
+    ContinueOperation,
+}
+/// Records an explicit decision about one existing operation after a collection
+/// session change. Validation is structural; live identity and safe continuation
+/// still require the recovery algorithm and current `--apply` authorization.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ResumeBindingDecision {
+    #[schemars(range(min = 1, max = 1))]
+    pub schema_version: u16,
+    pub operation_id: Uuid,
+    #[schemars(pattern(r"^lab-jcs-v1:plan:[0-9a-f]{64}$"))]
+    pub approval_digest: String,
+    pub old_binding: CollectionBinding,
+    pub new_binding: CollectionBinding,
+    #[schemars(pattern(r"^[0-9a-f]{64}$"))]
+    pub observed_state_digest: String,
+    pub actor: String,
+    pub decided_at: String,
+    pub scope: ResumeBindingScope,
+}
+impl ResumeBindingDecision {
+    pub fn validate(&self) -> Result<(), crate::canonical::ContractError> {
+        let invalid = || crate::canonical::ContractError("RESUME_BINDING_DECISION_INVALID".into());
+        let raw_digest = |value: &str| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        };
+        let binding_valid = |binding: &CollectionBinding| {
+            !binding.endpoint.trim().is_empty()
+                && binding.endpoint.len() <= 2048
+                && raw_digest(&binding.profile_fingerprint)
+                && raw_digest(&binding.path_fingerprint)
+                && binding
+                    .capability_digest
+                    .strip_prefix("lab-jcs-v1:lab-native-capabilities-v1:")
+                    .is_some_and(raw_digest)
+        };
+        if self.schema_version != 1
+            || self.operation_id.is_nil()
+            || self.old_binding.bridge_id.is_nil()
+            || self.old_binding.lineage_id.is_nil()
+            || self.old_binding.session_epoch.is_nil()
+            || self.new_binding.session_epoch.is_nil()
+            || !binding_valid(&self.old_binding)
+            || !binding_valid(&self.new_binding)
+            || self.old_binding.bridge_id != self.new_binding.bridge_id
+            || self.old_binding.lineage_id != self.new_binding.lineage_id
+            || self.old_binding.session_epoch == self.new_binding.session_epoch
+            || !self
+                .approval_digest
+                .strip_prefix("lab-jcs-v1:plan:")
+                .is_some_and(raw_digest)
+            || !raw_digest(&self.observed_state_digest)
+            || self.actor.trim().is_empty()
+            || self.actor.chars().count() > 200
+            || self.actor.chars().any(char::is_control)
+            || self.decided_at.trim().is_empty()
+            || self.decided_at.len() > 64
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GateStatus {
+    NotRun,
+    Pass,
+    Fail,
+    Blocked,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GateCommandResult {
+    /// Human-readable command with credentials and private inputs removed.
+    pub redacted_argv: Vec<String>,
+    #[schemars(pattern(r"^[0-9a-f]{64}$"))]
+    pub invocation_digest: String,
+    pub exit_code: i32,
+    #[schemars(pattern(r"^[0-9a-f]{64}$"))]
+    pub output_digest: String,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GateAssertion {
+    pub name: String,
+    pub passed: bool,
+    /// Redacted observation summary; raw private evidence belongs in controlled artifacts.
+    pub observed: String,
+}
+/// A scoped release-gate result. A parsed record is not proof that its commands
+/// ran; the referenced artifacts and fixture hashes must be independently checked.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GateEvidence {
+    #[schemars(range(min = 1, max = 1))]
+    pub schema_version: u16,
+    pub gate_id: String,
+    pub status: GateStatus,
+    pub version_matrix: BTreeMap<String, String>,
+    pub fixture_hashes: BTreeMap<String, String>,
+    pub commands: Vec<GateCommandResult>,
+    pub assertions: Vec<GateAssertion>,
+    pub artifact_refs: Vec<String>,
+    pub failure_code: Option<String>,
+}
+impl GateEvidence {
+    pub fn validate(&self) -> Result<(), crate::canonical::ContractError> {
+        let invalid = || crate::canonical::ContractError("GATE_EVIDENCE_INVALID".into());
+        let digest = |value: &str| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        };
+        if self.schema_version != 1
+            || !matches!(
+                self.gate_id.as_str(),
+                "EV-01"
+                    | "EV-02"
+                    | "EV-03"
+                    | "EV-04"
+                    | "EV-05"
+                    | "EV-06"
+                    | "EV-07"
+                    | "EV-08"
+                    | "EV-09"
+                    | "EV-10"
+                    | "EV-11"
+                    | "EV-12"
+                    | "EV-13"
+                    | "EV-14"
+            )
+            || self
+                .version_matrix
+                .iter()
+                .any(|(name, version)| name.trim().is_empty() || version.trim().is_empty())
+            || self
+                .fixture_hashes
+                .iter()
+                .any(|(name, hash)| name.trim().is_empty() || !digest(hash))
+            || self.commands.iter().any(|command| {
+                command.redacted_argv.is_empty()
+                    || command.redacted_argv.iter().any(|part| part.is_empty())
+                    || !digest(&command.invocation_digest)
+                    || !digest(&command.output_digest)
+            })
+            || self.assertions.iter().any(|assertion| {
+                assertion.name.trim().is_empty() || assertion.observed.trim().is_empty()
+            })
+            || self
+                .artifact_refs
+                .iter()
+                .any(|artifact| artifact.trim().is_empty() || artifact.len() > 1024)
+        {
+            return Err(invalid());
+        }
+        match self.status {
+            GateStatus::NotRun => {
+                if !self.version_matrix.is_empty()
+                    || !self.fixture_hashes.is_empty()
+                    || !self.commands.is_empty()
+                    || !self.assertions.is_empty()
+                    || !self.artifact_refs.is_empty()
+                    || self.failure_code.is_some()
+                {
+                    return Err(invalid());
+                }
+            }
+            GateStatus::Pass => {
+                if self.version_matrix.is_empty()
+                    || self.fixture_hashes.is_empty()
+                    || self.commands.is_empty()
+                    || self.commands.iter().any(|command| command.exit_code != 0)
+                    || self.assertions.is_empty()
+                    || self.assertions.iter().any(|assertion| !assertion.passed)
+                    || self.artifact_refs.is_empty()
+                    || self.failure_code.is_some()
+                {
+                    return Err(invalid());
+                }
+            }
+            GateStatus::Fail => {
+                if self.commands.is_empty()
+                    || self.assertions.is_empty()
+                    || !self
+                        .failure_code
+                        .as_ref()
+                        .is_some_and(|code| !code.trim().is_empty())
+                    || self.commands.iter().all(|command| command.exit_code == 0)
+                        && self.assertions.iter().all(|assertion| assertion.passed)
+                {
+                    return Err(invalid());
+                }
+            }
+            GateStatus::Blocked => {
+                if !self
+                    .failure_code
+                    .as_ref()
+                    .is_some_and(|code| !code.trim().is_empty())
+                {
+                    return Err(invalid());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionCapabilityState {
+    Unavailable,
+    Declared,
+    GateTested,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActionCapability {
+    pub action: String,
+    pub state: ActionCapabilityState,
+    pub gate_id: Option<String>,
+    pub gate_evidence_digest: Option<String>,
+    pub failure_code: Option<String>,
+}
+/// An inspection summary, never a substitute for checking the referenced gate
+/// evidence, current collection binding, or native preconditions before a write.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CapabilityReport {
+    #[schemars(range(min = 1, max = 1))]
+    pub schema_version: u16,
+    pub protocol: String,
+    pub anki_version: String,
+    #[schemars(pattern(r"^[0-9a-f]{64}$"))]
+    pub anki_connect_source_digest: String,
+    pub companion_version: String,
+    pub resource_versions: BTreeMap<String, String>,
+    pub actions: Vec<ActionCapability>,
+    pub auth_constraints: Vec<String>,
+    pub identity_constraints: Vec<String>,
+    pub serialization_constraints: Vec<String>,
+}
+impl CapabilityReport {
+    pub fn validate(&self) -> Result<(), crate::canonical::ContractError> {
+        let invalid = || crate::canonical::ContractError("CAPABILITY_REPORT_INVALID".into());
+        let digest = |value: &str| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        };
+        let mut seen = std::collections::HashSet::new();
+        let known_actions = [
+            "labCapabilities",
+            "labBegin",
+            "labInspect",
+            "labMutate",
+            "labOperationStatus",
+            "labRebind",
+            "labEnd",
+        ];
+        if self.schema_version != 1
+            || self.protocol != "lab-native-v1"
+            || self.anki_version.trim().is_empty()
+            || self.companion_version.trim().is_empty()
+            || !digest(&self.anki_connect_source_digest)
+            || self.actions.is_empty()
+            || self.actions.iter().any(|action| {
+                !seen.insert(&action.action)
+                    || !known_actions.contains(&action.action.as_str())
+                    || match action.state {
+                        ActionCapabilityState::Unavailable => {
+                            action.gate_id.is_some()
+                                || action.gate_evidence_digest.is_some()
+                                || !action
+                                    .failure_code
+                                    .as_ref()
+                                    .is_some_and(|code| !code.trim().is_empty())
+                        }
+                        ActionCapabilityState::Declared => {
+                            action.gate_id.is_some()
+                                || action.gate_evidence_digest.is_some()
+                                || action.failure_code.is_some()
+                        }
+                        ActionCapabilityState::GateTested => {
+                            !action.gate_id.as_ref().is_some_and(|id| {
+                                matches!(
+                                    id.as_str(),
+                                    "EV-01"
+                                        | "EV-02"
+                                        | "EV-03"
+                                        | "EV-04"
+                                        | "EV-05"
+                                        | "EV-06"
+                                        | "EV-07"
+                                        | "EV-08"
+                                        | "EV-09"
+                                        | "EV-10"
+                                        | "EV-11"
+                                        | "EV-12"
+                                        | "EV-13"
+                                        | "EV-14"
+                                )
+                            }) || !action.gate_evidence_digest.as_deref().is_some_and(digest)
+                                || action.failure_code.is_some()
+                        }
+                    }
+            })
+            || self
+                .resource_versions
+                .iter()
+                .any(|(name, version)| name.trim().is_empty() || version.trim().is_empty())
+            || [
+                &self.auth_constraints,
+                &self.identity_constraints,
+                &self.serialization_constraints,
+            ]
+            .iter()
+            .any(|items| items.is_empty() || items.iter().any(|item| item.trim().is_empty()))
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Snapshot {
@@ -519,7 +1095,6 @@ pub struct Snapshot {
     pub archives: Vec<SourceArchive>,
     pub media: Vec<MediaAsset>,
     pub before_digest: String,
-    pub verified_after_digest: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

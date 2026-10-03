@@ -378,7 +378,7 @@ impl Client {
             identity_confidence: "weak".into(),
         })
     }
-    pub fn check_profile(&self) -> Result<()> {
+    fn checked_profile(&self) -> Result<String> {
         let actual = self.call(Action::Profile, json!({}))?;
         let actual = actual.as_str().ok_or("ANKI_PROFILE_INVALID")?;
         if self.expected_profile.as_ref().is_some_and(|p| p != actual) {
@@ -392,7 +392,10 @@ impl Client {
             return Err("ANKI_PROFILE_CONFLICT".into());
         }
         *pinned = Some(actual.to_owned());
-        Ok(())
+        Ok(actual.to_owned())
+    }
+    pub fn check_profile(&self) -> Result<()> {
+        self.checked_profile().map(|_| ())
     }
     fn names(&self, action: Action) -> Result<Vec<NamedId>> {
         let map = self.call(action, json!({}))?;

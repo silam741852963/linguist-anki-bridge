@@ -136,7 +136,15 @@ fn validate_definition(definition: &PreparationDefinition) -> Result<()> {
             return Err("INVALID_PREPARATION_INPUT".into());
         }
     }
+    let (semantic_fingerprint, execution_fingerprint) =
+        linguist_core::records::setting_fingerprints(&job.settings.values)
+            .map_err(|e| e.to_string())?;
+    let split_valid = (job.settings.semantic_fingerprint.is_empty()
+        && job.settings.execution_fingerprint.is_empty())
+        || (job.settings.semantic_fingerprint == semantic_fingerprint
+            && job.settings.execution_fingerprint == execution_fingerprint);
     if job.settings.version != 2
+        || !split_valid
         || canonical::digest("resolved-settings", &job.settings.values)
             .map_err(|e| e.to_string())?
             != job.settings.fingerprint
@@ -161,6 +169,28 @@ fn validate_definition(definition: &PreparationDefinition) -> Result<()> {
 }
 
 impl Store {
+    fn verify_preparation_event_assets(&self, event: &PreparationEvent) -> Result<()> {
+        let expected = if let PreparationStage::Captured { document } = &event.stage {
+            self.verify_document_assets(std::slice::from_ref(document.as_ref()))?
+        } else {
+            std::collections::BTreeSet::new()
+        };
+        let mut statement = self.connection.prepare(
+            "SELECT digest FROM preparation_event_assets WHERE job_id=?1 AND sequence=?2 ORDER BY digest",
+        ).map_err(sql)?;
+        let indexed: std::collections::BTreeSet<String> = statement
+            .query_map(params![event.job_id.to_string(), event.sequence], |r| {
+                r.get(0)
+            })
+            .map_err(sql)?
+            .map(|r| r.map_err(sql))
+            .collect::<Result<_>>()?;
+        if expected != indexed {
+            return Err("PREPARATION_ASSET_INDEX_CORRUPT".into());
+        }
+        Ok(())
+    }
+
     /// Publish the complete immutable capture batch once, retaining the frozen selection.
     /// The job UUID identifies revision one; later review revisions remain untouched.
     pub fn publish_preparation_plan(
@@ -209,6 +239,7 @@ impl Store {
             {
                 return Err("PREPARATION_EVENT_CORRUPT".into());
             }
+            self.verify_preparation_event_assets(&event)?;
             match event.stage {
                 PreparationStage::Captured { document } => {
                     document_bytes = document_bytes
@@ -374,6 +405,7 @@ impl Store {
                 summary.attempt = event.attempt;
                 summary.checkpoint_sequence = Some(sequence);
                 summary.checkpoint_digest = Some(digest);
+                self.verify_preparation_event_assets(&event)?;
                 match event.stage {
                     PreparationStage::Interrupted { .. } => {
                         summary.state = "failed".into();
@@ -771,9 +803,7 @@ impl Store {
             {
                 return Err("PREPARATION_EVENT_CORRUPT".into());
             }
-            if let PreparationStage::Captured { document } = &event.stage {
-                self.verify_document_assets(std::slice::from_ref(document.as_ref()))?;
-            }
+            self.verify_preparation_event_assets(&event)?;
             previous_sequence = sequence;
             previous_digest = Some(digest.clone());
             visitor(PreparationReceipt { digest, event })?;

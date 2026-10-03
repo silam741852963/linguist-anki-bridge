@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SourceTaskMap",
+  "description": "A declared source-template mapping. Native ordinal/history verification belongs to WP-03.",
+  "type": "object",
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SourceTaskMapEntry"
+      }
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 1,
+      "minimum": 1
+    },
+    "source_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_model_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "target_model": {
+      "$ref": "#/$defs/TargetModelKind"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_id",
+    "source_model_digest",
+    "target_model",
+    "entries"
+  ],
+  "$defs": {
+    "SourceTaskMapEntry": {
+      "type": "object",
+      "properties": {
+        "source_ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "target_ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "target_task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source_ordinal",
+        "target_task",
+        "target_ordinal"
+      ]
+    },
+    "TargetModelKind": {
+      "type": "string",
+      "enum": [
+        "vocabulary",
+        "grammar"
+      ]
+    },
+    "Task": {
+      "type": "string",
+      "enum": [
+        "comprehension",
+        "production",
+        "spelling",
+        "recognition",
+        "application"
+      ]
+    }
+  }
+}

@@ -201,6 +201,36 @@ impl OllamaClient {
             .ok_or(OllamaError::Parse(OllamaParseError::Missing("response")))?;
         normalize_image_classification(raw).map_err(OllamaError::Parse)
     }
+    pub async fn suggest_field_mapping(
+        &self,
+        model: &str,
+        prompt: &str,
+    ) -> Result<FieldMappingSuggestion, OllamaError> {
+        let response = self
+            .client
+            .post(self.endpoint("api/generate")?)
+            .json(&field_mapping_request(model, prompt))
+            .send()
+            .await
+            .map_err(|error| OllamaError::Transport(error.to_string()))?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| OllamaError::Transport(error.to_string()))?;
+        if !status.is_success() {
+            return Err(OllamaError::Http(status.as_u16()));
+        }
+        let envelope: Value = serde_json::from_str(&body).map_err(|error| {
+            OllamaError::Parse(OllamaParseError::InvalidJson(error.to_string()))
+        })?;
+        let raw = envelope
+            .get("response")
+            .and_then(Value::as_str)
+            .ok_or(OllamaError::Parse(OllamaParseError::Missing("response")))?;
+        serde_json::from_str(raw)
+            .map_err(|error| OllamaError::Parse(OllamaParseError::InvalidJson(error.to_string())))
+    }
     fn endpoint(&self, path: &str) -> Result<reqwest::Url, OllamaError> {
         self.base
             .join(path)
@@ -263,6 +293,33 @@ pub fn image_classification_request(model: &str, encoded_image: &str) -> Value {
         "options": {"temperature": 0}
     })
 }
+
+pub fn field_mapping_request(model: &str, prompt: &str) -> Value {
+    json!({
+        "model": model,
+        "prompt": prompt,
+        "stream": false,
+        "think": true,
+        "format": {
+            "type": "object",
+            "properties": {
+                "assignments": {"type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                        "logical_field": {"type": "string"},
+                        "source_field": {"type": "string"},
+                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                        "reason": {"type": "string"}
+                    },
+                    "required": ["logical_field", "source_field", "confidence", "reason"]
+                }},
+                "summary": {"type": "string"}
+            },
+            "required": ["assignments", "summary"]
+        },
+        "options": {"temperature": 0}
+    })
+}
 use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -290,6 +347,18 @@ pub enum VisionClass {
 #[derive(Clone, Debug, PartialEq)]
 pub struct VisionClassification {
     pub classification: VisionClass,
+    pub confidence: f32,
+    pub reason: String,
+}
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct FieldMappingSuggestion {
+    pub assignments: Vec<FieldMappingAssignment>,
+    pub summary: String,
+}
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct FieldMappingAssignment {
+    pub logical_field: String,
+    pub source_field: String,
     pub confidence: f32,
     pub reason: String,
 }
@@ -479,6 +548,17 @@ mod tests {
         assert_eq!(
             request["format"]["required"],
             json!(["nuances", "examples"])
+        );
+    }
+
+    #[test]
+    fn mapping_request_enables_reasoning_and_constrained_assignments() {
+        let request = field_mapping_request("reasoning-model", "context");
+        assert_eq!(request["think"], true);
+        assert_eq!(request["stream"], false);
+        assert_eq!(
+            request["format"]["properties"]["assignments"]["items"]["required"],
+            json!(["logical_field", "source_field", "confidence", "reason"])
         );
     }
 

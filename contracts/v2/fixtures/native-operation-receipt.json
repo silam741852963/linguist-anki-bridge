@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "lineage_id": "44cb6177-4c34-483f-9149-5e67512ce303",
+  "operation_id": "6e7e3932-5fb5-4eaf-a30b-8044c967ac6d",
+  "session_epoch": "6e5cfa2f-2224-4710-b8d2-5741f763c8f7",
+  "payload_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approved_digest": "lab-jcs-v1:plan:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "state": "verified",
+  "readback": {
+    "observed_state_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "note_ids": ["1"],
+    "card_ids": ["2"],
+    "history_digest": null,
+    "manifest_digests": ["eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"]
+  },
+  "evidence_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

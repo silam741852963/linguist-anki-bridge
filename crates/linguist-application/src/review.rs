@@ -48,6 +48,8 @@ pub fn resolve(
             values: base.settings.values.clone(),
             provenance: base.settings.provenance.clone(),
             fingerprint: base.settings.fingerprint.clone(),
+            semantic_fingerprint: base.settings.semantic_fingerprint.clone(),
+            execution_fingerprint: base.settings.execution_fingerprint.clone(),
         };
         crate::media::validate_settings(&settings)?;
         crate::audio::validate_settings(&settings)?;

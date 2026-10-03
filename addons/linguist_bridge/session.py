@@ -42,6 +42,11 @@ def _fingerprint(domain, text):
         raise SessionError("BRIDGE_SESSION_ENCODING_INVALID") from None
 
 
+def collection_path_fingerprint(collection_path):
+    path, _ = _file(collection_path)
+    return _fingerprint("lab-path-v1", str(path))
+
+
 class SessionTracker:
     def __init__(self):
         if threading.current_thread() is not threading.main_thread():

@@ -15,6 +15,7 @@
       "properties": {
         "meaning_image": { "type": ["string", "null"] },
         "meaning_text": { "type": ["string", "null"] },
+        "examples": { "type": ["string", "null"] },
         "kanji_construction": { "type": ["string", "null"] },
         "audio": { "type": ["string", "null"] }
       }

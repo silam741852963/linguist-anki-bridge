@@ -1,5 +1,5 @@
 use crate::canonical::ContractError;
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt};
 use uuid::Uuid;
@@ -36,21 +36,58 @@ impl Language {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct AnkiId(String);
+const MAX_ANKI_ID: u64 = 9_007_199_254_740_991;
 impl TryFrom<String> for AnkiId {
     type Error = String;
     fn try_from(s: String) -> Result<Self, String> {
         if s.is_empty()
             || s.starts_with('0')
             || !s.bytes().all(|b| b.is_ascii_digit())
-            || s.parse::<i64>().is_err()
+            || !s
+                .parse::<u64>()
+                .is_ok_and(|id| (1..=MAX_ANKI_ID).contains(&id))
         {
-            Err("Anki ID must be a positive canonical decimal string".into())
+            Err("Anki ID must be a positive canonical decimal string within the JSON safe integer range".into())
         } else {
             Ok(Self(s))
         }
+    }
+}
+impl JsonSchema for AnkiId {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AnkiId".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        // Fixed-width decimal branches encode the exact numeric ceiling. A
+        // shorter positive decimal string always fits this 16-digit ceiling.
+        let maximum = MAX_ANKI_ID.to_string();
+        let mut branches = vec!["[1-9][0-9]{0,14}".to_owned()];
+        for (index, digit) in maximum.bytes().enumerate() {
+            let minimum = if index == 0 { b'1' } else { b'0' };
+            if digit > minimum {
+                let prefix = &maximum[..index];
+                let range = if digit == minimum + 1 {
+                    (minimum as char).to_string()
+                } else {
+                    format!("[{}-{}]", minimum as char, (digit - 1) as char)
+                };
+                let remaining = maximum.len() - index - 1;
+                branches.push(format!("{prefix}{range}[0-9]{{{remaining}}}"));
+            }
+        }
+        branches.push(maximum);
+        let pattern = format!("^(?:{})$", branches.join("|"));
+        json_schema!({
+            "type": "string",
+            "pattern": pattern,
+            "minLength": 1,
+            "maxLength": 16,
+            "description": "Canonical positive decimal Anki ID, at most 9007199254740991"
+        })
     }
 }
 impl From<AnkiId> for String {
@@ -199,6 +236,8 @@ pub struct LearningDocument {
     pub explanation_language: Language,
     pub content: LearningContent,
     pub requested_tasks: Vec<Task>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub task_maps: Vec<crate::records::SourceTaskMap>,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]

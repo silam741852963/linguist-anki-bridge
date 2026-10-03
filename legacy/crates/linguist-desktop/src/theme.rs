@@ -4,12 +4,20 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Default)]
 pub struct ThemePalette {
     pub background: String,
     pub surface: String,
     pub foreground: String,
     pub muted: String,
     pub accent: String,
+    pub selection: String,
+    pub red: String,
+    pub yellow: String,
+    pub green: String,
+    pub cyan: String,
+    pub blue: String,
+    pub magenta: String,
 }
 
 impl ThemePalette {
@@ -28,29 +36,40 @@ impl ThemePalette {
         Self::from_contents(&contents)
     }
     pub fn from_contents(contents: &str) -> Self {
-        let fallback = Self::default();
         let colors = parse_top_level_strings(contents);
+        let background = color(&colors, "background", String::new());
+        let foreground = color(&colors, "foreground", String::new());
+        let surface = color(&colors, "lighter_background", background.clone());
+        let muted = color(&colors, "muted", foreground.clone());
+        let accent = color(&colors, "accent", foreground.clone());
         Self {
-            background: color(&colors, "background", fallback.background),
-            surface: color(&colors, "lighter_background", fallback.surface),
-            foreground: color(&colors, "foreground", fallback.foreground),
-            muted: color(&colors, "muted", fallback.muted),
-            accent: color(&colors, "accent", fallback.accent),
+            background,
+            surface,
+            foreground: foreground.clone(),
+            muted,
+            selection: color(&colors, "selection", accent.clone()),
+            red: color(&colors, "red", accent.clone()),
+            yellow: color(&colors, "yellow", accent.clone()),
+            green: color(&colors, "green", accent.clone()),
+            cyan: color(&colors, "cyan", accent.clone()),
+            blue: color(&colors, "blue", accent.clone()),
+            magenta: color(&colors, "magenta", accent.clone()),
+            accent,
         }
     }
 }
 pub fn omarchy_palette_path() -> Option<PathBuf> {
     omarchy_palette_path_from(
-        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+        std::env::var_os("XDG_STATE_HOME").map(PathBuf::from),
         std::env::var_os("HOME").map(PathBuf::from),
     )
 }
 fn omarchy_palette_path_from(
-    config_home: Option<PathBuf>,
+    state_home: Option<PathBuf>,
     home: Option<PathBuf>,
 ) -> Option<PathBuf> {
-    config_home
-        .or_else(|| home.map(|home| home.join(".config")))
+    state_home
+        .or_else(|| home.map(|home| home.join(".local/state")))
         .map(|root| root.join("omarchy/current/theme/colors.toml"))
 }
 pub struct ThemeWatch {
@@ -80,18 +99,6 @@ impl ThemeWatch {
                     ThemePalette::from_contents(&contents)
                 }),
         )
-    }
-}
-
-impl Default for ThemePalette {
-    fn default() -> Self {
-        Self {
-            background: "#121212".into(),
-            surface: "#1c1c1c".into(),
-            foreground: "#e8e8e8".into(),
-            muted: "#737373".into(),
-            accent: "#e68e0d".into(),
-        }
     }
 }
 
@@ -151,24 +158,39 @@ mod tests {
     #[test]
     fn malformed_and_missing_palettes_fall_back() {
         let palette = ThemePalette::from_contents("background = \"red\"\naccent = \"#abcd\"");
-        assert_eq!(palette.background, "#121212");
-        assert_eq!(palette.accent, "#e68e0d");
+        assert!(palette.background.is_empty());
+        assert!(palette.accent.is_empty());
         assert_eq!(
             ThemePalette::load_from(Path::new("/not/a/theme")).foreground,
-            "#e8e8e8"
+            ""
         );
     }
 
     #[test]
     fn resolves_documented_omarchy_config_path() {
         assert_eq!(
-            omarchy_palette_path_from(Some("/config".into()), Some("/home/user".into())).unwrap(),
-            PathBuf::from("/config/omarchy/current/theme/colors.toml")
+            omarchy_palette_path_from(Some("/state".into()), Some("/home/user".into())).unwrap(),
+            PathBuf::from("/state/omarchy/current/theme/colors.toml")
         );
         assert_eq!(
             omarchy_palette_path_from(None, Some("/home/user".into())).unwrap(),
-            PathBuf::from("/home/user/.config/omarchy/current/theme/colors.toml")
+            PathBuf::from("/home/user/.local/state/omarchy/current/theme/colors.toml")
         );
+    }
+
+    #[test]
+    fn loads_semantic_omarchy_colors_for_native_surfaces() {
+        let palette = ThemePalette::from_contents(
+            "selection = \"#221122\"\nred = \"#aa0000\"\nyellow = \"#bbbb00\"\n\
+             green = \"#00aa00\"\ncyan = \"#00bbbb\"\nblue = \"#0000aa\"\nmagenta = \"#aa00aa\"\n",
+        );
+        assert_eq!(palette.selection, "#221122");
+        assert_eq!(palette.red, "#aa0000");
+        assert_eq!(palette.yellow, "#bbbb00");
+        assert_eq!(palette.green, "#00aa00");
+        assert_eq!(palette.cyan, "#00bbbb");
+        assert_eq!(palette.blue, "#0000aa");
+        assert_eq!(palette.magenta, "#aa00aa");
     }
 
     #[test]
@@ -185,7 +207,7 @@ mod tests {
         fs::write(&path, "accent = \"#abcdef\"\n").unwrap();
         assert_eq!(watch.poll().unwrap().accent, "#abcdef");
         fs::remove_file(&path).unwrap();
-        assert_eq!(watch.poll().unwrap().accent, ThemePalette::default().accent);
+        assert!(watch.poll().unwrap().accent.is_empty());
         assert!(watch.poll().is_none());
         fs::remove_dir_all(directory).unwrap();
     }

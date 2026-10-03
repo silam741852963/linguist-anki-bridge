@@ -22,6 +22,29 @@ fn canonical_objects_sort_but_arrays_keep_order() {
     );
 }
 #[test]
+fn canonical_bytes_and_domain_hash_match_ecmascript_vectors() {
+    let vectors: Vec<serde_json::Value> = canonical::parse(include_bytes!(
+        "../../../contracts/v2/fixtures/jcs-vectors.json"
+    ))
+    .unwrap();
+    for vector in vectors {
+        let value: serde_json::Value =
+            canonical::parse(vector["input"].as_str().unwrap().as_bytes()).unwrap();
+        assert_eq!(
+            String::from_utf8(canonical::bytes(&value).unwrap()).unwrap(),
+            vector["canonical"],
+            "{}",
+            vector["name"]
+        );
+        assert_eq!(
+            canonical::digest("test-vector", &value).unwrap(),
+            vector["digest"],
+            "{}",
+            vector["name"]
+        );
+    }
+}
+#[test]
 fn strict_json_rejects_duplicate_unsafe_and_trailing_input() {
     for input in [r#"{"a":1,"a":2}"#, r#"{"id":9007199254740992}"#, r#"{} {}"#] {
         assert!(canonical::parse::<serde_json::Value>(input.as_bytes()).is_err());
@@ -29,6 +52,193 @@ fn strict_json_rejects_duplicate_unsafe_and_trailing_input() {
     assert!(canonical::bytes(&f64::NAN).is_err());
     assert!(canonical::parse::<AnkiId>(b"123").is_err());
     assert!(canonical::parse::<AnkiId>(br#""0123""#).is_err());
+}
+#[test]
+fn anki_ids_are_canonical_and_fit_the_wire_safe_integer_range() {
+    for id in ["1", "123456789", "9007199254740991"] {
+        assert_eq!(
+            String::from(canonical::parse::<AnkiId>(format!("\"{id}\"").as_bytes()).unwrap()),
+            id
+        );
+    }
+    for id in [
+        "0",
+        "01",
+        "-1",
+        "+1",
+        "1.0",
+        "9007199254740992",
+        "9223372036854775807",
+    ] {
+        assert!(
+            canonical::parse::<AnkiId>(format!("\"{id}\"").as_bytes()).is_err(),
+            "{id}"
+        );
+    }
+    let schema = schemars::schema_for!(LearningDocument);
+    let schema = serde_json::to_value(schema).unwrap();
+    let id_schema = &schema["$defs"]["AnkiId"];
+    assert!(id_schema["pattern"].as_str().unwrap().starts_with("^(?:"));
+    assert_eq!(id_schema["minLength"], 1);
+    assert_eq!(id_schema["maxLength"], 16);
+}
+#[test]
+fn generated_contract_versions_match_the_supported_wire_versions() {
+    fn version<T: schemars::JsonSchema>() -> serde_json::Value {
+        let schema = serde_json::to_value(schemars::schema_for!(T)).unwrap();
+        schema["properties"]["schema_version"].clone()
+    }
+    for schema in [
+        version::<LearningDocument>(),
+        version::<linguist_core::records::PlanRevision>(),
+        version::<linguist_core::editing::PlanPatch>(),
+        version::<linguist_core::review::ResolutionRequest>(),
+        version::<linguist_core::plan_validation::ValidationEvidence>(),
+    ] {
+        assert_eq!(schema["minimum"], 2);
+        assert_eq!(schema["maximum"], 2);
+    }
+    let schema = serde_json::to_value(schemars::schema_for!(
+        linguist_core::records::SelectionReceipt
+    ))
+    .unwrap();
+    assert_eq!(schema["properties"]["schema_version"]["minimum"], 1);
+    assert_eq!(schema["properties"]["schema_version"]["maximum"], 1);
+    for field in ["matched_note_ids", "selected_note_ids"] {
+        assert_eq!(
+            schema["properties"][field]["items"]["$ref"],
+            "#/$defs/AnkiId"
+        );
+    }
+    let selector = serde_json::to_value(schemars::schema_for!(
+        linguist_core::records::SelectionInput
+    ))
+    .unwrap();
+    assert_eq!(
+        selector["oneOf"][0]["properties"]["input"]["items"]["$ref"],
+        "#/$defs/AnkiId"
+    );
+}
+#[test]
+fn native_receipt_requires_readback_for_verified_effects() {
+    use linguist_core::records::{NativeOperationReceipt, NativeReceiptState};
+    let fixture: NativeOperationReceipt = canonical::parse(include_bytes!(
+        "../../../contracts/v2/fixtures/native-operation-receipt.json"
+    ))
+    .unwrap();
+    fixture.validate().unwrap();
+    assert_eq!(
+        fixture,
+        canonical::parse(&canonical::bytes(&fixture).unwrap()).unwrap()
+    );
+    let mut value = serde_json::json!({
+        "schema_version":1,
+        "lineage_id":uuid::Uuid::new_v4(),
+        "operation_id":uuid::Uuid::new_v4(),
+        "session_epoch":uuid::Uuid::new_v4(),
+        "payload_digest":"a".repeat(64),
+        "approved_digest":format!("lab-jcs-v1:plan:{}", "b".repeat(64)),
+        "state":"unknown",
+        "readback":null,
+        "evidence_digest":"c".repeat(64)
+    });
+    let receipt: NativeOperationReceipt =
+        canonical::parse(&canonical::bytes(&value).unwrap()).unwrap();
+    receipt.validate().unwrap();
+    value["state"] = serde_json::json!("verified");
+    let missing: NativeOperationReceipt =
+        canonical::parse(&canonical::bytes(&value).unwrap()).unwrap();
+    assert!(missing.validate().is_err());
+    value["readback"] = serde_json::json!({
+        "observed_state_digest":"d".repeat(64),
+        "note_ids":["1"],
+        "card_ids":["2"],
+        "history_digest":null,
+        "manifest_digests":["e".repeat(64)]
+    });
+    let verified: NativeOperationReceipt =
+        canonical::parse(&canonical::bytes(&value).unwrap()).unwrap();
+    assert_eq!(verified.state, NativeReceiptState::Verified);
+    verified.validate().unwrap();
+    value["readback"]["card_ids"] = serde_json::json!(["2", "2"]);
+    let duplicate: NativeOperationReceipt =
+        canonical::parse(&canonical::bytes(&value).unwrap()).unwrap();
+    assert!(duplicate.validate().is_err());
+    value["readback"]["card_ids"] = serde_json::json!(["9007199254740992"]);
+    assert!(
+        canonical::parse::<NativeOperationReceipt>(&canonical::bytes(&value).unwrap()).is_err()
+    );
+}
+#[test]
+fn resume_binding_decision_binds_one_operation_and_changed_epoch() {
+    use linguist_core::records::ResumeBindingDecision;
+    let bytes = include_bytes!("../../../contracts/v2/fixtures/resume-binding-decision.json");
+    let decision: ResumeBindingDecision = canonical::parse(bytes).unwrap();
+    decision.validate().unwrap();
+    assert_eq!(
+        decision,
+        canonical::parse(&canonical::bytes(&decision).unwrap()).unwrap()
+    );
+    let mut changed = serde_json::to_value(&decision).unwrap();
+    changed["new_binding"]["session_epoch"] = changed["old_binding"]["session_epoch"].clone();
+    assert!(
+        canonical::parse::<ResumeBindingDecision>(&canonical::bytes(&changed).unwrap())
+            .unwrap()
+            .validate()
+            .is_err()
+    );
+    changed = serde_json::to_value(&decision).unwrap();
+    changed["new_binding"]["lineage_id"] = serde_json::json!(uuid::Uuid::new_v4());
+    assert!(
+        canonical::parse::<ResumeBindingDecision>(&canonical::bytes(&changed).unwrap())
+            .unwrap()
+            .validate()
+            .is_err()
+    );
+    changed = serde_json::to_value(&decision).unwrap();
+    changed["observed_state_digest"] = serde_json::json!("not a digest");
+    assert!(
+        canonical::parse::<ResumeBindingDecision>(&canonical::bytes(&changed).unwrap())
+            .unwrap()
+            .validate()
+            .is_err()
+    );
+}
+#[test]
+fn gate_and_capability_records_cannot_promote_declarations_to_tested() {
+    use linguist_core::records::{CapabilityReport, GateEvidence};
+    let gate: GateEvidence = canonical::parse(include_bytes!(
+        "../../../contracts/v2/fixtures/gate-evidence-not-run.json"
+    ))
+    .unwrap();
+    gate.validate().unwrap();
+    assert_eq!(
+        gate,
+        canonical::parse(&canonical::bytes(&gate).unwrap()).unwrap()
+    );
+    let mut promoted = serde_json::to_value(&gate).unwrap();
+    promoted["status"] = serde_json::json!("pass");
+    let forged: GateEvidence = canonical::parse(&canonical::bytes(&promoted).unwrap()).unwrap();
+    assert!(forged.validate().is_err());
+
+    let report: CapabilityReport = canonical::parse(include_bytes!(
+        "../../../contracts/v2/fixtures/capability-report.json"
+    ))
+    .unwrap();
+    report.validate().unwrap();
+    assert_eq!(
+        report,
+        canonical::parse(&canonical::bytes(&report).unwrap()).unwrap()
+    );
+    let mut promoted = serde_json::to_value(&report).unwrap();
+    promoted["actions"][0]["state"] = serde_json::json!("gate_tested");
+    let forged: CapabilityReport = canonical::parse(&canonical::bytes(&promoted).unwrap()).unwrap();
+    assert!(forged.validate().is_err());
+    promoted["actions"][0]["gate_id"] = serde_json::json!("EV-03");
+    promoted["actions"][0]["gate_evidence_digest"] = serde_json::json!("b".repeat(64));
+    let structurally_tested: CapabilityReport =
+        canonical::parse(&canonical::bytes(&promoted).unwrap()).unwrap();
+    structurally_tested.validate().unwrap();
 }
 #[test]
 fn field_intents_preserve_set_and_clear_distinctly() {
@@ -69,6 +279,66 @@ fn fixtures_render_fixed_models_and_roundtrip() {
     }
 }
 #[test]
+fn rich_dictionary_roundtrip_keeps_all_senses_and_renders_inert_reference() {
+    use linguist_core::records::{ReviewChoice, ReviewDecision};
+    let mut doc = LearningDocument::from_json(include_bytes!(
+        "../../../contracts/v2/fixtures/vocabulary-rich-dictionary.json"
+    ))
+    .unwrap();
+    assert!(
+        validation::validate(&doc)
+            .iter()
+            .any(|issue| issue.code == "DICTIONARY_SENSE_REVIEW")
+    );
+    let LearningContent::Vocabulary(vocab) = &doc.content else {
+        panic!("expected vocabulary")
+    };
+    assert_eq!(vocab.dictionary[0].senses.len(), 2);
+    assert_eq!(
+        vocab.dictionary[0].senses[0].examples[0].provenance,
+        Provenance::Dictionary
+    );
+    assert_eq!(vocab.dictionary[0].related_entries, ["edible", "meal"]);
+    assert_eq!(
+        doc,
+        LearningDocument::from_json(&canonical::bytes(&doc).unwrap()).unwrap()
+    );
+    let input_digest = doc.semantic_digest().unwrap();
+    doc.reviews.push(ReviewDecision {
+        id: uuid::Uuid::new_v4(),
+        issue_id: format!("DICTIONARY_SENSE_REVIEW:{}", doc.id),
+        input_digest,
+        actor: "reviewer".into(),
+        created_at: "2026-10-01T00:00:00Z".into(),
+        choice: ReviewChoice::Sense("consume-food".into()),
+    });
+    let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
+    let meaning = &rendered.fields["Meaning"];
+    assert!(meaning.starts_with("<p>consume food</p>"));
+    assert!(meaning.contains("Sense: consume-food (selected)"));
+    assert!(meaning.contains("Sense: erode"));
+    assert_eq!(meaning.matches("(selected)").count(), 1);
+    for text in [
+        "Wiktionary contributors",
+        "We eat rice.",
+        "wear away",
+        "restrictions",
+        "antonyms",
+        "retained",
+        "meal",
+    ] {
+        assert!(meaning.contains(text), "missing {text}: {meaning}");
+    }
+    for active in ["<script", "<img", "href=", "src=\"x"] {
+        assert!(
+            !meaning.contains(active),
+            "active provider markup: {meaning}"
+        );
+    }
+    assert!(meaning.contains("&lt;img src=x onerror=alert(1)&gt;"));
+    assert!(meaning.find("consume food").unwrap() < meaning.find("wear away").unwrap());
+}
+#[test]
 fn task_cues_reject_answer_leakage_and_invalid_task_kinds() {
     let mut doc = vocabulary();
     doc.requested_tasks.push(Task::Production);
@@ -99,12 +369,34 @@ fn html_and_media_cannot_bypass_typed_controls() {
 }
 #[test]
 fn legacy_archive_is_lossless_without_promoting_readiness() {
-    let bytes = include_bytes!("../../../legacy/contracts/fixtures/card-document.v1.json");
-    let archive = legacy::LegacyArchive::from_json(bytes).unwrap();
-    assert_eq!(
-        *archive.original(),
-        canonical::parse::<serde_json::Value>(&archive.to_v1_json().unwrap()).unwrap()
-    );
+    for bytes in [
+        include_bytes!("../../../legacy/contracts/fixtures/card-document.v1.json").as_slice(),
+        include_bytes!("../../../legacy/contracts/fixtures/dictionary-preserve-card.v1.json")
+            .as_slice(),
+        include_bytes!("../../../legacy/contracts/fixtures/grammar-card.v1.json").as_slice(),
+        include_bytes!("../../../legacy/contracts/fixtures/injection-card.v1.json").as_slice(),
+        include_bytes!("../../../legacy/contracts/fixtures/media-replacement-card.v1.json")
+            .as_slice(),
+        include_bytes!("../../../legacy/contracts/fixtures/modernization-card.v1.json").as_slice(),
+        include_bytes!("../../../legacy/contracts/fixtures/shared-fields-card.v1.json").as_slice(),
+        include_bytes!("../../../legacy/contracts/fixtures/validation-issues-card.v1.json")
+            .as_slice(),
+    ] {
+        let archive = legacy::LegacyArchive::from_json(bytes).unwrap();
+        assert_eq!(archive.to_v1_json().unwrap(), bytes);
+        assert_eq!(archive.raw_digest, canonical::asset_digest(bytes));
+        assert_eq!(
+            *archive.original(),
+            canonical::parse::<serde_json::Value>(bytes).unwrap()
+        );
+    }
+    let compact = br#"{"schema_version":1,"extension":{"b":2,"a":1}}"#;
+    let spaced = b"{ \"extension\": { \"a\": 1, \"b\": 2 }, \"schema_version\": 1 }\n";
+    let a = legacy::LegacyArchive::from_json(compact).unwrap();
+    let b = legacy::LegacyArchive::from_json(spaced).unwrap();
+    assert_eq!(a.digest, b.digest);
+    assert_ne!(a.raw_digest, b.raw_digest);
+    assert_eq!(b.to_v1_json().unwrap(), spaced);
 }
 #[test]
 fn effective_html_empty_field_blocks_rendering() {
@@ -126,6 +418,8 @@ fn review_is_bound_to_content_and_cannot_waive_errors() {
         provenance: Provenance::Generated,
         source_id: None,
         region_id: None,
+        target: None,
+        source_span: None,
         language: doc.explanation_language.clone(),
         claim: "to eat".into(),
         source_url: None,
@@ -160,6 +454,8 @@ fn approval_binds_content_but_excludes_review_timestamp_and_epoch() {
         revision: 1,
         parent_digest: None,
         settings: ResolvedSettings {
+            semantic_fingerprint: String::new(),
+            execution_fingerprint: String::new(),
             version: 2,
             values: BTreeMap::new(),
             provenance: BTreeMap::new(),
@@ -204,6 +500,83 @@ fn approval_binds_content_but_excludes_review_timestamp_and_epoch() {
 }
 
 #[test]
+fn new_approval_binding_excludes_execution_settings_but_legacy_binding_is_stable() {
+    use linguist_core::records::*;
+    let mut plan = PlanRevision {
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: ResolvedSettings {
+            version: 2,
+            values: BTreeMap::from([
+                ("llm.temperature".into(), serde_json::json!(0.0)),
+                ("output.format".into(), serde_json::json!("text")),
+                ("retry.read_attempts".into(), serde_json::json!(3)),
+            ]),
+            provenance: BTreeMap::from([
+                ("llm.temperature".into(), "builtin".into()),
+                ("output.format".into(), "builtin".into()),
+                ("retry.read_attempts".into(), "builtin".into()),
+            ]),
+            resource_hashes: BTreeMap::new(),
+            secret_refs: BTreeMap::new(),
+            fingerprint: "all-a".into(),
+            semantic_fingerprint: "semantic-a".into(),
+            execution_fingerprint: "execution-a".into(),
+        },
+        binding: None,
+        source_digest: "source".into(),
+        selection: None,
+        grammar_groups: vec![],
+        documents: vec![vocabulary()],
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    let (semantic, execution) = setting_fingerprints(&plan.settings.values).unwrap();
+    plan.settings.semantic_fingerprint = semantic;
+    plan.settings.execution_fingerprint = execution;
+    plan.settings.fingerprint =
+        linguist_core::canonical::digest("resolved-settings", &plan.settings.values).unwrap();
+    let approved = plan.approval_digest().unwrap();
+    plan.settings
+        .values
+        .insert("output.format".into(), serde_json::json!("json"));
+    plan.settings
+        .values
+        .insert("retry.read_attempts".into(), serde_json::json!(5));
+    plan.settings
+        .provenance
+        .insert("output.format".into(), "flag".into());
+    let (semantic, execution) = setting_fingerprints(&plan.settings.values).unwrap();
+    plan.settings.semantic_fingerprint = semantic;
+    plan.settings.execution_fingerprint = execution;
+    plan.settings.fingerprint =
+        linguist_core::canonical::digest("resolved-settings", &plan.settings.values).unwrap();
+    assert_eq!(approved, plan.approval_digest().unwrap());
+    plan.settings
+        .values
+        .insert("llm.temperature".into(), serde_json::json!(0.4));
+    assert!(plan.approval_digest().is_err());
+    let (semantic, execution) = setting_fingerprints(&plan.settings.values).unwrap();
+    plan.settings.semantic_fingerprint = semantic;
+    plan.settings.execution_fingerprint = execution;
+    plan.settings.fingerprint =
+        linguist_core::canonical::digest("resolved-settings", &plan.settings.values).unwrap();
+    assert_ne!(approved, plan.approval_digest().unwrap());
+    plan.settings
+        .values
+        .insert("llm.temperature".into(), serde_json::json!(0.0));
+    plan.settings.semantic_fingerprint.clear();
+    plan.settings.execution_fingerprint.clear();
+    let legacy = plan.approval_digest().unwrap();
+    plan.settings
+        .values
+        .insert("output.format".into(), serde_json::json!("text"));
+    assert_ne!(legacy, plan.approval_digest().unwrap());
+}
+
+#[test]
 fn example_translation_is_required_only_across_languages() {
     let mut doc = vocabulary();
     if let LearningContent::Vocabulary(v) = &mut doc.content {
@@ -225,6 +598,239 @@ fn example_translation_is_required_only_across_languages() {
         v.examples[0].sentence.clear();
     }
     assert!(incomplete(&doc));
+}
+
+#[test]
+fn source_media_requires_a_matching_source_archive_asset() {
+    use linguist_core::records::{MediaAsset, MediaOwner, MediaRole, SourceArchive, SourceRecord};
+
+    let mut doc = vocabulary();
+    let source_id = uuid::Uuid::new_v4();
+    let digest = "a".repeat(64);
+    doc.sources.push(SourceRecord {
+        id: source_id,
+        kind: "test".into(),
+        location: "fixture".into(),
+        digest: "b".repeat(64),
+        text: None,
+        fields: BTreeMap::new(),
+        model_manifest: String::new(),
+        template_manifest: None,
+        captured_at_unix_seconds: None,
+        tags: vec![],
+        cards: vec![],
+        media_refs: vec!["original.png".into()],
+    });
+    doc.archives.push(SourceArchive {
+        id: uuid::Uuid::new_v4(),
+        source_id,
+        digest: "b".repeat(64),
+        original_text: None,
+        original_fields: BTreeMap::new(),
+        asset_digests: vec![digest.clone()],
+    });
+    doc.media.push(MediaAsset {
+        digest: digest.clone(),
+        filename: "original.png".into(),
+        original_filename: Some("original.png".into()),
+        size_bytes: 1,
+        mime: "image/png".into(),
+        owner: MediaOwner::Source,
+        role: MediaRole::Archive,
+        source_id: Some(source_id),
+        attribution: "source".into(),
+        license: None,
+    });
+    let has_issue = |doc: &LearningDocument, code: &str| {
+        validation::validate(doc)
+            .iter()
+            .any(|issue| issue.code == code)
+    };
+    assert!(!has_issue(&doc, "SOURCE_MEDIA_ARCHIVE_REQUIRED"));
+    assert!(!has_issue(&doc, "MEDIA_SOURCE_MISSING"));
+    assert!(
+        serde_json::to_value(&doc.sources[0])
+            .unwrap()
+            .get("template_manifest")
+            .is_none()
+    );
+    doc.sources[0].template_manifest = Some(digest.clone());
+    doc.sources[0].captured_at_unix_seconds = Some(1);
+    assert!(!has_issue(&doc, "SOURCE_TEMPLATE_ARCHIVE_REQUIRED"));
+    doc.sources[0].captured_at_unix_seconds = Some(0);
+    assert!(has_issue(&doc, "SOURCE_CAPTURE_TIME_INVALID"));
+    doc.sources[0].captured_at_unix_seconds = Some(1);
+    doc.sources[0].text = Some("raw source text".into());
+    doc.archives[0].original_text = doc.sources[0].text.clone();
+    assert!(has_issue(&doc, "SOURCE_TEXT_ASSET_REQUIRED"));
+    doc.archives[0]
+        .asset_digests
+        .push(canonical::asset_digest(b"raw source text"));
+    assert!(!has_issue(&doc, "SOURCE_TEXT_ASSET_REQUIRED"));
+    doc.archives[0].original_text = Some("different".into());
+    assert!(has_issue(&doc, "SOURCE_ARCHIVE_REQUIRED"));
+    doc.archives[0].original_text = doc.sources[0].text.clone();
+
+    doc.archives[0].asset_digests.clear();
+    assert!(has_issue(&doc, "SOURCE_MEDIA_ARCHIVE_REQUIRED"));
+    assert!(has_issue(&doc, "SOURCE_TEMPLATE_ARCHIVE_REQUIRED"));
+    doc.archives[0].asset_digests.push(digest);
+    doc.media[0].source_id = Some(uuid::Uuid::new_v4());
+    assert!(has_issue(&doc, "MEDIA_SOURCE_MISSING"));
+    assert!(has_issue(&doc, "SOURCE_MEDIA_ARCHIVE_REQUIRED"));
+    doc.media[0].source_id = None;
+    assert!(has_issue(&doc, "SOURCE_MEDIA_ARCHIVE_REQUIRED"));
+}
+
+#[test]
+fn declared_task_maps_bind_source_model_and_fixed_target_ordinals() {
+    use linguist_core::records::{SourceArchive, SourceRecord, SourceTaskMap};
+
+    let mut map: SourceTaskMap = canonical::parse(include_bytes!(
+        "../../../contracts/v2/fixtures/source-task-map.json"
+    ))
+    .unwrap();
+    map.validate().unwrap();
+    let mut invalid = map.clone();
+    invalid.entries[1].source_ordinal = 0;
+    assert!(invalid.validate().is_err());
+    invalid = map.clone();
+    invalid.entries[1].target_ordinal = 2;
+    assert!(invalid.validate().is_err());
+    invalid = map.clone();
+    invalid.entries[1].target_task = Task::Recognition;
+    assert!(invalid.validate().is_err());
+
+    map.entries.truncate(1);
+    let mut doc = vocabulary();
+    doc.sources.push(SourceRecord {
+        id: map.source_id,
+        kind: "anki_read_capture_v2".into(),
+        location: "anki_note:123".into(),
+        digest: "b".repeat(64),
+        text: None,
+        fields: BTreeMap::new(),
+        model_manifest: map.source_model_digest.clone(),
+        template_manifest: None,
+        captured_at_unix_seconds: None,
+        tags: vec![],
+        cards: vec![],
+        media_refs: vec![],
+    });
+    doc.archives.push(SourceArchive {
+        id: uuid::Uuid::new_v4(),
+        source_id: map.source_id,
+        digest: "b".repeat(64),
+        original_text: None,
+        original_fields: BTreeMap::new(),
+        asset_digests: vec!["b".repeat(64), map.source_model_digest.clone()],
+    });
+    doc.task_maps.push(map);
+    let mapped_digest = doc.semantic_digest().unwrap();
+    let mapped_issue = |doc: &LearningDocument| {
+        validation::validate(doc)
+            .iter()
+            .any(|issue| issue.code == "SOURCE_TASK_MAP_INVALID")
+    };
+    assert!(!mapped_issue(&doc));
+    doc.task_maps[0].source_model_digest = "d".repeat(64);
+    assert_ne!(doc.semantic_digest().unwrap(), mapped_digest);
+    assert!(mapped_issue(&doc));
+    doc.task_maps[0].source_model_digest = "c".repeat(64);
+    doc.task_maps[0].entries[0].target_task = Task::Production;
+    assert!(mapped_issue(&doc));
+}
+
+#[test]
+fn evidence_targets_and_source_spans_reject_stale_or_split_references() {
+    use linguist_core::records::{
+        Evidence, EvidenceTarget, SourceArchive, SourceRecord, SourceTextSpan,
+    };
+
+    let mut doc = LearningDocument::from_json(include_bytes!(
+        "../../../contracts/v2/fixtures/vocabulary-rich-dictionary.json"
+    ))
+    .unwrap();
+    let source_id = uuid::Uuid::new_v4();
+    let text = "猫abc";
+    let digest = canonical::asset_digest(text.as_bytes());
+    doc.sources.push(SourceRecord {
+        id: source_id,
+        kind: "test".into(),
+        location: "fixture".into(),
+        digest: digest.clone(),
+        text: Some(text.into()),
+        fields: BTreeMap::new(),
+        model_manifest: String::new(),
+        template_manifest: None,
+        captured_at_unix_seconds: None,
+        tags: vec![],
+        cards: vec![],
+        media_refs: vec![],
+    });
+    doc.archives.push(SourceArchive {
+        id: uuid::Uuid::new_v4(),
+        source_id,
+        digest: digest.clone(),
+        original_text: Some(text.into()),
+        original_fields: BTreeMap::new(),
+        asset_digests: vec![digest],
+    });
+    let evidence_id = uuid::Uuid::new_v4();
+    let evidence_index = doc.evidence.len();
+    doc.evidence.push(Evidence {
+        id: evidence_id,
+        field: "meaning".into(),
+        provenance: Provenance::Dictionary,
+        source_id: Some(source_id),
+        region_id: None,
+        target: Some(EvidenceTarget::DictionarySense {
+            entry_index: 0,
+            sense_index: 0,
+        }),
+        source_span: Some(SourceTextSpan {
+            start_byte: 0,
+            end_byte: 3,
+        }),
+        language: doc.explanation_language.clone(),
+        claim: "consume food".into(),
+        source_url: None,
+        ambiguous: false,
+    });
+    let has_issue = |doc: &LearningDocument, code: &str| {
+        validation::validate(doc)
+            .iter()
+            .any(|issue| issue.code == code)
+    };
+    assert!(!has_issue(&doc, "EVIDENCE_TARGET_INVALID"));
+    assert!(!has_issue(&doc, "EVIDENCE_SOURCE_SPAN_INVALID"));
+    doc.evidence[evidence_index]
+        .source_span
+        .as_mut()
+        .unwrap()
+        .end_byte = 2;
+    assert!(has_issue(&doc, "EVIDENCE_SOURCE_SPAN_INVALID"));
+    doc.evidence[evidence_index]
+        .source_span
+        .as_mut()
+        .unwrap()
+        .end_byte = 3;
+    doc.evidence[evidence_index].target = Some(EvidenceTarget::DictionarySense {
+        entry_index: 0,
+        sense_index: 99,
+    });
+    assert!(has_issue(&doc, "EVIDENCE_TARGET_INVALID"));
+    doc.evidence[evidence_index].target = Some(EvidenceTarget::MediaAsset {
+        digest: "a".repeat(64),
+    });
+    assert!(has_issue(&doc, "EVIDENCE_TARGET_INVALID"));
+    doc.evidence[evidence_index].target = Some(EvidenceTarget::Example { index: 0 });
+    assert!(has_issue(&doc, "EVIDENCE_TARGET_INVALID"));
+    doc.evidence[evidence_index].provenance = Provenance::User;
+    if let LearningContent::Vocabulary(vocab) = &mut doc.content {
+        vocab.examples[0].evidence_ids.push(evidence_id);
+    }
+    assert!(!has_issue(&doc, "EVIDENCE_TARGET_INVALID"));
 }
 
 #[test]

@@ -4,8 +4,9 @@
 
 | Record | Required data |
 | --- | --- |
-| ResolvedSettings | version, typed values, per-key source, profile/purpose, resource hashes, secret reference names only, effective fingerprint |
+| ResolvedSettings | version, typed values, per-key source, profile/purpose, resource hashes, secret reference names only, full effective fingerprint and optional semantic/execution fingerprints |
 | SourceRecord | source ID/kind/location hash, full text/fields, model and template manifest, tags, card→deck memberships, media references, capture time/digest |
+| SourceTaskMap | version, captured source/model digest, target model kind, unique source ordinal → fixed target task/ordinal entries; declared intent only |
 | SourceRegion | image digest, rectangle/polygon, reading order, OCR engine/settings/text/confidence, literal source language |
 | SourceArchive | immutable original fields/text plus durable referenced image/audio bytes; original names and all associations |
 | Evidence | entry/sense/formation/example objects; source ID/region/span; actual provider/language; ambiguity markers |
@@ -26,6 +27,10 @@
 | GateEvidence | gate ID, version matrix, fixture/input hashes, actual commands/assertions/results and artifact references; not_run is never pass |
 
 Secrets never appear in durable settings/logs/export by default. Inputs needed to reproduce generation can contain private material: store them privately in plan data, not routine progress logs.
+
+New frozen settings include domain-separated fingerprints for semantic values and execution values (`output.*`, `logging.*`, `retry.*`). Both must match the stored values; the full fingerprint remains required. New plan approval projections exclude execution values, execution provenance and the full/execution fingerprints, but retain semantic values, semantic provenance, the semantic fingerprint and resource hashes. Older records omit both optional split fields and keep their original approval digest behavior. Preparation jobs verify the split when present and still use frozen full settings; an override envelope for resume is pending.
+
+`LearningDocumentV2.task_maps` is optional for older records and absent when no source mapping has been declared. Each map binds one `anki_read_capture_v2` source and its exact model payload digest. Vocabulary targets use Comprehension 0, Production 1 and Spelling 2; grammar targets use Recognition 0 and Application 1. Source ordinals and target tasks are unique per map. A map must refer only to requested tasks and cover any captured `CardState` tasks. The record does not certify that native source template ordinals, scheduler state or review history were observed; WP-03 supplies that evidence before migration.
 
 ## Selection receipt
 

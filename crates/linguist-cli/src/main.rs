@@ -1,8 +1,40 @@
 //! Offline contract tooling. Collection commands are added only with verified native safety.
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use linguist_core::{LearningDocument, canonical, model, render, validation};
-use std::{collections::BTreeMap, path::PathBuf, process::ExitCode};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    process::ExitCode,
+    sync::atomic::{AtomicU8, Ordering},
+};
 mod recovery_live;
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum OutputMode {
+    Human,
+    Json,
+    Jsonl,
+}
+impl OutputMode {
+    fn from_setting(value: &serde_json::Value) -> Result<Self, String> {
+        match value.as_str() {
+            Some("text") => Ok(Self::Human),
+            Some("json") => Ok(Self::Json),
+            Some("jsonl") => Ok(Self::Jsonl),
+            _ => Err("INVALID_OUTPUT_FORMAT".into()),
+        }
+    }
+}
+static OUTPUT_MODE: AtomicU8 = AtomicU8::new(0);
+fn set_output_mode(mode: OutputMode) {
+    OUTPUT_MODE.store(mode as u8, Ordering::Relaxed);
+}
+fn output_mode() -> OutputMode {
+    match OUTPUT_MODE.load(Ordering::Relaxed) {
+        1 => OutputMode::Json,
+        2 => OutputMode::Jsonl,
+        _ => OutputMode::Human,
+    }
+}
 #[derive(Parser)]
 #[command(
     name = "linguist-anki-bridge",
@@ -20,11 +52,44 @@ struct Cli {
     /// Typed setting override: KEY=VALUE (arrays/maps use JSON).
     #[arg(long = "set", global = true)]
     settings: Vec<String>,
+    /// Forbid internet providers; loopback services remain governed by their adapters.
+    #[arg(long, global = true)]
+    offline: bool,
+    /// Result format; specify before the command to distinguish file output paths.
+    #[arg(long, value_enum)]
+    output: Option<OutputMode>,
     #[command(subcommand)]
     command: Command,
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Preview or apply an approved plan; collection apply is unavailable.
+    Apply {
+        plan: uuid::Uuid,
+        #[arg(long)]
+        revision: Option<u32>,
+        #[arg(long)]
+        digest: Option<String>,
+        #[arg(long = "item-id")]
+        item_ids: Vec<uuid::Uuid>,
+        #[arg(long)]
+        apply: bool,
+    },
+    /// Snapshot inspection, restore and export are pending native evidence.
+    Snapshots {
+        #[command(subcommand)]
+        command: SnapshotCommand,
+    },
+    /// Cache reachability and pruning are pending.
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommand,
+    },
+    /// Resource inventory and installation are pending.
+    Resources {
+        #[command(subcommand)]
+        command: ResourceCommand,
+    },
     /// Queue preparation inputs and inspect durable local progress.
     Jobs {
         #[command(subcommand)]
@@ -62,8 +127,6 @@ enum Command {
     },
     /// Inspect the current implementation and collection safety status.
     Doctor {
-        #[arg(long)]
-        offline: bool,
         #[arg(long, conflicts_with_all = ["ollama", "bridge"])]
         local: bool,
         /// Probe only the configured local Ollama model metadata; never load or pull.
@@ -101,11 +164,122 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum BackupCommand {
+    Create {
+        #[arg(long)]
+        scope: String,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        apply: bool,
+    },
+    List {
+        #[arg(long)]
+        scope: Option<String>,
+        #[arg(long)]
+        since: Option<String>,
+    },
+    Verify {
+        backup: PathBuf,
+        #[arg(long)]
+        restore_test_target: Option<PathBuf>,
+    },
     /// Check the current .colpkg container and declared media without restoring it.
     Inspect { file: PathBuf },
 }
 #[derive(Subcommand)]
+enum SnapshotCommand {
+    List {
+        #[arg(long)]
+        note_id: Option<String>,
+        #[arg(long)]
+        job: Option<uuid::Uuid>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    Show {
+        snapshot: uuid::Uuid,
+    },
+    Restore {
+        snapshot: uuid::Uuid,
+        #[arg(long)]
+        apply: bool,
+    },
+    Export {
+        snapshot: uuid::Uuid,
+        #[arg(long)]
+        output: PathBuf,
+    },
+}
+#[derive(Subcommand)]
+enum CacheCommand {
+    Status {
+        #[arg(long)]
+        provider: Option<String>,
+        #[arg(long)]
+        purpose: Option<String>,
+    },
+    Prune {
+        #[arg(long)]
+        age_days: Option<u32>,
+        #[arg(long)]
+        budget_mb: Option<u64>,
+        #[arg(long)]
+        execute: bool,
+    },
+}
+#[derive(Subcommand)]
+enum ResourceCommand {
+    List {
+        #[arg(long)]
+        installed: bool,
+        #[arg(long)]
+        required: bool,
+        #[arg(long)]
+        resource: Option<String>,
+    },
+    Install {
+        resource: String,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        license: String,
+        #[arg(long)]
+        destination: PathBuf,
+    },
+}
+#[derive(Subcommand)]
 enum JobCommand {
+    Retry {
+        job: uuid::Uuid,
+        #[arg(long = "item-id", conflicts_with = "failed")]
+        item_ids: Vec<uuid::Uuid>,
+        #[arg(
+            long,
+            conflicts_with = "item_ids",
+            required_unless_present = "item_ids"
+        )]
+        failed: bool,
+        #[arg(long)]
+        apply: bool,
+    },
+    Rollback {
+        job: uuid::Uuid,
+        #[arg(long = "item-id")]
+        item_ids: Vec<uuid::Uuid>,
+        #[arg(long)]
+        apply: bool,
+    },
+    Delete {
+        job: uuid::Uuid,
+        #[arg(long)]
+        execute: bool,
+    },
     /// Preview interrupted source reads; --execute records recovery without retrying them.
     Recover {
         job: uuid::Uuid,
@@ -189,7 +363,7 @@ enum PrepareCommand {
         #[arg(long)]
         /// UTF-8 input file; use - for noninteractive stdin.
         document: Option<PathBuf>,
-        /// Explicit input framing: JSON, JSONL, or simple vocabulary CSV.
+        /// Explicit input framing: JSON, JSONL, or simple vocabulary/grammar CSV.
         #[arg(long, value_enum, requires = "document")]
         format: Option<AddFormat>,
         #[command(flatten)]
@@ -384,6 +558,24 @@ enum AddFormat {
 }
 #[derive(Subcommand)]
 enum DeckCommand {
+    Map {
+        purpose: String,
+        #[arg(long)]
+        source_deck: String,
+        #[arg(long)]
+        target_deck: Option<String>,
+        #[arg(long)]
+        source_model: String,
+        #[arg(long)]
+        fields: PathBuf,
+        #[arg(long)]
+        task_map: Option<PathBuf>,
+        #[arg(long = "ocr-language")]
+        ocr_languages: Vec<String>,
+    },
+    Unmap {
+        purpose: String,
+    },
     List {
         #[arg(long)]
         counts: bool,
@@ -442,6 +634,13 @@ enum NoteCommand {
 }
 #[derive(Subcommand)]
 enum RecoveryCommand {
+    Reconcile {
+        operation: uuid::Uuid,
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        rebind: bool,
+    },
     Inspect {
         #[arg(conflicts_with = "pending", required_unless_present = "pending")]
         operation: Option<uuid::Uuid>,
@@ -454,6 +653,15 @@ enum RecoveryCommand {
 }
 #[derive(Subcommand)]
 enum PlanCommand {
+    Regenerate {
+        plan: uuid::Uuid,
+        #[arg(long)]
+        base_revision: u32,
+        #[arg(long)]
+        digest: String,
+        #[arg(long)]
+        item_id: Option<uuid::Uuid>,
+    },
     /// Generate one review-only supplement with explicit current settings.
     Generate {
         plan: uuid::Uuid,
@@ -580,6 +788,22 @@ enum PlanCommand {
 }
 #[derive(Subcommand)]
 enum ConfigCommand {
+    /// Legacy source conversion is unavailable until full per-key accounting.
+    Import {
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        replace: bool,
+    },
+    /// Check an existing config version; version 2 is already current.
+    Migrate {
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        execute: bool,
+    },
     /// Set a typed value in the base file or explicit profile/purpose scope.
     Set { key: String, value: String },
     /// Remove an override, restoring inheritance; missing overrides are a no-op.
@@ -592,10 +816,12 @@ enum ConfigCommand {
         #[arg(long)]
         execute: bool,
     },
-    /// Write minimal version-2 TOML; refuses an existing destination.
+    /// Write minimal version-2 TOML; replacing an existing file saves a private backup.
     Init {
         #[arg(long)]
         path: Option<PathBuf>,
+        #[arg(long)]
+        replace: bool,
     },
     /// Show effective settings or builtin defaults; optional exact key/prefix.
     Show {
@@ -667,14 +893,104 @@ fn read_input(path: &PathBuf, max_bytes: u64, max_chars: usize) -> Result<Vec<u8
 }
 fn emit(value: &impl serde::Serialize) -> Result<(), String> {
     use std::io::Write;
-    let output = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    let value = serde_json::to_value(value).map_err(|e| e.to_string())?;
+    let output = match output_mode() {
+        OutputMode::Human => render_human(&value).into_bytes(),
+        OutputMode::Json => serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?,
+        OutputMode::Jsonl => serde_json::to_vec(&value).map_err(|e| e.to_string())?,
+    };
     let mut stdout = std::io::stdout().lock();
     stdout
         .write_all(&output)
         .and_then(|_| stdout.write_all(b"\n"))
-        .map_err(|e| format!("OUTPUT_IO: {e}"))
+        .map_err(output_write_error)
+}
+fn output_write_error(error: std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::BrokenPipe {
+        "OUTPUT_BROKEN_PIPE".into()
+    } else {
+        format!("OUTPUT_IO: {error}")
+    }
+}
+fn render_human(value: &serde_json::Value) -> String {
+    fn lines(prefix: &str, value: &serde_json::Value, output: &mut String) {
+        if let Some(object) = value.as_object() {
+            for (key, child) in object {
+                let key = key.escape_debug().to_string();
+                let path = if prefix.is_empty() {
+                    key
+                } else {
+                    format!("{prefix}.{key}")
+                };
+                lines(&path, child, output);
+            }
+        } else {
+            output.push_str(prefix);
+            output.push_str(": ");
+            output.push_str(&serde_json::to_string(value).expect("JSON value serializes"));
+            output.push('\n');
+        }
+    }
+    let mut output = String::new();
+    lines("result", value, &mut output);
+    output.pop();
+    output
+}
+fn unavailable_operation(command: &Command) -> Option<&'static str> {
+    match command {
+        Command::Apply { .. } => Some("OP-34 apply"),
+        Command::Snapshots {
+            command: SnapshotCommand::Restore { .. },
+        } => Some("OP-50 snapshots restore"),
+        Command::Snapshots {
+            command: SnapshotCommand::Export { .. },
+        } => Some("OP-51 snapshots export"),
+        Command::Cache { command } => Some(match command {
+            CacheCommand::Status { .. } => "OP-55 cache status",
+            CacheCommand::Prune { .. } => "OP-56 cache prune",
+        }),
+        Command::Resources { command } => Some(match command {
+            ResourceCommand::List { .. } => "OP-57 resources list",
+            ResourceCommand::Install { .. } => "OP-58 resources install",
+        }),
+        Command::Config {
+            command: ConfigCommand::Import { .. },
+        } => Some("OP-09 config import"),
+        Command::Decks {
+            command: DeckCommand::Map { .. },
+        } => Some("OP-13 decks map"),
+        Command::Decks {
+            command: DeckCommand::Unmap { .. },
+        } => Some("OP-14 decks unmap"),
+        Command::Plans {
+            command: PlanCommand::Regenerate { .. },
+        } => Some("OP-30 plans regenerate"),
+        Command::Jobs {
+            command: JobCommand::Retry { .. },
+        } => Some("OP-42 jobs retry"),
+        Command::Jobs {
+            command: JobCommand::Rollback { .. },
+        } => Some("OP-44 jobs rollback"),
+        Command::Jobs {
+            command: JobCommand::Delete { .. },
+        } => Some("OP-45 jobs delete"),
+        Command::Backup {
+            command: BackupCommand::Create { .. },
+        } => Some("OP-52 backup create"),
+        Command::Backup {
+            command: BackupCommand::List { .. },
+        } => Some("OP-53 backup list"),
+        Command::Backup {
+            command: BackupCommand::Verify { .. },
+        } => Some("OP-54 backup verify"),
+        Command::Recover {
+            command: RecoveryCommand::Reconcile { .. },
+        } => Some("OP-60 recover reconcile"),
+        _ => None,
+    }
 }
 fn run(cli: Cli) -> Result<u8, String> {
+    set_output_mode(cli.output.unwrap_or(OutputMode::Human));
     if let Command::Completions { shell } = &cli.command {
         use std::io::Write;
         let mut command = Cli::command();
@@ -686,18 +1002,119 @@ fn run(cli: Cli) -> Result<u8, String> {
         std::io::stdout()
             .lock()
             .write_all(&script)
-            .map_err(|e| format!("OUTPUT_IO: {e}"))?;
+            .map_err(output_write_error)?;
         return Ok(0);
+    }
+    if let Some(operation) = unavailable_operation(&cli.command) {
+        return Err(format!(
+            "CAPABILITY_UNAVAILABLE: {operation} requires its verified implementation"
+        ));
     }
     if let Command::Config { command } = &cli.command {
         return run_config(&cli, command);
     }
     let settings = load_effective(&cli)?;
+    use_settings_output(&cli, &settings)?;
     let max_bytes = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
     let max_chars = settings.values["input.max_record_chars"].as_u64().unwrap() as usize;
     let vocab_command = matches!(cli.command, Command::Vocab { .. });
     match cli.command {
-        Command::Config { .. } | Command::Completions { .. } => unreachable!(),
+        Command::Config { .. }
+        | Command::Completions { .. }
+        | Command::Apply { .. }
+        | Command::Cache { .. }
+        | Command::Resources { .. } => unreachable!(),
+        Command::Snapshots { command } => {
+            let env: BTreeMap<String, String> = std::env::vars().collect();
+            let root = linguist_config::expand_path(
+                settings.values["storage.state_dir"].as_str().unwrap(),
+                &env,
+            )?;
+            if !root.is_absolute() {
+                return Err("STORE_PATH_MUST_BE_ABSOLUTE".into());
+            }
+            let exists = match std::fs::symlink_metadata(&root) {
+                Ok(_) => true,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+                Err(_) => return Err("STORE_READ_IO".into()),
+            };
+            match command {
+                SnapshotCommand::List {
+                    note_id,
+                    job,
+                    status,
+                    cursor,
+                } => {
+                    let note_id = note_id
+                        .map(|id| linguist_core::AnkiId::try_from(id).map(String::from))
+                        .transpose()?;
+                    if status
+                        .as_deref()
+                        .is_some_and(|value| value != "unknown" && value != "receipt_recorded")
+                    {
+                        return Err("INVALID_SNAPSHOT_STATUS".into());
+                    }
+                    let after = cursor
+                        .map(|value| {
+                            uuid::Uuid::parse_str(&value)
+                                .map_err(|_| "INVALID_SNAPSHOT_CURSOR".to_owned())
+                        })
+                        .transpose()?;
+                    if !exists {
+                        emit(
+                            &serde_json::json!({"version":2,"snapshots":[],"next_cursor":null,"state_exists":false}),
+                        )?;
+                    } else {
+                        let store = linguist_store::Store::read_only(&root)?;
+                        let limit = settings.values["output.page_size"].as_u64().unwrap() as u32;
+                        let (page, next_cursor) = store.snapshot_page(after, limit)?;
+                        let mut snapshots = Vec::new();
+                        for record in page {
+                            if note_id.as_ref().is_some_and(|id| {
+                                !record
+                                    .snapshot
+                                    .originals
+                                    .iter()
+                                    .any(|source| source.location == format!("anki_note:{id}"))
+                            }) {
+                                continue;
+                            }
+                            if status
+                                .as_ref()
+                                .is_some_and(|value| *value != record.post_state_status)
+                            {
+                                continue;
+                            }
+                            if let Some(job) = job {
+                                let journal = match store.journal(record.snapshot.operation_id) {
+                                    Ok(journal) => journal,
+                                    Err(error) if error == "JOURNAL_NOT_FOUND" => continue,
+                                    Err(error) => return Err(error),
+                                };
+                                if journal.journal.snapshot_id != record.snapshot.id
+                                    || journal.journal.group_id != Some(job)
+                                {
+                                    continue;
+                                }
+                            }
+                            snapshots.push(record);
+                        }
+                        emit(
+                            &serde_json::json!({"version":2,"snapshots":snapshots,"next_cursor":next_cursor,"state_exists":true}),
+                        )?;
+                    }
+                }
+                SnapshotCommand::Show { snapshot } => {
+                    if !exists {
+                        return Err("SNAPSHOT_NOT_FOUND".into());
+                    }
+                    let store = linguist_store::Store::read_only(&root)?;
+                    emit(&store.snapshot(snapshot)?)?;
+                }
+                SnapshotCommand::Restore { .. } | SnapshotCommand::Export { .. } => unreachable!(),
+            }
+            Ok(0)
+        }
         Command::Vocab {
             command:
                 PrepareCommand::Add {
@@ -888,6 +1305,9 @@ fn run(cli: Cli) -> Result<u8, String> {
             )?;
             Ok(if dependency_unavailable { 3 } else { 0 })
         }
+        Command::Recover {
+            command: RecoveryCommand::Reconcile { .. },
+        } => unreachable!(),
         Command::Jobs { command } => {
             let env: BTreeMap<String, String> = std::env::vars().collect();
             if let JobCommand::Create { selector, limit } = command {
@@ -1041,6 +1461,9 @@ fn run(cli: Cli) -> Result<u8, String> {
                     )?;
                 }
                 JobCommand::Create { .. }
+                | JobCommand::Retry { .. }
+                | JobCommand::Rollback { .. }
+                | JobCommand::Delete { .. }
                 | JobCommand::Recover { .. }
                 | JobCommand::Run { .. }
                 | JobCommand::Pause { .. }
@@ -1074,6 +1497,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             }
             let store = linguist_store::Store::read_only(&root)?;
             match command {
+                PlanCommand::Regenerate { .. } => unreachable!(),
                 PlanCommand::Generate {
                     plan,
                     item_id,
@@ -1423,22 +1847,18 @@ fn run(cli: Cli) -> Result<u8, String> {
             Ok(0)
         }
         Command::Doctor {
-            offline,
             local,
             ollama,
             bridge,
         } => {
             if local {
+                let environment: BTreeMap<String, String> = std::env::vars().collect();
+                let resources = linguist_config::resources::inspect(&settings, &environment);
+                let required_missing = !resources.required_missing.is_empty();
                 emit(
-                    &serde_json::json!({"version":2,"collection_writes_enabled":false,"native_bridge":"not_implemented","release_gates":"not_run","services_probed":false}),
+                    &serde_json::json!({"version":2,"collection_writes_enabled":false,"native_bridge":"not_implemented","release_gates":"not_run","services_probed":false,"offline_requested":cli.offline,"local_resources":resources}),
                 )?;
-                return Ok(0);
-            }
-            let mut settings = settings;
-            if offline {
-                settings
-                    .values
-                    .insert("network.offline".into(), serde_json::json!(true));
+                return Ok(if required_missing { 3 } else { 0 });
             }
             if ollama {
                 let client = linguist_application::ollama::transport::Client::from_settings(
@@ -1511,6 +1931,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             emit(&serde_json::json!({"schema_version":2,"inspection":report}))?;
             Ok(0)
         }
+        Command::Backup { .. } => unreachable!(),
         Command::Models {
             command: None | Some(ModelCommand::Builtin),
         } => {
@@ -1584,6 +2005,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             let client = anki_client(&settings)?;
             let decks = client.decks()?;
             match command {
+                DeckCommand::Map { .. } | DeckCommand::Unmap { .. } => unreachable!(),
                 DeckCommand::List { counts, limit } => {
                     let limit = page_limit(limit, &settings)?;
                     let total = decks.len();
@@ -1809,8 +2231,28 @@ fn run(cli: Cli) -> Result<u8, String> {
     }
 }
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => match error.kind() {
+            clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                return match error.print() {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(io_error) if io_error.kind() == std::io::ErrorKind::BrokenPipe => {
+                        ExitCode::SUCCESS
+                    }
+                    Err(_) => ExitCode::from(6),
+                };
+            }
+            _ => {
+                let _ =
+                    writeln_error("USAGE: invalid command syntax; run linguist-anki-bridge --help");
+                return ExitCode::from(2);
+            }
+        },
+    };
+    match run(cli) {
         Ok(code) => ExitCode::from(code),
+        Err(message) if message == "OUTPUT_BROKEN_PIPE" => ExitCode::SUCCESS,
         Err(message) => {
             let _ = writeln_error(&message);
             ExitCode::from(error_exit(&message))
@@ -1849,12 +2291,97 @@ fn config_options(
         flags,
     })
 }
+fn apply_offline_flag(
+    cli: &Cli,
+    options: &mut linguist_config::ResolveOptions,
+) -> Result<(), String> {
+    if cli.offline {
+        if options.flags.contains_key("network.offline") {
+            return Err("OFFLINE_OVERRIDE_CONFLICT: --offline and --set network.offline".into());
+        }
+        options
+            .flags
+            .insert("network.offline".into(), serde_json::json!(true));
+    }
+    Ok(())
+}
+fn use_settings_output(cli: &Cli, settings: &linguist_config::Effective) -> Result<(), String> {
+    if cli.output.is_none() {
+        set_output_mode(OutputMode::from_setting(&settings.values["output.format"])?);
+    }
+    Ok(())
+}
+fn initial_config_setup(
+    registry: &linguist_config::Registry,
+    environment: &BTreeMap<String, String>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let candidate = linguist_config::ConfigFile::parse("[config]\nversion = 2\n", registry)?;
+    linguist_config::resolve(
+        registry,
+        &candidate,
+        &linguist_config::ResolveOptions::default(),
+    )?;
+    let mut setup = Vec::new();
+    for purpose in linguist_config::builtin_purposes() {
+        let effective = linguist_config::resolve(
+            registry,
+            &candidate,
+            &linguist_config::ResolveOptions {
+                purpose: Some(purpose.clone()),
+                environment: environment.clone(),
+                ..Default::default()
+            },
+        )?;
+        let key = |name: &str| format!("purposes.{purpose}.{name}");
+        let missing = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| key(name))
+                .filter(|name| {
+                    effective.values.get(name).is_none_or(|value| {
+                        value.is_null()
+                            || value.as_object().is_some_and(serde_json::Map::is_empty)
+                            || value.as_array().is_some_and(Vec::is_empty)
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let resources = linguist_config::resources::inspect(&effective, environment);
+        setup.push(serde_json::json!({
+            "purpose":purpose,
+            "target_language":effective.values[&key("target_language")],
+            "add_missing_mapping_keys":missing(&["target_deck"]),
+            "revamp_missing_mapping_keys":missing(&["source_deck","source_model","fields","card_tasks"]),
+            "model_candidate":effective.values["llm.model"],
+            "model_verified":false,
+            "required_missing_local_resources":resources.required_missing,
+            "runtime_resources_checked":false
+        }));
+    }
+    Ok(setup)
+}
 fn run_config(cli: &Cli, command: &ConfigCommand) -> Result<u8, String> {
     use linguist_config::{ConfigFile, Registry, config_path, resolve};
     let registry = Registry::builtin();
     match command {
         ConfigCommand::Describe { key } => {
-            emit(registry.lookup(key)?)?;
+            let entry = registry.lookup(key).map_err(|_| {
+                let names = registry.suggestions(key);
+                if names.is_empty() {
+                    format!("UNKNOWN_SETTING: {key}")
+                } else {
+                    format!(
+                        "UNKNOWN_SETTING: {key}; nearest valid names: {}",
+                        names.join(", ")
+                    )
+                }
+            })?;
+            let mut description = serde_json::to_value(entry).map_err(|e| e.to_string())?;
+            description["version"] = serde_json::json!(2);
+            description["resolved_key"] = serde_json::json!(key);
+            description["cross_field_checks"] =
+                serde_json::json!(linguist_config::cross_field_checks(key));
+            emit(&description)?;
             return Ok(0);
         }
         ConfigCommand::Show {
@@ -1869,9 +2396,15 @@ fn run_config(cli: &Cli, command: &ConfigCommand) -> Result<u8, String> {
         }
         _ => {}
     }
-    let options = config_options(cli, &registry)?;
+    let mut options = config_options(cli, &registry)?;
+    if matches!(
+        command,
+        ConfigCommand::Show { .. } | ConfigCommand::Validate { .. }
+    ) {
+        apply_offline_flag(cli, &mut options)?;
+    }
     let explicit = match command {
-        ConfigCommand::Init { path } => path.as_deref().or(cli.config.as_deref()),
+        ConfigCommand::Init { path, .. } => path.as_deref().or(cli.config.as_deref()),
         ConfigCommand::Validate { file } => file.as_deref().or(cli.config.as_deref()),
         _ => cli.config.as_deref(),
     };
@@ -1882,8 +2415,50 @@ fn run_config(cli: &Cli, command: &ConfigCommand) -> Result<u8, String> {
                 "CONFIG_INIT_SCOPE: init writes only version 2; set overrides separately".into(),
             );
         }
-        linguist_config::initialize(&path)?;
-        emit(&serde_json::json!({"version":2,"path":path,"created":true}))?;
+        let setup = initial_config_setup(&registry, &options.environment)?;
+        if cli.output.is_none()
+            && let Some(format) = options.environment.get("LAB_OUTPUT__FORMAT")
+        {
+            set_output_mode(OutputMode::from_setting(&serde_json::json!(format))?);
+        }
+        let replace = matches!(command, ConfigCommand::Init { replace: true, .. });
+        let backup = if replace {
+            Some(linguist_config::edit::replace_with_minimal(
+                &path,
+                &options.environment,
+            )?)
+        } else {
+            linguist_config::initialize(&path)?;
+            None
+        };
+        emit(
+            &serde_json::json!({"version":2,"path":path,"created":!replace,"replaced":replace,"backup":backup,"purpose_setup":setup,"next_commands":{"available":["config show","config validate"],"planned":["decks map PURPOSE"]}}),
+        )?;
+        return Ok(0);
+    }
+    if let ConfigCommand::Migrate { output, execute } = command {
+        if !options.flags.is_empty() || options.profile.is_some() || options.purpose.is_some() {
+            return Err("CONFIG_MIGRATE_SCOPE: migration reads the durable file only".into());
+        }
+        let file = ConfigFile::read(&path, &registry)?;
+        let effective = resolve(
+            &registry,
+            &file,
+            &linguist_config::ResolveOptions::default(),
+        )?;
+        use_settings_output(cli, &effective)?;
+        emit(&serde_json::json!({
+            "version":2,
+            "source":path,
+            "output":output,
+            "source_version":2,
+            "target_version":2,
+            "changed":false,
+            "requested_execute":execute,
+            "executed":false,
+            "candidate_written":false,
+            "reason":"already_current"
+        }))?;
         return Ok(0);
     }
     let edit_change = match command {
@@ -1923,6 +2498,7 @@ fn run_config(cli: &Cli, command: &ConfigCommand) -> Result<u8, String> {
             execute,
             &options.environment,
         )?;
+        use_settings_output(cli, &receipt.effective)?;
         emit(&receipt)?;
         return Ok(0);
     }
@@ -1942,10 +2518,16 @@ fn run_config(cli: &Cli, command: &ConfigCommand) -> Result<u8, String> {
         }
     };
     let mut effective = resolve(&registry, &file, &options)?;
+    use_settings_output(cli, &effective)?;
     match command {
-        ConfigCommand::Validate { .. } => emit(
-            &serde_json::json!({"version":2,"valid":true,"fingerprint":effective.fingerprint,"runtime_resources_checked":false}),
-        )?,
+        ConfigCommand::Validate { .. } => {
+            let resources = linguist_config::resources::inspect(&effective, &options.environment);
+            let missing = !resources.missing.is_empty();
+            emit(
+                &serde_json::json!({"version":2,"valid":true,"fingerprint":effective.fingerprint,"runtime_resources_checked":false,"local_resources":resources}),
+            )?;
+            return Ok(if missing { 3 } else { 0 });
+        }
         ConfigCommand::Show {
             key, provenance, ..
         } => {
@@ -1979,7 +2561,11 @@ fn error_exit(message: &str) -> u8 {
     let code = message.split(':').next().unwrap_or(message);
     if matches!(
         code,
-        "DICTIONARY_SETTING_MISSING" | "DICTIONARY_ARCHIVE_LIMIT" | "DICTIONARY_REVISION_LIMIT"
+        "UNSUPPORTED_CONFIG_VERSION"
+            | "OFFLINE_OVERRIDE_CONFLICT"
+            | "DICTIONARY_SETTING_MISSING"
+            | "DICTIONARY_ARCHIVE_LIMIT"
+            | "DICTIONARY_REVISION_LIMIT"
     ) {
         2
     } else if code == "DICTIONARY_ALREADY_ENRICHED" {
@@ -2017,7 +2603,8 @@ fn error_exit(message: &str) -> u8 {
 fn load_effective(cli: &Cli) -> Result<linguist_config::Effective, String> {
     use linguist_config::{ConfigFile, Registry};
     let registry = Registry::builtin();
-    let options = config_options(cli, &registry)?;
+    let mut options = config_options(cli, &registry)?;
+    apply_offline_flag(cli, &mut options)?;
     let path = linguist_config::config_path(cli.config.as_deref(), &options.environment)?;
     let file = match std::fs::symlink_metadata(&path) {
         Ok(_) => ConfigFile::read(&path, &registry)?,

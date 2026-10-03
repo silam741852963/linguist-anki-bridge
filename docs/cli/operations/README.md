@@ -4,11 +4,17 @@ Status: target command interface. Every public operation has an ID and explicit 
 
 ## Shared command wrapper
 
-1. Parse clap arguments; help/no-subcommand/completions return before state initialization. Invalid syntax exits 2.
+1. Parse clap arguments; help/no-subcommand/completions return before state initialization. Invalid syntax exits 2 with a stable JSON error on stderr; argument values are not echoed. Help/version retain clap's plain-text output.
 2. Resolve ALG-CONFIG only for needed capabilities. Initialize private local state only for operations that use it; read-only commands do not write Anki. Select an exact revision when approval/apply/recovery depends on one.
 3. Validate all request inputs and safety flags before calls. No command accepts a global force/auto-apply. `--apply` authorizes Anki mutations in that invocation only; `--execute` confirms previewed local destructive changes. `--yes` does not resolve content decisions.
 4. Return stable structured diagnostics and actionable next command. stdout contains result text or versioned JSON/JSONL; progress/logs go to stderr. Never mix private diagnostic payloads into machine output.
+
+Current CLI result formatting uses `output.format=text|json|jsonl`; top-level `--output human|json|jsonl` before the command overrides it. Human mode prints escaped key/value paths, JSON is pretty printed, and JSONL emits one compact versioned result envelope per command. File-export subcommands retain their own `--output PATH` after the command. Errors remain JSON on stderr. Per-item JSONL streaming and richer human summaries remain pending.
+
+`--offline` is global and sets the effective `network.offline=true` before capability resolution. It works before or after a subcommand; a simultaneous `--set network.offline=...` is a usage error. Local config edits and builtin-only reads do not need a network policy. Loopback Anki/Ollama probes remain available under each adapter's policy; internet dictionary requests are blocked.
 5. Exit codes: 0 complete/read/empty/no-op; 2 usage/config/schema; 3 unavailable dependency; 4 review needed; 5 source/identity/conflict; 6 provider/ordinary execution failure; 7 unresolved recovery/partial mutation; 130 interrupted after durable accounting. For mixed batches choose 7 > 5 > 4 > 6 > 3 > 2; show all per-item codes. Broken pipes are handled without noisy traceback.
+
+Current result and completion writers treat a closed stdout pipe as normal consumer closure: no stderr diagnostic, exit 0. Other stdout write errors retain `OUTPUT_IO` and exit 6. This does not cancel or roll back work completed before output.
 6. On Ctrl-C, stop dispatch, cancel safe reads, and finish durable accounting for sent mutations. If that cannot finish, leave unknown journal and exit 7 (or 130 with explicit pending recovery ID); never delete recovery evidence.
 
 Selectors: `--note-id` repeatable OR `--query` OR `--deck`/`--purpose` source mapping; conflicting selector modes fail. Add inputs: inline text OR --input file OR --document structured file. Explicit input format distinguishes one multiline record from JSONL/CSV multiple records. Writes show notes/cards/tasks separately. File exports create-new by default, --replace applies only to that output after backup.

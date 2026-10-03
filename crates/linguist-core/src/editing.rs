@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlanPatch {
+    #[schemars(range(min = 2, max = 2))]
     pub schema_version: u16,
     pub base_digest: String,
     pub items: Vec<ItemPatch>,

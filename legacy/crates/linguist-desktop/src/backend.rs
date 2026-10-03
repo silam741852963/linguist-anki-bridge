@@ -13,6 +13,13 @@ pub mod qobject {
         #[qproperty(QString, theme_foreground)]
         #[qproperty(QString, theme_muted)]
         #[qproperty(QString, theme_accent)]
+        #[qproperty(QString, theme_selection)]
+        #[qproperty(QString, theme_red)]
+        #[qproperty(QString, theme_yellow)]
+        #[qproperty(QString, theme_green)]
+        #[qproperty(QString, theme_cyan)]
+        #[qproperty(QString, theme_blue)]
+        #[qproperty(QString, theme_magenta)]
         #[qproperty(QString, anki_status)]
         #[qproperty(QString, ollama_status)]
         #[qproperty(QString, active_deck)]
@@ -22,11 +29,33 @@ pub mod qobject {
         #[qproperty(QString, queue_state)]
         #[qproperty(QString, queue_message)]
         #[qproperty(i32, deck_count)]
+        #[qproperty(i32, model_count)]
         #[qproperty(i32, selected_deck_index)]
         #[qproperty(i32, review_row_count)]
         #[qproperty(i32, selected_review_index)]
+        #[qproperty(i32, review_total)]
+        #[qproperty(i32, review_page)]
+        #[qproperty(i32, review_page_count)]
+        #[qproperty(i32, review_page_start)]
+        #[qproperty(i32, review_page_end)]
+        #[qproperty(i32, review_search_match)]
+        #[qproperty(i32, review_search_count)]
+        #[qproperty(i32, review_navigation_serial)]
+        #[qproperty(i32, review_content_serial)]
+        #[qproperty(i32, mapping_source_count)]
+        #[qproperty(i32, mapping_target_count)]
+        #[qproperty(QString, mapping_purpose)]
+        #[qproperty(QString, mapping_deck)]
+        #[qproperty(QString, mapping_model)]
+        #[qproperty(QString, mapping_tags)]
+        #[qproperty(bool, mapping_dirty)]
+        #[qproperty(bool, mapping_busy)]
+        #[qproperty(QString, mapping_message)]
+        #[qproperty(i32, mapping_render_serial)]
         #[qproperty(QString, draft_expression)]
         #[qproperty(QString, draft_meaning)]
+        #[qproperty(QString, draft_examples)]
+        #[qproperty(bool, draft_generated)]
         #[qproperty(QString, draft_kanji)]
         #[qproperty(QString, draft_images)]
         #[qproperty(QString, draft_audio)]
@@ -79,6 +108,9 @@ pub mod qobject {
         #[cxx_name = "refreshState"]
         fn refresh_state(self: Pin<&mut Self>);
         #[qinvokable]
+        #[cxx_name = "pollReviewLoad"]
+        fn poll_review_load(self: Pin<&mut Self>);
+        #[qinvokable]
         #[cxx_name = "clearError"]
         fn clear_error(self: Pin<&mut Self>);
         #[qinvokable]
@@ -86,13 +118,22 @@ pub mod qobject {
         fn select_item(self: Pin<&mut Self>, selection: &QString);
         #[qinvokable]
         #[cxx_name = "searchReview"]
-        fn search_review(self: Pin<&mut Self>, query: &QString);
+        fn search_review(self: Pin<&mut Self>, query: &QString, direction: i32);
+        #[qinvokable]
+        #[cxx_name = "previousReviewPage"]
+        fn previous_review_page(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "nextReviewPage"]
+        fn next_review_page(self: Pin<&mut Self>);
         #[qinvokable]
         #[cxx_name = "reportError"]
         fn report_error(self: Pin<&mut Self>, message: &QString);
         #[qinvokable]
         #[cxx_name = "deckName"]
         fn deck_name(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "modelName"]
+        fn model_name(self: &AppBackend, index: i32) -> QString;
         #[qinvokable]
         #[cxx_name = "selectDeckIndex"]
         fn select_deck_index(self: Pin<&mut Self>, index: i32);
@@ -109,11 +150,60 @@ pub mod qobject {
         #[cxx_name = "selectReviewIndex"]
         fn select_review_index(self: Pin<&mut Self>, index: i32);
         #[qinvokable]
+        #[cxx_name = "mappingSourceName"]
+        fn mapping_source_name(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "mappingSourceHtml"]
+        fn mapping_source_html(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "mappingSourceImage"]
+        fn mapping_source_image(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "mappingTargetKey"]
+        fn mapping_target_key(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "mappingTargetLabel"]
+        fn mapping_target_label(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "mappingTargetHtml"]
+        fn mapping_target_html(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "mappingTargetImage"]
+        fn mapping_target_image(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "mappingTargetHint"]
+        fn mapping_target_hint(self: &AppBackend, index: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "mappedSourceIndex"]
+        fn mapped_source_index(self: &AppBackend, target_index: i32) -> i32;
+        #[qinvokable]
+        #[cxx_name = "connectMappingField"]
+        fn connect_mapping_field(self: Pin<&mut Self>, source_index: i32, target_index: i32);
+        #[qinvokable]
+        #[cxx_name = "clearMappingField"]
+        fn clear_mapping_field(self: Pin<&mut Self>, target_index: i32);
+        #[qinvokable]
+        #[cxx_name = "setMappingPurpose"]
+        fn choose_mapping_purpose(self: Pin<&mut Self>, purpose: &QString);
+        #[qinvokable]
+        #[cxx_name = "saveFieldMapping"]
+        fn save_field_mapping(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "suggestFieldMapping"]
+        fn suggest_field_mapping(self: Pin<&mut Self>);
+        #[qinvokable]
+        #[cxx_name = "inspectDeckMapping"]
+        fn inspect_deck_mapping(self: Pin<&mut Self>, purpose: &QString, deck_name: &QString);
+        #[qinvokable]
         #[cxx_name = "editDraftExpression"]
         fn edit_draft_expression(self: Pin<&mut Self>, value: &QString);
         #[qinvokable]
         #[cxx_name = "editDraftMeaning"]
         fn edit_draft_meaning(self: Pin<&mut Self>, value: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "editDraftExamples"]
+        fn edit_draft_examples(self: Pin<&mut Self>, value: &QString);
         #[qinvokable]
         #[cxx_name = "editDraftKanji"]
         fn edit_draft_kanji(self: Pin<&mut Self>, value: &QString);
@@ -290,11 +380,11 @@ pub mod qobject {
 
 use std::pin::Pin;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::PathBuf,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -313,9 +403,7 @@ use linguist_core::{
 };
 use linguist_snapshots::SnapshotRepository;
 
-use crate::controller::{
-    ApplicationController, DesktopPort, DraftGenerationPort, DraftNotePort, GeneratedDraft,
-};
+use crate::controller::{ApplicationController, DesktopPort, DraftGenerationPort, GeneratedDraft};
 use crate::review_model::{ReviewQueueData, ReviewRow, ReviewState};
 use crate::theme::{ThemePalette, ThemeWatch, omarchy_palette_path};
 
@@ -436,6 +524,13 @@ pub struct AppBackendRust {
     theme_foreground: QString,
     theme_muted: QString,
     theme_accent: QString,
+    theme_selection: QString,
+    theme_red: QString,
+    theme_yellow: QString,
+    theme_green: QString,
+    theme_cyan: QString,
+    theme_blue: QString,
+    theme_magenta: QString,
     anki_status: QString,
     ollama_status: QString,
     active_deck: QString,
@@ -445,11 +540,33 @@ pub struct AppBackendRust {
     queue_state: QString,
     queue_message: QString,
     deck_count: i32,
+    model_count: i32,
     selected_deck_index: i32,
     review_row_count: i32,
     selected_review_index: i32,
+    review_total: i32,
+    review_page: i32,
+    review_page_count: i32,
+    review_page_start: i32,
+    review_page_end: i32,
+    review_search_match: i32,
+    review_search_count: i32,
+    review_navigation_serial: i32,
+    review_content_serial: i32,
+    mapping_source_count: i32,
+    mapping_target_count: i32,
+    mapping_purpose: QString,
+    mapping_deck: QString,
+    mapping_model: QString,
+    mapping_tags: QString,
+    mapping_dirty: bool,
+    mapping_busy: bool,
+    mapping_message: QString,
+    mapping_render_serial: i32,
     draft_expression: QString,
     draft_meaning: QString,
+    draft_examples: QString,
+    draft_generated: bool,
     draft_kanji: QString,
     draft_images: QString,
     draft_audio: QString,
@@ -501,6 +618,19 @@ pub struct AppBackendRust {
     selector_preview_rows: Vec<String>,
     selector_pending: Option<BatchSelector>,
     theme_watch: Option<ThemeWatch>,
+    review_browser: ReviewBrowser,
+    model_names: Vec<String>,
+    review_cache: Arc<Mutex<ReviewCache>>,
+    review_load_result: Arc<Mutex<Option<ReviewLoadOutput>>>,
+    review_generation: Arc<AtomicU64>,
+    field_mapping: FieldMappingEditor,
+    field_media_cache: Arc<Mutex<HashMap<String, String>>>,
+    field_media_result: Arc<Mutex<Option<FieldMediaOutput>>>,
+    field_media_generation: Arc<AtomicU64>,
+    mapping_suggestion_result: Arc<Mutex<Option<MappingSuggestionOutput>>>,
+    mapping_suggestion_generation: Arc<AtomicU64>,
+    mapping_inspection_result: Arc<Mutex<Option<MappingInspectionOutput>>>,
+    mapping_inspection_generation: Arc<AtomicU64>,
     batch_port: LocalBatchPort,
     batch_worker_active: Arc<AtomicBool>,
     batch_worker_error: Arc<Mutex<Option<String>>>,
@@ -514,6 +644,138 @@ struct CsvImportSource {
     deck_key: String,
     language_key: String,
     type_tag: String,
+}
+
+const REVIEW_PAGE_SIZE: usize = 100;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct ReviewIndexKey {
+    deck: String,
+    query: String,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct ReviewPageKey {
+    index: ReviewIndexKey,
+    offset: usize,
+}
+
+#[derive(Clone)]
+struct CachedReviewPage {
+    notes: Vec<linguist_application::NoteInfo>,
+}
+
+#[derive(Default)]
+struct ReviewCache {
+    indices: HashMap<ReviewIndexKey, Arc<Vec<i64>>>,
+    pages: HashMap<ReviewPageKey, CachedReviewPage>,
+}
+
+#[derive(Default)]
+struct ReviewBrowser {
+    deck: String,
+    query: String,
+    ids: Arc<Vec<i64>>,
+    offset: usize,
+    cursor: usize,
+    notes: Vec<linguist_application::NoteInfo>,
+}
+
+struct ReviewLoadRequest {
+    preferred_deck: Option<String>,
+    query: String,
+    requested_offset: usize,
+    requested_cursor: Option<usize>,
+    initial_direction: i32,
+    select_cursor: bool,
+    check_services: bool,
+    refresh_cache: bool,
+}
+
+#[derive(Clone)]
+struct LoadedReviewPage {
+    decks: Vec<String>,
+    models: Vec<String>,
+    deck: String,
+    query: String,
+    ids: Arc<Vec<i64>>,
+    offset: usize,
+    cursor: usize,
+    notes: Vec<linguist_application::NoteInfo>,
+    select_cursor: bool,
+}
+
+struct ReviewLoadOutput {
+    generation: u64,
+    anki: Option<Result<(), String>>,
+    ollama: Option<Result<(), String>>,
+    result: Result<LoadedReviewPage, String>,
+}
+
+const TARGET_FIELDS: [(&str, &str); 5] = [
+    ("expression", "Expression"),
+    ("meaning_image", "Meaning image"),
+    ("meaning_text", "Meaning text"),
+    ("kanji_construction", "Kanji construction"),
+    ("audio", "Audio"),
+];
+const ALL_TARGET_FIELD_KEYS: [&str; 6] = [
+    "expression",
+    "meaning_image",
+    "meaning_text",
+    "examples",
+    "kanji_construction",
+    "audio",
+];
+const ENGLISH_VOCAB_TARGET_FIELDS: [(&str, &str); 4] = [
+    ("expression", "Expression"),
+    ("meaning_image", "Meaning image"),
+    ("meaning_text", "Meaning text"),
+    ("audio", "Audio"),
+];
+const JAPANESE_GRAMMAR_TARGET_FIELDS: [(&str, &str); 3] = [
+    ("expression", "Grammar point"),
+    ("meaning_text", "Explanation"),
+    ("examples", "Examples"),
+];
+
+fn target_fields(purpose: &str) -> &'static [(&'static str, &'static str)] {
+    match purpose {
+        "english_vocab" => &ENGLISH_VOCAB_TARGET_FIELDS,
+        "japanese_grammar" => &JAPANESE_GRAMMAR_TARGET_FIELDS,
+        _ => &TARGET_FIELDS,
+    }
+}
+
+#[derive(Clone, Default)]
+struct FieldMappingEditor {
+    note_id: Option<i64>,
+    sources: Vec<(String, String)>,
+    connections: Vec<Option<usize>>,
+    hints: Vec<String>,
+    purpose: String,
+    deck: String,
+    model: String,
+    tags: Vec<String>,
+    dirty: bool,
+    message: String,
+    media: HashMap<String, String>,
+}
+
+struct FieldMediaOutput {
+    generation: u64,
+    note_id: i64,
+    media: HashMap<String, String>,
+}
+
+struct MappingSuggestionOutput {
+    generation: u64,
+    note_id: Option<i64>,
+    result: Result<linguist_ollama::FieldMappingSuggestion, String>,
+}
+struct MappingInspectionOutput {
+    generation: u64,
+    result: Result<(FieldMappingEditor, linguist_application::NoteInfo), String>,
 }
 
 impl Default for AppBackendRust {
@@ -534,6 +796,13 @@ impl AppBackendRust {
             theme_foreground: palette.foreground.into(),
             theme_muted: palette.muted.into(),
             theme_accent: palette.accent.into(),
+            theme_selection: palette.selection.into(),
+            theme_red: palette.red.into(),
+            theme_yellow: palette.yellow.into(),
+            theme_green: palette.green.into(),
+            theme_cyan: palette.cyan.into(),
+            theme_blue: palette.blue.into(),
+            theme_magenta: palette.magenta.into(),
             anki_status: state.anki.label().into(),
             ollama_status: state.ollama.label().into(),
             active_deck: state.active_deck.clone().into(),
@@ -543,11 +812,33 @@ impl AppBackendRust {
             queue_state: controller.queue().state().label().into(),
             queue_message: controller.queue().state().message().into(),
             deck_count: queue_len(controller.queue().decks().len()),
+            model_count: 0,
             selected_deck_index: queue_index(controller.queue().selected_deck_index()),
             review_row_count: queue_len(controller.queue().rows().len()),
             selected_review_index: queue_index(controller.queue().selected_index()),
+            review_total: 0,
+            review_page: 0,
+            review_page_count: 0,
+            review_page_start: 0,
+            review_page_end: 0,
+            review_search_match: 0,
+            review_search_count: 0,
+            review_navigation_serial: 0,
+            review_content_serial: 0,
+            mapping_source_count: 0,
+            mapping_target_count: queue_len(TARGET_FIELDS.len()),
+            mapping_purpose: QString::default(),
+            mapping_deck: QString::default(),
+            mapping_model: QString::default(),
+            mapping_tags: QString::default(),
+            mapping_dirty: false,
+            mapping_busy: false,
+            mapping_message: QString::default(),
+            mapping_render_serial: 0,
             draft_expression: QString::default(),
             draft_meaning: QString::default(),
+            draft_examples: QString::default(),
+            draft_generated: false,
             draft_kanji: QString::default(),
             draft_images: QString::default(),
             draft_audio: QString::default(),
@@ -599,6 +890,19 @@ impl AppBackendRust {
             selector_preview_rows: Vec::new(),
             selector_pending: None,
             theme_watch: omarchy_palette_path().map(ThemeWatch::new),
+            review_browser: ReviewBrowser::default(),
+            model_names: Vec::new(),
+            review_cache: Arc::new(Mutex::new(ReviewCache::default())),
+            review_load_result: Arc::new(Mutex::new(None)),
+            review_generation: Arc::new(AtomicU64::new(0)),
+            field_mapping: FieldMappingEditor::default(),
+            field_media_cache: Arc::new(Mutex::new(HashMap::new())),
+            field_media_result: Arc::new(Mutex::new(None)),
+            field_media_generation: Arc::new(AtomicU64::new(0)),
+            mapping_suggestion_result: Arc::new(Mutex::new(None)),
+            mapping_suggestion_generation: Arc::new(AtomicU64::new(0)),
+            mapping_inspection_result: Arc::new(Mutex::new(None)),
+            mapping_inspection_generation: Arc::new(AtomicU64::new(0)),
             batch_port,
             batch_worker_active: Arc::new(AtomicBool::new(false)),
             batch_worker_error: Arc::new(Mutex::new(None)),
@@ -754,7 +1058,14 @@ impl qobject::AppBackend {
         self.as_mut()
             .set_theme_foreground(palette.foreground.into());
         self.as_mut().set_theme_muted(palette.muted.into());
-        self.set_theme_accent(palette.accent.into());
+        self.as_mut().set_theme_accent(palette.accent.into());
+        self.as_mut().set_theme_selection(palette.selection.into());
+        self.as_mut().set_theme_red(palette.red.into());
+        self.as_mut().set_theme_yellow(palette.yellow.into());
+        self.as_mut().set_theme_green(palette.green.into());
+        self.as_mut().set_theme_cyan(palette.cyan.into());
+        self.as_mut().set_theme_blue(palette.blue.into());
+        self.set_theme_magenta(palette.magenta.into());
     }
 
     pub fn refresh_state(mut self: Pin<&mut Self>) {
@@ -766,11 +1077,209 @@ impl qobject::AppBackend {
                 .and_then(|index| queue.decks().get(index))
                 .cloned()
         };
-        match LiveDesktopPort::from_environment().map(|port| port.for_deck(selected_deck)) {
-            Ok(port) => self.as_mut().rust_mut().controller.refresh(&port),
-            Err(error) => self.as_mut().rust_mut().controller.report_error(error),
+        self.as_mut().rust_mut().controller.begin_refresh();
+        if let Ok(mut cache) = self.as_ref().rust().review_cache.lock() {
+            cache.indices.clear();
+            cache.pages.clear();
         }
-        sync_controller_state(self);
+        sync_controller_state(self.as_mut());
+        start_review_load(
+            self,
+            ReviewLoadRequest {
+                preferred_deck: selected_deck,
+                query: String::new(),
+                requested_offset: 0,
+                requested_cursor: Some(0),
+                initial_direction: 1,
+                select_cursor: false,
+                check_services: true,
+                refresh_cache: true,
+            },
+        );
+    }
+
+    pub fn poll_review_load(mut self: Pin<&mut Self>) {
+        let inspection = self
+            .as_ref()
+            .rust()
+            .mapping_inspection_result
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take());
+        if let Some(inspection) = inspection
+            && inspection.generation
+                == self
+                    .as_ref()
+                    .rust()
+                    .mapping_inspection_generation
+                    .load(Ordering::Acquire)
+        {
+            match inspection.result {
+                Ok((editor, note)) => {
+                    self.as_mut().rust_mut().field_mapping = editor;
+                    self.as_mut().set_mapping_busy(false);
+                    sync_field_mapping_state(self.as_mut());
+                    start_field_media_load(self.as_mut(), note);
+                }
+                Err(error) => {
+                    self.as_mut().rust_mut().field_mapping.message =
+                        format!("Could not inspect deck: {error}");
+                    self.as_mut().set_mapping_busy(false);
+                    sync_field_mapping_state(self.as_mut());
+                }
+            }
+        }
+        let suggestion = self
+            .as_ref()
+            .rust()
+            .mapping_suggestion_result
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take());
+        if let Some(suggestion) = suggestion
+            && suggestion.generation
+                == self
+                    .as_ref()
+                    .rust()
+                    .mapping_suggestion_generation
+                    .load(Ordering::Acquire)
+            && suggestion.note_id == self.as_ref().rust().field_mapping.note_id
+        {
+            let mut state = self.as_mut().rust_mut();
+            state.mapping_busy = false;
+            match suggestion.result {
+                Ok(suggestion) => {
+                    let mut applied = 0;
+                    let fields = target_fields(&state.field_mapping.purpose);
+                    for assignment in suggestion.assignments {
+                        let Some(target) = fields
+                            .iter()
+                            .position(|(key, _)| *key == assignment.logical_field)
+                        else {
+                            continue;
+                        };
+                        let Some(source) = state
+                            .field_mapping
+                            .sources
+                            .iter()
+                            .position(|(name, _)| name == &assignment.source_field)
+                        else {
+                            continue;
+                        };
+                        state.field_mapping.connections[target] = Some(source);
+                        state.field_mapping.hints[target] = format!(
+                            "{:.0}% · {}",
+                            assignment.confidence.clamp(0.0, 1.0) * 100.0,
+                            assignment.reason.trim()
+                        );
+                        applied += 1;
+                    }
+                    state.field_mapping.dirty = applied > 0;
+                    state.field_mapping.message = format!(
+                        "Ollama suggested {applied} connections · {}",
+                        suggestion.summary.trim()
+                    );
+                }
+                Err(error) => state.field_mapping.message = format!("Mapping failed: {error}"),
+            }
+            self.as_mut().set_mapping_busy(false);
+            sync_field_mapping_state(self.as_mut());
+        }
+        let media_output = self
+            .as_ref()
+            .rust()
+            .field_media_result
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take());
+        if let Some(media_output) = media_output
+            && media_output.generation
+                == self
+                    .as_ref()
+                    .rust()
+                    .field_media_generation
+                    .load(Ordering::Acquire)
+            && self.as_ref().rust().field_mapping.note_id == Some(media_output.note_id)
+        {
+            self.as_mut().rust_mut().field_mapping.media = media_output.media;
+            let serial = self.as_ref().rust().mapping_render_serial.wrapping_add(1);
+            self.as_mut().set_mapping_render_serial(serial);
+        }
+        let output = self
+            .as_ref()
+            .rust()
+            .review_load_result
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take());
+        let Some(output) = output else {
+            return;
+        };
+        if output.generation
+            != self
+                .as_ref()
+                .rust()
+                .review_generation
+                .load(Ordering::Acquire)
+        {
+            return;
+        }
+        if let (Some(anki), Some(ollama)) = (output.anki, output.ollama) {
+            self.as_mut()
+                .rust_mut()
+                .controller
+                .finish_service_checks(anki, ollama);
+        }
+        match output.result {
+            Ok(page) => {
+                let rows = page.notes.iter().cloned().map(review_row).collect();
+                {
+                    let mut state = self.as_mut().rust_mut();
+                    state.model_names = page.models;
+                    state.controller.finish_queue_load(
+                        page.deck.clone(),
+                        ReviewQueueData {
+                            decks: page.decks,
+                            rows,
+                        },
+                    );
+                    state.review_browser = ReviewBrowser {
+                        deck: page.deck,
+                        query: page.query,
+                        ids: page.ids,
+                        offset: page.offset,
+                        cursor: page.cursor,
+                        notes: page.notes,
+                    };
+                    if page.select_cursor && !state.review_browser.notes.is_empty() {
+                        let local = state
+                            .review_browser
+                            .cursor
+                            .saturating_sub(state.review_browser.offset)
+                            .min(state.review_browser.notes.len() - 1);
+                        let note = state.review_browser.notes[local].clone();
+                        state.controller.select_queue_index(local);
+                        state.controller.hydrate_selected_note(note);
+                    }
+                    refresh_field_mapping(&mut state);
+                }
+                let serial = self.as_ref().review_content_serial().wrapping_add(1);
+                self.as_mut().set_review_content_serial(serial);
+                let model_count = queue_len(self.as_ref().rust().model_names.len());
+                self.as_mut().set_model_count(model_count);
+                sync_controller_state(self.as_mut());
+                sync_review_browser_state(self.as_mut());
+                sync_field_mapping_state(self.as_mut());
+                start_selected_field_media_load(self);
+            }
+            Err(error) => {
+                self.as_mut()
+                    .rust_mut()
+                    .controller
+                    .finish_queue_error(error);
+                sync_controller_state(self);
+            }
+        }
     }
 
     pub fn clear_error(mut self: Pin<&mut Self>) {
@@ -786,31 +1295,83 @@ impl qobject::AppBackend {
         sync_controller_state(self);
     }
 
-    pub fn search_review(self: Pin<&mut Self>, query: &QString) {
-        let query = query.to_string().trim().to_lowercase();
-        if query.is_empty() {
+    pub fn search_review(mut self: Pin<&mut Self>, query: &QString, direction: i32) {
+        let query = query.to_string().trim().to_owned();
+        let (deck, same_query, total, current, offset) = {
+            let binding = self.as_ref();
+            let state = binding.rust();
+            (
+                state.review_browser.deck.clone(),
+                state.review_browser.query == query,
+                state.review_browser.ids.len(),
+                state.review_browser.cursor,
+                state.review_browser.offset,
+            )
+        };
+        if deck.is_empty() {
             return;
         }
-        let (row, deck) = {
-            let binding = self.as_ref();
-            let queue = binding.rust().controller.queue();
-            let row = queue.rows().iter().position(|row| {
-                row.expression.to_lowercase().contains(&query)
-                    || row.detail.to_lowercase().contains(&query)
-            });
-            let deck = queue
-                .decks()
-                .iter()
-                .position(|deck| deck.to_lowercase().contains(&query));
-            (row, deck)
-        };
-        if let Some(index) = row {
-            self.select_review_index(index as i32);
-        } else if let Some(index) = deck {
-            self.select_deck_index(index as i32);
-        } else {
-            self.report_error(&format!("No card or deck matches '{query}'").into());
+        if same_query && total > 0 {
+            let cursor = if direction < 0 {
+                (current + total - 1) % total
+            } else {
+                (current + 1) % total
+            };
+            let page_offset = cursor / REVIEW_PAGE_SIZE * REVIEW_PAGE_SIZE;
+            if page_offset == offset {
+                let local = cursor - offset;
+                {
+                    let mut state = self.as_mut().rust_mut();
+                    state.review_browser.cursor = cursor;
+                    state.controller.select_queue_index(local);
+                    if let Some(note) = state.review_browser.notes.get(local).cloned() {
+                        state.controller.hydrate_selected_note(note);
+                    }
+                }
+                sync_controller_state(self.as_mut());
+                sync_review_browser_state(self);
+                return;
+            }
+            self.as_mut().rust_mut().controller.begin_queue_loading();
+            sync_controller_state(self.as_mut());
+            start_review_load(
+                self,
+                ReviewLoadRequest {
+                    preferred_deck: Some(deck),
+                    query,
+                    requested_offset: page_offset,
+                    requested_cursor: Some(cursor),
+                    initial_direction: direction,
+                    select_cursor: true,
+                    check_services: false,
+                    refresh_cache: false,
+                },
+            );
+            return;
         }
+        self.as_mut().rust_mut().controller.begin_queue_loading();
+        sync_controller_state(self.as_mut());
+        start_review_load(
+            self,
+            ReviewLoadRequest {
+                preferred_deck: Some(deck),
+                query,
+                requested_offset: 0,
+                requested_cursor: None,
+                initial_direction: direction,
+                select_cursor: true,
+                check_services: false,
+                refresh_cache: false,
+            },
+        );
+    }
+
+    pub fn previous_review_page(self: Pin<&mut Self>) {
+        move_review_page(self, -1);
+    }
+
+    pub fn next_review_page(self: Pin<&mut Self>) {
+        move_review_page(self, 1);
     }
 
     pub fn report_error(mut self: Pin<&mut Self>, message: &QString) {
@@ -832,6 +1393,15 @@ impl qobject::AppBackend {
             .into()
     }
 
+    pub fn model_name(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().model_names.get(index))
+            .cloned()
+            .unwrap_or_default()
+            .into()
+    }
+
     pub fn select_deck_index(mut self: Pin<&mut Self>, index: i32) {
         if let Ok(index) = usize::try_from(index) {
             let selected_deck = self
@@ -845,12 +1415,28 @@ impl qobject::AppBackend {
             if selected_deck.is_none() {
                 return;
             }
-            self.as_mut().rust_mut().controller.select_deck_index(index);
-            match LiveDesktopPort::from_environment().map(|port| port.for_deck(selected_deck)) {
-                Ok(port) => self.as_mut().rust_mut().controller.refresh(&port),
-                Err(error) => self.as_mut().rust_mut().controller.report_error(error),
-            }
-            sync_controller_state(self);
+            self.as_mut()
+                .rust_mut()
+                .controller
+                .begin_deck_loading(index);
+            sync_controller_state(self.as_mut());
+            self.as_mut().rust_mut().review_browser = ReviewBrowser::default();
+            self.as_mut().rust_mut().field_mapping = FieldMappingEditor::default();
+            sync_review_browser_state(self.as_mut());
+            sync_field_mapping_state(self.as_mut());
+            start_review_load(
+                self,
+                ReviewLoadRequest {
+                    preferred_deck: selected_deck,
+                    query: String::new(),
+                    requested_offset: 0,
+                    requested_cursor: Some(0),
+                    initial_direction: 1,
+                    select_cursor: false,
+                    check_services: false,
+                    refresh_cache: false,
+                },
+            );
         }
     }
 
@@ -883,13 +1469,358 @@ impl qobject::AppBackend {
                 .controller
                 .select_queue_index(index);
             if needs_hydration {
-                match LiveDesktopPort::from_environment() {
-                    Ok(port) => backend.rust_mut().controller.hydrate_selected(&port),
-                    Err(error) => backend.rust_mut().controller.report_error(error),
+                let note_id = backend
+                    .as_ref()
+                    .rust()
+                    .controller
+                    .queue()
+                    .rows()
+                    .get(index)
+                    .map(|row| row.note_id);
+                if let Some(note) = backend
+                    .as_ref()
+                    .rust()
+                    .review_browser
+                    .notes
+                    .iter()
+                    .find(|note| Some(note.note_id) == note_id)
+                    .cloned()
+                {
+                    backend
+                        .as_mut()
+                        .rust_mut()
+                        .controller
+                        .hydrate_selected_note(note);
                 }
             }
-            sync_controller_state(self);
+            refresh_field_mapping(&mut backend.as_mut().rust_mut());
+            sync_controller_state(self.as_mut());
+            sync_field_mapping_state(self.as_mut());
+            start_selected_field_media_load(self);
         }
+    }
+
+    pub fn mapping_source_name(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().field_mapping.sources.get(index))
+            .map(|(name, _)| name.clone())
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn mapping_source_html(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().field_mapping.sources.get(index))
+            .map(|(_, html)| {
+                strip_image_tags(&embed_media_markup(
+                    safe_field_markup(html),
+                    &self.rust().field_mapping.media,
+                ))
+            })
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn mapping_source_image(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().field_mapping.sources.get(index))
+            .and_then(|(_, html)| local_image_names(html).into_iter().next())
+            .and_then(|name| self.rust().field_mapping.media.get(&name).cloned())
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn mapping_target_key(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| target_fields(&self.rust().field_mapping.purpose).get(index))
+            .map(|(key, _)| *key)
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn mapping_target_label(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| target_fields(&self.rust().field_mapping.purpose).get(index))
+            .map(|(_, label)| *label)
+            .unwrap_or_default()
+            .into()
+    }
+
+    fn generated_target_value(&self, index: i32) -> Option<String> {
+        let editor = &self.rust().field_mapping;
+        let draft = self.rust().controller.active_draft()?;
+        if editor.note_id != Some(draft.note_id) {
+            return None;
+        }
+        let document = draft.generated_document()?;
+        let (key, _) = target_fields(&editor.purpose).get(usize::try_from(index).ok()?)?;
+        match *key {
+            "expression" => Some(
+                document
+                    .expression
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;"),
+            ),
+            "meaning_image" => document.values.meaning_image,
+            "meaning_text" => document.values.meaning_text,
+            "examples" => document.values.examples,
+            "kanji_construction" => document.values.kanji_construction,
+            "audio" => document.values.audio,
+            _ => None,
+        }
+    }
+
+    pub fn mapping_target_html(&self, index: i32) -> QString {
+        self.generated_target_value(index)
+            .map(|value| strip_image_tags(&safe_field_markup(&value)))
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn mapping_target_image(&self, index: i32) -> QString {
+        self.generated_target_value(index)
+            .and_then(|value| local_image_names(&value).into_iter().next())
+            .and_then(|name| self.preview_media().get(&name).cloned())
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn mapping_target_hint(&self, index: i32) -> QString {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.rust().field_mapping.hints.get(index))
+            .cloned()
+            .unwrap_or_default()
+            .into()
+    }
+
+    pub fn mapped_source_index(&self, target_index: i32) -> i32 {
+        usize::try_from(target_index)
+            .ok()
+            .and_then(|index| self.rust().field_mapping.connections.get(index))
+            .and_then(|source| *source)
+            .map(queue_len)
+            .unwrap_or(-1)
+    }
+
+    pub fn connect_mapping_field(mut self: Pin<&mut Self>, source_index: i32, target_index: i32) {
+        let (Ok(source), Ok(target)) =
+            (usize::try_from(source_index), usize::try_from(target_index))
+        else {
+            return;
+        };
+        let mut state = self.as_mut().rust_mut();
+        if source >= state.field_mapping.sources.len()
+            || target >= state.field_mapping.connections.len()
+        {
+            return;
+        }
+        state.field_mapping.connections[target] = Some(source);
+        state.field_mapping.hints[target].clear();
+        state.field_mapping.dirty = true;
+        state.field_mapping.message = "Mapping changed; save to reuse it".into();
+        sync_field_mapping_state(self);
+    }
+
+    pub fn clear_mapping_field(mut self: Pin<&mut Self>, target_index: i32) {
+        let Ok(target) = usize::try_from(target_index) else {
+            return;
+        };
+        let mut state = self.as_mut().rust_mut();
+        let Some(connection) = state.field_mapping.connections.get_mut(target) else {
+            return;
+        };
+        *connection = None;
+        if let Some(hint) = state.field_mapping.hints.get_mut(target) {
+            hint.clear();
+        }
+        state.field_mapping.dirty = true;
+        state.field_mapping.message = "Mapping changed; save to reuse it".into();
+        sync_field_mapping_state(self);
+    }
+
+    pub fn choose_mapping_purpose(mut self: Pin<&mut Self>, purpose: &QString) {
+        let Some(purpose) = linguist_application::canonical_language_key(&purpose.to_string())
+        else {
+            return;
+        };
+        let mut state = self.as_mut().rust_mut();
+        if state.field_mapping.purpose != purpose {
+            let existing = mapping_fields(&state.field_mapping);
+            state.field_mapping.purpose = purpose;
+            state.field_mapping.connections = target_fields(&state.field_mapping.purpose)
+                .iter()
+                .map(|(key, _)| {
+                    existing.get(*key).and_then(|name| {
+                        state
+                            .field_mapping
+                            .sources
+                            .iter()
+                            .position(|(source, _)| source == name)
+                    })
+                })
+                .collect();
+            state.field_mapping.hints = vec![String::new(); state.field_mapping.connections.len()];
+            state.field_mapping.dirty = true;
+            state.field_mapping.message = "Purpose changed; save to reuse it".into();
+        }
+        sync_field_mapping_state(self);
+    }
+
+    pub fn save_field_mapping(mut self: Pin<&mut Self>) {
+        let result = (|| {
+            let binding = self.as_ref();
+            let mapping = &binding.rust().field_mapping;
+            if mapping.purpose.is_empty() {
+                return Err("Choose a deck purpose before saving".to_owned());
+            }
+            if mapping.deck.is_empty() || mapping.model.is_empty() {
+                return Err("The selected card has no deck or note type".to_owned());
+            }
+            let fields = mapping_fields(mapping);
+            if !fields.contains_key("expression") {
+                return Err("Connect an expression field before saving".to_owned());
+            }
+            let mut config = runtime_config()?;
+            if let Some((purpose, _)) = config.decks.iter().find(|(purpose, deck)| {
+                purpose.as_str() != mapping.purpose
+                    && deck.deck_name.as_deref() == Some(mapping.deck.as_str())
+            }) {
+                return Err(format!(
+                    "This deck is already assigned to {purpose}; choose a different purpose"
+                ));
+            }
+            let deck = config.decks.entry(mapping.purpose.clone()).or_default();
+            deck.deck_name = Some(mapping.deck.clone());
+            deck.model_name = Some(mapping.model.clone());
+            deck.fields = fields;
+            let path = native_config_path()?;
+            linguist_config::save_native_replace(&path, &config).map_err(|error| error.to_string())
+        })();
+        let mut state = self.as_mut().rust_mut();
+        match result {
+            Ok(()) => {
+                state.field_mapping.dirty = false;
+                state.field_mapping.message = "Reusable field mapping saved".into();
+            }
+            Err(error) => state.field_mapping.message = error,
+        }
+        sync_field_mapping_state(self);
+    }
+
+    pub fn suggest_field_mapping(mut self: Pin<&mut Self>) {
+        let editor = self.as_ref().rust().field_mapping.clone();
+        if editor.sources.is_empty() || editor.purpose.is_empty() {
+            self.as_mut().rust_mut().field_mapping.message =
+                "Load a deck sample and choose its purpose first".into();
+            sync_field_mapping_state(self);
+            return;
+        }
+        let prompt = mapping_reasoning_prompt(&editor);
+        let binding = self.as_ref();
+        let state = binding.rust();
+        let generation = state
+            .mapping_suggestion_generation
+            .fetch_add(1, Ordering::AcqRel)
+            + 1;
+        let live_generation = state.mapping_suggestion_generation.clone();
+        let result_slot = state.mapping_suggestion_result.clone();
+        self.as_mut().rust_mut().mapping_busy = true;
+        self.as_mut().rust_mut().field_mapping.message =
+            "Reasoning about deck and card fields…".into();
+        self.as_mut().set_mapping_busy(true);
+        sync_field_mapping_state(self.as_mut());
+        std::thread::spawn(move || {
+            let result = (|| {
+                let port = LiveDesktopPort::from_environment()?;
+                let config = runtime_config()?;
+                let model = if let Some(model) =
+                    config.ollama_model.filter(|model| !model.trim().is_empty())
+                {
+                    model
+                } else {
+                    let models = port
+                        .runtime
+                        .block_on(port.ollama.models())
+                        .map_err(|error| error.to_string())?;
+                    choose_reasoning_model(&models)
+                        .ok_or_else(|| "Ollama has no installed models".to_owned())?
+                };
+                port.runtime
+                    .block_on(port.ollama.suggest_field_mapping(&model, &prompt))
+                    .map_err(|error| error.to_string())
+            })();
+            if live_generation.load(Ordering::Acquire) == generation
+                && let Ok(mut slot) = result_slot.lock()
+            {
+                *slot = Some(MappingSuggestionOutput {
+                    generation,
+                    note_id: editor.note_id,
+                    result,
+                });
+            }
+        });
+    }
+
+    pub fn inspect_deck_mapping(mut self: Pin<&mut Self>, purpose: &QString, deck_name: &QString) {
+        let Some(purpose) = linguist_application::canonical_language_key(&purpose.to_string())
+        else {
+            self.as_mut().rust_mut().field_mapping.message = "Choose a deck purpose".into();
+            sync_field_mapping_state(self);
+            return;
+        };
+        let deck_name = deck_name.to_string().trim().to_owned();
+        if deck_name.is_empty() {
+            self.as_mut().rust_mut().field_mapping.message = "Choose an Anki deck".into();
+            sync_field_mapping_state(self);
+            return;
+        }
+        let binding = self.as_ref();
+        let state = binding.rust();
+        let generation = state
+            .mapping_inspection_generation
+            .fetch_add(1, Ordering::AcqRel)
+            + 1;
+        let live_generation = state.mapping_inspection_generation.clone();
+        let result_slot = state.mapping_inspection_result.clone();
+        self.as_mut().set_mapping_busy(true);
+        self.as_mut().rust_mut().field_mapping.message =
+            format!("Inspecting a representative card from {deck_name}…");
+        sync_field_mapping_state(self.as_mut());
+        std::thread::spawn(move || {
+            let result = (|| {
+                let port = LiveDesktopPort::from_environment()?;
+                let query = review_anki_query(&deck_name, "");
+                let note_id = port
+                    .runtime
+                    .block_on(port.anki.find_notes(&query))
+                    .map_err(|error| error.to_string())?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| format!("Deck {deck_name:?} has no notes"))?;
+                let note = port
+                    .runtime
+                    .block_on(port.anki.notes_info(&[note_id]))
+                    .map_err(|error| error.to_string())?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| format!("Anki did not return note {note_id}"))?;
+                let editor =
+                    field_mapping_for_note(&note, &purpose, &deck_name, &runtime_config()?);
+                Ok((editor, note))
+            })();
+            if live_generation.load(Ordering::Acquire) == generation
+                && let Ok(mut slot) = result_slot.lock()
+            {
+                *slot = Some(MappingInspectionOutput { generation, result });
+            }
+        });
     }
 
     pub fn edit_draft_meaning(mut self: Pin<&mut Self>, value: &QString) {
@@ -905,6 +1836,14 @@ impl qobject::AppBackend {
             .rust_mut()
             .controller
             .edit_draft(crate::draft::DraftField::Expression, value.to_string());
+        sync_controller_state(self);
+    }
+
+    pub fn edit_draft_examples(mut self: Pin<&mut Self>, value: &QString) {
+        self.as_mut()
+            .rust_mut()
+            .controller
+            .edit_draft(crate::draft::DraftField::Examples, value.to_string());
         sync_controller_state(self);
     }
 
@@ -985,6 +1924,13 @@ impl qobject::AppBackend {
     }
 
     pub fn preview_commit(mut self: Pin<&mut Self>) {
+        if !self.rust().draft_generated {
+            self.as_mut().rust_mut().controller.report_error(
+                "Generate a card and review all proposed changes before running a dry run",
+            );
+            sync_controller_state(self);
+            return;
+        }
         match LiveCommitAdapter::from_environment() {
             Ok(mut adapter) => self
                 .as_mut()
@@ -997,6 +1943,14 @@ impl qobject::AppBackend {
     }
 
     pub fn apply_commit(mut self: Pin<&mut Self>) {
+        if !self.rust().draft_generated {
+            self.as_mut()
+                .rust_mut()
+                .controller
+                .report_error("Generate and review the card before applying changes to Anki");
+            sync_controller_state(self);
+            return;
+        }
         match LiveCommitAdapter::from_environment() {
             Ok(mut adapter) => self
                 .as_mut()
@@ -1053,43 +2007,54 @@ impl qobject::AppBackend {
     }
 
     pub fn card_preview(&self, template_index: i32, back: bool) -> QString {
-        let Some(draft) = self.rust().controller.active_draft() else {
-            return QString::default();
-        };
-        let document = linguist_core::CardDocument {
-            schema_version: linguist_core::CONTRACT_VERSION,
-            expression: draft.expression.clone(),
-            values: linguist_core::LogicalFields {
-                meaning_image: draft
-                    .images
-                    .first()
-                    .map(|filename| format!("<img src=\"{filename}\">")),
-                meaning_text: Some(draft.meaning.clone()),
-                kanji_construction: Some(draft.kanji.clone()),
-                audio: Some(draft.audio.join("<br/>")),
-            },
-            media: vec![],
-            obsolete_media: vec![],
-            issues: vec![],
-            tags: vec![],
-            provenance: Default::default(),
-        };
-        usize::try_from(template_index)
-            .ok()
-            .and_then(|index| {
-                crate::preview_model::render_managed_card(
-                    &document,
-                    index,
-                    if back {
-                        crate::preview_model::CardFace::Back
-                    } else {
-                        crate::preview_model::CardFace::Front
-                    },
-                )
-            })
-            .map(|rendered| rendered.html)
+        self.render_card_preview(template_index, back)
+            .map(|rendered| embed_media_markup(rendered.html, &self.preview_media()))
             .unwrap_or_default()
             .into()
+    }
+
+    fn render_card_preview(
+        &self,
+        template_index: i32,
+        back: bool,
+    ) -> Option<crate::preview_model::RenderedCard> {
+        let draft = self.rust().controller.active_draft()?;
+        let document = draft.accepted_document()?;
+        if !draft.pending().is_empty() {
+            return None;
+        }
+        usize::try_from(template_index).ok().and_then(|index| {
+            let config = runtime_config().ok()?;
+            let purpose = generation_deck_key(draft, &config.decks).ok()?;
+            crate::preview_model::render_managed_card_with_spec(
+                &document,
+                &linguist_core::managed_vocab_spec(purpose),
+                index,
+                if back {
+                    crate::preview_model::CardFace::Back
+                } else {
+                    crate::preview_model::CardFace::Front
+                },
+            )
+        })
+    }
+
+    fn preview_media(&self) -> HashMap<String, String> {
+        let mut media = self.rust().field_mapping.media.clone();
+        if let Some(document) = self
+            .rust()
+            .controller
+            .active_draft()
+            .and_then(crate::draft::ReviewDraft::generated_document)
+        {
+            media.extend(document.media.iter().map(|asset| {
+                (
+                    asset.filename.clone(),
+                    media_data_uri(&asset.filename, &asset.data_base64),
+                )
+            }));
+        }
+        media
     }
 
     pub fn preview_audio_url(&self, index: i32) -> QString {
@@ -1930,6 +2895,419 @@ fn parse_batch_rows(rows: &str) -> Result<Vec<linguist_jobs::BatchItemSeed>, Str
     Ok(items)
 }
 
+fn start_selected_field_media_load(qobject: Pin<&mut qobject::AppBackend>) {
+    let note = {
+        let binding = qobject.as_ref();
+        let state = binding.rust();
+        let selected = state
+            .controller
+            .queue()
+            .selected_index()
+            .and_then(|index| state.controller.queue().rows().get(index))
+            .map(|row| row.note_id);
+        state
+            .review_browser
+            .notes
+            .iter()
+            .find(|note| Some(note.note_id) == selected)
+            .cloned()
+    };
+    let Some(note) = note else {
+        return;
+    };
+    start_field_media_load(qobject, note);
+}
+
+fn start_field_media_load(
+    qobject: Pin<&mut qobject::AppBackend>,
+    note: linguist_application::NoteInfo,
+) {
+    let names = note
+        .fields
+        .values()
+        .flat_map(|html| local_image_names(html))
+        .collect::<BTreeSet<_>>();
+    let binding = qobject.as_ref();
+    let state = binding.rust();
+    let generation = state.field_media_generation.fetch_add(1, Ordering::AcqRel) + 1;
+    let cache = state.field_media_cache.clone();
+    let result = state.field_media_result.clone();
+    let live_generation = state.field_media_generation.clone();
+    std::thread::spawn(move || {
+        let mut media = HashMap::new();
+        let port = LiveDesktopPort::from_environment().ok();
+        for name in names {
+            if live_generation.load(Ordering::Acquire) != generation {
+                return;
+            }
+            let cached = cache
+                .lock()
+                .ok()
+                .and_then(|cache| cache.get(&name).cloned());
+            let uri = if let Some(uri) = cached {
+                Some(uri)
+            } else if let Some(port) = &port {
+                port.runtime
+                    .block_on(port.anki.retrieve_media_file(&name))
+                    .ok()
+                    .flatten()
+                    .map(|file| media_data_uri(&file.filename, &file.data_base64))
+            } else {
+                None
+            };
+            if let Some(uri) = uri {
+                if let Ok(mut cache) = cache.lock() {
+                    cache.insert(name.clone(), uri.clone());
+                }
+                media.insert(name, uri);
+            }
+        }
+        if live_generation.load(Ordering::Acquire) == generation
+            && let Ok(mut slot) = result.lock()
+        {
+            *slot = Some(FieldMediaOutput {
+                generation,
+                note_id: note.note_id,
+                media,
+            });
+        }
+    });
+}
+
+fn local_image_names(value: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let lower = value.to_ascii_lowercase();
+    let mut cursor = 0;
+    while let Some(relative) = lower[cursor..].find("src=") {
+        let start = cursor + relative + 4;
+        let Some(quote) = value[start..].chars().next() else {
+            break;
+        };
+        if !matches!(quote, '"' | '\'') {
+            cursor = start;
+            continue;
+        }
+        let value_start = start + quote.len_utf8();
+        let Some(end) = value[value_start..].find(quote) else {
+            break;
+        };
+        let name = &value[value_start..value_start + end];
+        if valid_local_media_name(name) {
+            names.push(name.to_owned());
+        }
+        cursor = value_start + end + quote.len_utf8();
+    }
+    names
+}
+
+fn valid_local_media_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+fn media_data_uri(filename: &str, data_base64: &str) -> String {
+    let lower = filename.to_ascii_lowercase();
+    let mime = if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".gif") {
+        "image/gif"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else if lower.ends_with(".svg") {
+        "image/svg+xml"
+    } else {
+        "image/jpeg"
+    };
+    format!("data:{mime};base64,{data_base64}")
+}
+
+fn embed_media_markup(mut html: String, media: &HashMap<String, String>) -> String {
+    for (name, uri) in media {
+        html = html.replace(&format!("linguist-media:///{name}"), uri);
+        for quote in ['"', '\''] {
+            html = html.replace(
+                &format!("src={quote}{name}{quote}"),
+                &format!("src={quote}{uri}{quote}"),
+            );
+        }
+    }
+    html
+}
+
+fn strip_image_tags(value: &str) -> String {
+    let mut output = value.to_owned();
+    loop {
+        let lower = output.to_ascii_lowercase();
+        let Some(start) = lower.find("<img") else {
+            break;
+        };
+        let end = lower[start..]
+            .find('>')
+            .map(|offset| start + offset + 1)
+            .unwrap_or(output.len());
+        output.replace_range(start..end, "");
+    }
+    output
+}
+
+fn refresh_field_mapping(state: &mut AppBackendRust) {
+    let Some(draft) = state.controller.active_draft() else {
+        state.field_mapping = FieldMappingEditor::default();
+        return;
+    };
+    if state.field_mapping.note_id == Some(draft.note_id) {
+        return;
+    }
+    let config = runtime_config().unwrap_or_default();
+    let purpose = draft
+        .language_key
+        .clone()
+        .filter(|key| linguist_application::canonical_language_key(key).is_some())
+        .or_else(|| {
+            config.decks.iter().find_map(|(key, mapped)| {
+                (mapped.deck_name.as_deref() == Some(draft.deck_name.as_str())
+                    && mapped
+                        .model_name
+                        .as_deref()
+                        .is_none_or(|model| model == draft.target_model))
+                .then(|| key.clone())
+            })
+        })
+        .unwrap_or_default();
+    let configured = config
+        .decks
+        .get(&purpose)
+        .map(|deck| deck.fields.clone())
+        .filter(|fields| !fields.is_empty())
+        .unwrap_or_else(|| inferred_mapping_fields(&draft.source_fields));
+    let sources = ordered_mapping_sources(&draft.source_fields, &configured);
+    let connections = target_fields(&purpose)
+        .iter()
+        .map(|(key, _)| {
+            configured
+                .get(*key)
+                .and_then(|source| sources.iter().position(|(name, _)| name == source))
+        })
+        .collect();
+    state.field_mapping = FieldMappingEditor {
+        note_id: Some(draft.note_id),
+        sources,
+        connections,
+        hints: vec![String::new(); target_fields(&purpose).len()],
+        purpose,
+        deck: draft.deck_name.clone(),
+        model: draft.target_model.clone(),
+        tags: draft.source_tags.clone(),
+        dirty: false,
+        message: String::new(),
+        media: HashMap::new(),
+    };
+}
+
+fn field_mapping_for_note(
+    note: &linguist_application::NoteInfo,
+    purpose: &str,
+    deck: &str,
+    config: &linguist_config::NativeConfig,
+) -> FieldMappingEditor {
+    let configured = config
+        .decks
+        .get(purpose)
+        .map(|deck| deck.fields.clone())
+        .filter(|fields| !fields.is_empty())
+        .unwrap_or_else(|| inferred_mapping_fields(&note.fields));
+    let sources = ordered_mapping_sources(&note.fields, &configured);
+    let connections = target_fields(purpose)
+        .iter()
+        .map(|(key, _)| {
+            configured
+                .get(*key)
+                .and_then(|source| sources.iter().position(|(name, _)| name == source))
+        })
+        .collect();
+    FieldMappingEditor {
+        note_id: Some(note.note_id),
+        sources,
+        connections,
+        hints: vec![String::new(); target_fields(purpose).len()],
+        purpose: purpose.into(),
+        deck: deck.into(),
+        model: note.model_name.0.clone(),
+        tags: note.tags.clone(),
+        dirty: false,
+        message: "Review the inferred connections or ask Ollama for a suggestion".into(),
+        media: HashMap::new(),
+    }
+}
+
+fn ordered_mapping_sources(
+    fields: &BTreeMap<String, String>,
+    mapping: &BTreeMap<String, String>,
+) -> Vec<(String, String)> {
+    let mut ordered = Vec::with_capacity(fields.len());
+    for key in ALL_TARGET_FIELD_KEYS {
+        let Some(name) = mapping.get(key) else {
+            continue;
+        };
+        if let Some(value) = fields.get(name)
+            && !ordered.iter().any(|(existing, _)| existing == name)
+        {
+            ordered.push((name.clone(), value.clone()));
+        }
+    }
+    let remaining = fields
+        .iter()
+        .filter(|(name, _)| !ordered.iter().any(|(existing, _)| existing == *name))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect::<Vec<_>>();
+    ordered.extend(remaining);
+    ordered
+}
+
+fn inferred_mapping_fields(fields: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mapping = mapping_from_fields(fields);
+    [
+        ("expression", mapping.expression),
+        ("meaning_image", mapping.meaning_image),
+        ("meaning_text", mapping.meaning_text),
+        ("examples", mapping.examples),
+        ("kanji_construction", mapping.kanji_construction),
+        ("audio", mapping.audio),
+    ]
+    .into_iter()
+    .filter_map(|(key, value)| value.map(|value| (key.to_owned(), value)))
+    .collect()
+}
+
+fn mapping_fields(editor: &FieldMappingEditor) -> BTreeMap<String, String> {
+    target_fields(&editor.purpose)
+        .iter()
+        .enumerate()
+        .filter_map(|(target, (key, _))| {
+            let source = editor.connections.get(target).and_then(|source| *source)?;
+            let name = editor.sources.get(source).map(|(name, _)| name.clone())?;
+            Some(((*key).to_owned(), name))
+        })
+        .collect()
+}
+
+fn mapping_reasoning_prompt(editor: &FieldMappingEditor) -> String {
+    let targets = target_fields(&editor.purpose)
+        .iter()
+        .map(|(key, label)| serde_json::json!({"key": key, "meaning": label}))
+        .collect::<Vec<_>>();
+    let sources = editor
+        .sources
+        .iter()
+        .map(|(name, value)| {
+            let plain = linguist_core::normalize_expression(value);
+            let excerpt = plain.chars().take(400).collect::<String>();
+            serde_json::json!({"name": name, "sample": excerpt})
+        })
+        .collect::<Vec<_>>();
+    format!(
+        "You are mapping one existing Anki note type into a language-learning card schema. Reason from field names and representative content. Assign a source only when it semantically fits. A source may be reused when one legacy field combines concepts. Use exact target keys and exact source names. Do not invent fields. English vocabulary intentionally has no kanji construction. Return every confident mapping and explain uncertainty.\nContext:\n{}",
+        serde_json::json!({
+            "purpose": editor.purpose,
+            "deck": editor.deck,
+            "note_type": editor.model,
+            "tags": editor.tags,
+            "target_schema": targets,
+            "source_fields": sources,
+        })
+    )
+}
+
+fn choose_reasoning_model(models: &[String]) -> Option<String> {
+    models
+        .iter()
+        .find(|model| {
+            let model = model.to_ascii_lowercase();
+            ["reason", "qwen", "deepseek", "gpt-oss"]
+                .iter()
+                .any(|token| model.contains(token))
+        })
+        .or_else(|| models.first())
+        .cloned()
+}
+
+fn sync_field_mapping_state(mut qobject: Pin<&mut qobject::AppBackend>) {
+    let (source_count, purpose, deck, model, tags, dirty, message) = {
+        let binding = qobject.as_ref();
+        let editor = &binding.rust().field_mapping;
+        (
+            queue_len(editor.sources.len()),
+            editor.purpose.clone(),
+            editor.deck.clone(),
+            editor.model.clone(),
+            editor.tags.join(" · "),
+            editor.dirty,
+            editor.message.clone(),
+        )
+    };
+    qobject.as_mut().set_mapping_source_count(source_count);
+    qobject
+        .as_mut()
+        .set_mapping_target_count(queue_len(target_fields(&purpose).len()));
+    qobject.as_mut().set_mapping_purpose(purpose.into());
+    qobject.as_mut().set_mapping_deck(deck.into());
+    qobject.as_mut().set_mapping_model(model.into());
+    qobject.as_mut().set_mapping_tags(tags.into());
+    qobject.as_mut().set_mapping_dirty(dirty);
+    qobject.as_mut().set_mapping_message(message.into());
+    let serial = qobject.as_ref().mapping_render_serial().wrapping_add(1);
+    qobject.set_mapping_render_serial(serial);
+}
+
+fn safe_field_markup(value: &str) -> String {
+    let mut safe = value.to_owned();
+    for tag in ["script", "iframe", "object", "embed", "form"] {
+        safe = remove_html_block(&safe, tag);
+    }
+    safe = strip_remote_attribute(&safe, "src");
+    strip_remote_attribute(&safe, "href")
+}
+
+fn remove_html_block(value: &str, tag: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let lower = value.to_ascii_lowercase();
+    let mut cursor = 0;
+    let opening = format!("<{tag}");
+    let closing = format!("</{tag}>");
+    while let Some(relative) = lower[cursor..].find(&opening) {
+        let start = cursor + relative;
+        output.push_str(&value[cursor..start]);
+        let after = lower[start..]
+            .find(&closing)
+            .map(|end| start + end + closing.len())
+            .or_else(|| lower[start..].find('>').map(|end| start + end + 1))
+            .unwrap_or(value.len());
+        cursor = after;
+    }
+    output.push_str(&value[cursor..]);
+    output
+}
+
+fn strip_remote_attribute(value: &str, attribute: &str) -> String {
+    let mut output = value.to_owned();
+    for quote in ['"', '\''] {
+        for scheme in ["http://", "https://", "//"] {
+            let needle = format!("{attribute}={quote}{scheme}");
+            while let Some(start) = output.to_ascii_lowercase().find(&needle) {
+                let value_start = start + attribute.len() + 2;
+                let end = output[value_start..]
+                    .find(quote)
+                    .map(|end| value_start + end)
+                    .unwrap_or(output.len());
+                output.replace_range(value_start..end, "");
+            }
+        }
+    }
+    output
+}
+
 fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
     let state = qobject.as_ref().rust().controller.state().clone();
     let (
@@ -2071,6 +3449,23 @@ fn sync_controller_state(mut qobject: Pin<&mut qobject::AppBackend>) {
         .as_mut()
         .set_draft_expression(draft_expression.into());
     qobject.as_mut().set_draft_meaning(draft_meaning.into());
+    let examples = qobject
+        .as_ref()
+        .rust()
+        .controller
+        .active_draft()
+        .map(|draft| draft.examples.clone())
+        .unwrap_or_default();
+    qobject.as_mut().set_draft_examples(examples.into());
+    let generated = qobject
+        .as_ref()
+        .rust()
+        .controller
+        .active_draft()
+        .is_some_and(|draft| draft.accepted_document().is_some() && draft.pending().is_empty());
+    qobject.as_mut().set_draft_generated(generated);
+    let revision = qobject.as_ref().mapping_render_serial().wrapping_add(1);
+    qobject.as_mut().set_mapping_render_serial(revision);
     qobject.as_mut().set_draft_kanji(draft_kanji.into());
     qobject.as_mut().set_draft_images(draft_images.into());
     qobject.as_mut().set_draft_audio(draft_audio.into());
@@ -2143,10 +3538,60 @@ fn native_config_path() -> Result<PathBuf, String> {
 
 fn runtime_config() -> Result<linguist_config::NativeConfig, String> {
     let path = native_config_path()?;
-    if !path.exists() {
-        return Ok(linguist_config::NativeConfig::default());
+    let mut config = if path.exists() {
+        linguist_config::load_native(&path).map_err(|error| error.to_string())?
+    } else {
+        linguist_config::NativeConfig::default()
+    };
+    if let Some(defaults) = local_mapping_defaults()? {
+        merge_mapping_defaults(&mut config, defaults);
     }
-    linguist_config::load_native(&path).map_err(|error| error.to_string())
+    Ok(config)
+}
+
+fn merge_mapping_defaults(
+    config: &mut linguist_config::NativeConfig,
+    defaults: BTreeMap<String, linguist_config::DeckConfig>,
+) {
+    for (purpose, default) in defaults {
+        let configured = config.decks.entry(purpose).or_default();
+        if configured.deck_name.is_none() {
+            configured.deck_name = default.deck_name;
+        }
+        if configured.model_name.is_none() {
+            configured.model_name = default.model_name;
+        }
+        if configured.ocr_languages.is_empty() {
+            configured.ocr_languages = default.ocr_languages;
+        }
+        for (logical, physical) in default.fields {
+            configured.fields.entry(logical).or_insert(physical);
+        }
+    }
+}
+
+fn local_mapping_defaults() -> Result<Option<BTreeMap<String, linguist_config::DeckConfig>>, String>
+{
+    let path = std::env::var_os("LINGUIST_LOCAL_MAPPING_FILE")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let path = native_config_path()
+                .ok()?
+                .with_file_name("default-mappings.local.json");
+            path.exists().then_some(path)
+        })
+        .or_else(|| {
+            let path = PathBuf::from("local-deck-mappings.json");
+            path.exists().then_some(path)
+        });
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let bytes = std::fs::read(&path)
+        .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|error| format!("Invalid {}: {error}", path.display()))
 }
 
 fn nonempty_setting(value: &str) -> Option<String> {
@@ -2211,18 +3656,303 @@ fn configured_value(variable: &str, configured: &str, fallback: &str) -> String 
     })
 }
 
-const MAX_LIVE_QUEUE_NOTES: usize = 1_000;
+fn start_review_load(qobject: Pin<&mut qobject::AppBackend>, request: ReviewLoadRequest) {
+    let binding = qobject.as_ref();
+    let state = binding.rust();
+    let generation = state.review_generation.fetch_add(1, Ordering::AcqRel) + 1;
+    let cache = state.review_cache.clone();
+    let slot = state.review_load_result.clone();
+    let live_generation = state.review_generation.clone();
+    std::thread::spawn(move || {
+        let (anki, ollama, result) = match LiveDesktopPort::from_environment() {
+            Ok(port) => {
+                let anki = request.check_services.then(|| port.anki_available());
+                let ollama = request.check_services.then(|| port.ollama_available());
+                let result = load_review_page(&request, &cache, &port);
+                (anki, ollama, result)
+            }
+            Err(error) => (
+                request.check_services.then(|| Err(error.clone())),
+                request.check_services.then(|| Err(error.clone())),
+                Err(error),
+            ),
+        };
+        let preload = result.as_ref().ok().cloned();
+        if live_generation.load(Ordering::Acquire) == generation
+            && let Ok(mut output) = slot.lock()
+        {
+            *output = Some(ReviewLoadOutput {
+                generation,
+                anki,
+                ollama,
+                result,
+            });
+        }
+        if let Some(page) = preload
+            && live_generation.load(Ordering::Acquire) == generation
+        {
+            preload_review_neighbors(&page, &cache, &live_generation, generation);
+        }
+    });
+}
+
+fn load_review_page(
+    request: &ReviewLoadRequest,
+    cache: &Arc<Mutex<ReviewCache>>,
+    port: &LiveDesktopPort,
+) -> Result<LoadedReviewPage, String> {
+    let decks = port.decks()?;
+    let models = port.models().unwrap_or_default();
+    let deck = choose_deck(&decks, request.preferred_deck.as_deref())
+        .ok_or_else(|| "No Anki decks are available".to_owned())?;
+    let key = ReviewIndexKey {
+        deck: deck.clone(),
+        query: request.query.clone(),
+    };
+    if request.refresh_cache
+        && let Ok(mut cache) = cache.lock()
+    {
+        cache.indices.remove(&key);
+        cache.pages.retain(|page, _| page.index != key);
+    }
+    let cached_ids = cache
+        .lock()
+        .ok()
+        .and_then(|cache| cache.indices.get(&key).cloned());
+    let ids = if let Some(ids) = cached_ids {
+        ids
+    } else {
+        let query = review_anki_query(&deck, &request.query);
+        let ids = Arc::new(
+            port.runtime
+                .block_on(port.anki.find_notes(&query))
+                .map_err(|error| error.to_string())?,
+        );
+        if let Ok(mut cache) = cache.lock() {
+            cache.indices.insert(key.clone(), ids.clone());
+        }
+        ids
+    };
+    let (offset, cursor) = review_position(
+        ids.len(),
+        request.requested_offset,
+        request.requested_cursor,
+        request.initial_direction,
+    );
+    let page_key = ReviewPageKey { index: key, offset };
+    let cached_page = cache
+        .lock()
+        .ok()
+        .and_then(|cache| cache.pages.get(&page_key).cloned());
+    let notes = if let Some(page) = cached_page {
+        page.notes
+    } else {
+        let notes = fetch_review_page(port, &ids, offset)?;
+        if let Ok(mut cache) = cache.lock() {
+            cache.pages.insert(
+                page_key,
+                CachedReviewPage {
+                    notes: notes.clone(),
+                },
+            );
+        }
+        notes
+    };
+    Ok(LoadedReviewPage {
+        decks,
+        models,
+        deck,
+        query: request.query.clone(),
+        ids,
+        offset,
+        cursor,
+        notes,
+        select_cursor: request.select_cursor,
+    })
+}
+
+fn fetch_review_page(
+    port: &LiveDesktopPort,
+    ids: &[i64],
+    offset: usize,
+) -> Result<Vec<linguist_application::NoteInfo>, String> {
+    let end = (offset + REVIEW_PAGE_SIZE).min(ids.len());
+    if offset >= end {
+        return Ok(Vec::new());
+    }
+    let notes = port
+        .runtime
+        .block_on(port.anki.notes_info(&ids[offset..end]))
+        .map_err(|error| error.to_string())?;
+    let mut by_id = notes
+        .into_iter()
+        .map(|note| (note.note_id, note))
+        .collect::<HashMap<_, _>>();
+    Ok(ids[offset..end]
+        .iter()
+        .filter_map(|id| by_id.remove(id))
+        .collect())
+}
+
+fn preload_review_neighbors(
+    page: &LoadedReviewPage,
+    cache: &Arc<Mutex<ReviewCache>>,
+    generation: &AtomicU64,
+    expected_generation: u64,
+) {
+    let offsets = [
+        page.offset.checked_sub(REVIEW_PAGE_SIZE),
+        (page.offset + REVIEW_PAGE_SIZE < page.ids.len()).then_some(page.offset + REVIEW_PAGE_SIZE),
+    ];
+    let Ok(port) = LiveDesktopPort::from_environment() else {
+        return;
+    };
+    for offset in offsets.into_iter().flatten() {
+        if generation.load(Ordering::Acquire) != expected_generation {
+            return;
+        }
+        let key = ReviewPageKey {
+            index: ReviewIndexKey {
+                deck: page.deck.clone(),
+                query: page.query.clone(),
+            },
+            offset,
+        };
+        if cache
+            .lock()
+            .is_ok_and(|cache| cache.pages.contains_key(&key))
+        {
+            continue;
+        }
+        let Ok(notes) = fetch_review_page(&port, &page.ids, offset) else {
+            continue;
+        };
+        if let Ok(mut cache) = cache.lock() {
+            cache.pages.insert(key, CachedReviewPage { notes });
+        }
+    }
+}
+
+fn review_position(
+    total: usize,
+    requested_offset: usize,
+    requested_cursor: Option<usize>,
+    initial_direction: i32,
+) -> (usize, usize) {
+    if total == 0 {
+        return (0, 0);
+    }
+    let cursor = requested_cursor
+        .unwrap_or_else(|| if initial_direction < 0 { total - 1 } else { 0 })
+        .min(total - 1);
+    let last_offset = (total - 1) / REVIEW_PAGE_SIZE * REVIEW_PAGE_SIZE;
+    let offset = if requested_cursor.is_some() {
+        cursor / REVIEW_PAGE_SIZE * REVIEW_PAGE_SIZE
+    } else if requested_offset > 0 {
+        requested_offset.min(last_offset) / REVIEW_PAGE_SIZE * REVIEW_PAGE_SIZE
+    } else {
+        cursor / REVIEW_PAGE_SIZE * REVIEW_PAGE_SIZE
+    };
+    (
+        offset,
+        cursor
+            .max(offset)
+            .min((offset + REVIEW_PAGE_SIZE - 1).min(total - 1)),
+    )
+}
+
+fn review_anki_query(deck: &str, query: &str) -> String {
+    let deck = deck.replace('\\', "\\\\").replace('"', "\\\"");
+    let query = query.trim().replace('\\', "\\\\").replace('"', "\\\"");
+    if query.is_empty() {
+        format!("deck:\"{deck}\"")
+    } else {
+        format!("deck:\"{deck}\" \"{query}\"")
+    }
+}
+
+fn move_review_page(mut qobject: Pin<&mut qobject::AppBackend>, direction: i32) {
+    let (deck, query, total, offset) = {
+        let binding = qobject.as_ref();
+        let state = binding.rust();
+        (
+            state.review_browser.deck.clone(),
+            state.review_browser.query.clone(),
+            state.review_browser.ids.len(),
+            state.review_browser.offset,
+        )
+    };
+    let next = if direction < 0 {
+        offset.saturating_sub(REVIEW_PAGE_SIZE)
+    } else {
+        (offset + REVIEW_PAGE_SIZE)
+            .min(total.saturating_sub(1) / REVIEW_PAGE_SIZE * REVIEW_PAGE_SIZE)
+    };
+    if deck.is_empty() || total == 0 || next == offset {
+        return;
+    }
+    qobject.as_mut().rust_mut().controller.begin_queue_loading();
+    sync_controller_state(qobject.as_mut());
+    start_review_load(
+        qobject,
+        ReviewLoadRequest {
+            preferred_deck: Some(deck),
+            query,
+            requested_offset: next,
+            requested_cursor: Some(next),
+            initial_direction: direction,
+            select_cursor: false,
+            check_services: false,
+            refresh_cache: false,
+        },
+    );
+}
+
+fn sync_review_browser_state(mut qobject: Pin<&mut qobject::AppBackend>) {
+    let (total, offset, cursor, end, searching) = {
+        let binding = qobject.as_ref();
+        let state = binding.rust();
+        let total = state.review_browser.ids.len();
+        (
+            total,
+            state.review_browser.offset,
+            state.review_browser.cursor,
+            (state.review_browser.offset + state.review_browser.notes.len()).min(total),
+            !state.review_browser.query.is_empty(),
+        )
+    };
+    let pages = total.div_ceil(REVIEW_PAGE_SIZE);
+    qobject.as_mut().set_review_total(queue_len(total));
+    qobject.as_mut().set_review_page(if total == 0 {
+        0
+    } else {
+        queue_len(offset / REVIEW_PAGE_SIZE + 1)
+    });
+    qobject.as_mut().set_review_page_count(queue_len(pages));
+    qobject
+        .as_mut()
+        .set_review_page_start(if total == 0 { 0 } else { queue_len(offset + 1) });
+    qobject.as_mut().set_review_page_end(queue_len(end));
+    qobject
+        .as_mut()
+        .set_review_search_count(if searching { queue_len(total) } else { 0 });
+    qobject
+        .as_mut()
+        .set_review_search_match(if searching && total > 0 {
+            queue_len(cursor + 1)
+        } else {
+            0
+        });
+    let serial = qobject.as_ref().review_navigation_serial().wrapping_add(1);
+    qobject.set_review_navigation_serial(serial);
+}
+
 struct LiveDesktopPort {
     runtime: tokio::runtime::Runtime,
     anki: linguist_anki::AnkiConnectTransport,
     ollama: linguist_ollama::OllamaClient,
-    preferred_deck: Option<String>,
 }
 impl LiveDesktopPort {
-    fn for_deck(mut self, deck: Option<String>) -> Self {
-        self.preferred_deck = deck;
-        self
-    }
     fn from_environment() -> Result<Self, String> {
         let config = runtime_config()?;
         let anki_url = configured_value(
@@ -2241,13 +3971,18 @@ impl LiveDesktopPort {
                 .map_err(|error| error.to_string())?,
             ollama: linguist_ollama::OllamaClient::new(&ollama_url)
                 .map_err(|error| error.to_string())?,
-            preferred_deck: None,
         })
     }
     fn decks(&self) -> Result<Vec<String>, String> {
         self.runtime
             .block_on(self.anki.deck_names())
             .map(|decks| decks.into_iter().map(|deck| deck.0).collect())
+            .map_err(|error| error.to_string())
+    }
+    fn models(&self) -> Result<Vec<String>, String> {
+        self.runtime
+            .block_on(self.anki.model_names())
+            .map(|models| models.into_iter().map(|model| model.0).collect())
             .map_err(|error| error.to_string())
     }
 
@@ -2314,12 +4049,11 @@ impl DesktopPort for LiveDesktopPort {
             .map_err(|error| error.to_string())
     }
     fn active_deck(&self) -> Result<String, String> {
-        choose_deck(&self.decks()?, self.preferred_deck.as_deref())
-            .ok_or_else(|| "No Anki decks are available".into())
+        choose_deck(&self.decks()?, None).ok_or_else(|| "No Anki decks are available".into())
     }
     fn review_queue(&self) -> Result<ReviewQueueData, String> {
         let decks = self.decks()?;
-        let Some(deck) = choose_deck(&decks, self.preferred_deck.as_deref()) else {
+        let Some(deck) = choose_deck(&decks, None) else {
             return Ok(ReviewQueueData {
                 decks,
                 rows: Vec::new(),
@@ -2330,7 +4064,7 @@ impl DesktopPort for LiveDesktopPort {
             .runtime
             .block_on(self.anki.find_notes(&query))
             .map_err(|error| error.to_string())?;
-        ids.truncate(MAX_LIVE_QUEUE_NOTES);
+        ids.truncate(REVIEW_PAGE_SIZE);
         let notes = self
             .runtime
             .block_on(self.anki.notes_info(&ids))
@@ -2344,16 +4078,6 @@ fn choose_deck(decks: &[String], preferred: Option<&str>) -> Option<String> {
         .and_then(|name| decks.iter().find(|deck| deck.as_str() == name))
         .or_else(|| decks.first())
         .cloned()
-}
-impl DraftNotePort for LiveDesktopPort {
-    fn note(&self, note_id: i64) -> Result<linguist_application::NoteInfo, String> {
-        self.runtime
-            .block_on(self.anki.notes_info(&[note_id]))
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .next()
-            .ok_or_else(|| format!("Anki note {note_id} was not found"))
-    }
 }
 fn review_row(note: linguist_application::NoteInfo) -> ReviewRow {
     let raw_expression = ["Expression", "Word", "Front", "Vocabulary"]
@@ -2823,13 +4547,34 @@ impl linguist_pipeline::EnrichmentServices for LiveEnrichmentServices {
         deck_key: &'a str,
     ) -> linguist_pipeline::PipelineFuture<'a> {
         Box::pin(async move {
+            self.image_with_dictionary(expression, deck_key, &Default::default())
+                .await
+        })
+    }
+
+    fn image_with_dictionary<'a>(
+        &'a self,
+        expression: &'a str,
+        deck_key: &'a str,
+        dictionary: &'a linguist_core::DictionaryData,
+    ) -> linguist_pipeline::PipelineFuture<'a> {
+        Box::pin(async move {
             if deck_key.ends_with("grammar") {
                 return Ok(linguist_pipeline::ProviderOutput::Unavailable);
             }
             use base64::Engine;
             use std::sync::{Arc, atomic::AtomicBool};
+            let hint = dictionary
+                .definition
+                .split([';', '\n'])
+                .map(str::trim)
+                .filter(|term| !term.is_empty())
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let search = self.image_search.with_meaning_hint(&hint);
             let result = linguist_media::discover_image(
-                &self.image_search,
+                &search,
                 &self.image_fetch,
                 &OllamaImageClassifier {
                     client: &self.ollama,
@@ -3199,6 +4944,13 @@ impl DraftGenerationPort for LiveGenerationAdapter {
             value,
             provenance: "Native enrichment pipeline · Jisho + Ollama".into(),
         }];
+        if let Some(examples) = &document.values.examples {
+            changes.push(crate::draft::GeneratedChange {
+                field: crate::draft::DraftField::Examples,
+                value: examples.clone(),
+                provenance: "Ollama grammar examples".into(),
+            });
+        }
         if let Some(kanji) = document
             .values
             .kanji_construction
@@ -3324,24 +5076,23 @@ impl LiveCommitAdapter {
                 .first()
                 .map(|name| format!("<img src=\"{name}\">")),
             meaning_text: Some(draft.meaning.clone()),
+            examples: Some(draft.examples.clone()),
             kanji_construction: Some(draft.kanji.clone()),
             audio: Some(draft.audio.join("<br/>")),
         };
-        let managed_spec = linguist_core::japanese_vocab_spec();
-        let managed_mapping = FieldMapping {
-            expression: Some("Expression".into()),
-            meaning_image: Some("Picture".into()),
-            meaning_text: Some("Meaning".into()),
-            kanji_construction: Some("Kanji".into()),
-            audio: Some("Audio".into()),
-        };
         let config = runtime_config()?;
-        let deck_config = config.decks.iter().find_map(|(key, configured)| {
-            (key == &draft.deck_name
-                || configured.deck_name.as_deref() == Some(draft.deck_name.as_str()))
-            .then_some(configured)
+        let configured_entry = config.decks.iter().find(|(key, configured)| {
+            key.as_str() == draft.deck_name
+                || configured.deck_name.as_deref() == Some(draft.deck_name.as_str())
         });
-        let (deck_name, target_model, source, mapping, tags) = match draft.mode {
+        let purpose = configured_entry
+            .map(|(key, _)| key.as_str())
+            .or(draft.language_key.as_deref())
+            .unwrap_or("japanese_vocab");
+        let deck_config = configured_entry.map(|(_, configured)| configured);
+        let managed_spec = linguist_core::managed_vocab_spec(purpose);
+        let managed_mapping = managed_field_mapping(purpose);
+        let (deck_name, mut target_model, source, mut mapping, tags) = match draft.mode {
             CardMode::Modernize => {
                 let note = self.runtime.block_on(self.commit_note(draft))?;
                 let deck_name = note
@@ -3385,6 +5136,12 @@ impl LiveCommitAdapter {
                 Vec::new(),
             ),
         };
+        // Source mappings describe legacy input. Vocabulary output always uses
+        // its own managed schema, never the legacy physical field names.
+        if matches!(purpose, "japanese_vocab" | "english_vocab") {
+            target_model = managed_spec.model_name.clone();
+            mapping = managed_field_mapping(purpose);
+        }
         if deck_name.trim().is_empty() || target_model.trim().is_empty() {
             return Err("Deck and target model are required".into());
         }
@@ -3401,7 +5158,7 @@ impl LiveCommitAdapter {
         document.tags = tags;
         let template_plan = if target_model == managed_spec.model_name {
             self.runtime
-                .block_on(self.commit.japanese_template_plan())
+                .block_on(self.commit.managed_template_plan(purpose))
                 .map_err(|error| error.to_string())?
         } else {
             linguist_core::ManagedTemplatePlan::NoChange
@@ -3446,6 +5203,21 @@ impl LiveCommitAdapter {
     }
 }
 
+fn managed_field_mapping(purpose: &str) -> FieldMapping {
+    FieldMapping {
+        expression: Some("Expression".into()),
+        meaning_image: (purpose != "japanese_grammar").then(|| "Picture".into()),
+        meaning_text: Some(if purpose == "japanese_grammar" {
+            "Explanation".into()
+        } else {
+            "Meaning".into()
+        }),
+        examples: (purpose == "japanese_grammar").then(|| "Examples".into()),
+        kanji_construction: (purpose == "japanese_vocab").then(|| "Kanji".into()),
+        audio: (purpose != "japanese_grammar").then(|| "Audio".into()),
+    }
+}
+
 fn configured_mapping(fields: &BTreeMap<String, String>) -> FieldMapping {
     let field = |name: &str| {
         fields
@@ -3457,6 +5229,7 @@ fn configured_mapping(fields: &BTreeMap<String, String>) -> FieldMapping {
         expression: field("expression"),
         meaning_image: field("meaning_image"),
         meaning_text: field("meaning_text"),
+        examples: field("examples"),
         kanji_construction: field("kanji_construction"),
         audio: field("audio"),
     }
@@ -3477,6 +5250,7 @@ fn mapping_from_fields(fields: &BTreeMap<String, String>) -> FieldMapping {
         expression: find(&["Expression", "Word", "Front", "Vocabulary"]),
         meaning_image: find(&["Meaning Image", "Image", "Picture"]),
         meaning_text: find(&["Meaning", "Definition", "Back"]),
+        examples: find(&["Examples", "Example Sentences"]),
         kanji_construction: find(&["Kanji", "Kanji Construction"]),
         audio: find(&["Audio", "Pronunciation"]),
     }
@@ -3558,6 +5332,159 @@ impl crate::commit_model::CommitExecutor<crate::draft::ReviewDraft> for LiveComm
 #[cfg(test)]
 mod backend_tests {
     use super::*;
+
+    #[test]
+    fn review_pages_clamp_offsets_and_search_directions() {
+        assert_eq!(review_position(0, 500, Some(500), 1), (0, 0));
+        assert_eq!(review_position(250, 0, Some(135), 1), (100, 135));
+        assert_eq!(review_position(250, 999, None, 1), (200, 200));
+        assert_eq!(review_position(250, 0, None, -1), (200, 249));
+    }
+
+    #[test]
+    fn review_search_queries_cover_the_whole_deck_and_escape_input() {
+        assert_eq!(review_anki_query("Japanese", ""), "deck:\"Japanese\"");
+        assert_eq!(
+            review_anki_query("A \\\"deck", "say \\\"hi"),
+            "deck:\"A \\\\\\\"deck\" \"say \\\\\\\"hi\""
+        );
+    }
+
+    #[test]
+    fn reusable_field_mapping_keeps_schema_keys_and_source_names() {
+        let editor = FieldMappingEditor {
+            sources: vec![
+                ("Word".into(), "猫".into()),
+                ("Picture".into(), "<img src='cat.jpg'>".into()),
+                ("Definition".into(), "cat".into()),
+            ],
+            connections: vec![Some(0), Some(1), Some(2), None, None],
+            ..Default::default()
+        };
+        assert_eq!(
+            mapping_fields(&editor),
+            BTreeMap::from([
+                ("expression".into(), "Word".into()),
+                ("meaning_image".into(), "Picture".into()),
+                ("meaning_text".into(), "Definition".into()),
+            ])
+        );
+    }
+
+    #[test]
+    fn english_mapping_omits_kanji_and_orders_sources_by_schema() {
+        let fields = BTreeMap::from([
+            ("Extra".into(), "x".into()),
+            ("Picture".into(), "image".into()),
+            ("Pronunciation".into(), "audio".into()),
+            ("Word".into(), "term".into()),
+            ("Definition".into(), "meaning".into()),
+        ]);
+        let mapping = BTreeMap::from([
+            ("expression".into(), "Word".into()),
+            ("meaning_image".into(), "Picture".into()),
+            ("meaning_text".into(), "Definition".into()),
+            ("audio".into(), "Pronunciation".into()),
+        ]);
+        assert_eq!(
+            target_fields("english_vocab")
+                .iter()
+                .map(|(key, _)| *key)
+                .collect::<Vec<_>>(),
+            ["expression", "meaning_image", "meaning_text", "audio"]
+        );
+        assert_eq!(
+            ordered_mapping_sources(&fields, &mapping)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
+            ["Word", "Picture", "Definition", "Pronunciation", "Extra"]
+        );
+        assert_eq!(
+            target_fields("japanese_grammar")
+                .iter()
+                .map(|(key, _)| *key)
+                .collect::<Vec<_>>(),
+            ["expression", "meaning_text", "examples"]
+        );
+        let grammar = managed_field_mapping("japanese_grammar");
+        assert_eq!(grammar.meaning_text.as_deref(), Some("Explanation"));
+        assert_eq!(grammar.examples.as_deref(), Some("Examples"));
+        assert_eq!(grammar.meaning_image, None);
+        assert_eq!(grammar.audio, None);
+        assert_eq!(grammar.kanji_construction, None);
+    }
+
+    #[test]
+    fn mapping_prompt_contains_bounded_samples_and_exact_schema() {
+        let editor = FieldMappingEditor {
+            purpose: "english_vocab".into(),
+            deck: "Moonlit Manuscripts".into(),
+            model: "2. Picture Words".into(),
+            sources: vec![("Word".into(), format!("<b>{}</b>", "x".repeat(600)))],
+            ..Default::default()
+        };
+        let prompt = mapping_reasoning_prompt(&editor);
+        assert!(prompt.contains("Moonlit Manuscripts"));
+        assert!(prompt.contains("meaning_image"));
+        assert!(!prompt.contains("kanji_construction"));
+        assert!(prompt.len() < 1_800);
+        assert_eq!(
+            choose_reasoning_model(&["gemma".into(), "qwen3:8b".into()]),
+            Some("qwen3:8b".into())
+        );
+    }
+
+    #[test]
+    fn local_defaults_fill_gaps_without_overwriting_user_mapping() {
+        let mut config = linguist_config::NativeConfig::default();
+        config.decks.insert(
+            "english_vocab".into(),
+            linguist_config::DeckConfig {
+                deck_name: Some("My deck".into()),
+                fields: BTreeMap::from([("expression".into(), "Term".into())]),
+                ..Default::default()
+            },
+        );
+        merge_mapping_defaults(
+            &mut config,
+            BTreeMap::from([(
+                "english_vocab".into(),
+                linguist_config::DeckConfig {
+                    deck_name: Some("Default deck".into()),
+                    model_name: Some("Model".into()),
+                    fields: BTreeMap::from([
+                        ("expression".into(), "Word".into()),
+                        ("audio".into(), "Sound".into()),
+                    ]),
+                    ..Default::default()
+                },
+            )]),
+        );
+        let merged = &config.decks["english_vocab"];
+        assert_eq!(merged.deck_name.as_deref(), Some("My deck"));
+        assert_eq!(merged.model_name.as_deref(), Some("Model"));
+        assert_eq!(merged.fields["expression"], "Term");
+        assert_eq!(merged.fields["audio"], "Sound");
+    }
+
+    #[test]
+    fn field_renderer_embeds_local_media_and_blocks_active_remote_markup() {
+        let markup = embed_media_markup(
+            safe_field_markup(
+                "<script>bad()</script><a href='https://bad.test'>x</a><img src='cat.png'>",
+            ),
+            &HashMap::from([("cat.png".into(), "data:image/png;base64,Y2F0".into())]),
+        );
+        assert!(!markup.contains("<script"));
+        assert!(!markup.contains("https://bad.test"));
+        assert!(markup.contains("data:image/png;base64,Y2F0"));
+        assert!(!strip_image_tags(&markup).contains("<img"));
+        assert_eq!(
+            local_image_names("<img src=\"safe.webp\"><img src='../bad'>"),
+            ["safe.webp"]
+        );
+    }
 
     #[test]
     fn deck_purpose_mapping_validates_and_preserves_field_configuration() {

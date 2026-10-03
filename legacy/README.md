@@ -1,8 +1,26 @@
+# Archived implementation
+
+Moved intact under `legacy/` on 2026-09-26. This folder contains the previous Rust/Qt and Python/TUI applications, tests, contracts, packaging and historical docs. The active CLI design is [docs/cli](../docs/cli/README.md); new implementation belongs at repository root.
+
+Run old build/test commands from `legacy/`, for example `cargo metadata --offline --no-deps` and `PYTHONPATH=src .venv/bin/python -m pytest`. Local build artifacts and the virtual environment were moved without regeneration. Editable installs, console-script shebangs and cached absolute paths may refer to the old location; use the Python interpreter with explicit PYTHONPATH or recreate the environment before using its console scripts.
+
+Arch package build roots now use the cloned repository’s `legacy/` directory. Git history remains at repository root.
+
+---
+
 # Linguist Anki Bridge
 
 Version **0.0.1**. See
 [`docs/repository-state.md`](docs/repository-state.md) for the implemented
 architecture, workflows, storage boundaries, and current limitations.
+
+The new command-only implementation is specified in
+[`docs/cli-application-specification.md`](../docs/cli/reference/application/README.md).
+Read it before implementing the CLI; it separates current Rust/Python behavior,
+target requirements, recommendations, and open decisions for user review.
+The [research and implementation plan](../docs/cli/reference/research/README.md)
+adds current technology choices, read-only collection findings, and proposed v2
+standards for revamping and adding both vocabulary and grammar notes.
 
 Open-source Python application to bridge local Anki Desktop and Ollama with Crawl4AI web scrapers.
 Automates legacy card modernization (screenshot OCR -> Ollama annotations) and new vocabulary injection (dictionary parsing -> Ollama examples -> TTS audio fallback).
@@ -97,3 +115,5 @@ to `Expression`, `Picture`, `Meaning`, `Kanji`, and `Audio` as printed by the
 installer. Existing notes are not converted automatically. See
 [`docs/japanese-card-template.md`](docs/japanese-card-template.md) for the
 layout and migration guidance.
+
+The proposed CLI implementation is specified in the [implementation handbook](../docs/cli/README.md), including all command logic, typed settings, write/recovery rules and delivery work packages. This documentation describes the target implementation; it does not claim the current application implements those guarantees.

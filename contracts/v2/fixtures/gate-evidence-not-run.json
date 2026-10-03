@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "gate_id": "EV-01",
+  "status": "not_run",
+  "version_matrix": {},
+  "fixture_hashes": {},
+  "commands": [],
+  "assertions": [],
+  "artifact_refs": [],
+  "failure_code": null
+}

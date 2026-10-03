@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use linguist_core::{CardDocument, japanese_vocab_spec};
+use linguist_core::{CardDocument, ManagedModelSpec};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CardFace {
@@ -20,12 +20,12 @@ pub struct RenderedCard {
 
 /// Render one managed Anki card without a network-capable browser. Rich fields
 /// remain rich HTML, but remote links and media URLs are never carried forward.
-pub fn render_managed_card(
+pub fn render_managed_card_with_spec(
     document: &CardDocument,
+    spec: &ManagedModelSpec,
     template_index: usize,
     face: CardFace,
 ) -> Option<RenderedCard> {
-    let spec = japanese_vocab_spec();
     let template = spec.templates.get(template_index)?;
     let mut fields = BTreeMap::from([
         ("Expression", escape_html(&document.expression)),
@@ -36,6 +36,14 @@ pub fn render_managed_card(
         (
             "Meaning",
             sanitize_markup(document.values.meaning_text.as_deref().unwrap_or_default()),
+        ),
+        (
+            "Explanation",
+            sanitize_markup(document.values.meaning_text.as_deref().unwrap_or_default()),
+        ),
+        (
+            "Examples",
+            sanitize_markup(document.values.examples.as_deref().unwrap_or_default()),
         ),
         (
             "Kanji",
@@ -56,14 +64,14 @@ pub fn render_managed_card(
         CardFace::Front => &template.front,
         CardFace::Back => &template.back,
     };
-    let html = render_template(source, &mut fields);
+    let html = render_template(source, &spec.css, &mut fields);
     let images = image_urls(&html);
     let audio = audio_files(document.values.audio.as_deref().unwrap_or_default());
     Some(RenderedCard {
         template_name: template.name.clone(),
         face,
         html,
-        css: spec.css,
+        css: spec.css.clone(),
         audio,
         images,
     })
@@ -79,9 +87,17 @@ pub fn audio_media_url(value: &str, index: usize) -> Option<String> {
         .and_then(|filename| local_media_url(filename))
 }
 
-fn render_template(template: &str, fields: &mut BTreeMap<&str, String>) -> String {
+fn render_template(template: &str, css: &str, fields: &mut BTreeMap<&str, String>) -> String {
     let mut rendered = template.to_owned();
-    for field in ["Expression", "Picture", "Meaning", "Kanji", "Audio"] {
+    for field in [
+        "Expression",
+        "Picture",
+        "Meaning",
+        "Explanation",
+        "Examples",
+        "Kanji",
+        "Audio",
+    ] {
         let value = fields.get(field).cloned().unwrap_or_default();
         let opening = format!("{{{{#{field}}}}}");
         let closing = format!("{{{{/{field}}}}}");
@@ -99,7 +115,7 @@ fn render_template(template: &str, fields: &mut BTreeMap<&str, String>) -> Strin
         rendered = rendered.replace(&format!("{{{{type:{field}}}}}"), &type_answer(field));
         rendered = rendered.replace(&format!("{{{{{field}}}}}"), &value);
     }
-    format!("<style>{}</style>{rendered}", japanese_vocab_spec().css)
+    format!("<style>{css}</style>{rendered}")
 }
 
 fn type_answer(field: &str) -> String {
@@ -226,6 +242,7 @@ mod tests {
             values: LogicalFields {
                 meaning_image: Some("<img src='linguist-taberu.jpg'>".into()),
                 meaning_text: Some("to eat <a href='https://unsafe.example'>more</a>".into()),
+                examples: Some("<b>朝ご飯を食べる。</b> — I eat breakfast.".into()),
                 kanji_construction: Some("食 · eat".into()),
                 audio: Some("たべる [sound:linguist-taberu.mp3]".into()),
             },
@@ -245,7 +262,13 @@ mod tests {
         let document = document();
         for template in 0..3 {
             for face in [CardFace::Front, CardFace::Back] {
-                let rendered = render_managed_card(&document, template, face).unwrap();
+                let rendered = render_managed_card_with_spec(
+                    &document,
+                    &linguist_core::japanese_vocab_spec(),
+                    template,
+                    face,
+                )
+                .unwrap();
                 assert!(rendered.html.contains("lab-shell"));
                 assert!(rendered.css.contains("lab-expression"));
                 assert!(!rendered.html.contains("https://unsafe.example"));
@@ -276,5 +299,20 @@ mod tests {
             audio_media_url("safe-name.mp3", 0),
             Some("linguist-media:///safe-name.mp3".into())
         );
+    }
+
+    #[test]
+    fn grammar_preview_renders_dedicated_explanation_field() {
+        let rendered = render_managed_card_with_spec(
+            &document(),
+            &linguist_core::japanese_grammar_spec(),
+            0,
+            CardFace::Back,
+        )
+        .unwrap();
+        assert!(rendered.html.contains("Explanation"));
+        assert!(rendered.html.contains("to eat"));
+        assert!(!rendered.html.contains("{{Explanation}}"));
+        assert!(!rendered.html.contains("Kanji construction"));
     }
 }

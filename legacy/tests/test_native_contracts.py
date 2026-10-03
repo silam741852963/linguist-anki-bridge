@@ -48,6 +48,13 @@ def test_contract_rejects_unknown_version_before_processing():
         validate_card_document(payload)
 
 
+def test_contract_reads_pre_examples_v1_documents():
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    payload["values"].pop("examples")
+    document = import_card_document(payload)
+    assert document.values["examples"] is None
+
+
 def test_contract_rejects_out_of_range_confidence():
     payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
     payload["provenance"]["meaning_text"][0]["confidence_percent"] = 101

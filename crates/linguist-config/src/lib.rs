@@ -1,4 +1,7 @@
 //! Registry-backed configuration. No shell expansion or service discovery.
+pub mod resources;
+pub mod schema;
+pub use linguist_core::records::execution_setting;
 use linguist_core::{canonical, document::Language};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -62,6 +65,48 @@ impl Registry {
         }
         Err(format!("UNKNOWN_SETTING: {key}"))
     }
+    /// Return up to three nearby registered names; concrete profile/purpose
+    /// spelling is retained when the lookup was for a named mapping.
+    pub fn suggestions(&self, key: &str) -> Vec<String> {
+        if key.len() > 128 {
+            return Vec::new();
+        }
+        let parts: Vec<_> = key.split('.').collect();
+        let (pattern, name) = if parts.len() == 3
+            && matches!(parts[0], "purposes" | "profiles")
+            && name_valid(parts[1])
+        {
+            (
+                format!(
+                    "{}.<{}>.{}",
+                    parts[0],
+                    if parts[0] == "purposes" {
+                        "purpose"
+                    } else {
+                        "name"
+                    },
+                    parts[2]
+                ),
+                Some(parts[1]),
+            )
+        } else {
+            (key.to_owned(), None)
+        };
+        let mut candidates: Vec<_> = self
+            .entries
+            .keys()
+            .map(|candidate| {
+                (
+                    edit_distance(pattern.as_bytes(), candidate.as_bytes()),
+                    candidate
+                        .replace("<purpose>", name.unwrap_or("<purpose>"))
+                        .replace("<name>", name.unwrap_or("<name>")),
+                )
+            })
+            .collect();
+        candidates.sort();
+        candidates.into_iter().take(3).map(|(_, key)| key).collect()
+    }
     pub fn parse_value(&self, key: &str, input: &str) -> Result<Value> {
         let entry = self.lookup(key)?;
         let value = match entry.value_type.as_str() {
@@ -121,14 +166,15 @@ impl Registry {
             return Err(fail());
         }
         if let Some(text) = value.as_str() {
-            check_format(
-                e.constraints
-                    .get("format")
-                    .and_then(Value::as_str)
-                    .unwrap_or("text"),
-                text,
-            )
-            .map_err(|_| fail())?;
+            let format = e
+                .constraints
+                .get("format")
+                .and_then(Value::as_str)
+                .unwrap_or("text");
+            check_format(format, text).map_err(|_| fail())?;
+            if format == "url_template" {
+                check_url_template(key, text).map_err(|_| fail())?;
+            }
         }
         if let Some(items) = value.as_array() {
             if e.constraints["unique"] == true
@@ -218,6 +264,42 @@ impl Registry {
         values
     }
 }
+fn edit_distance(left: &[u8], right: &[u8]) -> usize {
+    let mut previous: Vec<usize> = (0..=right.len()).collect();
+    let mut current = vec![0; right.len() + 1];
+    for (row, &a) in left.iter().enumerate() {
+        current[0] = row + 1;
+        for (column, &b) in right.iter().enumerate() {
+            current[column + 1] = (previous[column + 1] + 1)
+                .min(current[column] + 1)
+                .min(previous[column] + usize::from(a != b));
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    previous[right.len()]
+}
+fn check_url_template(key: &str, template: &str) -> Result<()> {
+    let placeholder = match key {
+        "dictionary.url_template" => "{word}",
+        "kanji.url_template" => "{char}",
+        _ => return Err("undeclared URL template".into()),
+    };
+    if !template.contains(placeholder) {
+        return Err("required placeholder missing".into());
+    }
+    let authority = template
+        .split_once("://")
+        .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or(rest))
+        .ok_or("invalid URL template")?;
+    if authority.contains(['{', '}']) {
+        return Err("placeholder in URL authority".into());
+    }
+    let resolved = template.replace(placeholder, "x");
+    if resolved.contains(['{', '}']) {
+        return Err("unknown URL placeholder".into());
+    }
+    check_format("url", &resolved)
+}
 fn check_format(format: &str, s: &str) -> Result<()> {
     if s.contains('\0') || s.len() > 1024 * 1024 {
         return Err("invalid string".into());
@@ -276,6 +358,14 @@ fn presets() -> Value {
     ))
     .expect("compiled presets")
 }
+pub fn builtin_purposes() -> Vec<String> {
+    presets()["presets"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
+}
 #[derive(Clone, Debug, Default)]
 pub struct ConfigFile {
     pub values: BTreeMap<String, Value>,
@@ -301,8 +391,19 @@ impl ConfigFile {
     }
     pub fn read(path: &Path, registry: &Registry) -> Result<Self> {
         use std::io::Read;
-        let file = std::fs::File::open(path)
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        let file = options
+            .open(path)
             .map_err(|_| "CONFIG_IO: unable to read selected configuration".to_owned())?;
+        if !file.metadata().map_err(|_| "CONFIG_IO")?.is_file() {
+            return Err("CONFIG_NOT_REGULAR_FILE".into());
+        }
         let mut data = Vec::new();
         file.take(4 * 1024 * 1024 + 1)
             .read_to_end(&mut data)
@@ -404,6 +505,11 @@ pub struct Effective {
     pub values: BTreeMap<String, Value>,
     pub provenance: BTreeMap<String, String>,
     pub fingerprint: String,
+    pub semantic_fingerprint: String,
+    pub execution_fingerprint: String,
+}
+pub fn setting_fingerprints(values: &BTreeMap<String, Value>) -> Result<(String, String)> {
+    linguist_core::records::setting_fingerprints(values).map_err(|e| e.to_string())
 }
 #[derive(Default)]
 pub struct ResolveOptions {
@@ -499,31 +605,88 @@ pub fn resolve(
     }
     validate_effective(registry, &values)?;
     let fingerprint = canonical::digest("resolved-settings", &values).map_err(|e| e.to_string())?;
+    let (semantic_fingerprint, execution_fingerprint) = setting_fingerprints(&values)?;
     Ok(Effective {
         version: 2,
         values,
         provenance,
         fingerprint,
+        semantic_fingerprint,
+        execution_fingerprint,
     })
+}
+const NUMERIC_RELATIONS: [(&str, &str, bool); 3] = [
+    ("jobs.heartbeat_seconds", "jobs.lease_seconds", true),
+    (
+        "retry.initial_backoff_seconds",
+        "retry.max_backoff_seconds",
+        false,
+    ),
+    (
+        "learning.examples_min",
+        "learning.generated_examples_max",
+        false,
+    ),
+];
+fn provider_requirements() -> Vec<(&'static str, Value, &'static str)> {
+    vec![
+        ("llm.enabled", json!(true), "llm.model"),
+        (
+            "dictionary.provider",
+            json!("custom"),
+            "dictionary.url_template",
+        ),
+        (
+            "dictionary.provider",
+            json!("custom"),
+            "dictionary.schema_path",
+        ),
+        ("images.provider", json!("custom"), "images.custom_endpoint"),
+        ("audio.provider", json!("custom"), "audio.endpoint"),
+        ("audio.provider", json!("piper"), "audio.executable"),
+        ("audio.provider", json!("piper"), "audio.voice_resource"),
+        ("ocr.engine", json!("ollama"), "llm.vision_model"),
+        ("ocr.engine", json!("paddleocr"), "ocr.resource_path"),
+        ("browser.enabled", json!(true), "browser.executable"),
+    ]
+}
+/// Machine-readable cross-field rules involving a registered setting.
+pub fn cross_field_checks(key: &str) -> Vec<Value> {
+    let mut checks = Vec::new();
+    for (left, right, third) in NUMERIC_RELATIONS {
+        if key == left || key == right {
+            checks.push(json!({"kind":"numeric_relation","left":left,"operator":if third {"less_than_one_third_of"} else {"at_most"},"right":right}));
+        }
+    }
+    if matches!(key, "llm.max_output_tokens" | "llm.context_tokens") {
+        checks.push(json!({"kind":"numeric_relation","left":"llm.max_output_tokens","operator":"less_than","right":"llm.context_tokens"}));
+    }
+    for (selector, equals, required) in provider_requirements() {
+        if key == selector || key == required {
+            checks.push(json!({"kind":"required_when","selector":selector,"equals":equals,"required":required}));
+        }
+    }
+    if matches!(
+        key,
+        "anki.endpoint"
+            | "llm.endpoint"
+            | "audio.endpoint"
+            | "images.custom_endpoint"
+            | "dictionary.url_template"
+            | "kanji.url_template"
+            | "network.allowed_remote_service_hosts"
+            | "network.offline"
+    ) {
+        checks.push(json!({"kind":"remote_host_policy","allowed_hosts":"network.allowed_remote_service_hosts","offline":"network.offline"}));
+    }
+    checks
 }
 fn validate_effective(registry: &Registry, values: &BTreeMap<String, Value>) -> Result<()> {
     for (k, v) in values {
         registry.validate_value(k, v)?;
     }
     let n = |key: &str| values.get(key).and_then(Value::as_f64).unwrap_or(0.0);
-    for (a, b, strict) in [
-        ("jobs.heartbeat_seconds", "jobs.lease_seconds", true),
-        (
-            "retry.initial_backoff_seconds",
-            "retry.max_backoff_seconds",
-            false,
-        ),
-        (
-            "learning.examples_min",
-            "learning.generated_examples_max",
-            false,
-        ),
-    ] {
+    for (a, b, strict) in NUMERIC_RELATIONS {
         let right = if strict { n(b) / 3.0 } else { n(b) };
         if (strict && n(a) >= right) || (!strict && n(a) > right) {
             return Err(format!(
@@ -542,18 +705,38 @@ fn validate_effective(registry: &Registry, values: &BTreeMap<String, Value>) -> 
                 .into(),
         );
     }
+    let present = |key: &str| {
+        values
+            .get(key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+    };
+    for (selector, selected, required) in provider_requirements() {
+        if values.get(selector) == Some(&selected) && !present(required) {
+            return Err(format!(
+                "PROVIDER_SETTING_REQUIRED: {selector} requires {required}"
+            ));
+        }
+    }
     let hosts: Vec<_> = values["network.allowed_remote_service_hosts"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(Value::as_str)
         .collect();
-    for key in [
+    let mut endpoint_keys = vec![
         "anki.endpoint",
         "llm.endpoint",
         "audio.endpoint",
         "images.custom_endpoint",
-    ] {
+    ];
+    if values["dictionary.provider"] == "custom" {
+        endpoint_keys.push("dictionary.url_template");
+    }
+    if values.get("kanji.url_template") != Some(&registry.lookup("kanji.url_template")?.default) {
+        endpoint_keys.push("kanji.url_template");
+    }
+    for key in endpoint_keys {
         if let Some(endpoint) = values.get(key).and_then(Value::as_str) {
             let u = url::Url::parse(endpoint).map_err(|_| format!("INVALID_ENDPOINT: {key}"))?;
             let host = u.host_str().unwrap();

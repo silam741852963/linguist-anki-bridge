@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "operation_id": "6e7e3932-5fb5-4eaf-a30b-8044c967ac6d",
+  "approval_digest": "lab-jcs-v1:plan:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "old_binding": {
+    "endpoint": "http://127.0.0.1:8765",
+    "profile_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "path_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "bridge_id": "44cb6177-4c34-483f-9149-5e67512ce303",
+    "lineage_id": "6e5cfa2f-2224-4710-b8d2-5741f763c8f7",
+    "session_epoch": "e339a104-7cab-4fe4-977e-54101822a2f6",
+    "capability_digest": "lab-jcs-v1:lab-native-capabilities-v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "new_binding": {
+    "endpoint": "http://127.0.0.1:8765",
+    "profile_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "path_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "bridge_id": "44cb6177-4c34-483f-9149-5e67512ce303",
+    "lineage_id": "6e5cfa2f-2224-4710-b8d2-5741f763c8f7",
+    "session_epoch": "cbb69777-876a-43bb-91b9-9a60350c266b",
+    "capability_digest": "lab-jcs-v1:lab-native-capabilities-v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "observed_state_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "actor": "reviewer",
+  "decided_at": "2026-10-01T00:00:00Z",
+  "scope": "continue_operation"
+}

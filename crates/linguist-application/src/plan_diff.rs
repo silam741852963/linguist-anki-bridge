@@ -15,8 +15,13 @@ fn captured_cards(
             archive.source_id == source.id
                 && archive.digest == source.digest
                 && archive.original_fields == source.fields
+                && archive.original_text == source.text
                 && archive.asset_digests.contains(&source.digest)
                 && archive.asset_digests.contains(&source.model_manifest)
+                && source
+                    .template_manifest
+                    .as_ref()
+                    .is_none_or(|digest| archive.asset_digests.contains(digest))
         })
         .ok_or("PLAN_DIFF_SOURCE_ARCHIVE_CONFLICT")?;
     let manifest: Value = canonical::parse(&store.asset(&source.digest, cap)?)
@@ -28,6 +33,10 @@ fn captured_cards(
                 .strip_prefix("anki_note:")
                 .ok_or("PLAN_DIFF_SOURCE_LOCATION_INVALID")?
         || manifest["payloads"]["model"] != source.model_manifest
+        || source
+            .template_manifest
+            .as_ref()
+            .is_some_and(|digest| manifest["template_manifest"].as_str() != Some(digest.as_str()))
     {
         return Err("PLAN_DIFF_SOURCE_MANIFEST_CONFLICT".into());
     }
@@ -49,6 +58,8 @@ fn captured_cards(
         || rebuilt.source.tags != source.tags
         || rebuilt.source.media_refs != source.media_refs
         || rebuilt.source.model_manifest != source.model_manifest
+        || source.template_manifest.is_some()
+            && rebuilt.source.template_manifest != source.template_manifest
     {
         return Err("PLAN_DIFF_SOURCE_ARCHIVE_CONFLICT".into());
     }
@@ -170,6 +181,8 @@ mod tests {
             revision: 1,
             parent_digest: None,
             settings: ResolvedSettings {
+                semantic_fingerprint: String::new(),
+                execution_fingerprint: String::new(),
                 version: 2,
                 values: BTreeMap::from([("input.max_file_mb".into(), json!(1))]),
                 provenance: BTreeMap::new(),

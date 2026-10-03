@@ -19,8 +19,8 @@ use linguist_application::{
 };
 use linguist_core::{
     CONTRACT_VERSION, CardMode, ManagedModelSpec, ManagedTemplatePlan, ModelTemplate,
-    ObservedModel, SnapshotContract, SnapshotDocument, SnapshotOriginalNote, japanese_vocab_spec,
-    plan_japanese_vocab_template,
+    ObservedModel, SnapshotContract, SnapshotDocument, SnapshotOriginalNote, managed_vocab_spec,
+    plan_managed_vocab_template,
 };
 use linguist_snapshots::SnapshotRepository;
 use reqwest::{Client, Url};
@@ -668,7 +668,14 @@ impl AnkiCommitPort {
     }
 
     pub async fn japanese_template_plan(&self) -> Result<ManagedTemplatePlan, AnkiConnectError> {
-        let spec = japanese_vocab_spec();
+        self.managed_template_plan("japanese_vocab").await
+    }
+
+    pub async fn managed_template_plan(
+        &self,
+        purpose: &str,
+    ) -> Result<ManagedTemplatePlan, AnkiConnectError> {
+        let spec = managed_vocab_spec(purpose);
         if !self
             .transport
             .model_names()
@@ -693,13 +700,14 @@ impl AnkiCommitPort {
             })
             .collect();
         let css = self.transport.model_styling(&name).await?.css;
-        plan_japanese_vocab_template(Some(&ObservedModel {
+        let observed = ObservedModel {
             model_name: spec.model_name,
             fields,
             templates,
             css,
-        }))
-        .map_err(|error| AnkiConnectError::MalformedResponse {
+        };
+        let planned = plan_managed_vocab_template(purpose, Some(&observed));
+        planned.map_err(|error| AnkiConnectError::MalformedResponse {
             message: error.to_string(),
         })
     }
@@ -832,8 +840,10 @@ impl CommitPort for AnkiCommitPort {
                 return Ok(TemplateMutation::default());
             }
             let spec = match plan {
-                ManagedTemplatePlan::Create { spec } => spec.clone(),
-                _ => japanese_vocab_spec(),
+                ManagedTemplatePlan::Create { spec }
+                | ManagedTemplatePlan::UpgradeLegacy { spec, .. }
+                | ManagedTemplatePlan::Refresh { spec, .. } => spec.clone(),
+                ManagedTemplatePlan::NoChange => unreachable!("handled above"),
             };
             let mut mutation = TemplateMutation {
                 model_name: spec.model_name.clone(),
@@ -1412,7 +1422,7 @@ mod tests {
         );
         let mutation = port
             .apply_template(&ManagedTemplatePlan::Create {
-                spec: japanese_vocab_spec(),
+                spec: linguist_core::japanese_vocab_spec(),
             })
             .await
             .unwrap();

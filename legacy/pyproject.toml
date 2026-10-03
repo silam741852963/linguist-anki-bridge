@@ -46,4 +46,6 @@ where = ["src"]
 linguist_anki_bridge = [
     "templates/japanese_vocab/*.html",
     "templates/japanese_vocab/*.css",
+    "templates/english_vocab/*.html",
+    "templates/japanese_grammar/*.html",
 ]

@@ -6,6 +6,8 @@ fn main() {
             .qml_file("qml/Main.qml")
             .qml_file("qml/ReviewQueue.qml")
             .qml_file("qml/ReviewWorkspace.qml")
+            .qml_file("qml/MappingWorkspace.qml")
+            .qml_file("qml/ThemedDialog.qml")
             .qml_file("qml/BatchWorkspace.qml"),
     )
     .qt_module("Network")
@@ -13,6 +15,8 @@ fn main() {
     .qrc_resources([
         "qml/icons/add.svg",
         "qml/icons/card.svg",
+        "qml/icons/chevron-left.svg",
+        "qml/icons/chevron-right.svg",
         "qml/icons/brain-circuit.svg",
         "qml/icons/database.svg",
         "qml/icons/list.svg",
@@ -24,6 +28,7 @@ fn main() {
         "qml/icons/search.svg",
         "qml/icons/settings.svg",
         "qml/icons/triangle-alert.svg",
+        "qml/icons/unlink.svg",
         "qml/icons/undo.svg",
     ]);
     // GCC emits this warning from Qt's own qchar.h while compiling CXX-Qt

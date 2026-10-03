@@ -19,7 +19,9 @@ pub use expression::normalize_expression;
 pub use jobs::{BatchItemState, BatchJobState, ClaimStage};
 pub use managed_template::{
     ManagedModelSpec, ManagedTemplateError, ManagedTemplatePlan, ModelTemplate, ObservedModel,
-    japanese_vocab_spec, plan_japanese_vocab_template,
+    english_vocab_spec, japanese_grammar_spec, japanese_vocab_spec, managed_vocab_spec,
+    plan_english_vocab_template, plan_japanese_grammar_template, plan_japanese_vocab_template,
+    plan_managed_vocab_template,
 };
 pub use persistence::{
     BatchArtifactReference, BatchItemContract, BatchJobContract, BatchJobDocument, Extensions,

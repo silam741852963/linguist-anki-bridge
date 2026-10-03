@@ -37,8 +37,19 @@ pub struct EditReceipt {
     pub before_digest: String,
     pub after_digest: String,
     pub removed_keys: Vec<String>,
+    pub changes: Vec<SettingChange>,
     pub effective: Effective,
     pub serialization: String,
+}
+#[derive(Debug, Serialize)]
+pub struct SettingChange {
+    pub key: String,
+    pub before_override: Option<Value>,
+    pub after_override: Option<Value>,
+    pub before_effective: Option<Value>,
+    pub after_effective: Option<Value>,
+    pub before_provenance: Option<String>,
+    pub after_provenance: Option<String>,
 }
 fn bytes(path: &Path) -> Result<Vec<u8>> {
     let mut options = OpenOptions::new();
@@ -162,6 +173,72 @@ fn guard_state_move(
     }
     Ok(())
 }
+/// Replace an existing valid config with the minimal version-2 file after a
+/// byte-exact private backup. This never touches the selected state directory.
+pub fn replace_with_minimal(
+    path: &Path,
+    environment: &BTreeMap<String, String>,
+) -> Result<PathBuf> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let filename = path
+        .file_name()
+        .ok_or("INVALID_CONFIG_PATH")?
+        .to_string_lossy();
+    let lock_path = parent.join(format!(".{filename}.lock"));
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let lock = options.open(lock_path).map_err(|_| "CONFIG_LOCK_IO")?;
+    if !lock.metadata().map_err(|_| "CONFIG_LOCK_IO")?.is_file() {
+        return Err("CONFIG_LOCK_IO".into());
+    }
+    lock.try_lock()
+        .map_err(|_| "CONFIG_EDIT_CONFLICT: another editor holds the configuration lock")?;
+
+    let original = bytes(path)?;
+    let registry = Registry::builtin();
+    // A malformed existing file is still replaceable: its exact bytes survive
+    // in the backup. Only a valid old config can bind a state path to guard.
+    let before = std::str::from_utf8(&original)
+        .ok()
+        .and_then(|text| ConfigFile::parse(text, &registry).ok());
+    let replacement = b"[config]\nversion = 2\n";
+    let after = ConfigFile::parse(std::str::from_utf8(replacement).unwrap(), &registry)?;
+    validate_all(&registry, &after, environment)?;
+    if let Some(before) = &before {
+        guard_state_move(&registry, before, &after, environment)?;
+    }
+
+    let backup = parent.join(format!(".lab-config-backup-{}.toml", uuid::Uuid::new_v4()));
+    let mut backup_file = private_file(&backup)?;
+    backup_file
+        .write_all(&original)
+        .and_then(|_| backup_file.sync_all())
+        .map_err(|_| "CONFIG_BACKUP_IO")?;
+    sync_dir(parent)?;
+    let temp = parent.join(format!(".lab-config-init-{}.tmp", uuid::Uuid::new_v4()));
+    let outcome: Result<()> = (|| {
+        let mut file = private_file(&temp)?;
+        file.write_all(replacement)
+            .and_then(|_| file.sync_all())
+            .map_err(|_| "CONFIG_WRITE_IO")?;
+        if bytes(path)? != original {
+            return Err("CONFIG_EDIT_CONFLICT: configuration changed after validation".into());
+        }
+        std::fs::rename(&temp, path).map_err(|_| "CONFIG_PUBLISH_IO")?;
+        sync_dir(parent)
+    })();
+    let _ = std::fs::remove_file(temp);
+    outcome?;
+    Ok(backup)
+}
 /// Preview is side-effect free. Execute serializes cooperating editors with an OS lock.
 /// An external editor that ignores this lock is detected by the prepublication byte check.
 pub fn edit(
@@ -220,6 +297,7 @@ pub fn edit(
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
     };
+    let original_target = target.clone();
     let check_key = |key: &str| -> Result<()> {
         let e = registry.lookup(key)?;
         if key == "config.version" || key.contains('<') {
@@ -264,6 +342,7 @@ pub fn edit(
             }
         }
     }
+    let candidate_target = target.clone();
     match &record {
         Some(key) => {
             if !target.is_empty() || candidate.values.contains_key(key) {
@@ -284,6 +363,37 @@ pub fn edit(
             flags: BTreeMap::new(),
         },
     )?;
+    let before_effective = resolve(
+        &registry,
+        &before,
+        &ResolveOptions {
+            profile: scope.profile.clone(),
+            purpose: scope.purpose.clone(),
+            environment: environment.clone(),
+            flags: BTreeMap::new(),
+        },
+    )
+    .ok();
+    let changes = original_target
+        .keys()
+        .chain(candidate_target.keys())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|key| original_target.get(*key) != candidate_target.get(*key))
+        .map(|key| SettingChange {
+            key: key.clone(),
+            before_override: original_target.get(key).cloned(),
+            after_override: candidate_target.get(key).cloned(),
+            before_effective: before_effective
+                .as_ref()
+                .and_then(|e| e.values.get(key).cloned()),
+            after_effective: effective.values.get(key).cloned(),
+            before_provenance: before_effective
+                .as_ref()
+                .and_then(|e| e.provenance.get(key).cloned()),
+            after_provenance: effective.provenance.get(key).cloned(),
+        })
+        .collect();
     let changed = before.values != candidate.values;
     let output = serialize(&candidate)?;
     ConfigFile::parse(std::str::from_utf8(&output).unwrap(), &registry)?;
@@ -299,6 +409,7 @@ pub fn edit(
             canonical::asset_digest(&original)
         },
         removed_keys: removed,
+        changes,
         effective,
         serialization: "canonical TOML; original comments retained in backup".into(),
     };

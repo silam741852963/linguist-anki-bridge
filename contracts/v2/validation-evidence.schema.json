@@ -37,8 +37,8 @@
     "schema_version": {
       "type": "integer",
       "format": "uint16",
-      "maximum": 65535,
-      "minimum": 0
+      "maximum": 2,
+      "minimum": 2
     }
   },
   "additionalProperties": false,

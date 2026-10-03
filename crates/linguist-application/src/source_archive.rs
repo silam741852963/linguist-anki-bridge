@@ -223,6 +223,9 @@ pub fn archive_read_capture(
         .into_iter()
         .collect();
     let mut assets = BTreeMap::new();
+    let template_bytes = canonical::bytes(&m["templates"]).map_err(|e| e.to_string())?;
+    let template_digest = canonical::asset_digest(&template_bytes);
+    assets.insert(template_digest.clone(), template_bytes);
     let digests: BTreeMap<_, _> = [("note", note), ("model", model), ("cards", cards)]
         .into_iter()
         .map(|(name, bytes)| {
@@ -232,18 +235,26 @@ pub fn archive_read_capture(
         })
         .collect();
     let manifest=canonical::bytes(&json!({"schema_version":2,"kind":"anki_read_capture_v2","note_id":note_id,"payloads":digests,
+        "template_manifest": template_digest,
         "native_history_verified":false,"atomic_snapshot_verified":false,"media_bytes_archived":false})).map_err(|e|e.to_string())?;
     let digest = canonical::asset_digest(&manifest);
     assets.insert(digest.clone(), manifest);
     let source_id = uuid::Uuid::new_v4();
+    let captured_at_unix_seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "SOURCE_CAPTURE_CLOCK_INVALID")?
+        .as_secs();
     Ok(CapturedSource {
         source: SourceRecord {
             id: source_id,
             kind: "anki_read_capture_v2".into(),
             location: format!("anki_note:{note_id}"),
             digest: digest.clone(),
+            text: None,
             fields: fields.clone(),
             model_manifest: digests["model"].clone(),
+            template_manifest: Some(template_digest),
+            captured_at_unix_seconds: Some(captured_at_unix_seconds),
             tags,
             cards: vec![],
             media_refs,
@@ -252,6 +263,7 @@ pub fn archive_read_capture(
             id: uuid::Uuid::new_v4(),
             source_id,
             digest,
+            original_text: None,
             original_fields: fields,
             asset_digests: assets.keys().cloned().collect(),
         },

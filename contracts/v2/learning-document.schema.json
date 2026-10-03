@@ -102,6 +102,12 @@
     },
     "target_language": {
       "$ref": "#/$defs/Language"
+    },
+    "task_maps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SourceTaskMap"
+      }
     }
   },
   "additionalProperties": false,
@@ -115,7 +121,11 @@
   ],
   "$defs": {
     "AnkiId": {
-      "type": "string"
+      "description": "Canonical positive decimal Anki ID, at most 9007199254740991",
+      "type": "string",
+      "maxLength": 16,
+      "minLength": 1,
+      "pattern": "^(?:[1-9][0-9]{0,14}|[1-8][0-9]{15}|900[0-6][0-9]{12}|90070[0-9]{11}|90071[0-8][0-9]{10}|900719[0-8][0-9]{9}|9007199[0-1][0-9]{8}|90071992[0-4][0-9]{7}|900719925[0-3][0-9]{6}|9007199254[0-6][0-9]{5}|90071992547[0-3][0-9]{4}|9007199254740[0-8][0-9]{2}|90071992547409[0-8][0-9]{1}|9007199254740990[0-9]{0}|9007199254740991)$"
     },
     "CardState": {
       "type": "object",
@@ -246,10 +256,30 @@
           ],
           "format": "uuid"
         },
+        "source_span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceTextSpan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "source_url": {
           "type": [
             "string",
             "null"
+          ]
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvidenceTarget"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -261,6 +291,84 @@
         "language",
         "claim",
         "ambiguous"
+      ]
+    },
+    "EvidenceTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "entry_index": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "dictionary_sense"
+            },
+            "sense_index": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "entry_index",
+            "sense_index"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "example"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "index"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "grammar_formation"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "digest": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "media_asset"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "digest"
+          ]
+        }
       ]
     },
     "Example": {
@@ -962,6 +1070,12 @@
             "type": "string"
           }
         },
+        "original_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "source_id": {
           "type": "string",
           "format": "uuid"
@@ -979,6 +1093,14 @@
     "SourceRecord": {
       "type": "object",
       "properties": {
+        "captured_at_unix_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
         "cards": {
           "type": "array",
           "items": {
@@ -1018,6 +1140,18 @@
           "items": {
             "type": "string"
           }
+        },
+        "template_manifest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,
@@ -1093,6 +1227,96 @@
         "settings_digest",
         "text",
         "language"
+      ]
+    },
+    "SourceTaskMap": {
+      "description": "A declared source-template mapping. Native ordinal/history verification belongs to WP-03.",
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceTaskMapEntry"
+          }
+        },
+        "schema_version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 1,
+          "minimum": 1
+        },
+        "source_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "source_model_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "target_model": {
+          "$ref": "#/$defs/TargetModelKind"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "source_id",
+        "source_model_digest",
+        "target_model",
+        "entries"
+      ]
+    },
+    "SourceTaskMapEntry": {
+      "type": "object",
+      "properties": {
+        "source_ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "target_ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "target_task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source_ordinal",
+        "target_task",
+        "target_ordinal"
+      ]
+    },
+    "SourceTextSpan": {
+      "type": "object",
+      "properties": {
+        "end_byte": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "start_byte": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "start_byte",
+        "end_byte"
+      ]
+    },
+    "TargetModelKind": {
+      "type": "string",
+      "enum": [
+        "vocabulary",
+        "grammar"
       ]
     },
     "Task": {

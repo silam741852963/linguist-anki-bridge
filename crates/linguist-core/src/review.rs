@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResolutionRequest {
+    #[schemars(range(min = 2, max = 2))]
     pub schema_version: u16,
     pub base_revision: u32,
     pub base_digest: String,

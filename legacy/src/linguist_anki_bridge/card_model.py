@@ -76,7 +76,7 @@ def map_document_fields(document: CardDocument, deck_cfg: dict) -> dict[str, str
     mapped: dict[str, str | None] = {}
     logical_values = {"expression": document.expression, **document.values}
     for purpose in (
-        "expression", "meaning_image", "meaning_text", "kanji_construction", "audio"
+        "expression", "meaning_image", "meaning_text", "examples", "kanji_construction", "audio"
     ):
         field_name = fields_map.get(purpose)
         value = logical_values.get(purpose)
@@ -107,9 +107,18 @@ def format_llm_annotations_html(nuances: str, examples: list) -> str:
     output = ""
     if nuances:
         output += (
-            "<div data-source='llm' style='margin-top:6px;font-style:italic;color:#888'>"
+            "<div data-source='llm' style='margin-top:6px;font-style:italic'>"
             f"<b>Nuance:</b> {html_lib.escape(str(nuances))}</div>"
         )
+    examples_html = format_examples_html(examples)
+    if examples_html:
+        output += "<div data-source='llm' style='margin-top:10px'><b>Examples:</b><div style='margin-top:5px'>"
+        output += examples_html
+        output += "</div></div>"
+    return output
+
+
+def format_examples_html(examples: list) -> str:
     valid_examples = []
     for item in examples:
         if not isinstance(item, dict):
@@ -118,18 +127,16 @@ def format_llm_annotations_html(nuances: str, examples: list) -> str:
         translation = sanitize_generated_text(item.get("translation"))
         if sentence or translation:
             valid_examples.append((sentence, translation))
-    if valid_examples:
-        output += "<div data-source='llm' style='margin-top:10px'><b>Examples:</b><div style='margin-top:5px'>"
-        for number, (sentence, translation) in enumerate(valid_examples, 1):
-            sentence_html = html_lib.escape(sentence)
-            translation_html = html_lib.escape(translation)
-            separator = " — " if sentence_html and translation_html else ""
-            output += (
-                "<div style='margin-bottom:4px'>"
-                f"<b>{number}. {sentence_html}</b>{separator}"
-                f"<span style='color:#666;font-size:.9em'>{translation_html}</span></div>"
-            )
-        output += "</div></div>"
+    output = ""
+    for number, (sentence, translation) in enumerate(valid_examples, 1):
+        sentence_html = html_lib.escape(sentence)
+        translation_html = html_lib.escape(translation)
+        separator = " — " if sentence_html and translation_html else ""
+        output += (
+            "<div style='margin-bottom:4px'>"
+            f"<b>{number}. {sentence_html}</b>{separator}"
+            f"<span style='font-size:.9em'>{translation_html}</span></div>"
+        )
     return output
 
 
@@ -190,7 +197,7 @@ def format_dictionary_meaning_html(scraped: dict, target_word: str, nuances: str
             else:
                 section_style = "padding-top:8px"
             rendered.append(f"<section style='{section_style}'>" + "".join(body) + "</section>")
-        separator = "<hr style='border:0;border-top:2px solid #888;margin:10px 0'/>"
+        separator = "<hr style='border:0;border-top:2px solid currentColor;margin:10px 0'/>"
         return separator.join(rendered)
     if had_entries:
         return "<div>No concise dictionary senses found.</div>"
@@ -203,13 +210,11 @@ def format_dictionary_meaning_html(scraped: dict, target_word: str, nuances: str
     return "<div>Not found in standard dictionary.</div>"
 
 
-def format_anki_grammar_html(grammar_point: str, meaning: str, rules: str, examples: list) -> str:
-    output = f"<div><b>Grammar Point:</b> <span style='font-size:1.2em;color:#e68e0d'>{html_lib.escape(str(grammar_point))}</span></div>"
+def format_anki_grammar_html(grammar_point: str, meaning: str, rules: str) -> str:
+    output = f"<div><b>Grammar Point:</b> <span style='font-size:1.2em'>{html_lib.escape(str(grammar_point))}</span></div>"
     output += f"<div style='margin-top:5px'><b>Meaning:</b> {html_lib.escape(str(meaning))}</div>"
     if rules:
         output += f"<div style='margin-top:5px'><b>Structure/Rules:</b> <pre>{html_lib.escape(str(rules))}</pre></div>"
-    if examples:
-        output += format_llm_annotations_html("", examples)
     return output
 
 
@@ -219,7 +224,7 @@ def format_injection_context_html(type_tag: str = "", note: str = "") -> str:
         rows.append(f"<div><b>Learning focus:</b> {html_lib.escape(str(type_tag))}</div>")
     if note:
         rows.append(f"<div><b>Personal context:</b> {html_lib.escape(str(note))}</div>")
-    return ("<aside data-source='user' style='margin-top:12px;border-top:1px dashed #888;padding-top:8px'>" + "".join(rows) + "</aside>") if rows else ""
+    return ("<aside data-source='user' style='margin-top:12px;border-top:1px dashed currentColor;padding-top:8px'>" + "".join(rows) + "</aside>") if rows else ""
 
 
 def build_card_document(processed_data: dict, lang_key: str, mode: CardMode) -> CardDocument:
@@ -231,8 +236,9 @@ def build_card_document(processed_data: dict, lang_key: str, mode: CardMode) -> 
     original_word = str(processed_data.get("word", "") or "").strip()
     expression = str(processed_data.get("suggestion") or original_word).strip() if policy.create_note else original_word
     llm = processed_data.get("llm_response") or {}
-    if lang_key.endswith("grammar"):
-        meaning = format_anki_grammar_html(llm.get("grammar_point", expression), llm.get("meaning", ""), llm.get("rules", ""), llm.get("examples", []))
+    is_grammar = lang_key.endswith("grammar")
+    if is_grammar:
+        meaning = format_anki_grammar_html(llm.get("grammar_point", expression), llm.get("meaning", ""), llm.get("rules", ""))
     else:
         meaning = format_dictionary_meaning_html(processed_data.get("scraped", {}), expression, llm.get("nuances", ""), llm.get("examples", []))
     if processed_data.get("meaning_override_markdown") is not None:
@@ -311,6 +317,7 @@ def build_card_document(processed_data: dict, lang_key: str, mode: CardMode) -> 
             processed_data.get("kanji_override_media"),
         )
     return CardDocument(expression, {"meaning_image": "".join(images), "meaning_text": meaning,
+        "examples": format_examples_html(llm.get("examples", [])) if is_grammar else None,
         "kanji_construction": kanji, "audio": audio},
         media, obsolete, list(dict.fromkeys(issues)), tags)
 

@@ -29,6 +29,14 @@ pub trait EnrichmentServices: Send + Sync {
     ) -> PipelineFuture<'a>;
     fn kanji<'a>(&'a self, expression: &'a str, deck_key: &'a str) -> PipelineFuture<'a>;
     fn image<'a>(&'a self, expression: &'a str, deck_key: &'a str) -> PipelineFuture<'a>;
+    fn image_with_dictionary<'a>(
+        &'a self,
+        expression: &'a str,
+        deck_key: &'a str,
+        _dictionary: &'a DictionaryData,
+    ) -> PipelineFuture<'a> {
+        self.image(expression, deck_key)
+    }
     fn audio<'a>(
         &'a self,
         expression: &'a str,
@@ -293,6 +301,7 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             dictionary.reading, dictionary.pronunciations
         );
         let deck_expression_key = format!("{deck_key}\0{expression}");
+        let image_key = format!("{deck_expression_key}\0{}", dictionary.definition);
         let (generation_result, kanji_result, image_result, audio_result) = tokio::join!(
             self.call(expression, &generation_key, "generation", || self
                 .services
@@ -300,9 +309,9 @@ impl<S: EnrichmentServices> NativePipeline<S> {
             self.call(expression, &deck_expression_key, "kanji", || self
                 .services
                 .kanji(expression, deck_key)),
-            self.call(expression, &deck_expression_key, "image", || self
+            self.call(expression, &image_key, "image", || self
                 .services
-                .image(expression, deck_key)),
+                .image_with_dictionary(expression, deck_key, &dictionary)),
             self.call(expression, &audio_key, "audio", || self.services.audio(
                 expression,
                 deck_key,
@@ -583,6 +592,15 @@ mod tests {
                 b64: "aW1n".into(),
                 classification: "visual_recall".into(),
             })
+        }
+        fn image_with_dictionary<'a>(
+            &'a self,
+            expression: &'a str,
+            deck_key: &'a str,
+            dictionary: &'a DictionaryData,
+        ) -> PipelineFuture<'a> {
+            assert_eq!(dictionary.definition, "to eat");
+            self.image(expression, deck_key)
         }
         fn audio<'a>(
             &'a self,

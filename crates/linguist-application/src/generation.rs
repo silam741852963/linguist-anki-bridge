@@ -10,6 +10,9 @@ use std::collections::BTreeMap;
 
 pub mod repair;
 
+pub const VOCABULARY_PROMPT_V2: &str = include_str!("../../../resources/prompts/vocabulary-v2.txt");
+pub const GRAMMAR_PROMPT_V2: &str = include_str!("../../../resources/prompts/grammar-v2.txt");
+
 #[derive(Debug, Serialize)]
 pub struct ModelIdentity {
     pub name: String,
@@ -227,7 +230,7 @@ pub fn build_request(
                 "vocabulary",
                 "llm.prompts.vocabulary",
                 "builtin:vocabulary-v2",
-                include_str!("../../../resources/prompts/vocabulary-v2.txt"),
+                VOCABULARY_PROMPT_V2,
                 v.examples.len(),
             )
         }
@@ -247,7 +250,7 @@ pub fn build_request(
                 "grammar",
                 "llm.prompts.grammar",
                 "builtin:grammar-v2",
-                include_str!("../../../resources/prompts/grammar-v2.txt"),
+                GRAMMAR_PROMPT_V2,
                 g.examples.len(),
             )
         }
@@ -490,6 +493,10 @@ fn merge_checked_output(
             provenance: Provenance::Generated,
             source_id: Some(source_id),
             region_id: None,
+            target: Some(linguist_core::records::EvidenceTarget::Example {
+                index: examples.len(),
+            }),
+            source_span: None,
             language: child.target_language.clone(),
             claim: serde_json::to_string(&example).map_err(|_| "GENERATION_ENCODING")?,
             source_url: None,
@@ -503,12 +510,16 @@ fn merge_checked_output(
         });
     }
     for (field, claim) in claims {
+        let target = (field == "formation")
+            .then_some(linguist_core::records::EvidenceTarget::GrammarFormation);
         child.evidence.push(linguist_core::records::Evidence {
             id: uuid::Uuid::new_v4(),
             field,
             provenance: Provenance::Generated,
             source_id: Some(source_id),
             region_id: None,
+            target,
+            source_span: None,
             language: child.explanation_language.clone(),
             claim,
             source_url: None,
@@ -560,6 +571,7 @@ fn merge_checked_output(
     }
     let digest = canonical::asset_digest(&manifest);
     let output_digest = canonical::asset_digest(bytes);
+    let output_text = String::from_utf8(bytes.to_vec()).map_err(|_| "GENERATION_ENCODING")?;
     let mut assets = BTreeMap::from([
         (digest.clone(), manifest),
         (output_digest.clone(), bytes.to_vec()),
@@ -572,8 +584,11 @@ fn merge_checked_output(
         kind: "generated_supplement_v2".into(),
         location: "local_generation_artifact".into(),
         digest: digest.clone(),
+        text: Some(output_text.clone()),
         fields: fields.clone(),
         model_manifest: format!("{}@{}", model.name, model.digest),
+        template_manifest: None,
+        captured_at_unix_seconds: None,
         tags: vec![],
         cards: vec![],
         media_refs: vec![],
@@ -582,6 +597,7 @@ fn merge_checked_output(
         id: uuid::Uuid::new_v4(),
         source_id,
         digest: digest.clone(),
+        original_text: Some(output_text),
         original_fields: fields,
         asset_digests: assets.keys().cloned().collect(),
     });

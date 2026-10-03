@@ -49,6 +49,7 @@ pub struct WikipediaAndCommons {
     japanese_endpoint: reqwest::Url,
     english_endpoint: reqwest::Url,
     commons: WikimediaCommons,
+    meaning_hint: String,
 }
 
 impl WikipediaAndCommons {
@@ -65,7 +66,16 @@ impl WikipediaAndCommons {
             english_endpoint: reqwest::Url::parse(ENGLISH_WIKIPEDIA_API)
                 .map_err(|error| error.to_string())?,
             commons: WikimediaCommons::new()?,
+            meaning_hint: String::new(),
         })
+    }
+
+    /// Legacy lookup uses the dictionary meaning for English/Commons search,
+    /// while keeping the original expression for Japanese article discovery.
+    pub fn with_meaning_hint(&self, hint: &str) -> Self {
+        let mut search = self.clone();
+        search.meaning_hint = hint.trim().to_owned();
+        search
     }
 
     async fn search_articles(
@@ -107,8 +117,21 @@ impl ImageSearchPort for WikipediaAndCommons {
             }
             let (japanese, english, commons) = tokio::join!(
                 self.search_articles(&self.japanese_endpoint, query, "wikipedia-ja"),
-                self.search_articles(&self.english_endpoint, query, "wikipedia-en"),
-                self.commons.search_commons(query),
+                self.search_articles(
+                    &self.english_endpoint,
+                    if self.meaning_hint.is_empty() {
+                        query
+                    } else {
+                        &self.meaning_hint
+                    },
+                    "wikipedia-en"
+                ),
+                self.commons
+                    .search_commons(if self.meaning_hint.is_empty() {
+                        query
+                    } else {
+                        &self.meaning_hint
+                    }),
             );
             combine_search_results([japanese, english, commons])
         })

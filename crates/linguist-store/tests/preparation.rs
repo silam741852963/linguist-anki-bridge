@@ -41,6 +41,8 @@ fn definition() -> PreparationDefinition {
             id: uuid::Uuid::new_v4(),
             mode: JobMode::Prepare,
             settings: ResolvedSettings {
+                semantic_fingerprint: String::new(),
+                execution_fingerprint: String::new(),
                 version: 2,
                 fingerprint: canonical::digest("resolved-settings", &values).unwrap(),
                 values,
@@ -67,8 +69,11 @@ fn capture(hash: &str) -> LearningDocument {
         kind: "anki_read_capture_v2".into(),
         location: "anki_note:123".into(),
         digest: hash.into(),
+        text: None,
         fields: BTreeMap::new(),
         model_manifest: "original".into(),
+        template_manifest: None,
+        captured_at_unix_seconds: None,
         tags: vec![],
         cards: vec![],
         media_refs: vec![],
@@ -77,6 +82,7 @@ fn capture(hash: &str) -> LearningDocument {
         id: uuid::Uuid::new_v4(),
         source_id: id,
         digest: hash.into(),
+        original_text: None,
         original_fields: BTreeMap::new(),
         asset_digests: vec![hash.into()],
     });
@@ -118,6 +124,35 @@ fn capture_items(store: &mut Store, definition: &PreparationDefinition) -> Strin
         head = Some(captured.digest);
     }
     head.unwrap()
+}
+
+#[test]
+fn captured_event_reads_reject_missing_asset_index_links() {
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    store.create_preparation_job(&definition).unwrap();
+    capture_items(&mut store, &definition);
+    let db = rusqlite::Connection::open(f.0.join("state.sqlite3")).unwrap();
+    db.execute_batch("DROP TRIGGER preparation_assets_no_delete")
+        .unwrap();
+    db.execute(
+        "DELETE FROM preparation_event_assets WHERE job_id=?1 AND sequence=2",
+        [definition.job.id.to_string()],
+    )
+    .unwrap();
+    assert_eq!(
+        store
+            .preparation_events(definition.job.id, 0, 4)
+            .unwrap_err(),
+        "PREPARATION_ASSET_INDEX_CORRUPT"
+    );
+    assert_eq!(
+        store
+            .preparation_items(definition.job.id, 0, 2)
+            .unwrap_err(),
+        "PREPARATION_ASSET_INDEX_CORRUPT"
+    );
 }
 
 #[test]
@@ -694,6 +729,27 @@ fn worker_checkpoints_reject_wrong_expired_and_released_fencing_tokens() {
         .unwrap();
     assert_eq!(store.preparation_events(id, 0, 10).unwrap().len(), 2);
     store.release_lease(&second).unwrap();
+}
+
+#[test]
+fn preparation_rejects_inconsistent_split_settings_fingerprints() {
+    let f = Fixture::new();
+    let mut store = f.open();
+    let mut definition = definition();
+    let (semantic, execution) = setting_fingerprints(&definition.job.settings.values).unwrap();
+    definition.job.settings.semantic_fingerprint = semantic;
+    definition.job.settings.execution_fingerprint = execution;
+    store.create_preparation_job(&definition).unwrap();
+
+    let mut forged = definition.clone();
+    forged.job.id = uuid::Uuid::new_v4();
+    forged.job.settings.semantic_fingerprint = "forged".into();
+    forged.job.settings.execution_fingerprint =
+        setting_fingerprints(&forged.job.settings.values).unwrap().1;
+    assert_eq!(
+        store.create_preparation_job(&forged).unwrap_err(),
+        "INVALID_PREPARATION_SETTINGS"
+    );
 }
 
 #[test]

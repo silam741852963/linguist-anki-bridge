@@ -16,7 +16,7 @@ md5sums=('SKIP'
          'SKIP')
 
 pkgver() {
-    cd "$srcdir/$_pkgname"
+    cd "$srcdir/$_pkgname/legacy"
     local count hash
     count=$(git rev-list --count HEAD)
     hash=$(git rev-parse --short HEAD)
@@ -24,12 +24,12 @@ pkgver() {
 }
 
 build() {
-    cd "$srcdir/$_pkgname"
+    cd "$srcdir/$_pkgname/legacy"
     cargo build --release --locked -p linguist-desktop
 }
 
 package() {
-    cd "$srcdir/$_pkgname"
+    cd "$srcdir/$_pkgname/legacy"
     install -Dm755 target/release/linguist-anki-bridge-native "$pkgdir/usr/bin/linguist-anki-bridge-native"
     install -Dm644 "$srcdir/linguist-anki-bridge-native.desktop" "$pkgdir/usr/share/applications/linguist-anki-bridge-native.desktop"
     install -Dm644 docs/native-preview-release.md "$pkgdir/usr/share/doc/$pkgname/native-preview-release.md"

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "object-key-order",
+    "input": "{\"b\":2,\"a\":1}",
+    "canonical": "{\"a\":1,\"b\":2}",
+    "digest": "lab-jcs-v1:test-vector:038c6d2b04d1b2aa899a2d05799aee3fbcc1116f83d2e185525722b242dc760e"
+  },
+  {
+    "name": "unicode-key-order",
+    "input": "{\"\":1,\"😀\":2}",
+    "canonical": "{\"😀\":2,\"\":1}",
+    "digest": "lab-jcs-v1:test-vector:c9e9831eac385860caaf94fd3fee183e87680ae89a7460389e736fbc8a981018"
+  },
+  {
+    "name": "number-format",
+    "input": "{\"n\":[1.0,1e30,0.000001,0.0000001,-0.0]}",
+    "canonical": "{\"n\":[1,1e+30,0.000001,1e-7,0]}",
+    "digest": "lab-jcs-v1:test-vector:9f5ae398cda766332eab694b4d1738e97726fa4aa19f79ba77aac921095dfa89"
+  },
+  {
+    "name": "string-escapes",
+    "input": "{\"text\":\"line\\n\\\"\\\\\\u0001\"}",
+    "canonical": "{\"text\":\"line\\n\\\"\\\\\\u0001\"}",
+    "digest": "lab-jcs-v1:test-vector:58f13853357de0a7d7aa36b23dfba9d5cf9549cc78ca56856d24086c3bc3a33f"
+  },
+  {
+    "name": "nested-arrays",
+    "input": "{\"outer\":[{\"z\":true,\"a\":null},[3,2,1]]}",
+    "canonical": "{\"outer\":[{\"a\":null,\"z\":true},[3,2,1]]}",
+    "digest": "lab-jcs-v1:test-vector:8e86e7d4c7017c27577c46ef3cc33c1a064b87c9936b1709042d70cad75485c6"
+  }
+]

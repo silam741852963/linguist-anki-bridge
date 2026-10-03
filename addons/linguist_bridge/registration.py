@@ -5,6 +5,7 @@ import inspect
 import os
 from pathlib import Path
 import stat
+from .protocol import validated_session
 
 
 class RegistrationError(RuntimeError):
@@ -76,9 +77,12 @@ def register_read_actions(module, expected_pins, manifest_supplier, status_suppl
     def labCapabilities(self):
         manifest = manifest_supplier()
         if (type(manifest) is not dict or manifest.get("actions") != names
-                or manifest.get("mutation_variants") != []
-                or manifest.get("collection_session") is not None):
+                or manifest.get("mutation_variants") != []):
             raise RegistrationError("BRIDGE_MANIFEST_INVALID")
+        try:
+            validated_session(manifest.get("collection_session"))
+        except ValueError:
+            raise RegistrationError("BRIDGE_MANIFEST_INVALID") from None
         return manifest
 
     def labOperationStatus(self, lineage_id, operation_id):

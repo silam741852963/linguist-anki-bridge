@@ -9,7 +9,7 @@ use std::{
 };
 pub type Result<T> = std::result::Result<T, String>;
 const APPLICATION_ID: i64 = 0x4c414232;
-const SCHEMA: i64 = 7;
+const SCHEMA: i64 = 8;
 fn sql(e: rusqlite::Error) -> String {
     format!("STORE_SQL: {e}")
 }
@@ -238,8 +238,11 @@ impl Store {
             if version < 6 {
                 tx.execute_batch(preparation::SCHEMA_SQL).map_err(sql)?;
             }
-            tx.execute_batch(preparation_control::SCHEMA_SQL)
-                .map_err(sql)?;
+            if version < 7 {
+                tx.execute_batch(preparation_control::SCHEMA_SQL)
+                    .map_err(sql)?;
+            }
+            tx.execute_batch(snapshot::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
                 .map_err(sql)?;
             tx.commit().map_err(sql)?;
@@ -257,6 +260,7 @@ impl Store {
             tx.execute_batch(preparation::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(preparation_control::SCHEMA_SQL)
                 .map_err(sql)?;
+            tx.execute_batch(snapshot::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)
                 .map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
@@ -448,7 +452,21 @@ impl Store {
         {
             return Err("PLAN_CORRUPT".into());
         }
-        self.verify_revision_assets(&plan)?;
+        let assets = self.verify_revision_assets(&plan)?;
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT digest FROM revision_assets WHERE id=?1 AND revision=?2 ORDER BY digest",
+            )
+            .map_err(sql)?;
+        let indexed: std::collections::BTreeSet<String> = statement
+            .query_map(params![id.to_string(), revision], |r| r.get(0))
+            .map_err(sql)?
+            .map(|r| r.map_err(sql))
+            .collect::<Result<_>>()?;
+        if assets != indexed {
+            return Err("REVISION_ASSET_INDEX_CORRUPT".into());
+        }
         Ok(plan)
     }
     fn verify_revision_assets(
@@ -574,3 +592,4 @@ pub mod validation;
 pub mod approval;
 pub mod preparation;
 pub mod preparation_control;
+pub mod snapshot;

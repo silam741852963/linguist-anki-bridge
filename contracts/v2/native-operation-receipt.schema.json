@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NativeOperationReceipt",
+  "type": "object",
+  "properties": {
+    "approved_digest": {
+      "type": "string",
+      "pattern": "^lab-jcs-v1:plan:[0-9a-f]{64}$"
+    },
+    "evidence_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "lineage_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "operation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "payload_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "readback": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NativeReadback"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 1,
+      "minimum": 1
+    },
+    "session_epoch": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "state": {
+      "$ref": "#/$defs/NativeReceiptState"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "lineage_id",
+    "operation_id",
+    "session_epoch",
+    "payload_digest",
+    "approved_digest",
+    "state",
+    "evidence_digest"
+  ],
+  "$defs": {
+    "AnkiId": {
+      "description": "Canonical positive decimal Anki ID, at most 9007199254740991",
+      "type": "string",
+      "maxLength": 16,
+      "minLength": 1,
+      "pattern": "^(?:[1-9][0-9]{0,14}|[1-8][0-9]{15}|900[0-6][0-9]{12}|90070[0-9]{11}|90071[0-8][0-9]{10}|900719[0-8][0-9]{9}|9007199[0-1][0-9]{8}|90071992[0-4][0-9]{7}|900719925[0-3][0-9]{6}|9007199254[0-6][0-9]{5}|90071992547[0-3][0-9]{4}|9007199254740[0-8][0-9]{2}|90071992547409[0-8][0-9]{1}|9007199254740990[0-9]{0}|9007199254740991)$"
+    },
+    "NativeReadback": {
+      "type": "object",
+      "properties": {
+        "card_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnkiId"
+          }
+        },
+        "history_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manifest_digests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnkiId"
+          }
+        },
+        "observed_state_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "observed_state_digest",
+        "note_ids",
+        "card_ids",
+        "manifest_digests"
+      ]
+    },
+    "NativeReceiptState": {
+      "description": "Application-side evidence contract. A queued/running/unknown companion status\nis an observation, not proof that an Anki effect occurred or completed.",
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "unknown",
+        "failed_before_write",
+        "verified"
+      ]
+    }
+  }
+}
