@@ -258,30 +258,47 @@ fn required_for(key: &str, effective: &Effective) -> bool {
 }
 
 fn inspect_executable(reference: &str, environment: &BTreeMap<String, String>) -> &'static str {
+    match resolve_executable(reference, environment) {
+        Ok(_) => "available",
+        Err(status) => status,
+    }
+}
+
+/// Resolve a configured helper to an absolute regular executable file without
+/// invoking it. Bare names search only absolute `PATH` entries; the error is the
+/// same status string reported by `config validate`.
+pub fn resolve_executable(
+    reference: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<std::path::PathBuf, &'static str> {
     if reference.contains('/') || reference.starts_with('~') || reference.contains('$') {
         return match expand_path(reference, environment) {
-            Ok(path) if path.is_absolute() => inspect_executable_path(&path),
-            Ok(_) => "relative_path",
-            Err(_) => "invalid_path_expansion",
+            Ok(path) if path.is_absolute() => match inspect_executable_path(&path) {
+                "available" => Ok(path),
+                status => Err(status),
+            },
+            Ok(_) => Err("relative_path"),
+            Err(_) => Err("invalid_path_expansion"),
         };
     }
     let Some(search_path) = environment.get("PATH") else {
-        return "path_unavailable";
+        return Err("path_unavailable");
     };
     let mut found_invalid = None;
     for directory in std::env::split_paths(search_path) {
         if !directory.is_absolute() {
             continue;
         }
-        let status = inspect_executable_path(&directory.join(reference));
+        let candidate = directory.join(reference);
+        let status = inspect_executable_path(&candidate);
         if status == "available" {
-            return status;
+            return Ok(candidate);
         }
         if status != "missing" {
             found_invalid = Some(status);
         }
     }
-    found_invalid.unwrap_or("missing")
+    Err(found_invalid.unwrap_or("missing"))
 }
 
 fn inspect_executable_path(path: &Path) -> &'static str {

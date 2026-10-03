@@ -749,6 +749,7 @@ pub mod jobs;
 pub mod live_validation;
 pub mod mapping;
 pub mod media;
+pub mod ocr;
 pub mod ollama;
 pub mod plan_diff;
 pub mod revamp;

@@ -1,0 +1,904 @@
+//! ALG-OCR extraction through a bounded local Tesseract child process.
+//!
+//! Source bytes are never modified: the engine reads a private temporary PNG
+//! derivative that is removed when recognition finishes. Recognized text is
+//! untrusted data and is never interpreted as instructions.
+use image::{DynamicImage, ImageReader, Limits, imageops::FilterType};
+use linguist_config::Effective;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+use std::{
+    collections::BTreeMap,
+    io::{Cursor, Read},
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
+
+const SETTINGS: [&str; 13] = [
+    "ocr.engine",
+    "ocr.languages",
+    "ocr.preprocess",
+    "ocr.timeout_seconds",
+    "ocr.page_segmentation_mode",
+    "ocr.engine_mode",
+    "ocr.minimum_confidence",
+    "ocr.max_pixels",
+    "ocr.max_regions",
+    "ocr.executable",
+    "ocr.resource_path",
+    "helpers.memory_limit_mb",
+    "helpers.max_output_mb",
+];
+/// Diagnostic stderr is drained so the child cannot block, but never persisted.
+const STDERR_LIMIT: usize = 64 * 1024;
+const LANGUAGE_PACK_LIMIT: u64 = 1024 * 1024 * 1024;
+const MAX_UPSCALE: u32 = 3;
+/// Mean luminance below this is treated as light text on a dark background.
+const INVERT_BELOW: f64 = 120.0;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "code", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OcrError {
+    InvalidSettings {
+        message: String,
+    },
+    /// The selected engine has no implemented adapter in this build.
+    OcrEngineUnavailable {
+        engine: String,
+    },
+    OcrExecutableUnavailable {
+        status: String,
+    },
+    OcrResourcePathUnavailable {
+        status: String,
+    },
+    OcrLanguagePackMissing {
+        missing: Vec<String>,
+    },
+    OcrLanguagePackUnreadable {
+        language: String,
+    },
+    OcrImageRejected {
+        image_code: String,
+    },
+    OcrPixelLimit {
+        pixels: u64,
+        max_pixels: u64,
+    },
+    OcrDerivativeFailed,
+    OcrProcessSpawnFailed,
+    OcrProcessTimeout,
+    OcrProcessFailed {
+        exit_code: Option<i32>,
+    },
+    OcrOutputLimit,
+    OcrOutputMalformed {
+        reason: String,
+    },
+    OcrRegionLimit {
+        regions: usize,
+        max_regions: u64,
+    },
+}
+impl OcrError {
+    pub fn guidance(&self) -> &'static str {
+        match self {
+            Self::InvalidSettings { .. } => "Correct the OCR configuration before preparing again.",
+            Self::OcrEngineUnavailable { .. } => {
+                "Select ocr.engine=tesseract, or provide the item's text manually. Other OCR engines are not available in this build."
+            }
+            Self::OcrExecutableUnavailable { .. } => {
+                "Install Tesseract or set ocr.executable to an absolute regular executable file. Run `doctor --local` to confirm."
+            }
+            Self::OcrResourcePathUnavailable { .. } => {
+                "Set ocr.resource_path to an existing absolute tessdata directory, or unset it to use the engine default."
+            }
+            Self::OcrLanguagePackMissing { .. } => {
+                "Install the missing Tesseract language packs, or narrow ocr.languages for this purpose. Packs are never downloaded implicitly."
+            }
+            Self::OcrLanguagePackUnreadable { .. } => {
+                "Check that the language pack is a readable regular file within the size limit."
+            }
+            Self::OcrImageRejected { .. } | Self::OcrPixelLimit { .. } => {
+                "Inspect the original image. Provide a smaller supported replacement or transcribe it manually; the source asset is preserved."
+            }
+            Self::OcrDerivativeFailed => {
+                "Check temporary-directory space and permissions, then retry."
+            }
+            Self::OcrProcessSpawnFailed | Self::OcrProcessFailed { .. } => {
+                "Run the OCR executable manually on a sample image. The selected ocr.engine_mode needs matching installed training data."
+            }
+            Self::OcrProcessTimeout => {
+                "Retry with a smaller image, or deliberately raise ocr.timeout_seconds for this purpose."
+            }
+            Self::OcrOutputLimit => {
+                "The engine produced more output than helpers.max_output_mb permits. Nothing was truncated; review the image or raise the limit."
+            }
+            Self::OcrOutputMalformed { .. } => {
+                "The engine output was not valid Tesseract TSV. Verify the executable is a supported Tesseract build."
+            }
+            Self::OcrRegionLimit { .. } => {
+                "The image has more text lines than ocr.max_regions permits. Split or transcribe it manually, or raise the limit."
+            }
+        }
+    }
+    pub fn code(&self) -> String {
+        serde_json::to_value(self)
+            .ok()
+            .and_then(|v| v["code"].as_str().map(str::to_owned))
+            .unwrap_or_default()
+    }
+}
+impl std::fmt::Display for OcrError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidSettings { message } => write!(f, "OCR_INVALID_SETTINGS:{message}"),
+            _ => f.write_str(&self.code()),
+        }
+    }
+}
+impl std::error::Error for OcrError {}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LanguagePack {
+    pub code: String,
+    pub sha256: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Preprocessing {
+    pub enabled: bool,
+    pub grayscale: bool,
+    pub inverted: bool,
+    /// Integer upscale factor; derivative coordinates divide exactly back to source.
+    pub scale: u32,
+}
+
+/// Coordinates are in source-image pixels.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Bounds {
+    pub left: u32,
+    pub top: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OcrWord {
+    pub text: String,
+    pub confidence: f64,
+    pub bounds: Bounds,
+}
+
+/// One recognized text line in engine reading order.
+#[derive(Debug, Clone, Serialize)]
+pub struct OcrRegion {
+    pub block: u32,
+    pub paragraph: u32,
+    pub line: u32,
+    pub text: String,
+    pub confidence: f64,
+    pub bounds: Bounds,
+    pub words: Vec<OcrWord>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OcrResult {
+    pub engine: &'static str,
+    pub engine_version: String,
+    pub executable_sha256: String,
+    pub languages: Vec<LanguagePack>,
+    pub page_segmentation_mode: u64,
+    pub engine_mode: u64,
+    pub preprocessing: Preprocessing,
+    pub source_sha256: String,
+    pub source_width: u32,
+    pub source_height: u32,
+    pub derivative_sha256: String,
+    pub regions: Vec<OcrRegion>,
+    pub text: String,
+    /// Character-weighted mean of normalized word confidences.
+    pub confidence: Option<f64>,
+    /// Engine-specific score; it is not a calibrated probability of correctness.
+    pub confidence_semantics: &'static str,
+    pub needs_review: bool,
+    pub review_reasons: Vec<&'static str>,
+    pub raw_output_sha256: String,
+    /// Cache key: source bytes plus engine, resources and recognition settings.
+    pub cache_fingerprint: String,
+    /// Exact engine TSV for archival; excluded from serialized summaries.
+    #[serde(skip)]
+    pub raw_output: Vec<u8>,
+}
+
+pub fn validate_settings(settings: &Effective) -> Result<(), String> {
+    let registry = linguist_config::Registry::builtin();
+    for key in SETTINGS {
+        registry.validate_value(key, settings.values.get(key).ok_or("OCR_SETTING_MISSING")?)?;
+    }
+    Ok(())
+}
+
+/// Recognize text in one source image. Every engine failure is item-scoped and typed.
+pub fn recognize(
+    source: &[u8],
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) -> Result<OcrResult, OcrError> {
+    validate_settings(settings).map_err(|message| OcrError::InvalidSettings { message })?;
+    let value = |key: &str| &settings.values[key];
+    let engine = value("ocr.engine").as_str().unwrap();
+    if engine != "tesseract" {
+        return Err(OcrError::OcrEngineUnavailable {
+            engine: engine.into(),
+        });
+    }
+    let languages: Vec<String> = value("ocr.languages")
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_owned())
+        .collect();
+    if let Some(bad) = languages.iter().find(|l| !valid_language_code(l)) {
+        return Err(OcrError::InvalidSettings {
+            message: format!("ocr.languages:{bad}"),
+        });
+    }
+    let psm = value("ocr.page_segmentation_mode").as_u64().unwrap();
+    let oem = value("ocr.engine_mode").as_u64().unwrap();
+    let preprocess = value("ocr.preprocess").as_bool().unwrap();
+    let minimum = value("ocr.minimum_confidence").as_f64().unwrap();
+    let max_pixels = value("ocr.max_pixels").as_u64().unwrap();
+    let max_regions = value("ocr.max_regions").as_u64().unwrap();
+    let limits = ProcessLimits {
+        deadline: Instant::now()
+            + Duration::from_secs(value("ocr.timeout_seconds").as_u64().unwrap()),
+        output: value("helpers.max_output_mb").as_u64().unwrap() as usize * 1024 * 1024,
+        memory: value("helpers.memory_limit_mb").as_u64().unwrap() * 1024 * 1024,
+    };
+
+    // Decode safely before any process is started.
+    let inspection =
+        crate::media::inspect_image(source, settings).map_err(|e| OcrError::OcrImageRejected {
+            image_code: e.to_string(),
+        })?;
+    let pixels = u64::from(inspection.width) * u64::from(inspection.height);
+    if pixels > max_pixels {
+        return Err(OcrError::OcrPixelLimit { pixels, max_pixels });
+    }
+
+    let executable = linguist_config::resources::resolve_executable(
+        value("ocr.executable").as_str().unwrap(),
+        environment,
+    )
+    .map_err(|status| OcrError::OcrExecutableUnavailable {
+        status: status.into(),
+    })?;
+    let tessdata = match value("ocr.resource_path").as_str() {
+        None => None,
+        Some(reference) => Some(resource_directory(reference, environment)?),
+    };
+    let executable_sha256 = hash_file(&executable, u64::MAX)
+        .map_err(|_| OcrError::OcrExecutableUnavailable {
+            status: "unreadable".into(),
+        })?
+        .0;
+    let tessdata_args = |command: &mut Command| {
+        if let Some(dir) = &tessdata {
+            command.arg("--tessdata-dir").arg(dir);
+        }
+    };
+
+    let mut version = command(&executable);
+    version.arg("--version");
+    let version_out = run(version, &limits)?;
+    let engine_version = String::from_utf8_lossy(&version_out)
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|l| l.starts_with("tesseract "))
+        .ok_or_else(|| OcrError::OcrOutputMalformed {
+            reason: "version".into(),
+        })?
+        .to_owned();
+
+    let mut list = command(&executable);
+    tessdata_args(&mut list);
+    list.arg("--list-langs");
+    let (pack_dir, installed) = parse_language_list(&run(list, &limits)?)?;
+    let missing: Vec<String> = languages
+        .iter()
+        .filter(|l| !installed.contains(*l))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        return Err(OcrError::OcrLanguagePackMissing { missing });
+    }
+    let pack_dir = tessdata.clone().unwrap_or(pack_dir);
+    let mut packs = Vec::new();
+    for code in &languages {
+        let path = pack_dir.join(format!("{code}.traineddata"));
+        let (sha256, bytes) = hash_file(&path, LANGUAGE_PACK_LIMIT).map_err(|_| {
+            OcrError::OcrLanguagePackUnreadable {
+                language: code.clone(),
+            }
+        })?;
+        packs.push(LanguagePack {
+            code: code.clone(),
+            sha256,
+            bytes,
+        });
+    }
+
+    let (derivative, preprocessing) = derivative(source, settings, preprocess, max_pixels)?;
+    let derivative_sha256 = hex(&Sha256::digest(&derivative));
+    let workspace = TempDir::create().map_err(|_| OcrError::OcrDerivativeFailed)?;
+    let input = workspace.0.join("derivative.png");
+    write_private(&input, &derivative).map_err(|_| OcrError::OcrDerivativeFailed)?;
+    let mut recognize = command(&executable);
+    recognize.arg(&input).arg("stdout");
+    tessdata_args(&mut recognize);
+    recognize
+        .arg("-l")
+        .arg(languages.join("+"))
+        .arg("--psm")
+        .arg(psm.to_string())
+        .arg("--oem")
+        .arg(oem.to_string())
+        .arg("tsv");
+    let raw_output = run(recognize, &limits)?;
+    drop(workspace);
+
+    let regions = parse_tsv(&raw_output, preprocessing.scale)?;
+    if regions.len() as u64 > max_regions {
+        return Err(OcrError::OcrRegionLimit {
+            regions: regions.len(),
+            max_regions,
+        });
+    }
+    let text = regions
+        .iter()
+        .map(|r| r.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let (weighted, characters) =
+        regions
+            .iter()
+            .flat_map(|r| &r.words)
+            .fold((0.0, 0usize), |(sum, count), word| {
+                let n = word.text.chars().count();
+                (sum + word.confidence * n as f64, count + n)
+            });
+    let confidence = (characters > 0).then(|| weighted / characters as f64);
+    let mut review_reasons = Vec::new();
+    match confidence {
+        None => review_reasons.push("no_text_recognized"),
+        Some(c) if c < minimum => review_reasons.push("confidence_below_minimum"),
+        _ => {}
+    }
+    let source_sha256 = hex(&Sha256::digest(source));
+    let fingerprint = serde_json::json!({
+        "schema": "linguist-ocr-cache-v1",
+        "source_sha256": source_sha256,
+        "engine": "tesseract",
+        "engine_version": engine_version,
+        "executable_sha256": executable_sha256,
+        "languages": packs,
+        "page_segmentation_mode": psm,
+        "engine_mode": oem,
+        "preprocess": preprocess,
+        "max_pixels": max_pixels,
+    });
+    let cache_fingerprint = hex(&Sha256::digest(
+        serde_jcs::to_vec(&fingerprint).map_err(|_| OcrError::OcrDerivativeFailed)?,
+    ));
+    Ok(OcrResult {
+        engine: "tesseract",
+        engine_version,
+        executable_sha256,
+        languages: packs,
+        page_segmentation_mode: psm,
+        engine_mode: oem,
+        preprocessing,
+        source_sha256,
+        source_width: inspection.width,
+        source_height: inspection.height,
+        derivative_sha256,
+        text,
+        confidence,
+        confidence_semantics: "tesseract_word_confidence_normalized_uncalibrated",
+        needs_review: !review_reasons.is_empty(),
+        review_reasons,
+        raw_output_sha256: hex(&Sha256::digest(&raw_output)),
+        regions,
+        cache_fingerprint,
+        raw_output,
+    })
+}
+
+fn valid_language_code(code: &str) -> bool {
+    !code.is_empty()
+        && code.len() <= 64
+        && code
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+fn resource_directory(
+    reference: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<PathBuf, OcrError> {
+    let unavailable = |status: &str| OcrError::OcrResourcePathUnavailable {
+        status: status.into(),
+    };
+    let path = linguist_config::expand_path(reference, environment)
+        .map_err(|_| unavailable("invalid_path_expansion"))?;
+    if !path.is_absolute() {
+        return Err(unavailable("relative_path"));
+    }
+    match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.file_type().is_symlink() => Err(unavailable("symlink")),
+        Ok(m) if m.is_dir() => Ok(path),
+        Ok(_) => Err(unavailable("wrong_file_type")),
+        Err(_) => Err(unavailable("missing")),
+    }
+}
+
+/// Build a derivative from the first decoded frame. Preprocessing converts to
+/// grayscale, inverts dark backgrounds and upscales by an integer factor within
+/// the pixel budget so region coordinates map exactly back to the source.
+fn derivative(
+    source: &[u8],
+    settings: &Effective,
+    preprocess: bool,
+    max_pixels: u64,
+) -> Result<(Vec<u8>, Preprocessing), OcrError> {
+    let cap = settings.values["media.max_asset_mb"].as_u64().unwrap() * 1024 * 1024;
+    let mut limits = Limits::default();
+    limits.max_alloc = Some(cap);
+    let mut reader = ImageReader::new(Cursor::new(source))
+        .with_guessed_format()
+        .map_err(|_| OcrError::OcrDerivativeFailed)?;
+    reader.limits(limits);
+    let image = reader.decode().map_err(|_| OcrError::OcrDerivativeFailed)?;
+    let mut info = Preprocessing {
+        enabled: preprocess,
+        grayscale: false,
+        inverted: false,
+        scale: 1,
+    };
+    let image = if preprocess {
+        let mut gray = image.to_luma8();
+        let sum: u64 = gray.as_raw().iter().map(|&p| u64::from(p)).sum();
+        let mean = sum as f64 / gray.as_raw().len().max(1) as f64;
+        if mean < INVERT_BELOW {
+            image::imageops::invert(&mut gray);
+            info.inverted = true;
+        }
+        info.grayscale = true;
+        let pixels = u64::from(gray.width()) * u64::from(gray.height());
+        let mut scale = MAX_UPSCALE;
+        while scale > 1 && pixels * u64::from(scale * scale) > max_pixels {
+            scale -= 1;
+        }
+        info.scale = scale;
+        let gray = if scale > 1 {
+            image::imageops::resize(
+                &gray,
+                gray.width() * scale,
+                gray.height() * scale,
+                FilterType::Lanczos3,
+            )
+        } else {
+            gray
+        };
+        DynamicImage::ImageLuma8(gray)
+    } else {
+        image
+    };
+    let mut out = Cursor::new(Vec::new());
+    image
+        .write_to(&mut out, image::ImageFormat::Png)
+        .map_err(|_| OcrError::OcrDerivativeFailed)?;
+    Ok((out.into_inner(), info))
+}
+
+fn parse_language_list(output: &[u8]) -> Result<(PathBuf, Vec<String>), OcrError> {
+    let malformed = || OcrError::OcrOutputMalformed {
+        reason: "language_list".into(),
+    };
+    let text = std::str::from_utf8(output).map_err(|_| malformed())?;
+    let mut lines = text.lines();
+    let header = lines.next().ok_or_else(malformed)?;
+    let start = header.find('"').ok_or_else(malformed)? + 1;
+    let end = start + header[start..].find('"').ok_or_else(malformed)?;
+    let directory = PathBuf::from(&header[start..end]);
+    if !header.starts_with("List of available languages") || !directory.is_absolute() {
+        return Err(malformed());
+    }
+    Ok((
+        directory,
+        lines
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    ))
+}
+
+const TSV_HEADER: &str =
+    "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext";
+
+/// Parse Tesseract TSV word rows (level 5) into lines in engine order.
+fn parse_tsv(output: &[u8], scale: u32) -> Result<Vec<OcrRegion>, OcrError> {
+    let malformed = |reason: &str| OcrError::OcrOutputMalformed {
+        reason: reason.into(),
+    };
+    let text = std::str::from_utf8(output).map_err(|_| malformed("utf8"))?;
+    let mut lines = text.lines();
+    if lines.next() != Some(TSV_HEADER) {
+        return Err(malformed("header"));
+    }
+    let mut regions: Vec<OcrRegion> = Vec::new();
+    let mut boxes: Vec<(u32, u32, u32, u32)> = Vec::new();
+    for row in lines {
+        if row.is_empty() {
+            continue;
+        }
+        let columns: Vec<&str> = row.splitn(12, '\t').collect();
+        if columns.len() != 12 {
+            return Err(malformed("columns"));
+        }
+        let number = |i: usize| columns[i].parse::<u32>().map_err(|_| malformed("number"));
+        let level = number(0)?;
+        if !(1..=5).contains(&level) {
+            return Err(malformed("level"));
+        }
+        let confidence: f64 = columns[10].parse().map_err(|_| malformed("confidence"))?;
+        if !confidence.is_finite() || !(-1.0..=100.0).contains(&confidence) {
+            return Err(malformed("confidence"));
+        }
+        let word = columns[11];
+        if level != 5 || confidence < 0.0 || word.trim().is_empty() {
+            continue;
+        }
+        let (left, top, width, height) = (number(6)?, number(7)?, number(8)?, number(9)?);
+        let right = left.checked_add(width).ok_or_else(|| malformed("bounds"))?;
+        let bottom = top.checked_add(height).ok_or_else(|| malformed("bounds"))?;
+        let key = (number(2)?, number(3)?, number(4)?);
+        let word = OcrWord {
+            text: word.to_owned(),
+            confidence: confidence / 100.0,
+            bounds: to_source(left, top, right, bottom, scale),
+        };
+        match regions.last_mut() {
+            Some(r) if (r.block, r.paragraph, r.line) == key => {
+                let b = boxes.last_mut().unwrap();
+                *b = (b.0.min(left), b.1.min(top), b.2.max(right), b.3.max(bottom));
+                r.words.push(word);
+            }
+            _ => {
+                if regions
+                    .iter()
+                    .any(|r| (r.block, r.paragraph, r.line) == key)
+                {
+                    return Err(malformed("line_order"));
+                }
+                boxes.push((left, top, right, bottom));
+                regions.push(OcrRegion {
+                    block: key.0,
+                    paragraph: key.1,
+                    line: key.2,
+                    text: String::new(),
+                    confidence: 0.0,
+                    bounds: Bounds {
+                        left: 0,
+                        top: 0,
+                        width: 0,
+                        height: 0,
+                    },
+                    words: vec![word],
+                });
+            }
+        }
+    }
+    for (region, (left, top, right, bottom)) in regions.iter_mut().zip(boxes) {
+        region.bounds = to_source(left, top, right, bottom, scale);
+        region.text = join_words(&region.words);
+        region.confidence =
+            region.words.iter().map(|w| w.confidence).sum::<f64>() / region.words.len() as f64;
+    }
+    Ok(regions)
+}
+
+fn to_source(left: u32, top: u32, right: u32, bottom: u32, scale: u32) -> Bounds {
+    let (left, top) = (left / scale, top / scale);
+    Bounds {
+        left,
+        top,
+        width: right.div_ceil(scale) - left,
+        height: bottom.div_ceil(scale) - top,
+    }
+}
+
+/// CJK engines emit one word per character; only join non-CJK neighbours with a space.
+fn join_words(words: &[OcrWord]) -> String {
+    let mut text = String::new();
+    for word in words {
+        let separate = matches!(
+            (text.chars().last(), word.text.chars().next()),
+            (Some(a), Some(b)) if !(is_cjk(a) && is_cjk(b))
+        );
+        if separate {
+            text.push(' ');
+        }
+        text.push_str(&word.text);
+    }
+    text
+}
+
+fn is_cjk(c: char) -> bool {
+    matches!(c as u32,
+        0x3000..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0xFF00..=0xFFEF)
+}
+
+struct ProcessLimits {
+    deadline: Instant,
+    output: usize,
+    memory: u64,
+}
+
+/// No shell is involved; the environment is reduced to a fixed minimum.
+fn command(executable: &Path) -> Command {
+    let mut command = Command::new(executable);
+    command
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("LC_ALL", "C.UTF-8")
+        .env("OMP_THREAD_LIMIT", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    command
+}
+
+/// Run a child under the shared deadline, memory and output bounds. Timeout or
+/// excess output kills the whole process group; output is never truncated.
+fn run(mut command: Command, limits: &ProcessLimits) -> Result<Vec<u8>, OcrError> {
+    if Instant::now() >= limits.deadline {
+        return Err(OcrError::OcrProcessTimeout);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let memory = limits.memory;
+        // SAFETY: only async-signal-safe libc calls run between fork and exec.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                let limit = libc::rlimit {
+                    rlim_cur: memory,
+                    rlim_max: memory,
+                };
+                if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|_| OcrError::OcrProcessSpawnFailed)?;
+    let exceeded = Arc::new(AtomicBool::new(false));
+    let stdout = drain(
+        child.stdout.take().unwrap(),
+        limits.output,
+        Some(exceeded.clone()),
+    );
+    let stderr = drain(child.stderr.take().unwrap(), STDERR_LIMIT, None);
+    let status = loop {
+        if exceeded.load(Ordering::SeqCst) {
+            kill(&mut child);
+            let _ = (stdout.join(), stderr.join());
+            return Err(OcrError::OcrOutputLimit);
+        }
+        if Instant::now() >= limits.deadline {
+            kill(&mut child);
+            let _ = (stdout.join(), stderr.join());
+            return Err(OcrError::OcrProcessTimeout);
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => std::thread::sleep(Duration::from_millis(5)),
+            Err(_) => {
+                kill(&mut child);
+                return Err(OcrError::OcrProcessFailed { exit_code: None });
+            }
+        }
+    };
+    // A surviving grandchild could hold the pipe open; the group is killed either way.
+    kill_group(&child);
+    let output = stdout.join().unwrap_or_default();
+    let _ = stderr.join();
+    if exceeded.load(Ordering::SeqCst) {
+        return Err(OcrError::OcrOutputLimit);
+    }
+    if !status.success() {
+        return Err(OcrError::OcrProcessFailed {
+            exit_code: status.code(),
+        });
+    }
+    Ok(output)
+}
+
+fn drain(
+    mut pipe: impl Read + Send + 'static,
+    limit: usize,
+    exceeded: Option<Arc<AtomicBool>>,
+) -> JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut kept = Vec::new();
+        let mut chunk = [0u8; 8192];
+        loop {
+            match pipe.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(n) if kept.len() + n > limit => {
+                    if let Some(flag) = &exceeded {
+                        flag.store(true, Ordering::SeqCst);
+                        break;
+                    }
+                }
+                Ok(n) => kept.extend_from_slice(&chunk[..n]),
+            }
+        }
+        kept
+    })
+}
+
+fn kill_group(child: &Child) {
+    #[cfg(unix)]
+    // SAFETY: the child leads its own process group created in pre_exec.
+    unsafe {
+        libc::killpg(child.id() as libc::pid_t, libc::SIGKILL);
+    }
+}
+
+fn kill(child: &mut Child) {
+    kill_group(child);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn hash_file(path: &Path, limit: u64) -> std::io::Result<(String, u64)> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.len() > limit {
+        return Err(std::io::ErrorKind::InvalidInput.into());
+    }
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let bytes = std::io::copy(&mut (&mut file).take(limit.saturating_add(1)), &mut hasher)?;
+    if bytes > limit {
+        return Err(std::io::ErrorKind::InvalidInput.into());
+    }
+    Ok((hex(&hasher.finalize()), bytes))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)?.write_all(bytes)
+}
+
+/// Private derivative directory removed on drop, including after failures.
+struct TempDir(PathBuf);
+impl TempDir {
+    fn create() -> std::io::Result<Self> {
+        let path = std::env::temp_dir().join(format!("linguist-ocr-{}", uuid::Uuid::new_v4()));
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder.create(&path)?;
+        Ok(Self(path))
+    }
+}
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tsv_lines_map_back_to_source_coordinates() {
+        let tsv = format!(
+            "{TSV_HEADER}\n1\t1\t0\t0\t0\t0\t0\t0\t90\t30\t-1\t\n\
+             5\t1\t1\t1\t1\t1\t3\t6\t9\t9\t90\t日\n\
+             5\t1\t1\t1\t1\t2\t12\t6\t9\t10\t70\t本\n\
+             5\t1\t1\t1\t1\t3\t24\t6\t12\t9\t80\tOK\n\
+             5\t1\t1\t1\t2\t1\t3\t20\t7\t5\t50\tnext\n"
+        );
+        let regions = parse_tsv(tsv.as_bytes(), 3).unwrap();
+        assert_eq!(regions.len(), 2);
+        assert_eq!(regions[0].text, "日本 OK");
+        assert_eq!(
+            regions[0].bounds,
+            Bounds {
+                left: 1,
+                top: 2,
+                width: 11,
+                height: 4
+            }
+        );
+        assert!((regions[0].confidence - 0.8).abs() < 1e-9);
+        assert_eq!(
+            regions[1].words[0].bounds,
+            Bounds {
+                left: 1,
+                top: 6,
+                width: 3,
+                height: 3
+            }
+        );
+    }
+
+    #[test]
+    fn malformed_tsv_is_rejected_not_truncated() {
+        for bad in [
+            "nope\n".to_owned(),
+            format!("{TSV_HEADER}\n5\t1\t1\t1\t1\t1\t0\t0\t1\t1\tx\tw\n"),
+            format!("{TSV_HEADER}\n5\t1\t1\t1\t1\n"),
+            format!("{TSV_HEADER}\n9\t1\t1\t1\t1\t1\t0\t0\t1\t1\t5\tw\n"),
+            format!(
+                "{TSV_HEADER}\n5\t1\t1\t1\t1\t1\t0\t0\t1\t1\t5\ta\n\
+                 5\t1\t1\t1\t2\t1\t0\t0\t1\t1\t5\tb\n5\t1\t1\t1\t1\t2\t0\t0\t1\t1\t5\tc\n"
+            ),
+        ] {
+            assert!(matches!(
+                parse_tsv(bad.as_bytes(), 1),
+                Err(OcrError::OcrOutputMalformed { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn language_list_requires_absolute_directory() {
+        let (dir, langs) = parse_language_list(
+            b"List of available languages in \"/x/tessdata/\" (2):\neng\njpn\n",
+        )
+        .unwrap();
+        assert_eq!(
+            (dir, langs),
+            (
+                PathBuf::from("/x/tessdata/"),
+                vec!["eng".into(), "jpn".into()]
+            )
+        );
+        assert!(parse_language_list(b"List of available languages in \"rel\" (0):\n").is_err());
+    }
+}
