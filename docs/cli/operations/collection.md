@@ -92,9 +92,24 @@ CSS manifest. It reports `create` when the name is absent,
 bytes match, or `name_collision` when a same-name model differs. Template order
 and managed provenance are not established by AnkiConnect's read actions, so
 even matching content is only a reuse candidate. A collision exits review-needed
-and is never auto-overwritten. `--apply` fails before any Anki request until the
-verified native bridge, checkpoint and journal executor are implemented. Preview
-never claims apply eligibility or mutates the collection.
+and is never auto-overwritten. The preview lists `apply_requires`: a restored,
+collection-scope checkpoint with scheduling, media and schema, a journal before
+the call, and reconciliation by name, exact manifest and operation evidence.
+`--apply` still fails with `CAPABILITY_UNAVAILABLE` before any lease, journal or
+Anki request, because no tested native `install_model`/`export_checkpoint`
+adapter exists. Preview never claims apply eligibility or mutates the collection.
+
+The ALG-MODEL installer behind it (`linguist_application::model_install`) is
+complete over an injected port and tested with fakes. It reuses only an exact
+single same-name model (fields in order, template names/ordinals/bytes, CSS),
+blocks a differing or duplicated name, requires the checkpoint gate before
+creation, records pre-state and an `install_model` intent before calling, and
+verifies the read-back. A partial model or lost response enters
+`needs_recovery`, blocks new attempts for that name and is never deleted.
+Reconciliation adopts a result only when the exact name, exact manifest and
+companion evidence naming that model agree; it closes an uncertain request as
+not created only when the name is absent and the companion reports
+`failed_before_write`. It never re-sends.
 
 ## OP-18 — `notes list`
 

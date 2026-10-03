@@ -156,7 +156,7 @@ enum Command {
         #[command(subcommand)]
         command: Option<ModelCommand>,
     },
-    /// Inspect a local Anki package; inspection never authorizes apply or restore.
+    /// Verified checkpoints: preview/create, list receipts and verify packages.
     Backup {
         #[command(subcommand)]
         command: BackupCommand,
@@ -164,24 +164,38 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum BackupCommand {
+    /// Preview checkpoint coverage and path; --apply needs the verified native export.
     Create {
+        /// affected or collection; schema actions always escalate to collection.
         #[arg(long)]
         scope: String,
+        /// Create-new .colpkg path whose parent directory exists.
         #[arg(long)]
         output: PathBuf,
+        /// JSON scope manifest (notes, cards, models, media) the package must cover.
+        #[arg(long)]
+        scope_manifest: Option<PathBuf>,
         #[arg(long)]
         apply: bool,
     },
+    /// List stored checkpoint receipts, newest first.
     List {
         #[arg(long)]
         scope: Option<String>,
+        /// RFC 3339 UTC time or YYYY-MM-DD.
         #[arg(long)]
         since: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
     },
+    /// Verify a receipt ID or package file; a restore test uses a disposable directory.
     Verify {
-        backup: PathBuf,
+        backup: String,
         #[arg(long)]
         restore_test_target: Option<PathBuf>,
+        /// Scope manifest for an unregistered package file.
+        #[arg(long)]
+        scope_manifest: Option<PathBuf>,
     },
     /// Check the current .colpkg container and declared media without restoring it.
     Inspect { file: PathBuf },
@@ -997,15 +1011,6 @@ fn unavailable_operation(command: &Command) -> Option<&'static str> {
         Command::Jobs {
             command: JobCommand::Delete { .. },
         } => Some("OP-45 jobs delete"),
-        Command::Backup {
-            command: BackupCommand::Create { .. },
-        } => Some("OP-52 backup create"),
-        Command::Backup {
-            command: BackupCommand::List { .. },
-        } => Some("OP-53 backup list"),
-        Command::Backup {
-            command: BackupCommand::Verify { .. },
-        } => Some("OP-54 backup verify"),
         Command::Recover {
             command: RecoveryCommand::Reconcile { .. },
         } => Some("OP-60 recover reconcile"),
@@ -2149,50 +2154,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             )?;
             Ok(if ready { 0 } else { 3 })
         }
-        Command::Backup {
-            command: BackupCommand::Inspect { file },
-        } => {
-            let registry = linguist_config::Registry::builtin();
-            for key in [
-                "backup.verify_timeout_seconds",
-                "backup.max_package_gb",
-                "backup.max_collection_gb",
-                "backup.max_media_gb",
-                "backup.max_media_map_mb",
-                "backup.max_entries",
-                "backup.verify_scratch_dir",
-            ] {
-                registry.validate_value(key, &settings.values[key])?;
-            }
-            let gib = 1024 * 1024 * 1024;
-            let limits = linguist_application::checkpoint::PackageLimits {
-                max_package_bytes: settings.values["backup.max_package_gb"].as_u64().unwrap() * gib,
-                max_collection_bytes: settings.values["backup.max_collection_gb"]
-                    .as_u64()
-                    .unwrap()
-                    * gib,
-                max_media_bytes: settings.values["backup.max_media_gb"].as_u64().unwrap() * gib,
-                max_media_map_bytes: settings.values["backup.max_media_map_mb"].as_u64().unwrap()
-                    * 1024
-                    * 1024,
-                max_entries: settings.values["backup.max_entries"].as_u64().unwrap() as usize,
-                timeout: std::time::Duration::from_secs(
-                    settings.values["backup.verify_timeout_seconds"]
-                        .as_u64()
-                        .unwrap(),
-                ),
-                scratch_dir: linguist_config::expand_path(
-                    settings.values["backup.verify_scratch_dir"]
-                        .as_str()
-                        .unwrap(),
-                    &std::env::vars().collect(),
-                )?,
-            };
-            let report = linguist_application::checkpoint::inspect_colpkg(&file, limits)?;
-            emit(&serde_json::json!({"schema_version":2,"inspection":report}))?;
-            Ok(0)
-        }
-        Command::Backup { .. } => unreachable!(),
+        Command::Backup { command } => run_backup(command, &settings),
         Command::Models {
             command: None | Some(ModelCommand::Builtin),
         } => {
@@ -2224,7 +2186,9 @@ fn run(cli: Cli) -> Result<u8, String> {
                 _ => return Err("MODEL_PURPOSE_UNSUPPORTED".into()),
             };
             if apply {
-                return Err("CAPABILITY_UNAVAILABLE: native model installation requires verified bridge, checkpoint and journal support".into());
+                // The journaled installer (linguist_application::model_install) exists, but
+                // no tested native install_model adapter does; nothing is dispatched.
+                return Err("CAPABILITY_UNAVAILABLE: models install --apply requires the verified native install_model and export_checkpoint adapters; no lease, checkpoint, journal or Anki request was made".into());
             }
             let client = anki_client(&settings)?;
             let existing = client
@@ -2250,7 +2214,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             };
             client.check_profile()?;
             emit(
-                &serde_json::json!({"schema_version":2,"purpose":purpose,"proposal":action,"target":target,"existing":inspection,"checkpoint_verified":false,"native_template_order_verified":false,"apply_eligible":false,"writes_enabled":false}),
+                &serde_json::json!({"schema_version":2,"purpose":purpose,"proposal":action,"target":target,"existing":inspection,"checkpoint_verified":false,"apply_requires":{"checkpoint":{"package_scope":"collection","scheduling":true,"media":true,"schema":true,"restoration_tested":true},"journal_before_call":true,"reconcile_by":"name+exact manifest+operation evidence"},"native_template_order_verified":false,"apply_eligible":false,"writes_enabled":false}),
             )?;
             Ok(if action == "name_collision" { 4 } else { 0 })
         }
@@ -2962,6 +2926,295 @@ fn load_effective(cli: &Cli) -> Result<linguist_config::Effective, String> {
         }
     };
     linguist_config::resolve(&registry, &file, &options)
+}
+
+fn package_limits(
+    settings: &linguist_config::Effective,
+) -> Result<linguist_application::checkpoint::PackageLimits, String> {
+    let registry = linguist_config::Registry::builtin();
+    for key in [
+        "backup.verify_timeout_seconds",
+        "backup.max_package_gb",
+        "backup.max_collection_gb",
+        "backup.max_media_gb",
+        "backup.max_media_map_mb",
+        "backup.max_entries",
+        "backup.verify_scratch_dir",
+    ] {
+        registry.validate_value(key, &settings.values[key])?;
+    }
+    let value = |key: &str| settings.values[key].as_u64().unwrap();
+    let gib = 1024 * 1024 * 1024;
+    Ok(linguist_application::checkpoint::PackageLimits {
+        max_package_bytes: value("backup.max_package_gb") * gib,
+        max_collection_bytes: value("backup.max_collection_gb") * gib,
+        max_media_bytes: value("backup.max_media_gb") * gib,
+        max_media_map_bytes: value("backup.max_media_map_mb") * 1024 * 1024,
+        max_entries: value("backup.max_entries") as usize,
+        timeout: std::time::Duration::from_secs(value("backup.verify_timeout_seconds")),
+        scratch_dir: linguist_config::expand_path(
+            settings.values["backup.verify_scratch_dir"]
+                .as_str()
+                .unwrap(),
+            &std::env::vars().collect(),
+        )?,
+    })
+}
+
+fn read_scope_manifest(
+    path: Option<&std::path::Path>,
+    max_bytes: u64,
+) -> Result<linguist_application::checkpoint::ScopeManifest, String> {
+    use linguist_application::checkpoint::{CoverageRequirement, ScopeManifest};
+    let manifest = match path {
+        None => ScopeManifest {
+            schema_version: 1,
+            requirement: CoverageRequirement::default(),
+            note_ids: vec![],
+            cards: vec![],
+            model_ids: vec![],
+            media: vec![],
+        },
+        Some(path) => {
+            let bytes = read_bounded(path, max_bytes)?;
+            serde_json::from_slice(&bytes).map_err(|_| "CHECKPOINT_SCOPE_INVALID")?
+        }
+    };
+    manifest.validate()?;
+    Ok(manifest)
+}
+
+fn read_bounded(path: &std::path::Path, max_bytes: u64) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).map_err(|_| "INPUT_FILE_UNAVAILABLE")?;
+    let mut bytes = Vec::new();
+    file.take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "INPUT_FILE_UNAVAILABLE")?;
+    if bytes.len() as u64 > max_bytes {
+        return Err("INPUT_FILE_TOO_LARGE".into());
+    }
+    Ok(bytes)
+}
+
+/// Days since 1970-01-01 for a proleptic Gregorian date.
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let yoe = year - era * 400;
+    let month = month as i64;
+    let doy = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// Accepts `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SSZ` (UTC only).
+fn parse_since_ms(value: &str) -> Result<u64, String> {
+    let invalid = || "INVALID_SINCE: use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ".to_owned();
+    let (date, time) = match value.split_once('T') {
+        Some((date, time)) => (date, Some(time.strip_suffix('Z').ok_or_else(invalid)?)),
+        None => (value, None),
+    };
+    let parts: Vec<&str> = date.split('-').collect();
+    let number = |text: &str, len: usize| -> Result<u32, String> {
+        if text.len() != len || !text.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(invalid());
+        }
+        text.parse().map_err(|_| invalid())
+    };
+    let [year, month, day] = parts.as_slice() else {
+        return Err(invalid());
+    };
+    let (year, month, day) = (number(year, 4)?, number(month, 2)?, number(day, 2)?);
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let days_in_month = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+    if !(1970..=9999).contains(&year)
+        || !(1..=12).contains(&month)
+        || day == 0
+        || day > days_in_month[month as usize - 1]
+    {
+        return Err(invalid());
+    }
+    let mut seconds = days_from_civil(year as i64, month, day) * 86_400;
+    if let Some(time) = time {
+        let parts: Vec<&str> = time.split(':').collect();
+        let [h, m, sec] = parts.as_slice() else {
+            return Err(invalid());
+        };
+        let (h, m, sec) = (number(h, 2)?, number(m, 2)?, number(sec, 2)?);
+        if h > 23 || m > 59 || sec > 59 {
+            return Err(invalid());
+        }
+        seconds += (h * 3600 + m * 60 + sec) as i64;
+    }
+    Ok(seconds as u64 * 1000)
+}
+
+fn now_ms() -> Result<u64, String> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .map_err(|_| "CLOCK_INVALID".into())
+}
+
+fn run_backup(command: BackupCommand, settings: &linguist_config::Effective) -> Result<u8, String> {
+    use linguist_application::{backup, checkpoint};
+    let max_input = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
+    let state_root = || -> Result<PathBuf, String> {
+        let root = linguist_config::expand_path(
+            settings.values["storage.state_dir"].as_str().unwrap(),
+            &std::env::vars().collect(),
+        )?;
+        if !root.is_absolute() {
+            return Err("STORE_PATH_MUST_BE_ABSOLUTE".into());
+        }
+        Ok(root)
+    };
+    match command {
+        BackupCommand::Inspect { file } => {
+            let report = checkpoint::inspect_colpkg(&file, package_limits(settings)?)?;
+            emit(&serde_json::json!({"schema_version":2,"inspection":report}))?;
+            Ok(0)
+        }
+        BackupCommand::Create {
+            scope,
+            output,
+            scope_manifest,
+            apply,
+        } => {
+            let preference: backup::ScopePreference = scope.parse()?;
+            let manifest = read_scope_manifest(scope_manifest.as_deref(), max_input)?;
+            let preference_setting = settings.values["backup.scope"].as_str().unwrap();
+            let coverage = backup::plan_coverage(preference, &manifest);
+            let (output, _) = backup::checkpoint_paths(&output, uuid::Uuid::nil())?;
+            if apply {
+                // No tested native export_checkpoint adapter exists; never call an
+                // unverified endpoint. Nothing was journaled or sent.
+                return Err("CAPABILITY_UNAVAILABLE: backup create --apply requires the verified native export_checkpoint adapter; no lease, journal or Anki request was made".into());
+            }
+            emit(&serde_json::json!({
+                "schema_version": 2,
+                "mode": "preview",
+                "output": output,
+                "scope_digest": manifest.digest()?,
+                "scope_entries": {
+                    "notes": manifest.note_ids.len(),
+                    "cards": manifest.cards.len(),
+                    "models": manifest.model_ids.len(),
+                    "media": manifest.media.len(),
+                },
+                "configured_scope_preference": preference_setting,
+                "coverage": coverage,
+                "steps": [
+                    "acquire collection writer lease and verify native binding",
+                    "journal export intent, then request native export_checkpoint to a create-new temporary path",
+                    "verify file size and SHA-256 against the claim, package structure, SQLite integrity and every scope entry",
+                    "run a disposable decode restoration test in backup.verify_scratch_dir",
+                    "link the artifact create-new, then save an immutable receipt"
+                ],
+                "native_export_available": false,
+                "apply_eligible": false,
+                "writes_enabled": false,
+            }))?;
+            Ok(0)
+        }
+        BackupCommand::List {
+            scope,
+            since,
+            limit,
+        } => {
+            if let Some(scope) = &scope
+                && !matches!(scope.as_str(), "affected" | "collection")
+            {
+                return Err("INVALID_BACKUP_SCOPE".into());
+            }
+            let since = since.as_deref().map(parse_since_ms).transpose()?;
+            let limit =
+                u32::try_from(page_limit(limit, settings)?).map_err(|_| "INVALID_PAGE_LIMIT")?;
+            let root = state_root()?;
+            let records = if std::fs::symlink_metadata(&root).is_err() {
+                vec![]
+            } else {
+                let store = linguist_store::Store::read_only(&root)?;
+                store
+                    .list_checkpoints(scope.as_deref(), since, limit)?
+                    .iter()
+                    .map(|record| backup::summarize(&store, record))
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+            emit(&serde_json::json!({
+                "schema_version": 2,
+                "checkpoints": records,
+                "limit": limit,
+                "eligibility_note": "eligible means the stored receipt has a passing restoration test for its scope; dependent writes re-hash the artifact first",
+            }))?;
+            Ok(0)
+        }
+        BackupCommand::Verify {
+            backup: target,
+            restore_test_target,
+            scope_manifest,
+        } => {
+            let limits = package_limits(settings)?;
+            if let Ok(id) = uuid::Uuid::parse_str(&target) {
+                if scope_manifest.is_some() {
+                    return Err("CHECKPOINT_SCOPE_MANIFEST_NOT_ALLOWED: a registered receipt carries its own scope".into());
+                }
+                let root = state_root()?;
+                std::fs::symlink_metadata(&root).map_err(|_| "STORE_NOT_FOUND")?;
+                let report = if restore_test_target.is_some() {
+                    let mut store = linguist_store::Store::open_existing(&root)?;
+                    backup::verify_registered(
+                        &mut store,
+                        id,
+                        limits,
+                        restore_test_target.as_deref(),
+                        now_ms()?,
+                    )?
+                } else {
+                    let mut store = linguist_store::Store::read_only(&root)?;
+                    backup::verify_registered(&mut store, id, limits, None, 0)?
+                };
+                emit(
+                    &serde_json::json!({"schema_version":2,"registered":true,"verification":report,"checkpoint_eligible":true}),
+                )?;
+                return Ok(0);
+            }
+            let file = PathBuf::from(&target);
+            let manifest = read_scope_manifest(scope_manifest.as_deref(), max_input)?;
+            let (inspection, scope_report) =
+                checkpoint::inspect_colpkg_scope(&file, limits.clone(), &manifest)?;
+            let restoration = restore_test_target
+                .as_deref()
+                .map(|dir| checkpoint::restore_test(&file, limits, &manifest, dir))
+                .transpose()?;
+            emit(&serde_json::json!({
+                "schema_version": 2,
+                "registered": false,
+                "scope_digest": manifest.digest()?,
+                "inspection": inspection,
+                "scope_report": scope_report,
+                "restoration": restoration,
+                "verified": true,
+                "checkpoint_eligible": false,
+                "eligibility_note": "an unregistered file has no collection binding or receipt and cannot authorize a write",
+            }))?;
+            Ok(0)
+        }
+    }
 }
 
 fn anki_client(settings: &linguist_config::Effective) -> Result<linguist_anki::Client, String> {

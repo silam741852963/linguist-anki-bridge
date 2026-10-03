@@ -9,7 +9,7 @@ use std::{
 };
 pub type Result<T> = std::result::Result<T, String>;
 const APPLICATION_ID: i64 = 0x4c414232;
-const SCHEMA: i64 = 8;
+const SCHEMA: i64 = 9;
 fn sql(e: rusqlite::Error) -> String {
     format!("STORE_SQL: {e}")
 }
@@ -243,6 +243,7 @@ impl Store {
                     .map_err(sql)?;
             }
             tx.execute_batch(snapshot::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(checkpoint::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
                 .map_err(sql)?;
             tx.commit().map_err(sql)?;
@@ -261,6 +262,7 @@ impl Store {
             tx.execute_batch(preparation_control::SCHEMA_SQL)
                 .map_err(sql)?;
             tx.execute_batch(snapshot::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(checkpoint::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)
                 .map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
@@ -590,6 +592,7 @@ pub mod lease;
 pub mod validation;
 
 pub mod approval;
+pub mod checkpoint;
 pub mod preparation;
 pub mod preparation_control;
 pub mod snapshot;

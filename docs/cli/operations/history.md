@@ -58,6 +58,8 @@ Effects: Preview or external checkpoint/local artifact.
 
 Result/failure: Verified coverage receipt; unsupported/missing package fails. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current implementation: `backup create --scope affected|collection --output FILE [--scope-manifest FILE]` previews only. It validates the scope manifest (sorted unique note, card, note-type and media entries with SHA-1), checks that the output is an absolute create-new `.colpkg` path whose parent exists, and reports the coverage plan. Schema actions always escalate to a collection package with scheduling and media; content-only scopes also escalate because affected-scope deck packages are not implemented. `--apply` fails with `CAPABILITY_UNAVAILABLE` before any lease, journal, file or Anki request, because no tested native `export_checkpoint` adapter exists. The ALG-BACKUP orchestration behind it (`linguist_application::backup::create_checkpoint`) is complete over an injected export port and tested with fakes: it journals the export intent, requires a durable `request_started` before dispatch, checks the claimed path, size and SHA-256 against the actual file, inspects the package and every scope entry, runs a disposable restoration test, links the artifact create-new and only then saves an immutable receipt.
+
 ## OP-53 — `backup list`
 
 Inputs: Scope/date filters.
@@ -67,6 +69,8 @@ Effects: Local read.
 1. List receipts/checksum/coverage/restore-test status.
 
 Result/failure: Unverified artifact is not a valid checkpoint. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
+
+Current implementation: `backup list [--scope affected|collection] [--since YYYY-MM-DD|YYYY-MM-DDTHH:MM:SSZ] [--limit N]` reads stored receipts newest first without creating state (a missing state directory lists nothing). Each entry gives the path, SHA-256, size, coverage flags, scope digest, restoration status, count of later verifications and `checkpoint_eligible`, which is true only when the stored restoration test passed for the receipt's scope. Listing does not re-hash artifacts; the write gate does.
 
 ## OP-54 — `backup verify BACKUP`
 
@@ -80,4 +84,6 @@ Effects: Read file; explicit disposable-target test separately authorized.
 
 Result/failure: Verification report; no claim of scheduler recovery from file presence alone. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
-Available preliminary command: `backup inspect FILE` reads an existing current-format `.colpkg` and reports container, declared-media, decoded SQLite integrity and core Anki schema checks. The output includes note/card/review-log counts without proving source scope. It uses a private decoded collection scratch file in the configured existing directory and removes it on normal exit. It does not require a registered backup receipt, create local state, call Anki, restore a collection, or mark the file as a verified checkpoint. All `checkpoint_eligible` results are false until source scope and a disposable restoration test are implemented. The file and decoded-entry limits, timeout and scratch directory are configurable through the backup settings group.
+Current implementation: `backup verify RECEIPT_ID [--restore-test-target DIR]` re-hashes the registered artifact, compares size and SHA-256 with the receipt (a missing or changed file fails), re-inspects the package and re-checks the stored scope. With a target it repeats the disposable restoration test and appends the evidence to the receipt's verification log. `backup verify FILE [--scope-manifest FILE] [--restore-test-target DIR]` checks an unregistered package without creating state; it is always reported `checkpoint_eligible=false` because it has no collection binding or receipt. The restoration test decodes the package into a fresh private directory below the target, writes the collection and every media file, reopens them independently, checks SQLite integrity, every scope note/card/review count/note type and the media bytes again, then removes the directory. It does not use Anki's importer and never touches the active collection.
+
+Available preliminary command: `backup inspect FILE` reads an existing current-format `.colpkg` and reports container, declared-media, decoded SQLite integrity and core Anki schema checks. The output includes note/card/review-log counts without proving source scope. It uses a private decoded collection scratch file in the configured existing directory and removes it on normal exit. It does not require a registered backup receipt, create local state, call Anki, restore a collection, or mark the file as a verified checkpoint. Its `checkpoint_eligible` is always false; scope checks and restoration tests belong to `backup verify` and to checkpoint creation. The file and decoded-entry limits, timeout and scratch directory are configurable through the backup settings group.

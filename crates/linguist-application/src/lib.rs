@@ -805,6 +805,7 @@ fn publish_authored_records(
 }
 
 pub mod audio;
+pub mod backup;
 pub mod capture;
 pub mod checkpoint;
 pub mod dictionary;
@@ -818,6 +819,7 @@ pub mod jobs;
 pub mod live_validation;
 pub mod mapping;
 pub mod media;
+pub mod model_install;
 pub mod ocr;
 pub mod ocr_inspection;
 pub mod ollama;

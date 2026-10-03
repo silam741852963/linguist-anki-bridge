@@ -21,6 +21,9 @@ pub struct JournalVersion {
     pub journal: OperationJournal,
 }
 fn pending(j: &OperationJournal) -> bool {
+    if matches!(j.state, O::Committed | O::FailedBeforeWrite) {
+        return false;
+    }
     matches!(j.state, O::Mutating | O::Verifying | O::NeedsRecovery)
         || j.steps.iter().any(|s| {
             matches!(
@@ -63,10 +66,25 @@ fn validate(j: &OperationJournal) -> Result<()> {
             return Err("INTENT_CANNOT_HAVE_OBSERVED_RESULT".into());
         }
     }
-    if matches!(j.state, O::Committed | O::Compensated | O::Restored) {
-        return Err("JOURNAL_FINALIZATION_UNAVAILABLE: native/checkpoint/restore receipts are not implemented".into());
+    if matches!(j.state, O::Compensated | O::Restored) {
+        return Err(
+            "JOURNAL_FINALIZATION_UNAVAILABLE: compensation/restore receipts are not implemented"
+                .into(),
+        );
     }
-    if j.state == O::FailedBeforeWrite && j.steps.iter().any(|s| s.state != S::IntentRecorded) {
+    // Commit requires every recorded effect to be verified against its expected post-state.
+    if j.state == O::Committed
+        && (j.steps.is_empty() || j.steps.iter().any(|s| s.state != S::Verified))
+    {
+        return Err("COMMIT_REQUIRES_VERIFIED_STEPS".into());
+    }
+    // An explicit observed failure is recorded only when the caller has evidence of no
+    // collection effect; an absent receipt is unknown, never a failure.
+    if j.state == O::FailedBeforeWrite
+        && j.steps
+            .iter()
+            .any(|s| !matches!(s.state, S::IntentRecorded | S::ObservedFailure))
+    {
         return Err("SENT_EFFECT_CANNOT_FAIL_BEFORE_WRITE".into());
     }
     Ok(())
@@ -96,9 +114,14 @@ fn transition(old: &OperationJournal, new: &OperationJournal) -> Result<()> {
             ) | (
                 O::Checkpointed,
                 O::Mutating | O::FailedBeforeWrite | O::NeedsRecovery
-            ) | (O::Mutating, O::Verifying | O::NeedsRecovery)
-                | (O::Verifying, O::NeedsRecovery)
-                | (O::NeedsRecovery, O::Mutating | O::Verifying)
+            ) | (
+                O::Mutating,
+                O::Verifying | O::NeedsRecovery | O::FailedBeforeWrite
+            ) | (O::Verifying, O::NeedsRecovery | O::Committed)
+                | (
+                    O::NeedsRecovery,
+                    O::Mutating | O::Verifying | O::FailedBeforeWrite
+                )
         );
     if !allowed
         || matches!(
@@ -145,6 +168,8 @@ fn transition(old: &OperationJournal, new: &OperationJournal) -> Result<()> {
                     )
                     | (S::ObservedSuccess, S::Verified)
                     | (S::Unknown, S::Verified)
+                    // Reconciliation may prove that an unknown request had no effect.
+                    | (S::Unknown, S::ObservedFailure)
             );
         if !allowed {
             return Err(

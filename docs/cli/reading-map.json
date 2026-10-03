@@ -348,7 +348,7 @@
       "path": "operations/collection.md",
       "heading": "## OP-17 \u2014 `models install PURPOSE`",
       "title": "OP-17 \u2014 `models install PURPOSE`",
-      "words": 176,
+      "words": 317,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -554,7 +554,7 @@
       "path": "operations/history.md",
       "heading": "## OP-52 \u2014 `backup create`",
       "title": "OP-52 \u2014 `backup create`",
-      "words": 61,
+      "words": 210,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -570,7 +570,7 @@
       "path": "operations/history.md",
       "heading": "## OP-53 \u2014 `backup list`",
       "title": "OP-53 \u2014 `backup list`",
-      "words": 37,
+      "words": 103,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -580,7 +580,7 @@
       "path": "operations/history.md",
       "heading": "## OP-54 \u2014 `backup verify BACKUP`",
       "title": "OP-54 \u2014 `backup verify BACKUP`",
-      "words": 180,
+      "words": 313,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -1056,7 +1056,7 @@
       "path": "recovery/backup.md",
       "heading": "## ALG-BACKUP \u2014 verified checkpoint",
       "title": "ALG-BACKUP \u2014 verified checkpoint",
-      "words": 400,
+      "words": 629,
       "requires": [
         "contracts/invariants.md",
         "recovery/README.md",
@@ -1108,13 +1108,14 @@
       "path": "recovery/models.md",
       "heading": "## ALG-MODEL \u2014 model installation/change",
       "title": "ALG-MODEL \u2014 model installation/change",
-      "words": 99,
+      "words": 145,
       "requires": [
         "contracts/invariants.md",
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md"
+        "decisions/native-bridge.md",
+        "operations/collection.md"
       ]
     },
     "ALG-RECONCILE": {

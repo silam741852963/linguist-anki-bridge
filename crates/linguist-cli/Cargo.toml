@@ -26,3 +26,8 @@ clap_complete.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true
+zip.workspace = true
+zstd.workspace = true
+prost.workspace = true
+sha1.workspace = true
+sha2.workspace = true

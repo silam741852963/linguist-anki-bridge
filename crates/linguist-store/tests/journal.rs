@@ -244,3 +244,53 @@ fn pending_step_blocks_starting_any_later_effect() {
     assert!(store.append_journal(&j, Some(&before)).is_err());
     assert_eq!(store.pending_journal_count().unwrap(), 1);
 }
+#[test]
+fn commit_requires_every_step_verified_and_is_terminal() {
+    let f = Fixture::new();
+    let mut store = f.store();
+    let before = start(&mut store);
+    let mut j = before.journal.clone();
+    j.state = OperationState::Checkpointed;
+    let v = store.append_journal(&j, Some(&before)).unwrap();
+    j.state = OperationState::Mutating;
+    let v = store.append_journal(&j, Some(&v)).unwrap();
+    j.state = OperationState::Verifying;
+    j.steps[0].state = StepState::ObservedSuccess;
+    j.steps[0].observed_digest = Some("after".into());
+    let v = store.append_journal(&j, Some(&v)).unwrap();
+    let mut early = j.clone();
+    early.state = OperationState::Committed;
+    assert!(store.append_journal(&early, Some(&v)).is_err());
+    j.steps[0].state = StepState::Verified;
+    let v = store.append_journal(&j, Some(&v)).unwrap();
+    j.state = OperationState::Committed;
+    let committed = store.append_journal(&j, Some(&v)).unwrap();
+    assert!(!committed.pending_recovery);
+    j.state = OperationState::NeedsRecovery;
+    assert!(store.append_journal(&j, Some(&committed)).is_err());
+}
+#[test]
+fn observed_failure_may_fail_before_write_but_unknown_may_not() {
+    let f = Fixture::new();
+    let mut store = f.store();
+    let before = start(&mut store);
+    let mut j = before.journal.clone();
+    j.state = OperationState::Checkpointed;
+    let v = store.append_journal(&j, Some(&before)).unwrap();
+    j.state = OperationState::Mutating;
+    let v = store.append_journal(&j, Some(&v)).unwrap();
+    let mut unknown = j.clone();
+    unknown.steps[0].state = StepState::Unknown;
+    unknown.state = OperationState::FailedBeforeWrite;
+    assert!(store.append_journal(&unknown, Some(&v)).is_err());
+    unknown.state = OperationState::NeedsRecovery;
+    let v = store.append_journal(&unknown, Some(&v)).unwrap();
+    // Reconciliation evidence may close an unknown step as a proven no-effect.
+    let mut closed = unknown.clone();
+    closed.steps[0].state = StepState::ObservedFailure;
+    closed.steps[0].observed_digest = Some("absent".into());
+    closed.state = OperationState::FailedBeforeWrite;
+    let closed = store.append_journal(&closed, Some(&v)).unwrap();
+    assert!(!closed.pending_recovery);
+    assert_eq!(store.pending_journal_count().unwrap(), 0);
+}
