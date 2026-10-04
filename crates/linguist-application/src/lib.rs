@@ -680,7 +680,7 @@ fn build_authored_document(
         issues: vec![],
     };
     let (enriched, mut provider_assets) =
-        dictionary::enrich_document(&document, settings, providers.dictionary)?;
+        dictionary::enrich_document(&document, settings, environment, providers.dictionary)?;
     // Optional enrichment runs after dictionary lookup on the same staged item.
     let (enriched, enrichment_assets) =
         vocab::enrich_document(&enriched, settings, environment, providers)?;

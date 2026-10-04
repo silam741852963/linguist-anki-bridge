@@ -8,8 +8,10 @@ use std::{
     sync::atomic::{AtomicU8, Ordering},
 };
 mod diagnostics;
+mod interrupt;
 mod maintenance;
 mod recovery_live;
+mod remedy;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 enum OutputMode {
     Human,
@@ -47,8 +49,10 @@ struct Cli {
     /// Explicit configuration file; otherwise LAB_CONFIG/XDG is used.
     #[arg(long, global = true)]
     config: Option<PathBuf>,
+    /// Named profile overlay from the configuration file.
     #[arg(long, global = true)]
     profile: Option<String>,
+    /// Purpose preset: japanese_vocab, japanese_grammar, english_vocab or english_grammar.
     #[arg(long, global = true)]
     purpose: Option<String>,
     /// Typed setting override: KEY=VALUE (arrays/maps use JSON).
@@ -67,11 +71,15 @@ struct Cli {
 enum Command {
     /// Preview an approved plan's apply preflight; collection writes need the verified native adapter.
     Apply {
+        /// Plan ID printed by preparation or `plans list`.
         plan: uuid::Uuid,
+        /// Plan revision; defaults to the latest.
         #[arg(long)]
         revision: Option<u32>,
+        /// Expected revision digest from `plans show`.
         #[arg(long)]
         digest: Option<String>,
+        /// Limit the preview to this plan item (repeatable).
         #[arg(long = "item-id")]
         item_ids: Vec<uuid::Uuid>,
         /// Explicitly accept the schema/full-sync warning of a mapped note-type migration.
@@ -80,6 +88,7 @@ enum Command {
         /// Preview one reviewed grammar split group (children first, then the anchor).
         #[arg(long = "split-group", conflicts_with = "item_ids")]
         split_group: Option<uuid::Uuid>,
+        /// Request the collection write; unavailable until the native adapter is verified.
         #[arg(long)]
         apply: bool,
     },
@@ -135,6 +144,7 @@ enum Command {
     },
     /// Inspect the current implementation and collection safety status.
     Doctor {
+        /// Check only local configuration, state and resources; never contacts Anki or Ollama.
         #[arg(long, conflicts_with_all = ["ollama", "bridge"])]
         local: bool,
         /// Probe only the configured local Ollama model metadata; never load or pull.
@@ -184,22 +194,27 @@ enum BackupCommand {
         /// JSON scope manifest (notes, cards, models, media) the package must cover.
         #[arg(long)]
         scope_manifest: Option<PathBuf>,
+        /// Request the native export; unavailable until the native adapter is verified.
         #[arg(long)]
         apply: bool,
     },
     /// List stored checkpoint receipts, newest first.
     List {
+        /// Only receipts of this scope: affected or collection.
         #[arg(long)]
         scope: Option<String>,
         /// RFC 3339 UTC time or YYYY-MM-DD.
         #[arg(long)]
         since: Option<String>,
+        /// Maximum receipts to list.
         #[arg(long)]
         limit: Option<usize>,
     },
     /// Verify a receipt ID or package file; a restore test uses a disposable directory.
     Verify {
+        /// Checkpoint receipt ID or .colpkg file path.
         backup: String,
+        /// Empty disposable directory for a decode restoration test; removed afterwards.
         #[arg(long)]
         restore_test_target: Option<PathBuf>,
         /// Scope manifest for an unregistered package file.
@@ -207,34 +222,49 @@ enum BackupCommand {
         scope_manifest: Option<PathBuf>,
     },
     /// Check the current .colpkg container and declared media without restoring it.
-    Inspect { file: PathBuf },
+    Inspect {
+        /// .colpkg package file.
+        file: PathBuf,
+    },
 }
 #[derive(Subcommand)]
 enum SnapshotCommand {
+    /// List apply snapshots, newest first.
     List {
+        /// Only snapshots of this Anki note ID.
         #[arg(long)]
         note_id: Option<String>,
+        /// Only snapshots recorded by this apply job.
         #[arg(long)]
         job: Option<uuid::Uuid>,
+        /// Only snapshots in this state: unknown or receipt_recorded.
         #[arg(long)]
         status: Option<String>,
+        /// Continue after this snapshot ID from the previous page.
         #[arg(long)]
         cursor: Option<String>,
     },
+    /// Show one snapshot with its original state and receipt.
     Show {
+        /// Snapshot ID from `snapshots list`.
         snapshot: uuid::Uuid,
     },
     /// Preview what restoring this apply snapshot would reverse.
     Restore {
+        /// Snapshot ID from `snapshots list`.
         snapshot: uuid::Uuid,
         /// Observed-state-bound restore decision (JSON) to validate.
         #[arg(long)]
         decision: Option<PathBuf>,
+        /// Request the restore write; unavailable until the native adapter is verified.
         #[arg(long)]
         apply: bool,
     },
+    /// Write one snapshot as a private JSON file.
     Export {
+        /// Snapshot ID from `snapshots list`.
         snapshot: uuid::Uuid,
+        /// Create-new output file path.
         #[arg(long)]
         output: PathBuf,
     },
@@ -258,26 +288,36 @@ enum CacheCommand {
         /// Only this provider cache; store assets are left alone.
         #[arg(long)]
         provider: Option<String>,
+        /// Delete unreferenced cache entries; without it only a preview is shown.
         #[arg(long)]
         execute: bool,
     },
 }
 #[derive(Subcommand)]
 enum ResourceCommand {
+    /// List required resources and verify installed receipts.
     List {
+        /// Only installed resources.
         #[arg(long)]
         installed: bool,
+        /// Only resources the current settings need.
         #[arg(long)]
         required: bool,
+        /// Only this resource: tesseract, piper, file or ollama.
         #[arg(long)]
         resource: Option<String>,
     },
+    /// Preview or install one pinned resource from a local file or allowed URL.
     Install {
+        /// Resource kind: tesseract, piper, file or ollama.
         resource: String,
+        /// Local file path or HTTP(S) URL (Ollama: model name).
         #[arg(long)]
         source: String,
+        /// Version label recorded in the receipt.
         #[arg(long)]
         version: String,
+        /// Expected SHA-256 of the downloaded or copied artifact.
         #[arg(long)]
         sha256: String,
         /// SPDX license identifier of the artifact.
@@ -310,52 +350,72 @@ impl JobModeArg {
 enum JobCommand {
     /// Record a retry envelope for eligible failed items; never retries unknown outcomes.
     Retry {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
+        /// Retry this failed item (repeatable).
         #[arg(long = "item-id", conflicts_with = "failed")]
         item_ids: Vec<uuid::Uuid>,
+        /// Retry every eligible failed item.
         #[arg(
             long,
             conflicts_with = "item_ids",
             required_unless_present = "item_ids"
         )]
         failed: bool,
+        /// Required to record a retry of an apply job.
         #[arg(long)]
         apply: bool,
     },
+    /// Preview restoring a job's committed items through their snapshots.
     Rollback {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
+        /// Limit the rollback to this item (repeatable).
         #[arg(long = "item-id")]
         item_ids: Vec<uuid::Uuid>,
+        /// Request the restore writes; unavailable until the native adapter is verified.
         #[arg(long)]
         apply: bool,
     },
     /// Preview or record a local tombstone of a terminal job; nothing in Anki is deleted.
     Delete {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
+        /// Record the tombstone; without it only a preview is shown.
         #[arg(long)]
         execute: bool,
     },
     /// Preview interrupted source reads; --execute records recovery without retrying them.
     Recover {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
+        /// Resume at this zero-based position.
         #[arg(long, default_value_t = 0)]
         after_index: u32,
+        /// Maximum items in this page (1-1000).
         #[arg(long, value_parser = clap::value_parser!(u32).range(1..=1000))]
         limit: Option<u32>,
+        /// Reviewer name recorded with the recovery.
         #[arg(long)]
         actor: Option<String>,
+        /// Record the recovery; without it only a preview is shown.
         #[arg(long)]
         execute: bool,
     },
     /// Inspect verified local checkpoint/control pages; never reads Anki.
     Audit {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
+        /// Resume after this checkpoint position.
         #[arg(long, default_value_t = 0)]
         after_checkpoint: u32,
+        /// Resume after this control event position.
         #[arg(long, default_value_t = 0)]
         after_control: u32,
+        /// Maximum entries in this page (1-1000).
         #[arg(long,value_parser=clap::value_parser!(u32).range(1..=1000))]
         limit: Option<u32>,
+        /// Also read native ledger status; never reconciles or retries.
         #[arg(long)]
         live: bool,
     },
@@ -368,17 +428,21 @@ enum JobCommand {
         /// Keep the original database and translation in local state.
         #[arg(long, requires = "legacy")]
         execute: bool,
+        /// List stored legacy job imports.
         #[arg(long)]
         list_imports: bool,
+        /// Show one stored legacy job import.
         #[arg(long, conflicts_with = "list_imports")]
         show_import: Option<uuid::Uuid>,
     },
     /// Request a durable pause; dispatched reads finish their accounting.
     Pause {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
     },
     /// Clear a pause request and run with the job's frozen settings.
     Resume {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
         /// Required on every resume of an apply job.
         #[arg(long)]
@@ -386,10 +450,12 @@ enum JobCommand {
     },
     /// Prevent future dispatch; retain all checkpoints and assets.
     Cancel {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
     },
     /// Run a job with its frozen settings: prepare captures sources; apply needs --apply.
     Run {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
         /// Required on every run of an apply job; refused for prepare and simulate jobs.
         #[arg(long)]
@@ -402,13 +468,16 @@ enum JobCommand {
         /// Queue the first N query/deck matches in frozen order.
         #[arg(long, conflicts_with = "note_ids", requires = "NoteSelector", value_parser = clap::value_parser!(u64).range(1..=100000))]
         limit: Option<u64>,
+        /// Job mode; it never changes after creation.
         #[arg(long, value_enum, default_value = "prepare")]
         mode: JobModeArg,
         /// Approved plan for simulate/apply jobs.
         #[arg(long, conflicts_with = "NoteSelector")]
         plan: Option<uuid::Uuid>,
+        /// Exact approved plan revision.
         #[arg(long, requires = "plan")]
         revision: Option<u32>,
+        /// Exact approved revision digest.
         #[arg(long, requires = "plan")]
         digest: Option<String>,
         /// Approval to use; defaults to the only approval of the exact revision and digest.
@@ -423,28 +492,38 @@ enum JobCommand {
         /// Plan items to include, in plan order; default every approved item.
         #[arg(long = "item-id", requires = "plan")]
         item_ids: Vec<uuid::Uuid>,
+        /// Accept the schema/full-sync warning of mapped note-type migrations.
         #[arg(long, requires = "plan")]
         accept_schema_change: bool,
     },
+    /// List jobs, newest first.
     List {
+        /// Continue after this job ID from the previous page.
         #[arg(long)]
         after: Option<uuid::Uuid>,
+        /// Maximum jobs in this page (1-10000).
         #[arg(long,value_parser=clap::value_parser!(u32).range(1..=10000))]
         limit: Option<u32>,
+        /// Only jobs of this mode.
         #[arg(long, value_enum)]
         mode: Option<JobModeArg>,
         /// Include tombstoned jobs.
         #[arg(long)]
         include_deleted: bool,
     },
+    /// Show one job's state, counts and controls.
     Show {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
     },
+    /// List one job's items in frozen order.
     Items {
+        /// Job ID from `jobs list`.
         job: uuid::Uuid,
         /// Resume at this zero-based position in the frozen input order.
         #[arg(long, default_value_t = 0)]
         after_index: u32,
+        /// Maximum items in this page (1-10000).
         #[arg(long,value_parser=clap::value_parser!(u32).range(1..=10000))]
         limit: Option<u32>,
     },
@@ -479,22 +558,31 @@ struct InlineAdd {
     /// Grammar pattern; use with --meaning, --formation, --use-key and --target-language.
     #[arg(long)]
     pattern: Option<String>,
+    /// Meaning in the explanation language.
     #[arg(long)]
     meaning: Option<String>,
+    /// Stable sense key that distinguishes meanings of one expression.
     #[arg(long)]
     sense_key: Option<String>,
+    /// Grammar formation rule.
     #[arg(long)]
     formation: Option<String>,
+    /// Stable use key that distinguishes uses of one pattern.
     #[arg(long)]
     use_key: Option<String>,
+    /// Target language tag: ja or en.
     #[arg(long)]
     target_language: Option<String>,
+    /// Explanation language tag; defaults to the purpose preset.
     #[arg(long)]
     explanation_language: Option<String>,
+    /// Reading (for example kana for Japanese).
     #[arg(long)]
     reading: Option<String>,
+    /// Pronunciation text (for example IPA).
     #[arg(long)]
     pronunciation: Option<String>,
+    /// Usage note.
     #[arg(long)]
     usage: Option<String>,
     /// One authored example in the target language.
@@ -503,20 +591,28 @@ struct InlineAdd {
     /// Translation paired with --example-sentence.
     #[arg(long)]
     example_translation: Option<String>,
+    /// Authored Production task prompt.
     #[arg(long)]
     production_prompt: Option<String>,
+    /// Authored Spelling task prompt.
     #[arg(long)]
     spelling_prompt: Option<String>,
+    /// Authored grammar Recognition prompt.
     #[arg(long)]
     recognition_prompt: Option<String>,
+    /// Authored grammar Application exercise prompt.
     #[arg(long)]
     exercise_prompt: Option<String>,
+    /// Answer to the Application exercise.
     #[arg(long)]
     exercise_answer: Option<String>,
+    /// Where the item was met; kept as source context.
     #[arg(long)]
     context: Option<String>,
+    /// Private personal notes.
     #[arg(long)]
     personal_notes: Option<String>,
+    /// Short description of the source.
     #[arg(long)]
     source_summary: Option<String>,
     /// Add a tag to the prepared card; may be repeated.
@@ -659,47 +755,69 @@ enum AddFormat {
 }
 #[derive(Subcommand)]
 enum DeckCommand {
+    /// Record a purpose's source/target decks and source model field mapping.
     Map {
+        /// Purpose preset to map.
         purpose: String,
+        /// Existing regular source deck name.
         #[arg(long)]
         source_deck: String,
+        /// Existing regular target deck; omit to keep home decks on revamp.
         #[arg(long)]
         target_deck: Option<String>,
+        /// Source note type name.
         #[arg(long)]
         source_model: String,
+        /// JSON object mapping source fields to roles.
         #[arg(long)]
         fields: PathBuf,
+        /// JSON source task map (source card ordinal to target task).
         #[arg(long)]
         task_map: Option<PathBuf>,
+        /// OCR language for this purpose (repeatable).
         #[arg(long = "ocr-language")]
         ocr_languages: Vec<String>,
     },
+    /// Remove a purpose's deck mapping.
     Unmap {
+        /// Purpose preset to unmap.
         purpose: String,
     },
+    /// List deck names and IDs.
     List {
+        /// Also count notes and cards per deck.
         #[arg(long)]
         counts: bool,
+        /// Maximum decks in this page.
         #[arg(long)]
         limit: Option<usize>,
+        /// Continue from the previous page's cursor.
         #[arg(long)]
         cursor: Option<String>,
+        /// Only decks whose name contains this text.
         #[arg(long)]
         name_contains: Option<String>,
     },
+    /// Show one deck by exact name or ID.
     Show {
+        /// Exact deck name or ID.
         deck: String,
     },
 }
 #[derive(Subcommand)]
 enum ModelCommand {
+    /// List Anki note types.
     List,
+    /// Compare one Anki note type with the managed v2 manifests.
     Inspect {
+        /// Exact note type name or ID.
         model: String,
     },
     /// Preview a fixed v2 model for a purpose; native installation is gated.
     Install {
+        /// Purpose whose managed model to preview.
         purpose: String,
+        /// Request the installation; unavailable until the native adapter is verified.
         #[arg(long)]
         apply: bool,
     },
@@ -709,29 +827,38 @@ enum ModelCommand {
 #[derive(Args)]
 #[group(multiple = false)]
 struct NoteSelector {
+    /// Anki note ID (repeatable).
     #[arg(long = "note-id")]
     note_ids: Vec<String>,
+    /// Anki search query.
     #[arg(long)]
     query: Option<String>,
+    /// Exact deck name.
     #[arg(long)]
     deck: Option<String>,
 }
 #[derive(Subcommand)]
 enum NoteCommand {
+    /// List selected notes without private field values.
     List {
         #[command(flatten)]
         selector: NoteSelector,
+        /// Maximum notes in this page.
         #[arg(long)]
         limit: Option<usize>,
+        /// Continue from the previous page's cursor.
         #[arg(long)]
         cursor: Option<String>,
     },
+    /// Show one note with its fields, cards and tags.
     Show {
+        /// Anki note ID.
         note_id: String,
         /// Read referenced media bytes and report hashes/sizes, without exporting their content.
         #[arg(long)]
         media: bool,
     },
+    /// Count selected notes and cards.
     Count {
         #[command(flatten)]
         selector: NoteSelector,
@@ -739,16 +866,23 @@ enum NoteCommand {
 }
 #[derive(Subcommand)]
 enum RecoveryCommand {
+    /// Propose how to reconcile one uncertain apply operation.
     Reconcile {
+        /// Apply operation ID from `recover inspect --pending`.
         operation: uuid::Uuid,
+        /// Continue proven-safe effects; unavailable until the native adapter is verified.
         #[arg(long)]
         apply: bool,
+        /// With --apply: accept a recorded collection-session rebinding.
         #[arg(long)]
         rebind: bool,
     },
+    /// Show one operation's journal, or every pending operation.
     Inspect {
+        /// Apply operation ID.
         #[arg(conflicts_with = "pending", required_unless_present = "pending")]
         operation: Option<uuid::Uuid>,
+        /// List every operation with unfinished journal steps.
         #[arg(long)]
         pending: bool,
         /// Read native ledger status without reconciling or retrying effects.
@@ -760,13 +894,18 @@ enum RecoveryCommand {
 enum PlanCommand {
     /// Rerun one stage (dictionary|enrichment|generation); previews unless executed.
     Regenerate {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Latest revision the rerun extends.
         #[arg(long)]
         base_revision: u32,
+        /// Digest of that revision.
         #[arg(long)]
         digest: String,
+        /// Only this plan item.
         #[arg(long)]
         item_id: Option<uuid::Uuid>,
+        /// Stage to rerun: dictionary, enrichment or generation.
         #[arg(long)]
         stage: String,
         /// Owned field to clear and regenerate (repeatable); default protects them.
@@ -778,11 +917,15 @@ enum PlanCommand {
     },
     /// Generate one review-only supplement with explicit current settings.
     Generate {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Plan item to generate for.
         #[arg(long)]
         item_id: uuid::Uuid,
+        /// Latest revision the generation extends.
         #[arg(long)]
         base_revision: u32,
+        /// Digest of that revision.
         #[arg(long)]
         digest: String,
         /// Freeze current configuration into the child revision (including --set overrides).
@@ -791,9 +934,12 @@ enum PlanCommand {
     },
     /// Read managed v2 duplicate candidates for one authored add item; never clears apply.
     DuplicateCandidates {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Authored add item to check.
         #[arg(long)]
         item_id: uuid::Uuid,
+        /// Plan revision; defaults to the latest.
         #[arg(long)]
         revision: Option<u32>,
         /// Record found candidates as a duplicate review in a new revision.
@@ -805,7 +951,9 @@ enum PlanCommand {
     },
     /// Split a retained grammar source into authored units with one explicit anchor.
     SplitGrammar {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// JSON split request (see --template).
         #[arg(
             long,
             required_unless_present = "template",
@@ -818,85 +966,119 @@ enum PlanCommand {
     },
     /// Enrich a retained vocabulary draft using its frozen dictionary policy.
     Enrich {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Latest revision the enrichment extends.
         #[arg(long)]
         base_revision: u32,
+        /// Digest of that revision.
         #[arg(long)]
         digest: String,
     },
     /// Export a portable JSON bundle; private source archives require explicit inclusion.
     Export {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Plan revision; defaults to the latest.
         #[arg(long)]
         revision: Option<u32>,
+        /// Create-new bundle file path.
         #[arg(long)]
         output: PathBuf,
+        /// Bundle format.
         #[arg(long, default_value = "v2")]
         format: String,
+        /// Include private source archives in the bundle.
         #[arg(long)]
         include_private_archives: bool,
     },
     /// Resolve a known review issue using a fingerprint-bound typed decision.
     Resolve {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Issue ID from `plans show --issues-only`.
         issue: String,
+        /// Typed JSON decision bound to the issue fingerprint.
         #[arg(long)]
         decision: PathBuf,
     },
     /// Record content approval; collection apply still requires separate authorization.
     Approve {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Exact ready revision to approve.
         #[arg(long)]
         revision: u32,
+        /// Exact digest of that revision.
         #[arg(long)]
         digest: String,
+        /// Reviewer name recorded with the approval.
         #[arg(long)]
         actor: String,
+        /// Approve only this item (repeatable); default every item.
         #[arg(long = "item-id")]
         item_ids: Vec<uuid::Uuid>,
+        /// Accept this warning code (repeatable).
         #[arg(long = "accept-warning")]
         accepted_warnings: Vec<String>,
     },
     /// Validate saved content and persist digest-bound evidence.
     Validate {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Plan revision; defaults to the latest.
         #[arg(long)]
         revision: Option<u32>,
+        /// Also run bounded read-only checks against Anki.
         #[arg(long)]
         live: bool,
+        /// Resume live checks after this item index.
         #[arg(long, requires = "live")]
         after_index: Option<u32>,
+        /// Maximum items checked live (1-1000).
         #[arg(long, requires = "live", value_parser = clap::value_parser!(u32).range(1..=1000))]
         limit: Option<u32>,
     },
     /// Apply a typed JSON patch and preserve an immutable parent revision.
     Edit {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Latest revision the edit extends.
         #[arg(long)]
         base_revision: u32,
+        /// Typed JSON patch file.
         #[arg(long, required_unless_present = "editor", conflicts_with = "editor")]
         patch: Option<PathBuf>,
         /// Edit a private typed draft in editing.editor_argv, VISUAL or EDITOR.
         #[arg(long)]
         editor: bool,
+        /// Keep invalid edited content as a marked draft with issues.
         #[arg(long)]
         save_draft: bool,
     },
     /// Compare saved revisions; --live adds a bounded read-only source check.
     Diff {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Older revision to compare from.
         #[arg(long)]
         from_revision: u32,
+        /// Newer revision; defaults to the latest.
         #[arg(long)]
         revision: Option<u32>,
+        /// Also compare with the current Anki source (read-only).
         #[arg(long)]
         live: bool,
+        /// Resume live checks after this item index.
         #[arg(long, requires = "live")]
         after_index: Option<u32>,
+        /// Maximum items checked live (1-1000).
         #[arg(long, requires = "live", value_parser = clap::value_parser!(u32).range(1..=1000))]
         limit: Option<u32>,
     },
+    /// List plans with their latest revision state.
     List {
+        /// Maximum plans to list.
         #[arg(long)]
         limit: Option<u32>,
         /// Only latest revisions in this state: ready|needs_review|invalid.
@@ -906,8 +1088,11 @@ enum PlanCommand {
         #[arg(long)]
         workflow: Option<String>,
     },
+    /// Show one plan revision, its items and issues.
     Show {
+        /// Plan ID.
         plan: uuid::Uuid,
+        /// Plan revision; defaults to the latest.
         #[arg(long)]
         revision: Option<u32>,
         /// Inspect only this document from the selected revision.
@@ -916,8 +1101,10 @@ enum PlanCommand {
         /// Show a bounded issue page with exact decision identities and templates.
         #[arg(long)]
         issues_only: bool,
+        /// Resume after this issue index.
         #[arg(long, requires = "issues_only")]
         after_index: Option<u32>,
+        /// Maximum issues in this page (1-1000).
         #[arg(long, requires = "issues_only", value_parser = clap::value_parser!(u32).range(1..=1000))]
         limit: Option<u32>,
     },
@@ -927,8 +1114,10 @@ enum ConfigCommand {
     /// Convert a legacy Python YAML or native JSON config into a candidate TOML
     /// plus per-key report; the source and live config are never written.
     Import {
+        /// Legacy config file to read (never written).
         #[arg(long)]
         file: PathBuf,
+        /// Candidate TOML path; the report is written beside it.
         #[arg(long)]
         output: PathBuf,
         /// Replace this import's own candidate/report files.
@@ -938,6 +1127,7 @@ enum ConfigCommand {
     /// Check the config version (v2 is current), or activate an imported
     /// candidate with --from-import after accepting each unresolved key.
     Migrate {
+        /// Write the migrated file here instead of in place.
         #[arg(long, conflicts_with = "from_import")]
         output: Option<PathBuf>,
         /// Candidate written by `config import`.
@@ -946,42 +1136,64 @@ enum ConfigCommand {
         /// Explicitly accept one blocking legacy key (repeat for each).
         #[arg(long = "accept-unresolved", requires = "from_import")]
         accept_unresolved: Vec<String>,
+        /// Write the change; without it only a preview is shown.
         #[arg(long)]
         execute: bool,
     },
     /// Set a typed value in the base file or explicit profile/purpose scope.
-    Set { key: String, value: String },
+    Set {
+        /// Registered setting key.
+        key: String,
+        /// Typed value (arrays/maps use JSON).
+        value: String,
+    },
     /// Remove an override, restoring inheritance; missing overrides are a no-op.
-    Unset { key: String },
+    Unset {
+        /// Registered setting key.
+        key: String,
+    },
     /// Preview removal of overrides; --execute saves with a backup.
     Reset {
+        /// Setting key or prefix to reset.
         key: Option<String>,
+        /// Reset every override.
         #[arg(long, conflicts_with = "key", required_unless_present = "key")]
         all: bool,
+        /// Write the change; without it only a preview is shown.
         #[arg(long)]
         execute: bool,
     },
     /// Write minimal version-2 TOML; replacing an existing file saves a private backup.
     Init {
+        /// Write here instead of the default config path.
         #[arg(long)]
         path: Option<PathBuf>,
+        /// Replace an existing file after a private backup.
         #[arg(long)]
         replace: bool,
     },
     /// Show effective settings or builtin defaults; optional exact key/prefix.
     Show {
+        /// Exact setting key or dotted prefix.
         key: Option<String>,
+        /// Show builtin defaults instead of effective values.
         #[arg(long, conflicts_with = "effective")]
         defaults: bool,
+        /// Show effective values (the default).
         #[arg(long)]
         effective: bool,
+        /// Show which layer set each value.
         #[arg(long)]
         provenance: bool,
     },
     /// Describe a registered setting or mapping pattern.
-    Describe { key: String },
+    Describe {
+        /// Registered setting key or mapping pattern.
+        key: String,
+    },
     /// Validate a candidate file or the effective configuration.
     Validate {
+        /// Candidate file to validate instead of the effective configuration.
         #[arg(long)]
         file: Option<PathBuf>,
     },
@@ -989,11 +1201,20 @@ enum ConfigCommand {
 #[derive(Subcommand)]
 enum DocumentCommand {
     /// Validate a v2 JSON document and print structured issues.
-    Validate { file: PathBuf },
+    Validate {
+        /// v2 JSON document file, or - for stdin.
+        file: PathBuf,
+    },
     /// Render a validated v2 document as JSON; does not write to Anki.
-    Render { file: PathBuf },
+    Render {
+        /// v2 JSON document file, or - for stdin.
+        file: PathBuf,
+    },
     /// Print the semantic document fingerprint.
-    Digest { file: PathBuf },
+    Digest {
+        /// v2 JSON document file, or - for stdin.
+        file: PathBuf,
+    },
 }
 fn read_document(
     path: &PathBuf,
@@ -1087,6 +1308,66 @@ fn render_human(value: &serde_json::Value) -> String {
     output.pop();
     output
 }
+/// Commands that write local state, with a conservative estimate of how many
+/// bytes they may add beyond `storage.free_space_reserve_mb`. Pruning and
+/// read-only commands return `None`; resource installs check space themselves.
+fn state_write_estimate(command: &Command) -> Option<u64> {
+    const PER_NOTE: u64 = 1024 * 1024;
+    let notes = |selector: &NoteSelector, limit: &Option<u64>| {
+        let count = limit.unwrap_or(selector.note_ids.len().max(1) as u64);
+        count.saturating_mul(PER_NOTE)
+    };
+    match command {
+        Command::Vocab { command } | Command::Grammar { command } => match command {
+            PrepareCommand::Add { document, .. } => Some(
+                document
+                    .as_ref()
+                    .filter(|path| path.as_os_str() != "-")
+                    .and_then(|path| std::fs::metadata(path).ok())
+                    .map_or(0, |metadata| metadata.len().saturating_mul(8)),
+            ),
+            PrepareCommand::Revamp { selector, limit } => Some(notes(selector, limit)),
+        },
+        Command::Jobs { command } => match command {
+            JobCommand::Create {
+                selector, limit, ..
+            } => Some(notes(selector, limit)),
+            JobCommand::List { .. }
+            | JobCommand::Show { .. }
+            | JobCommand::Items { .. }
+            | JobCommand::Audit { .. }
+            | JobCommand::Rollback { apply: false, .. }
+            | JobCommand::Delete { execute: false, .. }
+            | JobCommand::Recover { execute: false, .. }
+            | JobCommand::Migrate { execute: false, .. } => None,
+            _ => Some(0),
+        },
+        Command::Plans { command } => match command {
+            PlanCommand::List { .. }
+            | PlanCommand::Show { .. }
+            | PlanCommand::Diff { .. }
+            | PlanCommand::Export { .. }
+            | PlanCommand::DuplicateCandidates { record: false, .. }
+            | PlanCommand::SplitGrammar { request: None, .. }
+            | PlanCommand::Regenerate {
+                use_current_settings: false,
+                ..
+            } => None,
+            _ => Some(0),
+        },
+        Command::Apply { apply: true, .. }
+        | Command::Recover {
+            command: RecoveryCommand::Reconcile { apply: true, .. },
+        }
+        | Command::Snapshots {
+            command: SnapshotCommand::Restore { apply: true, .. },
+        }
+        | Command::Backup {
+            command: BackupCommand::Create { apply: true, .. },
+        } => Some(0),
+        _ => None,
+    }
+}
 fn run(cli: Cli) -> Result<u8, String> {
     set_output_mode(cli.output.unwrap_or(OutputMode::Human));
     if let Command::Completions { shell } = &cli.command {
@@ -1130,6 +1411,13 @@ fn run(cli: Cli) -> Result<u8, String> {
     }
     if matches!(cli.command, Command::Apply { .. } | Command::Recover { .. }) {
         linguist_application::apply::require_native_adapter(&settings.values)?;
+    }
+    if let Some(extra) = state_write_estimate(&cli.command) {
+        linguist_config::resources::require_state_free_space(
+            &settings,
+            &std::env::vars().collect(),
+            extra,
+        )?;
     }
     match &cli.command {
         Command::Cache {
@@ -2840,6 +3128,7 @@ fn run(cli: Cli) -> Result<u8, String> {
     }
 }
 fn main() -> ExitCode {
+    interrupt::install();
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error) => match error.kind() {
@@ -2853,8 +3142,7 @@ fn main() -> ExitCode {
                 };
             }
             _ => {
-                let _ =
-                    writeln_error("USAGE: invalid command syntax; run linguist-anki-bridge --help");
+                let _ = writeln_usage_error(&error);
                 return ExitCode::from(2);
             }
         },
@@ -2888,13 +3176,62 @@ fn command_label() -> String {
     }
     names.join(" ")
 }
+/// Structured syntax error. Argument values and unknown words typed by the
+/// user are never echoed (they may be secrets); only the clap error kind and,
+/// for a defined argument, its name are reported.
+fn writeln_usage_error(error: &clap::Error) -> std::io::Result<()> {
+    use clap::error::{ContextKind, ContextValue, ErrorKind};
+    use std::io::Write;
+    let message = "USAGE: invalid command syntax; run linguist-anki-bridge --help";
+    let kind = match error.kind() {
+        ErrorKind::InvalidValue => "invalid_value",
+        ErrorKind::UnknownArgument => "unknown_argument",
+        ErrorKind::InvalidSubcommand => "unknown_subcommand",
+        ErrorKind::NoEquals => "missing_equals",
+        ErrorKind::ValueValidation => "invalid_value",
+        ErrorKind::TooManyValues => "too_many_values",
+        ErrorKind::TooFewValues => "too_few_values",
+        ErrorKind::WrongNumberOfValues => "wrong_number_of_values",
+        ErrorKind::ArgumentConflict => "argument_conflict",
+        ErrorKind::MissingRequiredArgument => "missing_required_argument",
+        ErrorKind::MissingSubcommand | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
+            "missing_subcommand"
+        }
+        ErrorKind::InvalidUtf8 => "invalid_utf8",
+        _ => "invalid_syntax",
+    };
+    let mut value = serde_json::json!({
+        "error": message,
+        "usage_kind": kind,
+        "next": remedy::next_step(message),
+    });
+    let defined = matches!(
+        error.kind(),
+        ErrorKind::InvalidValue
+            | ErrorKind::ValueValidation
+            | ErrorKind::NoEquals
+            | ErrorKind::TooManyValues
+            | ErrorKind::TooFewValues
+            | ErrorKind::WrongNumberOfValues
+            | ErrorKind::ArgumentConflict
+    );
+    if defined && let Some(ContextValue::String(argument)) = error.get(ContextKind::InvalidArg) {
+        value["argument"] = serde_json::json!(argument);
+    }
+    if error.kind() == ErrorKind::MissingRequiredArgument
+        && let Some(ContextValue::Strings(arguments)) = error.get(ContextKind::InvalidArg)
+    {
+        value["missing"] = serde_json::json!(arguments);
+    }
+    writeln!(std::io::stderr(), "{value}")
+}
 fn writeln_error(message: &str) -> std::io::Result<()> {
     use std::io::Write;
-    writeln!(
-        std::io::stderr(),
-        "{}",
-        serde_json::json!({"error":message})
-    )
+    let mut error = serde_json::json!({"error":message});
+    if let Some(next) = remedy::next_step(message) {
+        error["next"] = serde_json::json!(next);
+    }
+    writeln!(std::io::stderr(), "{error}")
 }
 
 fn config_options(

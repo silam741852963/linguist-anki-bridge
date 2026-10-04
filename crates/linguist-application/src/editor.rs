@@ -167,11 +167,30 @@ pub fn editor_argv(
 /// Run the editor on `path` with inherited terminal I/O and wait for it.
 pub fn launch(argv: &[String], path: &Path) -> Result<(), String> {
     let (program, args) = argv.split_first().ok_or("EDITOR_UNAVAILABLE")?;
-    let status = std::process::Command::new(program)
+    let mut child = std::process::Command::new(program)
         .args(args)
         .arg(path)
-        .status()
+        .spawn()
         .map_err(|_| "EDITOR_SPAWN_FAILED")?;
+    // The editor owns the terminal: a Ctrl-C meant for it must not end this
+    // process and orphan the editor. Restore the previous handlers afterwards.
+    #[cfg(unix)]
+    // SAFETY: SIG_IGN is always a valid disposition; the previous handlers are
+    // restored below before returning.
+    let previous = unsafe {
+        (
+            libc::signal(libc::SIGINT, libc::SIG_IGN),
+            libc::signal(libc::SIGQUIT, libc::SIG_IGN),
+        )
+    };
+    let status = child.wait();
+    #[cfg(unix)]
+    // SAFETY: restores the dispositions returned by signal() above.
+    unsafe {
+        libc::signal(libc::SIGINT, previous.0);
+        libc::signal(libc::SIGQUIT, previous.1);
+    }
+    let status = status.map_err(|_| "EDITOR_SPAWN_FAILED")?;
     if !status.success() {
         return Err(
             "PLAN_EDIT_ABORTED: the editor exited unsuccessfully; the parent revision is unchanged"

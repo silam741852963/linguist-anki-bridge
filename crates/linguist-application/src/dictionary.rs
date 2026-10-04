@@ -85,7 +85,8 @@ pub fn enrich_revision(
     let mut child = base.clone();
     let mut assets = Vec::new();
     for document in &mut child.documents {
-        let (enriched, responses) = enrich_document(document, &settings, dictionary)?;
+        let (enriched, responses) =
+            enrich_document(document, &settings, &Default::default(), dictionary)?;
         for bytes in responses {
             if seen.insert(canonical::asset_digest(&bytes)) {
                 total = total
@@ -173,9 +174,12 @@ pub fn lookup_term(expression: &str, settings: &Effective) -> Result<String, Str
 
 /// Stage enrichment atomically: provider failure leaves the caller's document unchanged.
 /// Returned response bytes must be retained before publishing the enriched revision.
+/// `environment` expands unfrozen `${XDG_*}` storage paths (the provider
+/// cache); frozen plan settings already carry absolute paths.
 pub fn enrich_document(
     document: &LearningDocument,
     settings: &Effective,
+    environment: &std::collections::BTreeMap<String, String>,
     dictionary: Option<&dyn crate::DictionaryPort>,
 ) -> Result<(LearningDocument, Vec<Vec<u8>>), String> {
     validate_settings(settings)?;
@@ -218,8 +222,9 @@ pub fn enrich_document(
             let page = if let Some(provider) = dictionary {
                 provider.lookup(&term, &document.target_language)?
             } else {
-                let client = linguist_dictionary::transport::DictionaryClient::for_target(
+                let client = linguist_dictionary::transport::DictionaryClient::for_target_in(
                     settings,
+                    environment,
                     &document.target_language,
                 )
                 .map_err(|e| format!("CAPABILITY_UNAVAILABLE: {e}"))?;

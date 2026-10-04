@@ -1,0 +1,5722 @@
+{
+ "schema_version": 1,
+ "fixtures": [
+  {
+   "id": "VA-JA-01",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "baseline"
+   ],
+   "rationale": "Kanji verb with okurigana and reading.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "食べる",
+     "meaning": "to eat",
+     "sense_key": "eat",
+     "reading": "たべる"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Expression": "食べる",
+     "Reading": "たべる",
+     "Meaning": "to eat"
+    }
+   }
+  },
+  {
+   "id": "VA-JA-02",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kana"
+   ],
+   "rationale": "Kana-only expression keeps kana; no kanji is invented.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "ありがとう",
+     "meaning": "thank you",
+     "sense_key": "thanks",
+     "reading": "ありがとう"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Expression": "ありがとう"
+    },
+    "rendered_excludes": {
+     "Kanji": "有"
+    }
+   }
+  },
+  {
+   "id": "VA-JA-03",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "homograph"
+   ],
+   "rationale": "はし as bridge: the sense key separates it from chopsticks.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "橋",
+     "meaning": "bridge",
+     "sense_key": "bridge",
+     "reading": "はし"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "SenseKey": "bridge",
+     "Meaning": "bridge"
+    }
+   }
+  },
+  {
+   "id": "VA-JA-04",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "homograph"
+   ],
+   "rationale": "はし as chopsticks: same reading, different sense.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "箸",
+     "meaning": "chopsticks",
+     "sense_key": "chopsticks",
+     "reading": "はし"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "SenseKey": "chopsticks",
+     "Meaning": "chopsticks"
+    }
+   }
+  },
+  {
+   "id": "VA-JA-05",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "kanji",
+    "vietnamese_explanation"
+   ],
+   "rationale": "Vietnamese explanation is kept verbatim.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "勉強",
+     "meaning": "học tập; việc học",
+     "sense_key": "study",
+     "reading": "べんきょう"
+    },
+    "explanation_language": "vi"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Meaning": "học tập; việc học",
+     "ExplanationLanguage": "vi"
+    }
+   }
+  },
+  {
+   "id": "VA-JA-06",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "task_leakage"
+   ],
+   "rationale": "Production cue gives the meaning, not the answer.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "飲む",
+     "meaning": "to drink",
+     "sense_key": "drink",
+     "production_prompt": "Say 'to drink' in Japanese."
+    },
+    "requested_tasks": [
+     "comprehension",
+     "production"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "ProductionPrompt": "in Japanese."
+    }
+   }
+  },
+  {
+   "id": "VA-JA-07",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "task_leakage"
+   ],
+   "rationale": "Production cue containing the answer is rejected.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "飲む",
+     "meaning": "to drink",
+     "sense_key": "drink",
+     "production_prompt": "飲む (to drink)"
+    },
+    "requested_tasks": [
+     "comprehension",
+     "production"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "ANSWER_LEAK"
+    ]
+   }
+  },
+  {
+   "id": "VA-JA-08",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "task_leakage"
+   ],
+   "rationale": "Requested production without a cue blocks.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "飲む",
+     "meaning": "to drink",
+     "sense_key": "drink"
+    },
+    "requested_tasks": [
+     "comprehension",
+     "production"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "MISSING_CUE"
+    ]
+   }
+  },
+  {
+   "id": "VA-JA-09",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Missing core meaning blocks; nothing is filled in.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "走る",
+     "sense_key": "run",
+     "reading": "はしる"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "REQUIRED_CONTENT"
+    ]
+   }
+  },
+  {
+   "id": "VA-JA-10",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "adversarial"
+   ],
+   "rationale": "HTML/script in authored text is escaped when rendered.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "見る",
+     "meaning": "<img src=x onerror=alert(1)>to see",
+     "sense_key": "see"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_excludes": {
+     "Meaning": "<img"
+    }
+   }
+  },
+  {
+   "id": "VA-JA-11",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "A generated example without evidence is an unsupported claim.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "書く",
+     "meaning": "to write",
+     "sense_key": "write",
+     "examples": [
+      {
+       "sentence": "手紙を書きます。",
+       "translation": "I write a letter.",
+       "provenance": "generated",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "GENERATED_EXAMPLE_EVIDENCE_REQUIRED"
+    ]
+   }
+  },
+  {
+   "id": "VA-JA-12",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "kanji",
+    "vietnamese_explanation"
+   ],
+   "rationale": "User example with Vietnamese translation.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "水",
+     "meaning": "nước",
+     "sense_key": "water",
+     "reading": "みず",
+     "examples": [
+      {
+       "sentence": "水を飲みます。",
+       "translation": "Tôi uống nước.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "vi"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Examples": "水を飲みます。"
+    }
+   }
+  },
+  {
+   "id": "VA-JA-13",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kana",
+    "no_dictionary_match"
+   ],
+   "rationale": "No dictionary entry: authored meaning stays, warning only.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "ぴえん",
+     "meaning": "(slang) on the verge of tears",
+     "sense_key": "teary"
+    }
+   },
+   "dictionary": {
+    "provider": "jisho",
+    "body": {
+     "meta": {
+      "status": 200
+     },
+     "data": []
+    }
+   },
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [
+     "DICTIONARY_NOT_FOUND"
+    ]
+   }
+  },
+  {
+   "id": "VA-JA-14",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "homograph"
+   ],
+   "rationale": "Two dictionary entries (なま/せい): a sense must be chosen.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "生"
+    }
+   },
+   "dictionary": {
+    "provider": "jisho",
+    "body": {
+     "meta": {
+      "status": 200
+     },
+     "data": [
+      {
+       "slug": "生",
+       "japanese": [
+        {
+         "word": "生",
+         "reading": "なま"
+        }
+       ],
+       "senses": [
+        {
+         "english_definitions": [
+          "raw",
+          "uncooked"
+         ]
+        },
+        {
+         "english_definitions": [
+          "draft (beer)"
+         ]
+        }
+       ]
+      },
+      {
+       "slug": "生-1",
+       "japanese": [
+        {
+         "word": "生",
+         "reading": "せい"
+        }
+       ],
+       "senses": [
+        {
+         "english_definitions": [
+          "life",
+          "living"
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "DICTIONARY_SENSE_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VA-JA-15",
+   "workflow": "vocab_add",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "task_leakage"
+   ],
+   "rationale": "Spelling cue never shows the written form.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "ja",
+    "body": {
+     "expression": "猫",
+     "meaning": "cat",
+     "sense_key": "cat",
+     "reading": "ねこ",
+     "spelling_prompt": "Write the kanji for ねこ (cat)."
+    },
+    "requested_tasks": [
+     "comprehension",
+     "spelling"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "SpellingPrompt": "ねこ"
+    }
+   }
+  },
+  {
+   "id": "VA-EN-01",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Plain English verb.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "run",
+     "meaning": "to move quickly on foot",
+     "sense_key": "move-fast"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Expression": "run"
+    }
+   }
+  },
+  {
+   "id": "VA-EN-02",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "bank (finance) is distinct from bank (river).",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "bank",
+     "meaning": "an institution that keeps money",
+     "sense_key": "finance"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "SenseKey": "finance"
+    }
+   }
+  },
+  {
+   "id": "VA-EN-03",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "bank (river) has its own sense key.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "bank",
+     "meaning": "the land beside a river",
+     "sense_key": "river"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "SenseKey": "river"
+    }
+   }
+  },
+  {
+   "id": "VA-EN-04",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "lead (metal) with its own pronunciation.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "lead",
+     "meaning": "a heavy grey metal",
+     "sense_key": "metal",
+     "pronunciation": "/lɛd/"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Pronunciation": "/lɛd/"
+    }
+   }
+  },
+  {
+   "id": "VA-EN-05",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "vi",
+   "categories": [
+    "vietnamese_explanation"
+   ],
+   "rationale": "English word explained in Vietnamese.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "necessary",
+     "meaning": "cần thiết",
+     "sense_key": "needed"
+    },
+    "explanation_language": "vi"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Meaning": "cần thiết",
+     "ExplanationLanguage": "vi"
+    }
+   }
+  },
+  {
+   "id": "VA-EN-06",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Spelling cue with blanks does not reveal the word.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "necessary",
+     "meaning": "needed",
+     "sense_key": "needed",
+     "spelling_prompt": "n_c_ss_ry (needed)"
+    },
+    "requested_tasks": [
+     "comprehension",
+     "spelling"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": []
+   }
+  },
+  {
+   "id": "VA-EN-07",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Spelling cue containing the word is rejected.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "necessary",
+     "meaning": "needed",
+     "sense_key": "needed",
+     "spelling_prompt": "Spell necessary"
+    },
+    "requested_tasks": [
+     "comprehension",
+     "spelling"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "ANSWER_LEAK"
+    ]
+   }
+  },
+  {
+   "id": "VA-EN-08",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Multi-word production cue containing the phrase is rejected.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "give up",
+     "meaning": "to stop trying",
+     "sense_key": "quit",
+     "production_prompt": "give up = stop trying"
+    },
+    "requested_tasks": [
+     "comprehension",
+     "production"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "ANSWER_LEAK"
+    ]
+   }
+  },
+  {
+   "id": "VA-EN-09",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Multi-word production cue that only defines it.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "give up",
+     "meaning": "to stop trying",
+     "sense_key": "quit",
+     "production_prompt": "Phrasal verb: to stop trying"
+    },
+    "requested_tasks": [
+     "comprehension",
+     "production"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": []
+   }
+  },
+  {
+   "id": "VA-EN-10",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Script in the expression is escaped, not executed.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "<script>alert(1)</script>run",
+     "meaning": "to move fast",
+     "sense_key": "move"
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_excludes": {
+     "Expression": "<script"
+    }
+   }
+  },
+  {
+   "id": "VA-EN-11",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Template braces in notes stay literal text.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "walk",
+     "meaning": "to move on foot",
+     "sense_key": "walk"
+    },
+    "personal_notes": "{{Expression}} {{#Meaning}}x{{/Meaning}}"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "PersonalNotes": "{{Expression}}"
+    }
+   }
+  },
+  {
+   "id": "VA-EN-12",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "no_dictionary_match"
+   ],
+   "rationale": "Only a French section exists: no English fallback.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "pain",
+     "meaning": "physical suffering",
+     "sense_key": "hurt"
+    }
+   },
+   "dictionary": {
+    "provider": "wiktionary",
+    "body": {
+     "fr": [
+      {
+       "language": "French",
+       "partOfSpeech": "Noun",
+       "definitions": [
+        {
+         "definition": "pain (bread)"
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [
+     "DICTIONARY_NOT_FOUND"
+    ]
+   }
+  },
+  {
+   "id": "VA-EN-13",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "One entry with two senses and no authored choice needs review.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "bank"
+    }
+   },
+   "dictionary": {
+    "provider": "wiktionary",
+    "body": {
+     "en": [
+      {
+       "language": "English",
+       "partOfSpeech": "Noun",
+       "definitions": [
+        {
+         "definition": "An institution where one can place and borrow money."
+        },
+        {
+         "definition": "The edge of a river or lake."
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "DICTIONARY_SENSE_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VA-EN-14",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Example in the target language with an English gloss.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "borrow",
+     "meaning": "to take something to return later",
+     "sense_key": "take-temporarily",
+     "examples": [
+      {
+       "sentence": "Can I borrow your pen?",
+       "translation": "May I use your pen and give it back?",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Examples": "Can I borrow your pen?"
+    }
+   }
+  },
+  {
+   "id": "VA-EN-15",
+   "workflow": "vocab_add",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Context and source summary keep control characters out of fields.",
+   "input": {
+    "schema_version": 2,
+    "kind": "vocabulary",
+    "target_language": "en",
+    "body": {
+     "expression": "light",
+     "meaning": "not heavy",
+     "sense_key": "weight"
+    },
+    "context": "Seen in: \"a light bag\" <b>bold</b>",
+    "source_summary": "Textbook p.12"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Meaning": "not heavy"
+    }
+   }
+  },
+  {
+   "id": "GA-JA-01",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "baseline"
+   ],
+   "rationale": "Permission pattern with one example.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜てもいい",
+     "use_key": "permission",
+     "meaning": "may; it is all right to",
+     "formation": "V-て + もいい",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "ここで写真を撮ってもいいですか。",
+       "translation": "May I take photos here?",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Pattern": "〜てもいい"
+    }
+   }
+  },
+  {
+   "id": "GA-JA-02",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "vietnamese_explanation",
+    "kana"
+   ],
+   "rationale": "Japanese grammar explained in Vietnamese (preset).",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜ながら",
+     "use_key": "simultaneous",
+     "meaning": "vừa ... vừa ...",
+     "formation": "V-ます語幹 + ながら",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "音楽を聞きながら勉強します。",
+       "translation": "Tôi vừa nghe nhạc vừa học.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Meaning": "vừa ... vừa ...",
+     "ExplanationLanguage": "vi"
+    }
+   }
+  },
+  {
+   "id": "GA-JA-03",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Obligation pattern.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜なければならない",
+     "use_key": "obligation",
+     "meaning": "must; have to",
+     "formation": "V-ない形(ない→なければ) + ならない",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "明日早く起きなければならない。",
+       "translation": "I have to get up early tomorrow.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": []
+   }
+  },
+  {
+   "id": "GA-JA-04",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Experience pattern.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜たことがある",
+     "use_key": "experience",
+     "meaning": "have done (at least once)",
+     "formation": "V-た + ことがある",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "日本に行ったことがあります。",
+       "translation": "I have been to Japan.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": []
+   }
+  },
+  {
+   "id": "GA-JA-05",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "homograph",
+    "kana"
+   ],
+   "rationale": "ように (purpose) is one use of a homograph pattern.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜ように",
+     "use_key": "purpose",
+     "meaning": "so that",
+     "formation": "V-辞書形/ない形 + ように",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "忘れないようにメモします。",
+       "translation": "I take notes so that I won't forget.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "UseKey": "purpose"
+    }
+   }
+  },
+  {
+   "id": "GA-JA-06",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "homograph",
+    "kana"
+   ],
+   "rationale": "ように (resemblance) is a separate use key.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜ように",
+     "use_key": "resemblance",
+     "meaning": "like; as",
+     "formation": "N + の + ように",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "雪のように白い。",
+       "translation": "White like snow.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "UseKey": "resemblance"
+    }
+   }
+  },
+  {
+   "id": "GA-JA-07",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage",
+    "kanji"
+   ],
+   "rationale": "Application exercise whose answer is not in the prompt.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜ながら",
+     "use_key": "simultaneous",
+     "meaning": "while doing",
+     "formation": "V-ます語幹 + ながら",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "exercise_prompt": "コーヒーを（のむ）＿＿＿＿新聞を読みます。",
+     "exercise_answer": "飲みながら",
+     "examples": [
+      {
+       "sentence": "歩きながら話す。",
+       "translation": "Talk while walking.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en",
+    "requested_tasks": [
+     "recognition",
+     "application"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "ExerciseAnswer": "飲みながら"
+    }
+   }
+  },
+  {
+   "id": "GA-JA-08",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Application without an answer blocks.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜ながら",
+     "use_key": "simultaneous",
+     "meaning": "while doing",
+     "formation": "V-ます語幹 + ながら",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "exercise_prompt": "テレビを見＿＿＿＿ご飯を食べる。",
+     "examples": [
+      {
+       "sentence": "歩きながら話す。",
+       "translation": "Talk while walking.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en",
+    "requested_tasks": [
+     "recognition",
+     "application"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "MISSING_EXERCISE"
+    ]
+   }
+  },
+  {
+   "id": "GA-JA-09",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Application prompt that contains its answer is rejected.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜ながら",
+     "use_key": "simultaneous",
+     "meaning": "while doing",
+     "formation": "V-ます語幹 + ながら",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "exercise_prompt": "テレビを見ながらご飯を食べる。（見ながら）",
+     "exercise_answer": "見ながら",
+     "examples": [
+      {
+       "sentence": "歩きながら話す。",
+       "translation": "Talk while walking.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en",
+    "requested_tasks": [
+     "recognition",
+     "application"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "ANSWER_LEAK"
+    ]
+   }
+  },
+  {
+   "id": "GA-JA-10",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Grammar needs at least one validated use example.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜すぎる",
+     "use_key": "excess",
+     "meaning": "too much",
+     "formation": "V-ます語幹/A語幹 + すぎる",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": []
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "GRAMMAR_EXAMPLE_REQUIRED"
+    ]
+   }
+  },
+  {
+   "id": "GA-JA-11",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Markup in the formation is escaped.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜たら",
+     "use_key": "conditional",
+     "meaning": "if; when",
+     "formation": "<script>alert('x')</script>V-た + ら",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "雨が降ったら行きません。",
+       "translation": "If it rains, I won't go.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_excludes": {
+     "Formation": "<script"
+    }
+   }
+  },
+  {
+   "id": "GA-JA-12",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kana"
+   ],
+   "rationale": "An empty recognition prompt is missing core content.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜けど",
+     "use_key": "contrast",
+     "meaning": "but; although",
+     "formation": "普通形 + けど",
+     "recognition_prompt": "",
+     "examples": [
+      {
+       "sentence": "高いけど、買います。",
+       "translation": "It's expensive, but I'll buy it.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "REQUIRED_CONTENT"
+    ]
+   }
+  },
+  {
+   "id": "GA-JA-13",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Generated grammar example without evidence is unsupported.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜ば",
+     "use_key": "conditional",
+     "meaning": "if",
+     "formation": "V-ば形",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "安ければ買います。",
+       "translation": "If it's cheap, I'll buy it.",
+       "provenance": "generated",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "GENERATED_EXAMPLE_EVIDENCE_REQUIRED"
+    ]
+   }
+  },
+  {
+   "id": "GA-JA-14",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kana",
+    "baseline"
+   ],
+   "rationale": "Kana-only pattern with two examples.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜けど",
+     "use_key": "contrast",
+     "meaning": "but; although",
+     "formation": "普通形 + けど",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "高いけど、買います。",
+       "translation": "It's expensive, but I'll buy it.",
+       "provenance": "user",
+       "evidence_ids": []
+      },
+      {
+       "sentence": "行きたいけど、時間がない。",
+       "translation": "I want to go, but I have no time.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "en"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Examples": "行きたいけど"
+    }
+   }
+  },
+  {
+   "id": "GA-JA-15",
+   "workflow": "grammar_add",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "vietnamese_explanation",
+    "kanji"
+   ],
+   "rationale": "Vietnamese preset with usage note.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "ja",
+    "body": {
+     "pattern": "〜はずだ",
+     "use_key": "expectation",
+     "meaning": "chắc là; lẽ ra",
+     "formation": "普通形 + はずだ",
+     "usage": "Dựa trên căn cứ khách quan.",
+     "recognition_prompt": "Which pattern fits this sentence?",
+     "examples": [
+      {
+       "sentence": "彼はもう着いたはずだ。",
+       "translation": "Chắc là anh ấy đã đến rồi.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Usage": "Dựa trên căn cứ khách quan."
+    }
+   }
+  },
+  {
+   "id": "GA-EN-01",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Past habit.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "used to + V",
+     "use_key": "past-habit",
+     "meaning": "a past habit or state",
+     "formation": "used to + base verb",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "I used to live in Hanoi.",
+       "translation": "I lived in Hanoi in the past.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Pattern": "used to + V"
+    }
+   }
+  },
+  {
+   "id": "GA-EN-02",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Present perfect experience.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "have + past participle",
+     "use_key": "experience",
+     "meaning": "life experience up to now",
+     "formation": "have/has + V3",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "I have seen that film.",
+       "translation": "At some time I saw that film.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": []
+   }
+  },
+  {
+   "id": "GA-EN-03",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Advice with had better.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "had better + V",
+     "use_key": "strong-advice",
+     "meaning": "it is advisable to",
+     "formation": "had better + base verb",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "You had better leave now.",
+       "translation": "You should leave now.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": []
+   }
+  },
+  {
+   "id": "GA-EN-04",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "vi",
+   "categories": [
+    "vietnamese_explanation"
+   ],
+   "rationale": "English grammar explained in Vietnamese.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "be going to + V",
+     "use_key": "plan",
+     "meaning": "sắp; dự định",
+     "formation": "am/is/are going to + V",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "I am going to visit my aunt.",
+       "translation": "Tôi định thăm dì.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "explanation_language": "vi"
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Meaning": "sắp; dự định"
+    }
+   }
+  },
+  {
+   "id": "GA-EN-05",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "multi_pattern"
+   ],
+   "rationale": "A correlative structure is one pattern, not two cards.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "not only ... but also ...",
+     "use_key": "addition",
+     "meaning": "both, with emphasis",
+     "formation": "not only X but also Y",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "She speaks not only English but also Japanese.",
+       "translation": "She speaks both languages.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Pattern": "not only ... but also ..."
+    }
+   }
+  },
+  {
+   "id": "GA-EN-06",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "would (past habit) is a separate use from would (conditional).",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "would + V",
+     "use_key": "past-habit",
+     "meaning": "repeated past action",
+     "formation": "would + base verb",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "Every summer we would swim in the lake.",
+       "translation": "We swam there each summer.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "UseKey": "past-habit"
+    }
+   }
+  },
+  {
+   "id": "GA-EN-07",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "would (conditional) has its own use key.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "would + V",
+     "use_key": "conditional",
+     "meaning": "result of an unreal condition",
+     "formation": "if + past, would + base verb",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "If I had time, I would help.",
+       "translation": "I lack time, so I can't help.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "UseKey": "conditional"
+    }
+   }
+  },
+  {
+   "id": "GA-EN-08",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Application exercise with a hidden answer.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "used to + V",
+     "use_key": "past-habit",
+     "meaning": "a past habit",
+     "formation": "used to + base verb",
+     "recognition_prompt": "Which structure is used here?",
+     "exercise_prompt": "I ___ play tennis as a child. (habit)",
+     "exercise_answer": "used to",
+     "examples": [
+      {
+       "sentence": "I used to live in Hanoi.",
+       "translation": "I lived in Hanoi in the past.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "requested_tasks": [
+     "recognition",
+     "application"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "ExercisePrompt": "I ___ play tennis"
+    }
+   }
+  },
+  {
+   "id": "GA-EN-09",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Application exercise without an answer blocks.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "used to + V",
+     "use_key": "past-habit",
+     "meaning": "a past habit",
+     "formation": "used to + base verb",
+     "recognition_prompt": "Which structure is used here?",
+     "exercise_prompt": "I ___ play tennis as a child.",
+     "examples": [
+      {
+       "sentence": "I used to live in Hanoi.",
+       "translation": "I lived in Hanoi in the past.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "requested_tasks": [
+     "recognition",
+     "application"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "MISSING_EXERCISE"
+    ]
+   }
+  },
+  {
+   "id": "GA-EN-10",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Exercise prompt that states the answer is rejected.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "used to + V",
+     "use_key": "past-habit",
+     "meaning": "a past habit",
+     "formation": "used to + base verb",
+     "recognition_prompt": "Which structure is used here?",
+     "exercise_prompt": "I used to play tennis. Fill: I ___ play tennis.",
+     "exercise_answer": "used to",
+     "examples": [
+      {
+       "sentence": "I used to live in Hanoi.",
+       "translation": "I lived in Hanoi in the past.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    },
+    "requested_tasks": [
+     "recognition",
+     "application"
+    ]
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "ANSWER_LEAK"
+    ]
+   }
+  },
+  {
+   "id": "GA-EN-11",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Event-handler markup in the meaning is escaped.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "so ... that",
+     "use_key": "result",
+     "meaning": "<a href=javascript:alert(1)>so much that</a>",
+     "formation": "so + adj + that + clause",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "It was so cold that we stayed in.",
+       "translation": "Because it was very cold, we stayed in.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": [],
+    "rendered_excludes": {
+     "Meaning": "<a "
+    }
+   }
+  },
+  {
+   "id": "GA-EN-12",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "No examples blocks grammar readiness.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "would rather + V",
+     "use_key": "preference",
+     "meaning": "prefer to",
+     "formation": "would rather + base verb",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": []
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "GRAMMAR_EXAMPLE_REQUIRED"
+    ]
+   }
+  },
+  {
+   "id": "GA-EN-13",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Generated example without evidence is unsupported.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "be used to + V-ing",
+     "use_key": "accustomed",
+     "meaning": "be accustomed to",
+     "formation": "be used to + V-ing",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "I am used to waking up early.",
+       "translation": "Waking early is normal for me.",
+       "provenance": "generated",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "GENERATED_EXAMPLE_EVIDENCE_REQUIRED"
+    ]
+   }
+  },
+  {
+   "id": "GA-EN-14",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "multi_pattern"
+   ],
+   "rationale": "Third conditional keeps both clauses in one pattern.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "if + past perfect, would have + V3",
+     "use_key": "unreal-past",
+     "meaning": "imagined past result",
+     "formation": "if + had + V3, would have + V3",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "If I had studied, I would have passed.",
+       "translation": "I did not study and did not pass.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": true,
+    "issues": []
+   }
+  },
+  {
+   "id": "GA-EN-15",
+   "workflow": "grammar_add",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Missing formation blocks; nothing is generated.",
+   "input": {
+    "schema_version": 2,
+    "kind": "grammar",
+    "target_language": "en",
+    "body": {
+     "pattern": "passive voice",
+     "use_key": "passive",
+     "meaning": "the subject receives the action",
+     "formation": "",
+     "recognition_prompt": "Which structure is used here?",
+     "examples": [
+      {
+       "sentence": "The letter was written by Mai.",
+       "translation": "Mai wrote the letter.",
+       "provenance": "user",
+       "evidence_ids": []
+      }
+     ]
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "REQUIRED_CONTENT"
+    ]
+   }
+  },
+  {
+   "id": "VR-JA-01",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "baseline"
+   ],
+   "rationale": "Plain mapped fields become source-backed candidates.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "食べる"
+     ],
+     [
+      "Reading",
+      "たべる"
+     ],
+     [
+      "Meaning",
+      "to eat"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      ""
+     ],
+     [
+      "Notes",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "expression": "食べる",
+     "reading": "たべる",
+     "meaning": "to eat"
+    }
+   }
+  },
+  {
+   "id": "VR-JA-02",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kana"
+   ],
+   "rationale": "Kana-only note.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "ありがとう"
+     ],
+     [
+      "Reading",
+      "ありがとう"
+     ],
+     [
+      "Meaning",
+      "thank you"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      ""
+     ],
+     [
+      "Notes",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "expression": "ありがとう"
+    }
+   }
+  },
+  {
+   "id": "VR-JA-03",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "homograph"
+   ],
+   "rationale": "Homograph note keeps its own meaning; no sense is guessed.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "橋"
+     ],
+     [
+      "Reading",
+      "はし"
+     ],
+     [
+      "Meaning",
+      "bridge"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      ""
+     ],
+     [
+      "Notes",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "meaning": "bridge"
+    },
+    "absent": [
+     "DICTIONARY_SENSE_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-JA-04",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Unmapped nonempty Notes field is reviewed, not dropped.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "走る"
+     ],
+     [
+      "Reading",
+      "はしる"
+     ],
+     [
+      "Meaning",
+      "to run"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      ""
+     ],
+     [
+      "Notes",
+      "JLPT N5"
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_UNMAPPED_FIELD_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-JA-05",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "adversarial"
+   ],
+   "rationale": "Formatting HTML is reduced to text and reviewed.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "見る"
+     ],
+     [
+      "Reading",
+      "みる"
+     ],
+     [
+      "Meaning",
+      "<b>to see</b>; <i>to look</i>"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      ""
+     ],
+     [
+      "Notes",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "staged": {
+     "meaning": "to see; to look"
+    }
+   }
+  },
+  {
+   "id": "VR-JA-06",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "adversarial"
+   ],
+   "rationale": "Script content never reaches a staged field.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "聞く"
+     ],
+     [
+      "Reading",
+      "きく"
+     ],
+     [
+      "Meaning",
+      "<script>alert(1)</script>to listen"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      ""
+     ],
+     [
+      "Notes",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "staged": {
+     "meaning": "to listen"
+    },
+    "staged_excludes": {
+     "meaning": "alert"
+    }
+   }
+  },
+  {
+   "id": "VR-JA-07",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "mixed_image"
+   ],
+   "rationale": "Picture role with verified image bytes stays archived.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "犬"
+     ],
+     [
+      "Reading",
+      "いぬ"
+     ],
+     [
+      "Meaning",
+      "dog"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      "<img src=\"inu.png\">"
+     ],
+     [
+      "Notes",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning",
+     "picture": "Picture"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "inu.png": {
+      "png": [
+       2,
+       2
+      ]
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_STRUCTURED_ROLE_REVIEW",
+     "SOURCE_MEDIA_CONTENT_REVIEW"
+    ],
+    "media_archived": [
+     "inu.png"
+    ]
+   }
+  },
+  {
+   "id": "VR-JA-08",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "mixed_image"
+   ],
+   "rationale": "A referenced picture that cannot be read needs review.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "猫"
+     ],
+     [
+      "Reading",
+      "ねこ"
+     ],
+     [
+      "Meaning",
+      "cat"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      "<img src=\"neko.jpg\">"
+     ],
+     [
+      "Notes",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning",
+     "picture": "Picture"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "neko.jpg": null
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_MEDIA_MISSING_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-JA-09",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "mixed_image"
+   ],
+   "rationale": "Corrupt image bytes are kept but flagged.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "鳥"
+     ],
+     [
+      "Reading",
+      "とり"
+     ],
+     [
+      "Meaning",
+      "bird"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      "<img src=\"tori.png\">"
+     ],
+     [
+      "Notes",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning",
+     "picture": "Picture"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "tori.png": {
+      "text": "not a png"
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_MEDIA_FORMAT_REVIEW"
+    ],
+    "media_archived": [
+     "tori.png"
+    ]
+   }
+  },
+  {
+   "id": "VR-JA-10",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "shared_media"
+   ],
+   "rationale": "One file referenced by two fields is archived once.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "山"
+     ],
+     [
+      "Reading",
+      "やま"
+     ],
+     [
+      "Meaning",
+      "mountain"
+     ],
+     [
+      "Audio",
+      "[sound:yama.mp3]"
+     ],
+     [
+      "Picture",
+      ""
+     ],
+     [
+      "Notes",
+      "[sound:yama.mp3]"
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning",
+     "audio": "Audio"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "yama.mp3": {
+      "fixture": "audio/tone.mp3"
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_STRUCTURED_ROLE_REVIEW"
+    ],
+    "media_archived": [
+     "yama.mp3"
+    ]
+   }
+  },
+  {
+   "id": "VR-JA-11",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "kanji",
+    "vietnamese_explanation"
+   ],
+   "rationale": "Vietnamese meaning from the source is kept.",
+   "input": {
+    "model": "Japanese Vocab (legacy)",
+    "fields": [
+     [
+      "Expression",
+      "勉強"
+     ],
+     [
+      "Reading",
+      "べんきょう"
+     ],
+     [
+      "Meaning",
+      "học tập"
+     ],
+     [
+      "Audio",
+      ""
+     ],
+     [
+      "Picture",
+      ""
+     ],
+     [
+      "Notes",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "reading": "Reading",
+     "meaning": "Meaning"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {
+    "learning.explanation_language": "vi"
+   },
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "meaning": "học tập"
+    }
+   }
+  },
+  {
+   "id": "VR-JA-12",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "mixed_model"
+   ],
+   "rationale": "Basic model: Front/Back mapping.",
+   "input": {
+    "model": "Basic",
+    "fields": [
+     [
+      "Front",
+      "時間"
+     ],
+     [
+      "Back",
+      "time"
+     ]
+    ],
+    "mapping": {
+     "expression": "Front",
+     "meaning": "Back"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "expression": "時間",
+     "meaning": "time"
+    }
+   }
+  },
+  {
+   "id": "VR-JA-13",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "mixed_model"
+   ],
+   "rationale": "Ruby markup is rich content and is not flattened.",
+   "input": {
+    "model": "Basic",
+    "fields": [
+     [
+      "Front",
+      "<ruby>漢字<rt>かんじ</rt></ruby>"
+     ],
+     [
+      "Back",
+      "kanji"
+     ]
+    ],
+    "mapping": {
+     "expression": "Front",
+     "meaning": "Back"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_RICH_FIELD_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-JA-14",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji",
+    "task_leakage"
+   ],
+   "rationale": "A production flag is a task candidate needing review.",
+   "input": {
+    "model": "Japanese Vocab (production)",
+    "fields": [
+     [
+      "Expression",
+      "書く"
+     ],
+     [
+      "Meaning",
+      "to write"
+     ],
+     [
+      "Produce",
+      "y"
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "meaning": "Meaning",
+     "enable_production": "Produce"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_TASK_MAPPING_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-JA-15",
+   "workflow": "vocab_revamp",
+   "purpose": "japanese_vocab",
+   "language": "ja",
+   "explanation_language": "en",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Language field disagreeing with the purpose is a conflict.",
+   "input": {
+    "model": "Japanese Vocab (lang)",
+    "fields": [
+     [
+      "Expression",
+      "雨"
+     ],
+     [
+      "Meaning",
+      "rain"
+     ],
+     [
+      "Lang",
+      "en"
+     ]
+    ],
+    "mapping": {
+     "expression": "Expression",
+     "meaning": "Meaning",
+     "language": "Lang"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_LANGUAGE_CONFLICT"
+    ]
+   }
+  },
+  {
+   "id": "VR-EN-01",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Plain English note.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "run"
+     ],
+     [
+      "Definition",
+      "to move fast"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "expression": "run",
+     "meaning": "to move fast"
+    }
+   }
+  },
+  {
+   "id": "VR-EN-02",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "bank (river) source meaning is not overridden.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "bank"
+     ],
+     [
+      "Definition",
+      "land along a river"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "meaning": "land along a river"
+    }
+   }
+  },
+  {
+   "id": "VR-EN-03",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "lead (metal) keeps IPA as pronunciation.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "lead"
+     ],
+     [
+      "Definition",
+      "a soft metal"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      "/lɛd/"
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition",
+     "pronunciation": "IPA"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "pronunciation": "/lɛd/"
+    }
+   }
+  },
+  {
+   "id": "VR-EN-04",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Structured example pairs become source-backed candidates for review.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "borrow"
+     ],
+     [
+      "Definition",
+      "take for a time"
+     ],
+     [
+      "Example",
+      "[{\"sentence\":\"Can I borrow a pen?\",\"translation\":\"\"}]"
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition",
+     "examples": "Example"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_EXAMPLES_REVIEW"
+    ],
+    "absent": [
+     "SOURCE_EXAMPLES_SCHEMA_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-EN-05",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Unmapped example text is reviewed rather than lost.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "borrow"
+     ],
+     [
+      "Definition",
+      "take for a time"
+     ],
+     [
+      "Example",
+      "Can I borrow a pen?"
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_UNMAPPED_FIELD_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-EN-06",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Event-handler HTML is stripped to text.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "click"
+     ],
+     [
+      "Definition",
+      "<span onclick=\"steal()\">to press a button</span>"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "staged": {
+     "meaning": "to press a button"
+    },
+    "staged_excludes": {
+     "meaning": "steal"
+    }
+   }
+  },
+  {
+   "id": "VR-EN-07",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Encoded markup becomes literal text, never live HTML.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "tag"
+     ],
+     [
+      "Definition",
+      "&lt;b&gt;label&lt;/b&gt;"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "staged": {
+     "meaning": "<b>label</b>"
+    }
+   }
+  },
+  {
+   "id": "VR-EN-08",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "mixed_image"
+   ],
+   "rationale": "Image with verified bytes.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "apple"
+     ],
+     [
+      "Definition",
+      "a round fruit"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      "<img src=\"apple.png\">"
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition",
+     "picture": "Image"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "apple.png": {
+      "png": [
+       2,
+       2
+      ]
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_STRUCTURED_ROLE_REVIEW",
+     "SOURCE_MEDIA_CONTENT_REVIEW"
+    ],
+    "media_archived": [
+     "apple.png"
+    ]
+   }
+  },
+  {
+   "id": "VR-EN-09",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "mixed_image"
+   ],
+   "rationale": "Missing image bytes need review.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "pear"
+     ],
+     [
+      "Definition",
+      "a fruit"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      "<img src=\"pear.png\">"
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition",
+     "picture": "Image"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "pear.png": null
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_MEDIA_MISSING_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-EN-10",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "shared_media"
+   ],
+   "rationale": "Same picture in two fields is one archived asset.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "tree"
+     ],
+     [
+      "Definition",
+      "<img src=\"tree.png\"> a tall plant"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      "<img src=\"tree.png\">"
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition",
+     "picture": "Image"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "tree.png": {
+      "png": [
+       2,
+       2
+      ]
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "media_archived": [
+     "tree.png"
+    ]
+   }
+  },
+  {
+   "id": "VR-EN-11",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "vi",
+   "categories": [
+    "vietnamese_explanation"
+   ],
+   "rationale": "Vietnamese definition kept from source.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "necessary"
+     ],
+     [
+      "Definition",
+      "cần thiết"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {
+    "learning.explanation_language": "vi"
+   },
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "meaning": "cần thiết"
+    }
+   }
+  },
+  {
+   "id": "VR-EN-12",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "mixed_model"
+   ],
+   "rationale": "Basic (and reversed card) model mapped explicitly.",
+   "input": {
+    "model": "Basic (and reversed card)",
+    "fields": [
+     [
+      "Front",
+      "quiet"
+     ],
+     [
+      "Back",
+      "making little noise"
+     ]
+    ],
+    "mapping": {
+     "expression": "Front",
+     "meaning": "Back"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 7,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "expression": "quiet"
+    }
+   }
+  },
+  {
+   "id": "VR-EN-13",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "mixed_model"
+   ],
+   "rationale": "One field mapped to two roles is a combined field.",
+   "input": {
+    "model": "Basic",
+    "fields": [
+     [
+      "Front",
+      "dog"
+     ],
+     [
+      "Back",
+      "an animal"
+     ]
+    ],
+    "mapping": {
+     "expression": "Front",
+     "meaning": "Back",
+     "usage": "Back"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_COMBINED_FIELD_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-EN-14",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Spelling flag is only a candidate.",
+   "input": {
+    "model": "English Vocab (spelling)",
+    "fields": [
+     [
+      "Word",
+      "necessary"
+     ],
+     [
+      "Definition",
+      "needed"
+     ],
+     [
+      "Spell",
+      "1"
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition",
+     "enable_spelling": "Spell"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_TASK_MAPPING_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "VR-EN-15",
+   "workflow": "vocab_revamp",
+   "purpose": "english_vocab",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Template syntax in a source field is rich content.",
+   "input": {
+    "model": "English Vocab (legacy)",
+    "fields": [
+     [
+      "Word",
+      "brace"
+     ],
+     [
+      "Definition",
+      "{{Definition}} a support"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "IPA",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "expression": "Word",
+     "meaning": "Definition"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_RICH_FIELD_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "GR-JA-01",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "kana",
+    "vietnamese_explanation",
+    "baseline"
+   ],
+   "rationale": "Vietnamese preset meaning kept.",
+   "input": {
+    "model": "Japanese Grammar (legacy)",
+    "fields": [
+     [
+      "Pattern",
+      "〜てもいい"
+     ],
+     [
+      "Meaning",
+      "được phép"
+     ],
+     [
+      "Formation",
+      "V-て + もいい"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "pattern": "〜てもいい",
+     "meaning": "được phép",
+     "formation": "V-て + もいい"
+    }
+   }
+  },
+  {
+   "id": "GR-JA-02",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "multi_pattern"
+   ],
+   "rationale": "Two patterns in one note are not split automatically.",
+   "input": {
+    "model": "Japanese Grammar (legacy)",
+    "fields": [
+     [
+      "Pattern",
+      "〜ても<br>〜てもいい"
+     ],
+     [
+      "Meaning",
+      "dù ...<br>được phép"
+     ],
+     [
+      "Formation",
+      "V-て + も"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "staged": {
+     "pattern": "〜ても\n〜てもいい"
+    },
+    "documents": 1
+   }
+  },
+  {
+   "id": "GR-JA-03",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "kana"
+   ],
+   "rationale": "Plain-text examples are never split automatically.",
+   "input": {
+    "model": "Japanese Grammar (legacy)",
+    "fields": [
+     [
+      "Pattern",
+      "〜ながら"
+     ],
+     [
+      "Meaning",
+      "vừa ... vừa"
+     ],
+     [
+      "Formation",
+      "V-ます + ながら"
+     ],
+     [
+      "Example",
+      "歩きながら話す。"
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation",
+     "examples": "Example"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_EXAMPLES_SCHEMA_REVIEW",
+     "GRAMMAR_EXAMPLE_REQUIRED"
+    ]
+   }
+  },
+  {
+   "id": "GR-JA-04",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "mixed_image"
+   ],
+   "rationale": "Grammar card image is archived with its bytes.",
+   "input": {
+    "model": "Japanese Grammar (legacy)",
+    "fields": [
+     [
+      "Pattern",
+      "〜たら"
+     ],
+     [
+      "Meaning",
+      "nếu"
+     ],
+     [
+      "Formation",
+      "V-た + ら"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      "<img src=\"tara.png\">"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation",
+     "picture": "Image"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "tara.png": {
+      "png": [
+       2,
+       2
+      ]
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_STRUCTURED_ROLE_REVIEW",
+     "SOURCE_MEDIA_CONTENT_REVIEW"
+    ],
+    "media_archived": [
+     "tara.png"
+    ]
+   }
+  },
+  {
+   "id": "GR-JA-05",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "mixed_image"
+   ],
+   "rationale": "Missing grammar image needs review.",
+   "input": {
+    "model": "Japanese Grammar (legacy)",
+    "fields": [
+     [
+      "Pattern",
+      "〜ば"
+     ],
+     [
+      "Meaning",
+      "nếu"
+     ],
+     [
+      "Formation",
+      "V-ば"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      "<img src=\"ba.png\">"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation",
+     "picture": "Image"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "ba.png": null
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_MEDIA_MISSING_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "GR-JA-06",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Script in the formation never reaches staged text.",
+   "input": {
+    "model": "Japanese Grammar (legacy)",
+    "fields": [
+     [
+      "Pattern",
+      "〜のに"
+     ],
+     [
+      "Meaning",
+      "mặc dù"
+     ],
+     [
+      "Formation",
+      "<script>x()</script>普通形 + のに"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "staged": {
+     "formation": "普通形 + のに"
+    },
+    "staged_excludes": {
+     "formation": "x()"
+    }
+   }
+  },
+  {
+   "id": "GR-JA-07",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "homograph",
+    "kana"
+   ],
+   "rationale": "ように with a source use key.",
+   "input": {
+    "model": "Japanese Grammar (use key)",
+    "fields": [
+     [
+      "Pattern",
+      "〜ように"
+     ],
+     [
+      "Use",
+      "purpose"
+     ],
+     [
+      "Meaning",
+      "để"
+     ],
+     [
+      "Formation",
+      "V + ように"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "use_key": "Use",
+     "meaning": "Meaning",
+     "formation": "Formation"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "use_key": "purpose"
+    }
+   }
+  },
+  {
+   "id": "GR-JA-08",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Unmapped notes are reviewed, not dropped.",
+   "input": {
+    "model": "Japanese Grammar (notes)",
+    "fields": [
+     [
+      "Pattern",
+      "〜なければならない"
+     ],
+     [
+      "Meaning",
+      "phải"
+     ],
+     [
+      "Formation",
+      "V-なければ + ならない"
+     ],
+     [
+      "Notes",
+      "N4"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_UNMAPPED_FIELD_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "GR-JA-09",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "Application flag is a task candidate.",
+   "input": {
+    "model": "Japanese Grammar (exercise)",
+    "fields": [
+     [
+      "Pattern",
+      "〜ながら"
+     ],
+     [
+      "Meaning",
+      "vừa"
+     ],
+     [
+      "Formation",
+      "V-ます + ながら"
+     ],
+     [
+      "Exercise",
+      "テレビを見＿＿食べる"
+     ],
+     [
+      "Answer",
+      "ながら"
+     ],
+     [
+      "Apply",
+      "y"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation",
+     "exercise_prompt": "Exercise",
+     "exercise_answer": "Answer",
+     "enable_application": "Apply"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_TASK_MAPPING_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "GR-JA-10",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "shared_media",
+    "kana"
+   ],
+   "rationale": "Shared audio referenced twice is archived once.",
+   "input": {
+    "model": "Japanese Grammar (audio)",
+    "fields": [
+     [
+      "Pattern",
+      "〜けど"
+     ],
+     [
+      "Meaning",
+      "nhưng"
+     ],
+     [
+      "Formation",
+      "普通形 + けど"
+     ],
+     [
+      "Audio",
+      "[sound:kedo.mp3]"
+     ],
+     [
+      "Example",
+      "高いけど買う。[sound:kedo.mp3]"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation",
+     "audio": "Audio"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "kedo.mp3": {
+      "fixture": "audio/tone.mp3"
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_STRUCTURED_ROLE_REVIEW"
+    ],
+    "media_archived": [
+     "kedo.mp3"
+    ]
+   }
+  },
+  {
+   "id": "GR-JA-11",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "mixed_model"
+   ],
+   "rationale": "Basic grammar card with Front/Back.",
+   "input": {
+    "model": "Basic",
+    "fields": [
+     [
+      "Front",
+      "〜すぎる"
+     ],
+     [
+      "Back",
+      "quá"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Front",
+     "meaning": "Back"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "pattern": "〜すぎる"
+    }
+   }
+  },
+  {
+   "id": "GR-JA-12",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "mixed_model",
+    "multi_pattern"
+   ],
+   "rationale": "Back with list markup keeps every item.",
+   "input": {
+    "model": "Basic",
+    "fields": [
+     [
+      "Front",
+      "〜ばかり"
+     ],
+     [
+      "Back",
+      "<ul><li>chỉ toàn</li><li>vừa mới</li></ul>"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Front",
+     "meaning": "Back"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "staged_contains": {
+     "meaning": "vừa mới"
+    }
+   }
+  },
+  {
+   "id": "GR-JA-13",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Explanation language field matching the preset is fine.",
+   "input": {
+    "model": "Japanese Grammar (lang)",
+    "fields": [
+     [
+      "Pattern",
+      "〜はずだ"
+     ],
+     [
+      "Meaning",
+      "chắc là"
+     ],
+     [
+      "Formation",
+      "普通形 + はずだ"
+     ],
+     [
+      "Expl",
+      "vi"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation",
+     "explanation_language": "Expl"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "absent": [
+     "SOURCE_LANGUAGE_CONFLICT"
+    ]
+   }
+  },
+  {
+   "id": "GR-JA-14",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "kanji"
+   ],
+   "rationale": "Explanation language field disagreeing with the preset conflicts.",
+   "input": {
+    "model": "Japanese Grammar (lang)",
+    "fields": [
+     [
+      "Pattern",
+      "〜はずだ"
+     ],
+     [
+      "Meaning",
+      "should be"
+     ],
+     [
+      "Formation",
+      "普通形 + はずだ"
+     ],
+     [
+      "Expl",
+      "en"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation",
+     "explanation_language": "Expl"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_LANGUAGE_CONFLICT"
+    ]
+   }
+  },
+  {
+   "id": "GR-JA-15",
+   "workflow": "grammar_revamp",
+   "purpose": "japanese_grammar",
+   "language": "ja",
+   "explanation_language": "vi",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Template syntax in the pattern is rich content.",
+   "input": {
+    "model": "Japanese Grammar (legacy)",
+    "fields": [
+     [
+      "Pattern",
+      "{{Pattern}}〜まで"
+     ],
+     [
+      "Meaning",
+      "cho đến"
+     ],
+     [
+      "Formation",
+      "N + まで"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Pattern",
+     "meaning": "Meaning",
+     "formation": "Formation"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_RICH_FIELD_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "GR-EN-01",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Plain English grammar note.",
+   "input": {
+    "model": "English Grammar (legacy)",
+    "fields": [
+     [
+      "Structure",
+      "used to + V"
+     ],
+     [
+      "Meaning",
+      "past habit"
+     ],
+     [
+      "Form",
+      "used to + base verb"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "pattern": "used to + V",
+     "formation": "used to + base verb"
+    }
+   }
+  },
+  {
+   "id": "GR-EN-02",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "multi_pattern"
+   ],
+   "rationale": "Several tenses in one note stay one reviewed draft.",
+   "input": {
+    "model": "English Grammar (legacy)",
+    "fields": [
+     [
+      "Structure",
+      "present perfect<br>past simple"
+     ],
+     [
+      "Meaning",
+      "experience vs finished time"
+     ],
+     [
+      "Form",
+      "have + V3<br>V2"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "documents": 1,
+    "staged": {
+     "pattern": "present perfect\npast simple"
+    }
+   }
+  },
+  {
+   "id": "GR-EN-03",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Plain-text example sentences need review, not guessing.",
+   "input": {
+    "model": "English Grammar (legacy)",
+    "fields": [
+     [
+      "Structure",
+      "had better"
+     ],
+     [
+      "Meaning",
+      "strong advice"
+     ],
+     [
+      "Form",
+      "had better + V"
+     ],
+     [
+      "Example",
+      "You had better go."
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form",
+     "examples": "Example"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_EXAMPLES_SCHEMA_REVIEW",
+     "GRAMMAR_EXAMPLE_REQUIRED"
+    ]
+   }
+  },
+  {
+   "id": "GR-EN-04",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "vi",
+   "categories": [
+    "vietnamese_explanation"
+   ],
+   "rationale": "Vietnamese meaning with explicit override.",
+   "input": {
+    "model": "English Grammar (legacy)",
+    "fields": [
+     [
+      "Structure",
+      "be going to"
+     ],
+     [
+      "Meaning",
+      "dự định"
+     ],
+     [
+      "Form",
+      "be going to + V"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {
+    "learning.explanation_language": "vi"
+   },
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "meaning": "dự định"
+    }
+   }
+  },
+  {
+   "id": "GR-EN-05",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "mixed_image"
+   ],
+   "rationale": "Grammar chart image with bytes.",
+   "input": {
+    "model": "English Grammar (legacy)",
+    "fields": [
+     [
+      "Structure",
+      "conditionals"
+     ],
+     [
+      "Meaning",
+      "if-clauses"
+     ],
+     [
+      "Form",
+      "if + present, will + V"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      "<img src=\"cond.png\">"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form",
+     "picture": "Image"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "cond.png": {
+      "png": [
+       2,
+       2
+      ]
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_STRUCTURED_ROLE_REVIEW"
+    ],
+    "media_archived": [
+     "cond.png"
+    ]
+   }
+  },
+  {
+   "id": "GR-EN-06",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "mixed_image"
+   ],
+   "rationale": "Unreadable chart image bytes are flagged.",
+   "input": {
+    "model": "English Grammar (legacy)",
+    "fields": [
+     [
+      "Structure",
+      "passive"
+     ],
+     [
+      "Meaning",
+      "receive the action"
+     ],
+     [
+      "Form",
+      "be + V3"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      "<img src=\"passive.gif\">"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form",
+     "picture": "Image"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "passive.gif": {
+      "text": "GIF89a?"
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_MEDIA_FORMAT_REVIEW"
+    ],
+    "media_archived": [
+     "passive.gif"
+    ]
+   }
+  },
+  {
+   "id": "GR-EN-07",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "iframe markup is stripped to text.",
+   "input": {
+    "model": "English Grammar (legacy)",
+    "fields": [
+     [
+      "Structure",
+      "so ... that"
+     ],
+     [
+      "Meaning",
+      "<iframe src=\"https://example.invalid\"></iframe>result"
+     ],
+     [
+      "Form",
+      "so + adj + that"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      ""
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_HTML_TEXT_REVIEW"
+    ],
+    "staged": {
+     "meaning": "result"
+    },
+    "staged_excludes": {
+     "meaning": "iframe"
+    }
+   }
+  },
+  {
+   "id": "GR-EN-08",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "would (habit) with a use key from the source.",
+   "input": {
+    "model": "English Grammar (use key)",
+    "fields": [
+     [
+      "Structure",
+      "would + V"
+     ],
+     [
+      "Use",
+      "past-habit"
+     ],
+     [
+      "Meaning",
+      "repeated past action"
+     ],
+     [
+      "Form",
+      "would + V"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "use_key": "Use",
+     "meaning": "Meaning",
+     "formation": "Form"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "use_key": "past-habit"
+    }
+   }
+  },
+  {
+   "id": "GR-EN-09",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "homograph"
+   ],
+   "rationale": "would (conditional) with a different use key.",
+   "input": {
+    "model": "English Grammar (use key)",
+    "fields": [
+     [
+      "Structure",
+      "would + V"
+     ],
+     [
+      "Use",
+      "conditional"
+     ],
+     [
+      "Meaning",
+      "unreal result"
+     ],
+     [
+      "Form",
+      "would + V"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "use_key": "Use",
+     "meaning": "Meaning",
+     "formation": "Form"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "use_key": "conditional"
+    }
+   }
+  },
+  {
+   "id": "GR-EN-10",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "task_leakage"
+   ],
+   "rationale": "An exercise flag is a candidate only.",
+   "input": {
+    "model": "English Grammar (exercise)",
+    "fields": [
+     [
+      "Structure",
+      "used to"
+     ],
+     [
+      "Meaning",
+      "past habit"
+     ],
+     [
+      "Form",
+      "used to + V"
+     ],
+     [
+      "Gap",
+      "I ___ swim."
+     ],
+     [
+      "Answer",
+      "used to"
+     ],
+     [
+      "Apply",
+      "yes"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form",
+     "exercise_prompt": "Gap",
+     "exercise_answer": "Answer",
+     "enable_application": "Apply"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_TASK_MAPPING_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "GR-EN-11",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "mixed_model"
+   ],
+   "rationale": "Cloze-style model with an unmapped Text field.",
+   "input": {
+    "model": "Cloze",
+    "fields": [
+     [
+      "Text",
+      "I {{c1::used to}} swim."
+     ],
+     [
+      "Back Extra",
+      "past habit"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Back Extra"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_UNMAPPED_FIELD_REVIEW"
+    ]
+   }
+  },
+  {
+   "id": "GR-EN-12",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "mixed_model"
+   ],
+   "rationale": "Basic grammar card.",
+   "input": {
+    "model": "Basic",
+    "fields": [
+     [
+      "Front",
+      "had better"
+     ],
+     [
+      "Back",
+      "strong advice"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Front",
+     "meaning": "Back"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "staged": {
+     "meaning": "strong advice"
+    }
+   }
+  },
+  {
+   "id": "GR-EN-13",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "shared_media"
+   ],
+   "rationale": "Audio used in two fields is archived once.",
+   "input": {
+    "model": "English Grammar (audio)",
+    "fields": [
+     [
+      "Structure",
+      "would rather"
+     ],
+     [
+      "Meaning",
+      "prefer"
+     ],
+     [
+      "Form",
+      "would rather + V"
+     ],
+     [
+      "Audio",
+      "[sound:rather.ogg]"
+     ],
+     [
+      "Example",
+      "I'd rather stay. [sound:rather.ogg]"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form",
+     "audio": "Audio"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {
+     "rather.ogg": {
+      "fixture": "audio/tone.ogg"
+     }
+    }
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_STRUCTURED_ROLE_REVIEW"
+    ],
+    "media_archived": [
+     "rather.ogg"
+    ]
+   }
+  },
+  {
+   "id": "GR-EN-14",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "baseline"
+   ],
+   "rationale": "Language field matching the purpose is accepted.",
+   "input": {
+    "model": "English Grammar (lang)",
+    "fields": [
+     [
+      "Structure",
+      "had better"
+     ],
+     [
+      "Meaning",
+      "advice"
+     ],
+     [
+      "Form",
+      "had better + V"
+     ],
+     [
+      "Lang",
+      "en"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form",
+     "language": "Lang"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW"
+    ],
+    "absent": [
+     "SOURCE_LANGUAGE_CONFLICT"
+    ]
+   }
+  },
+  {
+   "id": "GR-EN-15",
+   "workflow": "grammar_revamp",
+   "purpose": "english_grammar",
+   "language": "en",
+   "explanation_language": "en",
+   "categories": [
+    "adversarial"
+   ],
+   "rationale": "Control of data URIs: image src with javascript is not media.",
+   "input": {
+    "model": "English Grammar (legacy)",
+    "fields": [
+     [
+      "Structure",
+      "passive"
+     ],
+     [
+      "Meaning",
+      "be + V3"
+     ],
+     [
+      "Form",
+      "be + V3"
+     ],
+     [
+      "Example",
+      ""
+     ],
+     [
+      "Image",
+      "<img src=\"javascript:alert(1)\">"
+     ]
+    ],
+    "mapping": {
+     "pattern": "Structure",
+     "meaning": "Meaning",
+     "formation": "Form"
+    },
+    "tags": [
+     "legacy"
+    ],
+    "reps": 3,
+    "media": {}
+   },
+   "dictionary": null,
+   "settings": {},
+   "expect": {
+    "ready": false,
+    "issues": [
+     "SOURCE_NATIVE_HISTORY_REVIEW",
+     "SOURCE_UNMAPPED_FIELD_REVIEW"
+    ]
+   }
+  }
+ ]
+}

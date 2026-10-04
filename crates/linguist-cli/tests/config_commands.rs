@@ -2492,6 +2492,7 @@ fn authored_add_cli_creates_plan_without_anki_and_blocks_requested_generation() 
     assert_eq!(live.status.code(), Some(3));
     let out = cli()
         .args([
+            "--offline",
             "--set",
             &setting,
             "vocab",
@@ -2501,7 +2502,9 @@ fn authored_add_cli_creates_plan_without_anki_and_blocks_requested_generation() 
         ])
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(3));
+    // The default dictionary now resolves its cache path; --offline refuses
+    // the uncached lookup before any revision is written.
+    assert!(!out.status.success(), "{out:?}");
     assert_eq!(store.list_revisions(10).unwrap().len(), 1);
     drop(store);
     std::fs::remove_dir_all(root).unwrap();

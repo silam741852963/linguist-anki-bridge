@@ -48,3 +48,11 @@ percent-encoding = "=2.3.2"
 unicode-normalization = "=0.1.25"
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "ogg", "vorbis", "wav", "pcm", "id3v2"] }
+
+# Release binaries are built by scripts/release-build.py with --locked, fixed
+# SOURCE_DATE_EPOCH and remapped paths so that two builds compare byte-equal.
+[profile.release]
+codegen-units = 1
+incremental = false
+debug = false
+strip = "symbols"

@@ -120,6 +120,34 @@ pub fn inspect(effective: &Effective, environment: &BTreeMap<String, String>) ->
     }
 }
 
+/// Conservative preflight before a command writes local state: the file
+/// system holding `storage.state_dir` must keep `storage.free_space_reserve_mb`
+/// free after `extra_bytes` (the caller's estimate of what it will write).
+/// Path problems are left to the store, which reports them precisely.
+pub fn require_state_free_space(
+    effective: &Effective,
+    environment: &BTreeMap<String, String>,
+    extra_bytes: u64,
+) -> std::result::Result<(), String> {
+    let reserve = effective.values["storage.free_space_reserve_mb"]
+        .as_u64()
+        .ok_or("STORAGE_FREE_SPACE: storage.free_space_reserve_mb is not set")?
+        .saturating_mul(1024 * 1024);
+    let required = reserve.saturating_add(extra_bytes);
+    let Some(state) = effective.values["storage.state_dir"].as_str() else {
+        return Ok(());
+    };
+    match inspect_free_space(state, environment, required) {
+        ("insufficient_space", Some(available)) => Err(format!(
+            "STORAGE_FREE_SPACE: {available} bytes free under storage.state_dir; this command needs {required} (storage.free_space_reserve_mb plus an estimated {extra_bytes} bytes)"
+        )),
+        ("space_unavailable", _) => {
+            Err("STORAGE_FREE_SPACE: free space under storage.state_dir cannot be measured".into())
+        }
+        _ => Ok(()),
+    }
+}
+
 fn inspect_free_space(
     state_path: &str,
     environment: &BTreeMap<String, String>,

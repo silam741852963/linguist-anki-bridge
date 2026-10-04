@@ -414,7 +414,12 @@ pub fn regenerate(
                 if settings.values["dictionary.provider"] == "authored" {
                     return Err("REGENERATE_DICTIONARY_PROVIDER_REQUIRED".into());
                 }
-                crate::dictionary::enrich_document(&prepared, settings, providers.dictionary)?
+                crate::dictionary::enrich_document(
+                    &prepared,
+                    settings,
+                    environment,
+                    providers.dictionary,
+                )?
             }
             Stage::Enrichment => {
                 crate::vocab::enrich_document(&prepared, settings, environment, providers)?
