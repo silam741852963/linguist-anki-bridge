@@ -729,6 +729,8 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                         && (ids.len() > 1 || matches!(&doc.content, LearningContent::Grammar(g) if !g.pattern.trim().is_empty())),
                     ReviewChoice::Duplicate { note_id, action } =>
                         crate::review::duplicate_choice_matches(issue, note_id, action),
+                    ReviewChoice::Anchor(anchor) => issue.code == "GRAMMAR_SPLIT_NATIVE_REVIEW"
+                        && crate::review::split_anchor_matches(doc, *anchor),
                     ReviewChoice::ContentVerified { evidence_ids } => {
                         matches!(issue.code.as_str(), "GENERATED_FACT_REVIEW" | "SOURCE_CLAIM_CONFLICT")
                             && !issue.source_refs.is_empty()

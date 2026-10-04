@@ -13,10 +13,10 @@ This assigns each [fixed invariant](../contracts/invariants.md) a named test loc
 | INV-07 | WP-11 | Disposable native timeout/crash test: unknown effect reconciles before any retry or compensation |
 | INV-08 | WP-11, WP-13 | `crates/linguist-store/tests/lease.rs` lease behavior; integrated apply/model/backup/restore writer test pending |
 | INV-09 | WP-03, WP-11 | Disposable native migration test: retained card IDs, scheduling and review log survive every supported mapping |
-| INV-10 | WP-11, WP-12 | Disposable native conversion/restore test: source media and unrecognized shared models remain present |
+| INV-10 | WP-11, WP-12 | `crates/linguist-application/tests/restore.rs` (media collision never overwritten, uploaded media kept); `scripts/verify-native-restore.py` note types and media survive restore and deletion; live conversion/restore through the native transport pending |
 | INV-11 | WP-11 | Disposable native test: successful completion requires read-back and durable matching receipt |
 | INV-12 | WP-11, WP-13 | `crates/linguist-store/tests/store.rs` immutable revisions; interrupted native resume test pending |
-| INV-13 | WP-12 | Disposable native restore test: later reviews persist and changed user content conflicts |
+| INV-13 | WP-12 | `crates/linguist-application/tests/restore.rs` later study kept, later edits conflict, every reverse crash boundary resumes; `scripts/verify-native-restore.py` effect-level later-review preservation; live restore through the native transport pending |
 | INV-14 | WP-14 | Retention test: unresolved journal, snapshot, accepted asset, backup and reader references resist pruning |
 | INV-15 | WP-02, WP-14 | `crates/linguist-config/tests/config.rs`; nondefault downstream consumer coverage pending |
 | INV-16 | WP-06–WP-08 | `crates/linguist-application/tests/generation.rs` protected merge; tool/shell/network invocation rejection pending |

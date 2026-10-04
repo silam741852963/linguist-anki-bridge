@@ -21,7 +21,7 @@ pub struct JournalVersion {
     pub journal: OperationJournal,
 }
 fn pending(j: &OperationJournal) -> bool {
-    if matches!(j.state, O::Committed | O::FailedBeforeWrite) {
+    if matches!(j.state, O::Committed | O::FailedBeforeWrite | O::Restored) {
         return false;
     }
     matches!(j.state, O::Mutating | O::Verifying | O::NeedsRecovery)
@@ -66,11 +66,19 @@ fn validate(j: &OperationJournal) -> Result<()> {
             return Err("INTENT_CANNOT_HAVE_OBSERVED_RESULT".into());
         }
     }
-    if matches!(j.state, O::Compensated | O::Restored) {
+    if j.state == O::Compensated {
         return Err(
-            "JOURNAL_FINALIZATION_UNAVAILABLE: compensation/restore receipts are not implemented"
-                .into(),
+            "JOURNAL_FINALIZATION_UNAVAILABLE: compensation receipts are not implemented".into(),
         );
+    }
+    // A restored operation keeps its recorded step evidence; only an
+    // unresolved request can never be finalized.
+    if j.state == O::Restored
+        && j.steps
+            .iter()
+            .any(|s| matches!(s.state, S::RequestStarted | S::Unknown))
+    {
+        return Err("RESTORE_REQUIRES_RECONCILED_STEPS".into());
     }
     // Commit requires every recorded effect to be verified against its expected post-state.
     if j.state == O::Committed
@@ -122,12 +130,17 @@ fn transition(old: &OperationJournal, new: &OperationJournal) -> Result<()> {
                     O::NeedsRecovery,
                     O::Mutating | O::Verifying | O::FailedBeforeWrite
                 )
+                // Only a verified restore finalizes a committed or known-partial
+                // operation; the store checks its receipt.
+                | (O::Committed | O::NeedsRecovery, O::Restored)
         );
+    let finalizing = new.state == O::Restored && old.state != O::Restored;
     if !allowed
-        || matches!(
-            old.state,
-            O::FailedBeforeWrite | O::Committed | O::Compensated | O::Restored
-        )
+        || (!finalizing
+            && matches!(
+                old.state,
+                O::FailedBeforeWrite | O::Committed | O::Compensated | O::Restored
+            ))
     {
         return Err("INVALID_OPERATION_TRANSITION".into());
     }
@@ -192,6 +205,9 @@ fn transition(old: &OperationJournal, new: &OperationJournal) -> Result<()> {
     if new.steps.iter().any(|s| s.state == S::Unknown) && new.state != O::NeedsRecovery {
         return Err("UNKNOWN_EFFECT_REQUIRES_RECOVERY".into());
     }
+    if finalizing && new.steps != old.steps {
+        return Err("RESTORE_FINALIZATION_CHANGES_STEPS".into());
+    }
     Ok(())
 }
 impl Store {
@@ -254,6 +270,12 @@ impl Store {
         let actual:Option<(u32,String)>=tx.query_row("SELECT e.sequence,e.body_digest FROM journal_events e JOIN journal_heads h ON h.operation=e.operation AND h.sequence=e.sequence WHERE e.operation=?1",[journal.id.to_string()],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(sql)?;
         if actual != expected.map(|v| (v.sequence, v.digest.clone())) {
             return Err("JOURNAL_VERSION_CONFLICT".into());
+        }
+        if journal.state == O::Restored
+            && expected.is_some_and(|v| v.journal.state != O::Restored)
+            && !Store::has_committed_restore(&tx, journal.id)?
+        {
+            return Err("RESTORE_RECEIPT_REQUIRED".into());
         }
         // The supplied prior object must itself match its recorded digest, not just the head label.
         if let Some(version) = expected

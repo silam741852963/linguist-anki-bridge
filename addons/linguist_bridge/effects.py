@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Native collection effects for typed `labMutate` bodies (WP-11).
+"""Native collection effects for typed `labMutate` bodies (WP-11, WP-12).
 
 These functions operate on an already-open Anki `Collection` passed by the
 caller. They import no Anki/Qt module, register no action and are not part of
@@ -108,24 +108,10 @@ def update_note(col, body, manifest_digest):
         raise EffectError("BRIDGE_FILTERED_DECK")
     migration = body.get("migration")
     if migration is not None:
-        source = col.models.get(migration["source_model_id"])
-        target = col.models.get(migration["target_model_id"])
-        if (source is None or target is None or observed["model_id"] != source["id"]
-                or target["name"] != migration["target_model_name"]):
-            raise EffectError("BRIDGE_MODEL_MISMATCH")
-        mapping = {entry["target"]: entry["source"] for entry in migration["ordinal_map"]}
-        if {card["ordinal"] for card in observed["cards"]} - set(mapping.values()):
+        mapped = {entry["source"] for entry in migration["ordinal_map"]}
+        if {card["ordinal"] for card in observed["cards"]} - mapped:
             raise EffectError("BRIDGE_MIGRATION_DROPS_CARD")
-        info = col.models.change_notetype_info(
-            old_notetype_id=source["id"], new_notetype_id=target["id"])
-        request = info.input
-        request.note_ids.append(body["note_id"])
-        del request.new_fields[:]
-        request.new_fields.extend(-1 for _ in target["flds"])
-        del request.new_templates[:]
-        request.new_templates.extend(mapping.get(index, -1)
-                                     for index in range(len(target["tmpls"])))
-        col.models.change_notetype_of_notes(request)
+        _change_notetype(col, body["note_id"], migration, observed)
     note = col.get_note(body["note_id"])
     if set(note.keys()) != set(body["fields"]):
         raise EffectError("BRIDGE_FIELDS_MISMATCH")
@@ -137,6 +123,89 @@ def update_note(col, body, manifest_digest):
     col.update_note(note)
     card_ids = col.card_ids_of_note(body["note_id"])
     col.set_deck(card_ids, int(body["deck_id"]))
+    return body["note_id"]
+
+
+def _change_notetype(col, note_id, migration, observed):
+    """Mapped note-type change; unmapped template ordinals lose their cards."""
+    source = col.models.get(migration["source_model_id"])
+    target = col.models.get(migration["target_model_id"])
+    if (source is None or target is None or observed["model_id"] != source["id"]
+            or target["name"] != migration["target_model_name"]):
+        raise EffectError("BRIDGE_MODEL_MISMATCH")
+    mapping = {entry["target"]: entry["source"] for entry in migration["ordinal_map"]}
+    info = col.models.change_notetype_info(
+        old_notetype_id=source["id"], new_notetype_id=target["id"])
+    request = info.input
+    request.note_ids.append(note_id)
+    del request.new_fields[:]
+    request.new_fields.extend(-1 for _ in target["flds"])
+    del request.new_templates[:]
+    request.new_templates.extend(mapping.get(index, -1)
+                                 for index in range(len(target["tmpls"])))
+    col.models.change_notetype_of_notes(request)
+    return mapping
+
+
+def _studied(card):
+    return card["review_count"] > 0 or card["scheduler"].get("reps", "0") != "0"
+
+
+def restore_note(col, body, manifest_digest):
+    """restore_note (WP-12): precondition CAS, an optional reverse mapped
+    note-type change that removes only the listed unstudied cards, the exact
+    field set and tag set, and one deck per kept card. Kept cards keep their
+    IDs, current scheduling and review history; nothing is rescheduled."""
+    observed = observe_note(col, body["note_id"], manifest_digest)
+    if content_digest(observed) != body["expected_pre_digest"]:
+        raise EffectError("BRIDGE_PRECONDITION_FAILED")
+    if any(card["original_deck_id"] for card in observed["cards"]):
+        raise EffectError("BRIDGE_FILTERED_DECK")
+    removed = set(body["removed_card_ids"])
+    kept = {entry["card_id"]: int(entry["deck_id"]) for entry in body["card_decks"]}
+    migration = body.get("migration")
+    if migration is None:
+        if removed:
+            raise EffectError("BRIDGE_REMOVAL_REQUIRES_MAPPING")
+    else:
+        mapped = {entry["source"] for entry in migration["ordinal_map"]}
+        dropped = {card["id"] for card in observed["cards"] if card["ordinal"] not in mapped}
+        if dropped != removed:
+            raise EffectError("BRIDGE_REVERSE_MAPPING_MISMATCH")
+        if any(_studied(card) for card in observed["cards"] if card["id"] in removed):
+            raise EffectError("BRIDGE_STUDIED_CARD_REMOVAL")
+    if {card["id"] for card in observed["cards"]} - removed != set(kept):
+        raise EffectError("BRIDGE_CARD_SET_MISMATCH")
+    for deck_id in set(kept.values()):
+        deck = col.decks.get(deck_id, default=False)
+        if not deck or deck.get("dyn"):
+            raise EffectError("BRIDGE_DECK_INVALID")
+    if migration is not None:
+        _change_notetype(col, body["note_id"], migration, observed)
+    note = col.get_note(body["note_id"])
+    if set(note.keys()) != set(body["fields"]):
+        raise EffectError("BRIDGE_FIELDS_MISMATCH")
+    for name, value in body["fields"].items():
+        note[name] = value
+    note.tags = list(body["tags"])
+    col.update_note(note)
+    for card_id, deck_id in kept.items():
+        col.set_deck([card_id], deck_id)
+    return body["note_id"]
+
+
+def delete_unstudied_created_note(col, body, manifest_digest):
+    """delete_unstudied_created_note (WP-12): remove one app-created note only
+    while its content matches the precondition and no card has any review."""
+    try:
+        observed = observe_note(col, body["note_id"], manifest_digest)
+    except Exception as error:  # Anki raises NotFoundError for a missing note.
+        raise EffectError("BRIDGE_NOTE_MISSING") from error
+    if content_digest(observed) != body["expected_pre_digest"]:
+        raise EffectError("BRIDGE_PRECONDITION_FAILED")
+    if any(_studied(card) for card in observed["cards"]):
+        raise EffectError("BRIDGE_STUDIED_NOTE")
+    col.remove_notes([body["note_id"]])
     return body["note_id"]
 
 

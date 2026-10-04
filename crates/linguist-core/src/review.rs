@@ -428,6 +428,13 @@ pub fn resolve(
                 return Err(ContractError("REVIEW_DUPLICATE_CHOICE_INVALID".into()));
             }
         }
+        // Accept ALG-SPLIT for this unit: the named anchor keeps the source
+        // note and its history; every other unit becomes a fresh note.
+        ReviewChoice::Anchor(anchor) if issue.code == "GRAMMAR_SPLIT_NATIVE_REVIEW" => {
+            if !split_anchor_matches(document, *anchor) {
+                return Err(ContractError("REVIEW_SPLIT_ANCHOR_MISMATCH".into()));
+            }
+        }
         _ => {
             return Err(ContractError(
                 "CAPABILITY_UNAVAILABLE: this issue/decision pipeline is not implemented".into(),
@@ -653,7 +660,20 @@ fn rebindable(choice: &ReviewChoice) -> bool {
             | ReviewChoice::Media(_)
             | ReviewChoice::Duplicate { .. }
             | ReviewChoice::Segmentation(_)
+            | ReviewChoice::Anchor(_)
     )
+}
+
+/// True when this split unit's recorded request names `anchor` as the unit
+/// that keeps the source note.
+pub(crate) fn split_anchor_matches(document: &crate::LearningDocument, anchor: uuid::Uuid) -> bool {
+    document
+        .sources
+        .iter()
+        .filter(|source| source.kind == "grammar_split_request_v1")
+        .filter_map(|source| source.fields.get("split_request"))
+        .filter_map(|raw| crate::canonical::parse::<serde_json::Value>(raw.as_bytes()).ok())
+        .any(|request| request["document_id"].as_str() == Some(anchor.to_string().as_str()))
 }
 
 /// Segmentation names one or more recorded candidate regions, in reading order.

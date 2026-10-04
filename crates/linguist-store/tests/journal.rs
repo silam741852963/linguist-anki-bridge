@@ -294,3 +294,57 @@ fn observed_failure_may_fail_before_write_but_unknown_may_not() {
     assert!(!closed.pending_recovery);
     assert_eq!(store.pending_journal_count().unwrap(), 0);
 }
+#[test]
+fn restored_requires_a_committed_restore_receipt_and_is_terminal() {
+    let f = Fixture::new();
+    let mut store = f.store();
+    let before = start(&mut store);
+    let mut j = before.journal.clone();
+    j.state = OperationState::Checkpointed;
+    let v = store.append_journal(&j, Some(&before)).unwrap();
+    j.state = OperationState::Mutating;
+    let v = store.append_journal(&j, Some(&v)).unwrap();
+    // An unknown effect can never be finalized as restored.
+    let mut unknown = j.clone();
+    unknown.steps[0].state = StepState::Unknown;
+    unknown.state = OperationState::NeedsRecovery;
+    let unknown_version = store.append_journal(&unknown, Some(&v)).unwrap();
+    let mut restored = unknown.clone();
+    restored.state = OperationState::Restored;
+    assert!(
+        store
+            .append_journal(&restored, Some(&unknown_version))
+            .is_err()
+    );
+    // A verified step still needs a committed restore receipt.
+    let mut verified = unknown.clone();
+    verified.steps[0].state = StepState::Verified;
+    verified.steps[0].observed_digest = Some("after".into());
+    let verified_version = store
+        .append_journal(&verified, Some(&unknown_version))
+        .unwrap();
+    let mut restored = verified.clone();
+    restored.state = OperationState::Restored;
+    assert_eq!(
+        store
+            .append_journal(&restored, Some(&verified_version))
+            .unwrap_err(),
+        "RESTORE_RECEIPT_REQUIRED"
+    );
+    // Finalization cannot change step evidence either.
+    let mut changed = restored.clone();
+    changed.steps[0].observed_digest = Some("other".into());
+    assert!(
+        store
+            .append_journal(&changed, Some(&verified_version))
+            .is_err()
+    );
+    // Compensation stays unavailable.
+    let mut compensated = verified.clone();
+    compensated.state = OperationState::Compensated;
+    assert!(
+        store
+            .append_journal(&compensated, Some(&verified_version))
+            .is_err()
+    );
+}

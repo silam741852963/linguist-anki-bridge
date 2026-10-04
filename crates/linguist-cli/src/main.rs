@@ -75,10 +75,13 @@ enum Command {
         /// Explicitly accept the schema/full-sync warning of a mapped note-type migration.
         #[arg(long)]
         accept_schema_change: bool,
+        /// Preview one reviewed grammar split group (children first, then the anchor).
+        #[arg(long = "split-group", conflicts_with = "item_ids")]
+        split_group: Option<uuid::Uuid>,
         #[arg(long)]
         apply: bool,
     },
-    /// Snapshot inspection, restore and export are pending native evidence.
+    /// List, show, export and preview restoring local snapshots; restore writes need the verified native adapter.
     Snapshots {
         #[command(subcommand)]
         command: SnapshotCommand,
@@ -218,8 +221,12 @@ enum SnapshotCommand {
     Show {
         snapshot: uuid::Uuid,
     },
+    /// Preview what restoring this apply snapshot would reverse.
     Restore {
         snapshot: uuid::Uuid,
+        /// Observed-state-bound restore decision (JSON) to validate.
+        #[arg(long)]
+        decision: Option<PathBuf>,
         #[arg(long)]
         apply: bool,
     },
@@ -990,9 +997,6 @@ fn render_human(value: &serde_json::Value) -> String {
 }
 fn unavailable_operation(command: &Command) -> Option<&'static str> {
     match command {
-        Command::Snapshots {
-            command: SnapshotCommand::Restore { .. },
-        } => Some("OP-50 snapshots restore"),
         Command::Cache { command } => Some(match command {
             CacheCommand::Status { .. } => "OP-55 cache status",
             CacheCommand::Prune { .. } => "OP-56 cache prune",
@@ -1007,9 +1011,6 @@ fn unavailable_operation(command: &Command) -> Option<&'static str> {
         Command::Jobs {
             command: JobCommand::Retry { .. },
         } => Some("OP-42 jobs retry"),
-        Command::Jobs {
-            command: JobCommand::Rollback { .. },
-        } => Some("OP-44 jobs rollback"),
         Command::Jobs {
             command: JobCommand::Delete { .. },
         } => Some("OP-45 jobs delete"),
@@ -1063,6 +1064,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             digest,
             item_ids,
             accept_schema_change,
+            split_group,
             apply,
         } => run_apply(
             &settings,
@@ -1070,6 +1072,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             revision,
             digest,
             &item_ids,
+            split_group,
             accept_schema_change,
             apply,
         ),
@@ -1160,7 +1163,56 @@ fn run(cli: Cli) -> Result<u8, String> {
                     let store = linguist_store::Store::read_only(&root)?;
                     emit(&store.snapshot(snapshot)?)?;
                 }
-                SnapshotCommand::Restore { .. } => unreachable!(),
+                SnapshotCommand::Restore {
+                    snapshot,
+                    decision,
+                    apply,
+                } => {
+                    if !exists {
+                        return Err("SNAPSHOT_NOT_FOUND".into());
+                    }
+                    let store = linguist_store::Store::read_only(&root)?;
+                    let preview = linguist_application::restore::local_preview(&store, snapshot)?;
+                    let decision = decision
+                        .map(|path| -> Result<_, String> {
+                            let bytes = read_input(&path, max_bytes, max_chars)?;
+                            let decision: linguist_application::restore::RestoreDecision =
+                                serde_json::from_slice(&bytes)
+                                    .map_err(|_| "RESTORE_DECISION_INVALID".to_owned())?;
+                            if decision.schema_version != 1 || decision.snapshot_id != snapshot {
+                                return Err("RESTORE_DECISION_INVALID".into());
+                            }
+                            Ok(decision)
+                        })
+                        .transpose()?;
+                    if apply {
+                        // ALG-RESTORE is implemented over the native port, but no
+                        // tested lab-native-v1 mutation transport exists.
+                        return Err("CAPABILITY_UNAVAILABLE: snapshots restore --apply requires the verified native lab-native-v1 mutation adapter; no lease, checkpoint, journal or Anki request was made".into());
+                    }
+                    let blocked = !preview.blockers.is_empty();
+                    emit(&serde_json::json!({
+                        "schema_version": 2,
+                        "mode": "preview",
+                        "live_checked": false,
+                        "restore": preview,
+                        "decision_digest": decision.as_ref().map(|d| d.digest()).transpose()?,
+                        "restore_requirements": [
+                            "current invocation --apply",
+                            "verified lab-native-v1 bridge on loopback with the same collection identity",
+                            "live preview: conflicts against the recorded post-state, each decided in an observed-state-bound decision",
+                            "verified checkpoint covering the note, its cards and, for a reverse note-type change, both models",
+                            "unknown apply outcomes reconciled first",
+                        ],
+                        "preserved": [
+                            "retained card IDs with current scheduling and review history, including later reviews",
+                            "shared note types and collection media (never deleted)",
+                            "created notes unless an unchanged, unstudied note is explicitly listed",
+                        ],
+                        "collection_writes_enabled": false,
+                    }))?;
+                    return Ok(if blocked { 4 } else { 0 });
+                }
                 SnapshotCommand::Export { snapshot, output } => {
                     if !exists {
                         return Err("SNAPSHOT_NOT_FOUND".into());
@@ -1399,6 +1451,14 @@ fn run(cli: Cli) -> Result<u8, String> {
                 },
         } => run_reconcile(&settings, operation, apply, rebind),
         Command::Jobs { command } => {
+            if let JobCommand::Rollback {
+                job,
+                item_ids,
+                apply,
+            } = command
+            {
+                return run_rollback(&settings, job, &item_ids, apply);
+            }
             let env: BTreeMap<String, String> = std::env::vars().collect();
             if let JobCommand::Create { selector, limit } = command {
                 let purpose = cli
@@ -3100,12 +3160,14 @@ fn state_root(settings: &linguist_config::Effective) -> Result<PathBuf, String> 
 }
 
 /// OP-34 preview. Local preflight only: no lease, journal, checkpoint or Anki request.
+#[allow(clippy::too_many_arguments)]
 fn run_apply(
     settings: &linguist_config::Effective,
     plan: uuid::Uuid,
     revision: Option<u32>,
     digest: Option<String>,
     item_ids: &[uuid::Uuid],
+    split_group: Option<uuid::Uuid>,
     accept_schema_change: bool,
     apply: bool,
 ) -> Result<u8, String> {
@@ -3125,7 +3187,27 @@ fn run_apply(
         // AnkiConnect writes.
         return Err("CAPABILITY_UNAVAILABLE: apply --apply requires the verified native lab-native-v1 mutation adapter; no lease, checkpoint, journal or Anki request was made".into());
     }
-    let items = linguist_application::apply::preview(&store, plan, revision, item_ids)?;
+    let (item_ids, split) = match split_group {
+        Some(group) => {
+            let units = stored
+                .grammar_groups
+                .iter()
+                .find(|g| g.id == group)
+                .ok_or("SPLIT_GROUP_NOT_FOUND")?
+                .units
+                .clone();
+            let execution = store
+                .split_execution_for(plan, revision, group)?
+                .map(|record| linguist_application::split::status(&store, record.execution_id))
+                .transpose()?;
+            (
+                units,
+                Some(serde_json::json!({"group_id": group, "execution": execution})),
+            )
+        }
+        None => (item_ids.to_vec(), None),
+    };
+    let items = linguist_application::apply::preview(&store, plan, revision, &item_ids)?;
     let blocked = items
         .iter()
         .filter(|item| !item.blockers.is_empty())
@@ -3138,6 +3220,7 @@ fn run_apply(
         "latest_revision": latest,
         "digest": actual,
         "accept_schema_change": accept_schema_change,
+        "split_group": split,
         "items": items,
         "blocked_items": blocked,
         "apply_requirements": [
@@ -3170,6 +3253,12 @@ fn run_reconcile(
         Err(code) if code == "APPLY_OPERATION_NOT_FOUND" => None,
         Err(code) => return Err(code),
     };
+    // A restore journal resumes through `snapshots restore`, never a new operation.
+    let restore = match store.restore_operation(operation) {
+        Ok(record) => Some(record),
+        Err(code) if code == "RESTORE_OPERATION_NOT_FOUND" => None,
+        Err(code) => return Err(code),
+    };
     if apply {
         return Err(format!(
             "CAPABILITY_UNAVAILABLE: recover reconcile --apply requires the verified native lab-native-v1 adapter; operation {operation} was not changed and no Anki request was made"
@@ -3182,11 +3271,74 @@ fn run_reconcile(
         "operation_id": operation,
         "journal": journal,
         "apply_operation": proposal,
-        "reconciliation_kind": if proposal.is_some() { "apply" } else { "unsupported_journal_kind" },
+        "restore_operation": restore.as_ref().map(|r| serde_json::json!({
+            "target_operation": r.target_operation,
+            "target_snapshot": r.target_snapshot,
+            "resume_command": linguist_application::restore::restore_command(r.target_snapshot),
+        })),
+        "reconciliation_kind": if proposal.is_some() { "apply" } else if restore.is_some() { "restore" } else { "unsupported_journal_kind" },
         "live_checked": false,
         "reconciliation_available": false,
     }))?;
     Ok(if unresolved { 4 } else { 0 })
+}
+
+/// OP-44 local preview: what restoring every apply operation of one group
+/// (an apply job or a grammar split execution) would reverse.
+fn run_rollback(
+    settings: &linguist_config::Effective,
+    group: uuid::Uuid,
+    item_ids: &[uuid::Uuid],
+    apply: bool,
+) -> Result<u8, String> {
+    let store = linguist_store::Store::read_only(&state_root(settings)?)?;
+    let mut items = Vec::new();
+    for version in store.group_journals(group, 10000)? {
+        let Ok(record) = store.apply_operation(version.journal.id) else {
+            continue;
+        };
+        if !item_ids.is_empty() && !item_ids.contains(&record.item_id) {
+            continue;
+        }
+        let preview =
+            linguist_application::restore::local_preview(&store, version.journal.snapshot_id);
+        items.push(serde_json::json!({
+            "item_id": record.item_id,
+            "operation_id": version.journal.id,
+            "snapshot_id": version.journal.snapshot_id,
+            "state": version.journal.state,
+            "restore": preview.as_ref().ok(),
+            "error": preview.err(),
+        }));
+    }
+    if items.is_empty() {
+        return Err("ROLLBACK_GROUP_EMPTY: no apply operation carries this group".into());
+    }
+    if apply {
+        return Err("CAPABILITY_UNAVAILABLE: jobs rollback --apply requires the verified native lab-native-v1 mutation adapter; no lease, checkpoint, journal or Anki request was made".into());
+    }
+    let split = match store.split_execution(group) {
+        Ok(_) => Some(linguist_application::split::status(&store, group)?),
+        Err(code) if code == "SPLIT_EXECUTION_NOT_FOUND" => None,
+        Err(code) => return Err(code),
+    };
+    let blocked = items.iter().any(|item| {
+        !item["error"].is_null()
+            || item["restore"]["blockers"]
+                .as_array()
+                .is_some_and(|b| !b.is_empty())
+    });
+    emit(&serde_json::json!({
+        "schema_version": 2,
+        "mode": "preview",
+        "group_id": group,
+        "live_checked": false,
+        "split_execution": split,
+        "items": items,
+        "order": "existing-note restores (the split anchor) first, then created notes, which are kept unless explicitly listed while unchanged and unstudied",
+        "collection_writes_enabled": false,
+    }))?;
+    Ok(if blocked { 4 } else { 0 })
 }
 
 fn run_backup(command: BackupCommand, settings: &linguist_config::Effective) -> Result<u8, String> {

@@ -96,3 +96,9 @@ collection, with the same content precondition digest as the Rust apply
 orchestration. It is not registered, dispatched or included in the read-only
 artifact; it exists for disposable Anki evidence
 (`scripts/verify-native-apply.py`). Live writes remain disabled.
+
+WP-12 adds `restore_note` (precondition check, optional reverse mapped note-type
+change that removes only listed unstudied cards, exact fields and tags, one deck
+per kept card) and `delete_unstudied_created_note` (only while unchanged and
+without reviews). They are equally unregistered and exist for disposable Anki
+evidence (`scripts/verify-native-restore.py`).

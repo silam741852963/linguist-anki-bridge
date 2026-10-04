@@ -391,3 +391,73 @@ fn crash_between_asset_file_and_metadata_leaves_recoverable_orphan() {
     drop(store);
     assert_eq!(f.store().asset(&digest, 1024).unwrap(), bytes);
 }
+
+#[test]
+fn restore_records_are_immutable_and_bound_to_their_snapshot() {
+    use linguist_store::restore::{RestoreOperationRecord, RestoreReceipt};
+    let f = Fixture::new();
+    let mut store = f.store();
+    let s = snapshot();
+    store.publish_snapshot(&s).unwrap();
+    let record = RestoreOperationRecord {
+        operation_id: Uuid::new_v4(),
+        target_operation: s.operation_id,
+        target_snapshot: s.id,
+        created_ms: 1,
+        decision: serde_json::json!({"actor": "reviewer"}),
+        intent: serde_json::json!({"steps": []}),
+    };
+    let mut wrong = record.clone();
+    wrong.target_operation = Uuid::new_v4();
+    assert_eq!(
+        store.publish_restore_operation(&wrong).unwrap_err(),
+        "RESTORE_OPERATION_INVALID"
+    );
+    store.publish_restore_operation(&record).unwrap();
+    assert_eq!(
+        store.publish_restore_operation(&record).unwrap_err(),
+        "RESTORE_OPERATION_CONFLICT"
+    );
+    assert_eq!(
+        store.restore_operation(record.operation_id).unwrap(),
+        record
+    );
+    assert_eq!(
+        store.restore_operations_for(s.operation_id).unwrap(),
+        vec![record.clone()]
+    );
+    // A receipt needs the restore journal with every step verified.
+    let receipt = RestoreReceipt {
+        schema_version: 1,
+        restore_operation: record.operation_id,
+        target_operation: s.operation_id,
+        target_snapshot: s.id,
+        lineage_id: Uuid::new_v4(),
+        session_epoch: Uuid::new_v4(),
+        observed_state_digest: "a".repeat(64),
+        evidence_digest: "b".repeat(64),
+        note_id: Some(1),
+        deleted_note_ids: vec![],
+        kept_card_ids: vec![],
+        removed_card_ids: vec![],
+        history_digest: "c".repeat(64),
+        restored_media: vec![],
+    };
+    assert_eq!(
+        store.append_restore_receipt(&receipt).unwrap_err(),
+        "JOURNAL_NOT_FOUND"
+    );
+    assert!(
+        store
+            .restore_receipt(record.operation_id)
+            .unwrap()
+            .is_none()
+    );
+    drop(store);
+    let db = rusqlite::Connection::open(f.0.join("state.sqlite3")).unwrap();
+    assert!(
+        db.execute("UPDATE restore_operations SET created_ms=2", [])
+            .is_err()
+    );
+    assert!(db.execute("DELETE FROM restore_operations", []).is_err());
+}

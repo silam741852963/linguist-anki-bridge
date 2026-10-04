@@ -130,6 +130,31 @@ pub struct UpdateNote {
     pub deck_id: i64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardDeck {
+    pub card_id: i64,
+    pub deck_id: i64,
+}
+
+/// Exact reverse effect for ALG-RESTORE: an optional reverse mapped
+/// note-type change, the complete field set, the exact tag set and one deck
+/// per kept card. Cards keep their IDs and current scheduling and history.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RestoreNote {
+    pub note_id: i64,
+    /// Content precondition captured by the restore preflight.
+    pub expected_pre_digest: String,
+    pub migration: Option<Migration>,
+    pub fields: BTreeMap<String, String>,
+    pub tags: Vec<String>,
+    /// Every card that remains after the restore, with its deck.
+    pub card_decks: Vec<CardDeck>,
+    /// Unstudied cards the reverse mapping removes; reviewed explicitly.
+    pub removed_card_ids: Vec<i64>,
+}
+
 /// Exact typed `labMutate` body. `CreateNote` carries the complete create-note
 /// wire envelope accepted by `linguist_anki::native::validate_create_note_intent`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -146,6 +171,13 @@ pub enum Effect {
         envelope: serde_json::Value,
     },
     UpdateNote(UpdateNote),
+    RestoreNote(RestoreNote),
+    /// Remove one note this app created, only while its content is unchanged
+    /// and none of its cards has any review.
+    DeleteUnstudiedCreatedNote {
+        note_id: i64,
+        expected_pre_digest: String,
+    },
 }
 
 impl Effect {
@@ -154,6 +186,8 @@ impl Effect {
             Self::StoreMedia { .. } => "store_media",
             Self::CreateNote { .. } => "create_note",
             Self::UpdateNote(_) => "update_note",
+            Self::RestoreNote(_) => "restore_note",
+            Self::DeleteUnstudiedCreatedNote { .. } => "delete_unstudied_created_note",
         }
     }
     /// Raw SHA-256 of the exact canonical wire bytes.
@@ -194,6 +228,11 @@ pub trait ApplyPort {
     fn models_named(&mut self, name: &str) -> Result<Vec<ObservedModel>>;
     fn deck(&mut self, name: &str) -> Result<Option<ObservedDeck>>;
     fn media(&mut self, filename: &str) -> Result<Option<ObservedMedia>>;
+    /// Exact bytes of one collection media file, for the pre-write archive.
+    /// Without this capability source media is recorded by name and hash only.
+    fn media_bytes(&mut self, _filename: &str, _max_bytes: u64) -> Result<Option<Vec<u8>>> {
+        Err("CAPABILITY_UNAVAILABLE: native media byte reads".into())
+    }
     fn mutate(
         &mut self,
         request: &MutationRequest,
@@ -305,17 +344,21 @@ pub struct ApplyItemOutcome {
     pub next_command: Option<String>,
 }
 
-fn issue(code: &str, message: impl Into<String>) -> Issue {
+pub(crate) fn issue(code: &str, message: impl Into<String>) -> Issue {
     let mut issue = Issue::new(code, Severity::Error, None, message);
     issue.stage = "apply".into();
     issue
+}
+
+pub fn reconcile_command_for(operation: Uuid) -> String {
+    reconcile_command(operation)
 }
 
 fn reconcile_command(operation: Uuid) -> String {
     format!("linguist-anki-bridge recover reconcile {operation} --apply")
 }
 
-fn digest_of<T: Serialize + ?Sized>(value: &T) -> Result<String> {
+pub(crate) fn digest_of<T: Serialize + ?Sized>(value: &T) -> Result<String> {
     Ok(canonical::asset_digest(
         &canonical::bytes(value).map_err(|e| e.to_string())?,
     ))
@@ -331,7 +374,7 @@ pub fn same_collection(a: &CollectionBinding, b: &CollectionBinding) -> bool {
         && a.lineage_id == b.lineage_id
 }
 
-fn loopback(endpoint: &str) -> bool {
+pub(crate) fn loopback(endpoint: &str) -> bool {
     url::Url::parse(endpoint).is_ok_and(|url| {
         matches!(
             url.host(),
@@ -358,7 +401,7 @@ pub fn task_ordinal(model: &ManagedModel, task: Task) -> Option<u16> {
         .map(|template| template.ordinal)
 }
 
-fn ordinal_task(model: &ManagedModel, ordinal: u16) -> Option<Task> {
+pub(crate) fn ordinal_task(model: &ManagedModel, ordinal: u16) -> Option<Task> {
     [
         Task::Comprehension,
         Task::Production,
@@ -390,7 +433,10 @@ pub fn purpose(document: &LearningDocument) -> Result<String> {
     Ok(format!("{language}_{kind}"))
 }
 
-fn target_deck_name(plan: &PlanRevision, document: &LearningDocument) -> Result<Option<String>> {
+pub(crate) fn target_deck_name(
+    plan: &PlanRevision,
+    document: &LearningDocument,
+) -> Result<Option<String>> {
     let key = format!("purposes.{}.target_deck", purpose(document)?);
     Ok(plan
         .settings
@@ -426,7 +472,7 @@ pub fn source_note(document: &LearningDocument) -> Result<Option<(&SourceRecord,
     }
 }
 
-fn sorted_tags(tags: &[String]) -> Vec<String> {
+pub(crate) fn sorted_tags(tags: &[String]) -> Vec<String> {
     tags.iter()
         .cloned()
         .collect::<BTreeSet<_>>()
@@ -508,6 +554,44 @@ pub fn authorize(
     item_id: Uuid,
     approval_id: Uuid,
 ) -> Result<AuthorizedItem> {
+    authorize_role(
+        store,
+        plan_id,
+        revision,
+        digest,
+        item_id,
+        approval_id,
+        Role::Standalone,
+    )
+}
+
+/// How one item is written: alone, or as one unit of an ALG-SPLIT group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Role {
+    Standalone,
+    /// A non-anchor unit: always a fresh note, whatever source it cites.
+    SplitChild,
+    /// The one unit that keeps the source note's identity and history.
+    SplitAnchor,
+}
+
+/// Operation identity allocated before any write.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Slot {
+    pub operation: Uuid,
+    pub main_step: Uuid,
+    pub role: Role,
+}
+
+pub(crate) fn authorize_role(
+    store: &Store,
+    plan_id: Uuid,
+    revision: u32,
+    digest: &str,
+    item_id: Uuid,
+    approval_id: Uuid,
+    role: Role,
+) -> Result<AuthorizedItem> {
     let plan = store.revision(plan_id, revision)?;
     if store.latest_revision(plan_id)? != revision {
         return Err("APPLY_REVISION_STALE: a newer plan revision exists".into());
@@ -532,15 +616,21 @@ pub fn authorize(
     {
         return Err("APPLY_ITEM_NOT_READY".into());
     }
-    if plan
+    let group = plan
         .grammar_groups
         .iter()
-        .any(|group| group.units.contains(&item_id))
-    {
-        return Err(
-            "CAPABILITY_UNAVAILABLE: reviewed grammar split groups require ALG-SPLIT (WP-12)"
-                .into(),
-        );
+        .find(|group| group.units.contains(&item_id));
+    let expected = match group {
+        None => Role::Standalone,
+        Some(group) if group.anchor_document == item_id => Role::SplitAnchor,
+        Some(_) => Role::SplitChild,
+    };
+    if role != expected {
+        return Err(if role == Role::Standalone {
+            "APPLY_SPLIT_GROUP_REQUIRED: a reviewed grammar split unit is applied only with its whole group (children first, then the anchor)".into()
+        } else {
+            "SPLIT_UNIT_ROLE_MISMATCH".into()
+        });
     }
     let document = plan
         .documents
@@ -565,7 +655,7 @@ pub fn authorize(
 /// True when every effect of an earlier attempt is either a verified
 /// content-addressed media upload or a native failure proven to have had no
 /// collection effect; a new attempt may then supersede it.
-fn superseded_safely(journal: &OperationJournal) -> bool {
+pub(crate) fn superseded_safely(journal: &OperationJournal) -> bool {
     journal.state == OperationState::NeedsRecovery
         && journal.steps.iter().all(|step| {
             step.state == StepState::ObservedFailure
@@ -601,13 +691,15 @@ fn prior_attempts(store: &Store, plan_id: Uuid, item_id: Uuid) -> Result<()> {
     Ok(())
 }
 
-struct Journal<'a> {
-    store: &'a mut Store,
-    version: JournalVersion,
+pub(crate) struct Journal<'a> {
+    pub store: &'a mut Store,
+    pub version: JournalVersion,
+    /// Command that resumes this journal after a local durability failure.
+    pub recovery: String,
 }
 
 impl Journal<'_> {
-    fn advance(&mut self, change: impl FnOnce(&mut OperationJournal)) -> Result<()> {
+    pub fn advance(&mut self, change: impl FnOnce(&mut OperationJournal)) -> Result<()> {
         let mut next = self.version.journal.clone();
         change(&mut next);
         self.version = self
@@ -616,12 +708,12 @@ impl Journal<'_> {
             .map_err(|code| {
                 format!(
                     "APPLY_LOCAL_DURABILITY_FAILED: {code}; stop all writes and run {}",
-                    reconcile_command(next.id)
+                    self.recovery
                 )
             })?;
         Ok(())
     }
-    fn note_issue(&mut self, code: &str, message: String) -> Result<()> {
+    pub fn note_issue(&mut self, code: &str, message: String) -> Result<()> {
         self.advance(|j| j.issues.push(issue(code, message)))
     }
 }
@@ -741,6 +833,7 @@ fn preflight(
     port: &mut dyn ApplyPort,
     item: &AuthorizedItem,
     request: &ApplyRequest,
+    role: Role,
 ) -> Result<Preflight> {
     let target = &item.rendered.model;
     let target_digest = manifest_digest(target)?;
@@ -771,7 +864,16 @@ fn preflight(
         }
         None => None,
     };
-    let (action, observed, deck_id, migration) = match source_note(&item.document)? {
+    // A split child cites the shared source only as a reference; it is
+    // always created as a fresh note with fresh scheduling.
+    let source = match role {
+        Role::SplitChild => None,
+        _ => source_note(&item.document)?,
+    };
+    if role == Role::SplitAnchor && source.is_none() {
+        return Err("SPLIT_ANCHOR_SOURCE_MISSING".into());
+    }
+    let (action, observed, deck_id, migration) = match source {
         None => (
             ItemAction::Create,
             None,
@@ -999,8 +1101,59 @@ fn create_envelope(
     Ok(envelope)
 }
 
-fn fresh_snapshot(
+/// Archive the exact bytes of media the original fields reference, when the
+/// native port can read them and they match the collection's recorded hash.
+fn archive_source_media(
     store: &mut Store,
+    port: &mut dyn ApplyPort,
+    note: &ObservedNote,
+    source_id: Uuid,
+    max_bytes: u64,
+) -> Vec<linguist_core::records::MediaAsset> {
+    let Ok(discovery) = crate::capture::discover_media(&note.fields, 100 * 1024 * 1024, 10000)
+    else {
+        return vec![];
+    };
+    let names: BTreeSet<String> = discovery
+        .references
+        .into_iter()
+        .map(|reference| reference.filename)
+        .collect();
+    let mut out = Vec::new();
+    for name in names {
+        let Ok(Some(observed)) = port.media(&name) else {
+            continue;
+        };
+        let Ok(Some(bytes)) = port.media_bytes(&name, max_bytes) else {
+            continue;
+        };
+        if canonical::asset_digest(&bytes) != observed.sha256
+            || bytes.len() as u64 != observed.size_bytes
+        {
+            continue;
+        }
+        let Ok(digest) = store.publish_asset(&bytes, max_bytes) else {
+            continue;
+        };
+        out.push(linguist_core::records::MediaAsset {
+            digest,
+            filename: name,
+            original_filename: None,
+            size_bytes: observed.size_bytes,
+            mime: "application/octet-stream".into(),
+            owner: linguist_core::records::MediaOwner::Source,
+            role: linguist_core::records::MediaRole::Archive,
+            source_id: Some(source_id),
+            attribution: "anki_collection".into(),
+            license: None,
+        });
+    }
+    out
+}
+
+pub(crate) fn fresh_snapshot(
+    store: &mut Store,
+    port: &mut dyn ApplyPort,
     operation: Uuid,
     note: Option<&ObservedNote>,
     target: &ManagedModel,
@@ -1009,6 +1162,7 @@ fn fresh_snapshot(
 ) -> Result<Snapshot> {
     let mut originals = Vec::new();
     let mut archives = Vec::new();
+    let mut media: Vec<linguist_core::records::MediaAsset> = vec![];
     if let Some(note) = note {
         let bytes = canonical::bytes(note).map_err(|e| e.to_string())?;
         let digest = store.publish_asset(&bytes, 100 * 1024 * 1024)?;
@@ -1022,7 +1176,9 @@ fn fresh_snapshot(
                     .unwrap_or(card.ordinal);
                 Ok(CardState {
                     id: AnkiId::try_from(card.id.to_string())?,
-                    task: ordinal_task(target, ordinal).ok_or("APPLY_TASK_UNMAPPED")?,
+                    task: ordinal_task(target, ordinal)
+                        .or_else(|| ordinal_task(target, card.ordinal))
+                        .ok_or("APPLY_TASK_UNMAPPED")?,
                     deck_id: AnkiId::try_from(card.deck_id.to_string())?,
                     home_deck_id: AnkiId::try_from(card.deck_id.to_string())?,
                     scheduler: card.scheduler.clone(),
@@ -1053,8 +1209,8 @@ fn fresh_snapshot(
             original_fields: note.fields.clone(),
             asset_digests: vec![digest],
         });
+        media = archive_source_media(store, port, note, source_id, 100 * 1024 * 1024);
     }
-    let media: Vec<linguist_core::records::MediaAsset> = vec![];
     let before_digest = canonical::digest("snapshot-original", &(&originals, &archives, &media))
         .map_err(|e| e.to_string())?;
     let snapshot = Snapshot {
@@ -1077,17 +1233,54 @@ pub fn apply_item(
     port: &mut dyn ApplyPort,
     request: &ApplyRequest,
 ) -> Result<ApplyItemOutcome> {
-    if !request.apply {
-        return Err("APPLY_FLAG_REQUIRED: the current invocation must pass --apply".into());
+    apply_item_with(
+        store,
+        lease,
+        port,
+        request,
+        &Slot {
+            operation: Uuid::new_v4(),
+            main_step: Uuid::new_v4(),
+            role: Role::Standalone,
+        },
+    )
+}
+
+/// Everything ALG-APPLY checks before a durable intent, for one item in its
+/// role. It reads the store and the collection and writes nothing.
+pub(crate) struct Checked {
+    item: AuthorizedItem,
+    current: CollectionBinding,
+    pre: Preflight,
+    authorization: CheckpointAuthorization,
+}
+
+impl Checked {
+    pub fn observed(&self) -> Option<&ObservedNote> {
+        self.pre.observed.as_ref()
     }
-    store.validate_lease(lease)?;
-    let item = authorize(
+    pub fn model(&self) -> &ManagedModel {
+        &self.item.rendered.model
+    }
+    pub fn migration(&self) -> Option<&Migration> {
+        self.pre.migration.as_ref()
+    }
+}
+
+pub(crate) fn check_item(
+    store: &Store,
+    port: &mut dyn ApplyPort,
+    request: &ApplyRequest,
+    role: Role,
+) -> Result<Checked> {
+    let item = authorize_role(
         store,
         request.plan_id,
         request.revision,
         request.digest,
         request.item_id,
         request.approval_id,
+        role,
     )?;
     prior_attempts(store, request.plan_id, request.item_id)?;
     let approved =
@@ -1103,7 +1296,7 @@ pub fn apply_item(
             "APPLY_REMOTE_MUTATION_UNAVAILABLE: managed writes require a loopback bridge".into(),
         );
     }
-    let pre = preflight(store, port, &item, request)?;
+    let pre = preflight(store, port, &item, request, role)?;
     let schema = pre.migration.is_some();
     let (note_ids, card_ids, model_ids) = match &pre.observed {
         Some(note) => (
@@ -1134,9 +1327,34 @@ pub fn apply_item(
             max_package_bytes: request.max_package_bytes,
         },
     )?;
+    Ok(Checked {
+        item,
+        current,
+        pre,
+        authorization,
+    })
+}
+
+pub(crate) fn apply_item_with(
+    store: &mut Store,
+    lease: &LeaseToken,
+    port: &mut dyn ApplyPort,
+    request: &ApplyRequest,
+    slot: &Slot,
+) -> Result<ApplyItemOutcome> {
+    if !request.apply {
+        return Err("APPLY_FLAG_REQUIRED: the current invocation must pass --apply".into());
+    }
+    store.validate_lease(lease)?;
+    let Checked {
+        item,
+        current,
+        pre,
+        authorization,
+    } = check_item(store, port, request, slot.role)?;
     let checkpoint_digest = store.checkpoint(request.checkpoint_id)?.receipt.checksum;
-    let operation = Uuid::new_v4();
-    let main_step = Uuid::new_v4();
+    let operation = slot.operation;
+    let main_step = slot.main_step;
     let marker =
         (pre.action == ItemAction::Create).then(|| format!("lab_op_{}", main_step.simple()));
     let (desired, retained, pre_state) = desired_projection(&item, &pre, marker.as_deref())?;
@@ -1245,6 +1463,7 @@ pub fn apply_item(
     })?;
     let snapshot = fresh_snapshot(
         store,
+        port,
         operation,
         pre.observed.as_ref(),
         &item.rendered.model,
@@ -1275,7 +1494,11 @@ pub fn apply_item(
         issues: vec![],
     };
     let version = store.append_journal(&journal, None)?;
-    let mut journal = Journal { store, version };
+    let mut journal = Journal {
+        store,
+        version,
+        recovery: reconcile_command(operation),
+    };
     journal.advance(|j| j.state = OperationState::Preflight)?;
     let owner = match port.begin(&current, &item.approval_digest) {
         Ok(owner) => owner,
@@ -1289,29 +1512,59 @@ pub fn apply_item(
         }
     };
     journal.advance(|j| j.state = OperationState::Checkpointed)?;
-    let context = Context {
-        record_intent: &intent,
-        binding: current,
-        approval_digest: item.approval_digest.clone(),
-        owner: owner.clone(),
+    let context = Context::for_apply(
+        &intent,
+        current,
+        item.approval_digest.clone(),
+        owner.clone(),
         operation,
-    };
+    );
     let result = drive(&mut journal, port, &context);
-    let outcome = finish(&mut journal, port, &context, result, request.item_id)?;
+    let outcome = finish(
+        &mut journal,
+        port,
+        &context,
+        &intent,
+        result,
+        request.item_id,
+    )?;
     // Release the native owner only after durable accounting.
     let _ = port.end(&owner);
     Ok(outcome)
 }
 
-struct Context<'a> {
-    record_intent: &'a ApplyIntent,
-    binding: CollectionBinding,
-    approval_digest: String,
-    owner: OwnerToken,
-    operation: Uuid,
+/// What the shared step driver needs: the frozen steps plus the read-back
+/// facts that apply effects do not carry themselves.
+pub(crate) struct Context<'a> {
+    pub steps: &'a [IntentStep],
+    pub marker_tag: Option<&'a str>,
+    pub retained: BTreeSet<i64>,
+    pub target_model: (i64, &'a str),
+    pub binding: CollectionBinding,
+    pub approval_digest: String,
+    pub owner: OwnerToken,
+    pub operation: Uuid,
 }
 
-impl Context<'_> {
+impl<'a> Context<'a> {
+    pub fn for_apply(
+        intent: &'a ApplyIntent,
+        binding: CollectionBinding,
+        approval_digest: String,
+        owner: OwnerToken,
+        operation: Uuid,
+    ) -> Self {
+        Self {
+            steps: &intent.steps,
+            marker_tag: intent.marker_tag.as_deref(),
+            retained: intent.retained_card_ids.iter().copied().collect(),
+            target_model: (intent.target_model_id, &intent.target_manifest_digest),
+            binding,
+            approval_digest,
+            owner,
+            operation,
+        }
+    }
     fn request(&self, step: &IntentStep) -> MutationRequest {
         MutationRequest {
             operation_id: step.step_id,
@@ -1324,16 +1577,12 @@ impl Context<'_> {
         }
     }
     fn retained(&self) -> BTreeSet<i64> {
-        self.record_intent
-            .retained_card_ids
-            .iter()
-            .copied()
-            .collect()
+        self.retained.clone()
     }
 }
 
 /// What the collection shows for one step right now.
-enum Readback {
+pub(crate) enum Readback {
     /// Matches the step's expected post-state exactly.
     Expected(String),
     /// Matches the step's recorded precondition: no effect is visible.
@@ -1342,8 +1591,29 @@ enum Readback {
     Different(String),
 }
 
-fn read_step(port: &mut dyn ApplyPort, context: &Context, step: &IntentStep) -> Result<Readback> {
-    let intent = context.record_intent;
+/// Projection a restore expects: every kept card with its current
+/// scheduling, and the observed model manifest digest compared verbatim.
+pub fn restore_projection(note: &ObservedNote, kept: &BTreeSet<i64>) -> NoteProjection {
+    project(note, kept, None)
+}
+
+pub(crate) fn deleted_projection(note_id: i64) -> serde_json::Value {
+    serde_json::json!({ "deleted_note_id": note_id })
+}
+
+fn compare(digest: String, step: &IntentStep) -> Readback {
+    if digest == step.expected_digest {
+        Readback::Expected(digest)
+    } else {
+        Readback::Different(digest)
+    }
+}
+
+pub(crate) fn read_step(
+    port: &mut dyn ApplyPort,
+    context: &Context,
+    step: &IntentStep,
+) -> Result<Readback> {
     match &step.effect {
         Effect::StoreMedia { filename, .. } => match port.media(filename)? {
             None => Ok(Readback::Unchanged),
@@ -1362,16 +1632,12 @@ fn read_step(port: &mut dyn ApplyPort, context: &Context, step: &IntentStep) -> 
             }
         },
         Effect::CreateNote { .. } => {
-            let marker = intent.marker_tag.as_deref().ok_or("APPLY_INTENT_CORRUPT")?;
+            let marker = context.marker_tag.ok_or("APPLY_INTENT_CORRUPT")?;
             let candidates = port.notes_tagged(marker)?;
             match candidates.as_slice() {
                 [] => Ok(Readback::Unchanged),
                 [note] => {
-                    let projection = project(
-                        note,
-                        &BTreeSet::new(),
-                        Some((intent.target_model_id, &intent.target_manifest_digest)),
-                    );
+                    let projection = project(note, &BTreeSet::new(), Some(context.target_model));
                     let digest = digest_of(&projection)?;
                     Ok(if digest == step.expected_digest {
                         Readback::Expected(digest)
@@ -1392,11 +1658,7 @@ fn read_step(port: &mut dyn ApplyPort, context: &Context, step: &IntentStep) -> 
             if content_digest(&note)? == update.expected_pre_digest {
                 return Ok(Readback::Unchanged);
             }
-            let projection = project(
-                &note,
-                &context.retained(),
-                Some((intent.target_model_id, &intent.target_manifest_digest)),
-            );
+            let projection = project(&note, &context.retained(), Some(context.target_model));
             let digest = digest_of(&projection)?;
             Ok(if digest == step.expected_digest {
                 Readback::Expected(digest)
@@ -1404,17 +1666,41 @@ fn read_step(port: &mut dyn ApplyPort, context: &Context, step: &IntentStep) -> 
                 Readback::Different(digest)
             })
         }
+        Effect::RestoreNote(restore) => {
+            let Some(note) = port.note(restore.note_id)? else {
+                return Ok(Readback::Different(digest_of(&deleted_projection(
+                    restore.note_id,
+                ))?));
+            };
+            if content_digest(&note)? == restore.expected_pre_digest {
+                return Ok(Readback::Unchanged);
+            }
+            let kept = restore.card_decks.iter().map(|c| c.card_id).collect();
+            Ok(compare(digest_of(&restore_projection(&note, &kept))?, step))
+        }
+        Effect::DeleteUnstudiedCreatedNote {
+            note_id,
+            expected_pre_digest,
+        } => match port.note(*note_id)? {
+            None => Ok(compare(digest_of(&deleted_projection(*note_id))?, step)),
+            Some(note) if &content_digest(&note)? == expected_pre_digest => Ok(Readback::Unchanged),
+            Some(note) => Ok(Readback::Different(digest_of(&project(
+                &note,
+                &note.cards.iter().map(|c| c.id).collect(),
+                None,
+            ))?)),
+        },
     }
 }
 
 /// Outcome of driving the remaining steps.
-enum Drive {
+pub(crate) enum Drive {
     Committed,
     Stopped,
 }
 
 /// Record a matching read-back as verified from the step's current state.
-fn verify_step(journal: &mut Journal, index: usize, observed: String) -> Result<()> {
+pub(crate) fn verify_step(journal: &mut Journal, index: usize, observed: String) -> Result<()> {
     if journal.version.journal.steps[index].state == StepState::RequestStarted {
         let digest = observed.clone();
         journal.advance(|j| {
@@ -1428,7 +1714,12 @@ fn verify_step(journal: &mut Journal, index: usize, observed: String) -> Result<
     })
 }
 
-fn to_unknown(journal: &mut Journal, index: usize, code: &str, detail: String) -> Result<()> {
+pub(crate) fn to_unknown(
+    journal: &mut Journal,
+    index: usize,
+    code: &str,
+    detail: String,
+) -> Result<()> {
     journal.advance(|j| {
         j.steps[index].state = StepState::Unknown;
         j.state = OperationState::NeedsRecovery;
@@ -1441,7 +1732,7 @@ fn to_unknown(journal: &mut Journal, index: usize, code: &str, detail: String) -
 
 /// A native refusal counts as "no effect" only with a read-back that still
 /// shows the precondition.
-fn observed_failure(journal: &mut Journal, index: usize, reason: &str) -> Result<()> {
+pub(crate) fn observed_failure(journal: &mut Journal, index: usize, reason: &str) -> Result<()> {
     let digest = canonical::digest("lab-apply-failure-v1", reason).ok();
     journal.advance(|j| {
         j.steps[index].state = StepState::ObservedFailure;
@@ -1468,13 +1759,13 @@ fn observed_failure(journal: &mut Journal, index: usize, reason: &str) -> Result
     })
 }
 
-fn dispatch(
+pub(crate) fn dispatch(
     journal: &mut Journal,
     port: &mut dyn ApplyPort,
     context: &Context,
     index: usize,
 ) -> Result<Option<Drive>> {
-    let step = &context.record_intent.steps[index];
+    let step = &context.steps[index];
     let response = port.mutate(&context.request(step));
     let failure_reason = match response {
         Ok(NativeStatus::Verified) => None,
@@ -1541,8 +1832,12 @@ fn dispatch(
 }
 
 /// Executes remaining `intent_recorded` steps in order.
-fn drive(journal: &mut Journal, port: &mut dyn ApplyPort, context: &Context) -> Result<Drive> {
-    for index in 0..context.record_intent.steps.len() {
+pub(crate) fn drive(
+    journal: &mut Journal,
+    port: &mut dyn ApplyPort,
+    context: &Context,
+) -> Result<Drive> {
+    for index in 0..context.steps.len() {
         match journal.version.journal.steps[index].state {
             StepState::Verified => continue,
             StepState::IntentRecorded => {}
@@ -1563,9 +1858,9 @@ fn drive(journal: &mut Journal, port: &mut dyn ApplyPort, context: &Context) -> 
 fn commit(
     journal: &mut Journal,
     context: &Context,
+    intent: &ApplyIntent,
     port: &mut dyn ApplyPort,
 ) -> Result<(Option<i64>, String)> {
-    let intent = context.record_intent;
     let last = intent.steps.last().ok_or("APPLY_INTENT_CORRUPT")?;
     let note = match &last.effect {
         Effect::CreateNote { .. } => port
@@ -1573,7 +1868,7 @@ fn commit(
             .into_iter()
             .next(),
         Effect::UpdateNote(update) => port.note(update.note_id)?,
-        Effect::StoreMedia { .. } => None,
+        _ => None,
     }
     .ok_or("APPLY_READBACK_UNAVAILABLE")?;
     let retained = if matches!(last.effect, Effect::CreateNote { .. }) {
@@ -1660,11 +1955,12 @@ fn finish(
     journal: &mut Journal,
     port: &mut dyn ApplyPort,
     context: &Context,
+    intent: &ApplyIntent,
     result: Result<Drive>,
     item_id: Uuid,
 ) -> Result<ApplyItemOutcome> {
     let (note_id, receipt_digest) = match result? {
-        Drive::Committed => commit(journal, context, port)?,
+        Drive::Committed => commit(journal, context, intent, port)?,
         Drive::Stopped => (None, String::new()),
     };
     let j = &journal.version.journal;
@@ -1673,9 +1969,9 @@ fn finish(
     Ok(ApplyItemOutcome {
         item_id,
         operation_id: Some(j.id),
-        action: Some(context.record_intent.action),
+        action: Some(intent.action),
         state: j.state,
-        note_id: note_id.or(context.record_intent.note_id),
+        note_id: note_id.or(intent.note_id),
         snapshot_id: Some(j.snapshot_id),
         checkpoint_id: j.backup_id,
         receipt_digest: (!receipt_digest.is_empty()).then_some(receipt_digest),
@@ -1754,7 +2050,10 @@ pub struct ReconcileRequest {
     pub rebind: Option<ResumeBindingDecision>,
 }
 
-fn load_intent(store: &Store, operation: Uuid) -> Result<(ApplyOperationRecord, ApplyIntent)> {
+pub(crate) fn load_intent(
+    store: &Store,
+    operation: Uuid,
+) -> Result<(ApplyOperationRecord, ApplyIntent)> {
     let record = store.apply_operation(operation)?;
     let intent: ApplyIntent =
         serde_json::from_value(record.intent.clone()).map_err(|_| "APPLY_OPERATION_CORRUPT")?;
@@ -1781,7 +2080,7 @@ fn classify(
     state: StepState,
     trusted_lineage: bool,
 ) -> Result<(Option<NativeStatus>, Readback, &'static str, &'static str)> {
-    let step = &context.record_intent.steps[index];
+    let step = &context.steps[index];
     let status = if state == StepState::IntentRecorded {
         None
     } else {
@@ -1810,6 +2109,151 @@ fn classify(
     Ok((status, readback, evidence, action))
 }
 
+fn mark_unknown_if_started(journal: &mut Journal, index: usize, state: StepState) -> Result<()> {
+    if state == StepState::RequestStarted {
+        to_unknown(
+            journal,
+            index,
+            "APPLY_OUTCOME_UNKNOWN",
+            "request started without a recorded observation".into(),
+        )?;
+    }
+    Ok(())
+}
+
+/// ALG-RECONCILE over every unverified step of one journal. Without `apply`
+/// it only classifies the first unresolved step. Returns the findings and
+/// whether the journal stopped before every step was verified.
+pub(crate) fn reconcile_steps(
+    journal: &mut Journal,
+    port: &mut dyn ApplyPort,
+    context: &Context,
+    apply: bool,
+    trusted_lineage: bool,
+) -> Result<(Vec<StepFinding>, bool)> {
+    let mut findings = Vec::new();
+    for index in 0..context.steps.len() {
+        let state = journal.version.journal.steps[index].state;
+        if state == StepState::Verified {
+            continue;
+        }
+        if state == StepState::ObservedFailure {
+            return Ok((findings, true));
+        }
+        let (status, readback, evidence, action) =
+            classify(port, context, index, state, trusted_lineage)?;
+        findings.push(StepFinding {
+            step_id: context.steps[index].step_id,
+            variant: context.steps[index].effect.variant().into(),
+            journal_state: state,
+            native_status: status.clone(),
+            evidence,
+            action,
+        });
+        if !apply {
+            return Ok((findings, true));
+        }
+        match (action, readback) {
+            ("adopt", Readback::Expected(digest)) => {
+                mark_unknown_if_started(journal, index, state)?;
+                verify_step(journal, index, digest)?;
+            }
+            ("record_failure", _) => {
+                mark_unknown_if_started(journal, index, state)?;
+                let reason = match status {
+                    Some(NativeStatus::FailedBeforeWrite { reason }) => reason,
+                    _ => "failed_before_write".into(),
+                };
+                observed_failure(journal, index, &reason)?;
+                return Ok((findings, true));
+            }
+            ("resubmit_same_uuid", _) => {
+                mark_unknown_if_started(journal, index, state)?;
+                // Durable record of the resubmission before dispatch; the
+                // native ledger deduplicates the same UUID and payload.
+                journal.note_issue(
+                    "APPLY_RESUBMIT_SAME_UUID",
+                    format!(
+                        "native ledger has no row for {} and the collection shows the precondition",
+                        context.steps[index].step_id
+                    ),
+                )?;
+                let response = port.mutate(&context.request(&context.steps[index]));
+                let readback = read_step(port, context, &context.steps[index]);
+                match (response, readback) {
+                    (Ok(NativeStatus::Verified), Ok(Readback::Expected(digest))) => {
+                        verify_step(journal, index, digest)?;
+                    }
+                    _ => {
+                        journal.advance(|j| {
+                            j.state = OperationState::NeedsRecovery;
+                            j.issues.push(issue(
+                                "APPLY_RESUBMIT_UNVERIFIED",
+                                "resubmission did not produce a matching read-back",
+                            ));
+                        })?;
+                        return Ok((findings, true));
+                    }
+                }
+            }
+            ("dispatch", _) => {
+                if matches!(
+                    journal.version.journal.state,
+                    OperationState::NeedsRecovery
+                        | OperationState::Checkpointed
+                        | OperationState::Mutating
+                ) {
+                    journal.advance(|j| {
+                        j.state = OperationState::Mutating;
+                        j.steps[index].state = StepState::RequestStarted;
+                    })?;
+                } else {
+                    // Prepared/preflight: the operation never reached dispatch.
+                    journal.advance(|j| {
+                        j.state = OperationState::FailedBeforeWrite;
+                        j.issues.push(issue(
+                            "APPLY_NOT_DISPATCHED",
+                            "the operation stopped before its checkpointed state; start a new attempt",
+                        ));
+                    })?;
+                    return Ok((findings, true));
+                }
+                if dispatch(journal, port, context, index)?.is_some() {
+                    return Ok((findings, true));
+                }
+            }
+            _ => {
+                mark_unknown_if_started(journal, index, state)?;
+                let code = match evidence {
+                    "pending" => "APPLY_NATIVE_PENDING",
+                    "absent_unproven" => "APPLY_ABSENCE_UNPROVEN",
+                    _ => "APPLY_RECONCILE_REVIEW_REQUIRED",
+                };
+                let already = journal
+                    .version
+                    .journal
+                    .issues
+                    .last()
+                    .is_some_and(|last| last.code == code);
+                if !already {
+                    journal.note_issue(
+                        code,
+                        "evidence cannot prove this step's outcome; choose adopt, restore or export evidence after review".into(),
+                    )?;
+                }
+                return Ok((findings, true));
+            }
+        }
+    }
+    let unverified = journal
+        .version
+        .journal
+        .steps
+        .iter()
+        .any(|s| s.state != StepState::Verified);
+    Ok((findings, unverified))
+}
+
 /// ALG-RECONCILE for one apply operation. It never creates a new operation ID,
 /// never re-sends an unknown or pending row and only writes with `--apply`.
 pub fn reconcile(
@@ -1829,12 +2273,14 @@ pub fn reconcile(
     let approval_digest = version.journal.approval_digest.clone();
     let terminal = matches!(
         version.journal.state,
-        OperationState::Committed | OperationState::FailedBeforeWrite
+        OperationState::Committed | OperationState::FailedBeforeWrite | OperationState::Restored
     );
     let base = |journal: &OperationJournal, steps: Vec<StepFinding>, applied, rebound| {
         let unresolved = !matches!(
             journal.state,
-            OperationState::Committed | OperationState::FailedBeforeWrite
+            OperationState::Committed
+                | OperationState::FailedBeforeWrite
+                | OperationState::Restored
         );
         ReconcileOutcome {
             operation_id: journal.id,
@@ -1884,178 +2330,29 @@ pub fn reconcile(
     } else {
         None
     };
-    let context = Context {
-        record_intent: &intent,
-        binding: current.clone(),
+    let context = Context::for_apply(
+        &intent,
+        current.clone(),
         approval_digest,
-        owner: owner.clone().unwrap_or(OwnerToken {
+        owner.clone().unwrap_or(OwnerToken {
             token: Uuid::nil(),
             fence: 0,
         }),
-        operation: request.operation_id,
-    };
+        request.operation_id,
+    );
     let trusted_lineage =
         execution.lineage_id == current.lineage_id && execution.bridge_id == current.bridge_id;
-    let mut journal = Journal { store, version };
-    let mut findings = Vec::new();
-    let mut stopped = false;
-    for index in 0..intent.steps.len() {
-        let state = journal.version.journal.steps[index].state;
-        if state == StepState::Verified {
-            continue;
-        }
-        if state == StepState::ObservedFailure {
-            stopped = true;
-            break;
-        }
-        let (status, readback, evidence, action) =
-            classify(port, &context, index, state, trusted_lineage)?;
-        findings.push(StepFinding {
-            step_id: intent.steps[index].step_id,
-            variant: intent.steps[index].effect.variant().into(),
-            journal_state: state,
-            native_status: status.clone(),
-            evidence,
-            action,
-        });
-        if !request.apply {
-            stopped = true;
-            break;
-        }
-        match (action, readback) {
-            ("adopt", Readback::Expected(digest)) => {
-                if state == StepState::RequestStarted {
-                    to_unknown(
-                        &mut journal,
-                        index,
-                        "APPLY_OUTCOME_UNKNOWN",
-                        "request started without a recorded observation".into(),
-                    )?;
-                }
-                verify_step(&mut journal, index, digest)?;
-            }
-            ("record_failure", _) => {
-                if state == StepState::RequestStarted {
-                    to_unknown(
-                        &mut journal,
-                        index,
-                        "APPLY_OUTCOME_UNKNOWN",
-                        "request started without a recorded observation".into(),
-                    )?;
-                }
-                let reason = match status {
-                    Some(NativeStatus::FailedBeforeWrite { reason }) => reason,
-                    _ => "failed_before_write".into(),
-                };
-                observed_failure(&mut journal, index, &reason)?;
-                stopped = true;
-                break;
-            }
-            ("resubmit_same_uuid", _) => {
-                if state == StepState::RequestStarted {
-                    to_unknown(
-                        &mut journal,
-                        index,
-                        "APPLY_OUTCOME_UNKNOWN",
-                        "request started without a recorded observation".into(),
-                    )?;
-                }
-                // Durable record of the resubmission before dispatch; the
-                // native ledger deduplicates the same UUID and payload.
-                journal.note_issue(
-                    "APPLY_RESUBMIT_SAME_UUID",
-                    format!(
-                        "native ledger has no row for {} and the collection shows the precondition",
-                        intent.steps[index].step_id
-                    ),
-                )?;
-                let response = port.mutate(&context.request(&intent.steps[index]));
-                let readback = read_step(port, &context, &intent.steps[index]);
-                match (response, readback) {
-                    (Ok(NativeStatus::Verified), Ok(Readback::Expected(digest))) => {
-                        verify_step(&mut journal, index, digest)?;
-                    }
-                    _ => {
-                        journal.advance(|j| {
-                            j.state = OperationState::NeedsRecovery;
-                            j.issues.push(issue(
-                                "APPLY_RESUBMIT_UNVERIFIED",
-                                "resubmission did not produce a matching read-back",
-                            ));
-                        })?;
-                        stopped = true;
-                        break;
-                    }
-                }
-            }
-            ("dispatch", _) => {
-                if journal.version.journal.state == OperationState::NeedsRecovery
-                    || journal.version.journal.state == OperationState::Checkpointed
-                    || journal.version.journal.state == OperationState::Mutating
-                {
-                    journal.advance(|j| {
-                        j.state = OperationState::Mutating;
-                        j.steps[index].state = StepState::RequestStarted;
-                    })?;
-                } else {
-                    // Prepared/preflight: the operation never reached dispatch.
-                    journal.advance(|j| {
-                        j.state = OperationState::FailedBeforeWrite;
-                        j.issues.push(issue(
-                            "APPLY_NOT_DISPATCHED",
-                            "the operation stopped before its checkpointed state; start a new apply",
-                        ));
-                    })?;
-                    stopped = true;
-                    break;
-                }
-                if dispatch(&mut journal, port, &context, index)?.is_some() {
-                    stopped = true;
-                    break;
-                }
-            }
-            _ => {
-                if state == StepState::RequestStarted {
-                    to_unknown(
-                        &mut journal,
-                        index,
-                        "APPLY_OUTCOME_UNKNOWN",
-                        "request started without a recorded observation".into(),
-                    )?;
-                }
-                let code = match evidence {
-                    "pending" => "APPLY_NATIVE_PENDING",
-                    "absent_unproven" => "APPLY_ABSENCE_UNPROVEN",
-                    _ => "APPLY_RECONCILE_REVIEW_REQUIRED",
-                };
-                let already = journal
-                    .version
-                    .journal
-                    .issues
-                    .last()
-                    .is_some_and(|last| last.code == code);
-                if !already {
-                    journal.note_issue(
-                        code,
-                        "evidence cannot prove this step's outcome; choose adopt, restore or export evidence after review".into(),
-                    )?;
-                }
-                stopped = true;
-                break;
-            }
-        }
-    }
+    let mut journal = Journal {
+        store,
+        version,
+        recovery: reconcile_command(request.operation_id),
+    };
+    let (findings, stopped) =
+        reconcile_steps(&mut journal, port, &context, request.apply, trusted_lineage)?;
     let mut outcome_note = intent.note_id;
     let mut receipt_digest = None;
-    if !stopped
-        && journal
-            .version
-            .journal
-            .steps
-            .iter()
-            .all(|s| s.state == StepState::Verified)
-    {
-        let (note, receipt) = commit(&mut journal, &context, port)?;
+    if !stopped {
+        let (note, receipt) = commit(&mut journal, &context, &intent, port)?;
         outcome_note = note;
         receipt_digest = Some(receipt);
     }
@@ -2102,6 +2399,10 @@ pub struct PreviewItem {
     pub required_variants: Vec<&'static str>,
     pub blockers: Vec<String>,
     pub unresolved_operations: Vec<Uuid>,
+    /// Reviewed grammar split group, applied only as a whole (ALG-SPLIT).
+    pub split_group: Option<Uuid>,
+    /// `anchor` keeps the source note; `child` is always a fresh note.
+    pub split_role: Option<&'static str>,
 }
 
 pub fn preview(
@@ -2151,15 +2452,23 @@ pub fn preview(
         if !content_ready {
             blockers.push("APPLY_ITEM_NOT_READY".into());
         }
-        if plan
+        let group = plan
             .grammar_groups
             .iter()
-            .any(|group| group.units.contains(&document.id))
-        {
-            blockers.push("APPLY_SPLIT_UNAVAILABLE".into());
-        }
+            .find(|group| group.units.contains(&document.id));
+        let split_role = group.map(|group| {
+            if group.anchor_document == document.id {
+                "anchor"
+            } else {
+                "child"
+            }
+        });
         let rendered = plan.rendered.iter().find(|r| r.document_id == document.id);
-        let source = source_note(document);
+        let source = if split_role == Some("child") {
+            Ok(None)
+        } else {
+            source_note(document)
+        };
         let (action, source_note_id) = match &source {
             Ok(None) => ("create", None),
             Ok(Some((_, id))) => ("update_or_migrate", Some(*id)),
@@ -2214,6 +2523,8 @@ pub fn preview(
             required_variants,
             blockers,
             unresolved_operations,
+            split_group: group.map(|group| group.id),
+            split_role,
         });
     }
     Ok(out)
