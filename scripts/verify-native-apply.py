@@ -196,10 +196,42 @@ def main():
             expect_error("BRIDGE_MEDIA_COLLISION", effects.store_media, col, name, other,
                          hashlib.sha256(other).hexdigest())
             assert effects.media_sha256(col, name) == digest
+            # 7. FSRS: a deck move keeps the memory state (Anki's set_deck
+            # clears it); a move into a deck with another preset is refused.
+            col.set_config("fsrs", True)
+            fsrs = col.new_note(vocab)
+            for name, value in vocab_fields(vocab_manifest, Expression="走る").items():
+                fsrs[name] = value
+            col.add_note(fsrs, home)
+            fsrs_card = col.card_ids_of_note(fsrs.id)[0]
+            study(col, fsrs_card)
+            study(col, fsrs_card)
+            before = effects.observe_note(col, fsrs.id, manifest_digest)
+            assert before["cards"][0]["scheduler"]["memory_state"] != "None"
+            move = {
+                "note_id": fsrs.id, "expected_pre_digest": effects.content_digest(before),
+                "migration": None, "fields": vocab_fields(vocab_manifest, Expression="走る"),
+                "add_tags": [], "deck_id": target,
+            }
+            effects.update_note(col, move, manifest_digest)
+            moved = effects.observe_note(col, fsrs.id, manifest_digest)
+            assert retained(before, moved, fsrs_card), (before, moved)
+            assert moved["cards"][0]["deck_id"] == target
+            other_preset = col.decks.add_config_returning_id("Disposable other preset")
+            other_deck = col.decks.id("Disposable other preset deck")
+            deck = col.decks.get(other_deck)
+            deck["conf"] = other_preset
+            col.decks.save(deck)
+            refused = dict(move, deck_id=other_deck,
+                           expected_pre_digest=effects.content_digest(moved))
+            expect_error("BRIDGE_FSRS_PRESET_CHANGE", effects.update_note, col, refused,
+                         manifest_digest)
+            assert effects.observe_note(col, fsrs.id, manifest_digest) == moved
         finally:
             col.close()
-    print("PASS: disposable native apply effects retain card IDs, history and scheduling;"
-          " CAS, filtered-deck and media collision refusals verified")
+    print("PASS: disposable native apply effects retain card IDs, history, scheduling and"
+          " FSRS memory state; CAS, filtered-deck, preset-change and media collision"
+          " refusals verified")
 
 
 if __name__ == "__main__":

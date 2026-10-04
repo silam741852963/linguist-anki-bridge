@@ -98,6 +98,33 @@ def create_note(col, body, manifest_digest):
     return note.id
 
 
+def _check_moves(col, card_ids, deck_of):
+    """Refuse a deck move that would carry an FSRS memory state into a deck
+    with a different preset; the state would no longer match its parameters."""
+    for card_id in card_ids:
+        card = col.get_card(card_id)
+        target = deck_of(card_id)
+        if target is None or card.did == target or card.memory_state is None:
+            continue
+        if (col.decks.config_dict_for_deck_id(card.did)["id"]
+                != col.decks.config_dict_for_deck_id(target)["id"]):
+            raise EffectError("BRIDGE_FSRS_PRESET_CHANGE")
+
+
+def _move_cards(col, card_ids, deck_of):
+    """Move cards one by one through `update_card`. Anki 25.09's
+    `Collection.set_deck` clears FSRS memory state (stability, difficulty,
+    desired retention, decay) even between decks sharing a preset; writing
+    the card keeps every scheduling field and the review log unchanged."""
+    for card_id in card_ids:
+        target = deck_of(card_id)
+        card = col.get_card(card_id)
+        if target is None or card.did == target:
+            continue
+        card.did = target
+        col.update_card(card)
+
+
 def update_note(col, body, manifest_digest):
     """update_note: precondition CAS, optional mapped migration, fields, added
     tags and deck placement. Retained cards keep their IDs and history."""
@@ -106,6 +133,8 @@ def update_note(col, body, manifest_digest):
         raise EffectError("BRIDGE_PRECONDITION_FAILED")
     if any(card["original_deck_id"] for card in observed["cards"]):
         raise EffectError("BRIDGE_FILTERED_DECK")
+    deck_id = int(body["deck_id"])
+    _check_moves(col, [card["id"] for card in observed["cards"]], lambda _: deck_id)
     migration = body.get("migration")
     if migration is not None:
         mapped = {entry["source"] for entry in migration["ordinal_map"]}
@@ -121,8 +150,7 @@ def update_note(col, body, manifest_digest):
         if tag not in note.tags:
             note.tags.append(tag)
     col.update_note(note)
-    card_ids = col.card_ids_of_note(body["note_id"])
-    col.set_deck(card_ids, int(body["deck_id"]))
+    _move_cards(col, col.card_ids_of_note(body["note_id"]), lambda _: deck_id)
     return body["note_id"]
 
 
@@ -180,6 +208,7 @@ def restore_note(col, body, manifest_digest):
         deck = col.decks.get(deck_id, default=False)
         if not deck or deck.get("dyn"):
             raise EffectError("BRIDGE_DECK_INVALID")
+    _check_moves(col, list(kept), kept.get)
     if migration is not None:
         _change_notetype(col, body["note_id"], migration, observed)
     note = col.get_note(body["note_id"])
@@ -189,8 +218,7 @@ def restore_note(col, body, manifest_digest):
         note[name] = value
     note.tags = list(body["tags"])
     col.update_note(note)
-    for card_id, deck_id in kept.items():
-        col.set_deck([card_id], deck_id)
+    _move_cards(col, list(kept), kept.get)
     return body["note_id"]
 
 
