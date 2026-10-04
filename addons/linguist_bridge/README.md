@@ -89,3 +89,10 @@ Files in this directory are licensed under GPL-3.0-or-later as indicated in thei
 SPDX headers. The complete license text is available at
 https://www.gnu.org/licenses/gpl-3.0.txt and must accompany the future artifact.
 No Anki or AnkiConnect program source is bundled in this package.
+
+`effects.py` (WP-11) implements the `create_note`, `update_note` (with an optional
+mapped note-type migration) and `store_media` effects over an already-open
+collection, with the same content precondition digest as the Rust apply
+orchestration. It is not registered, dispatched or included in the read-only
+artifact; it exists for disposable Anki evidence
+(`scripts/verify-native-apply.py`). Live writes remain disabled.

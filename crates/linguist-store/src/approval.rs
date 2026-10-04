@@ -62,6 +62,26 @@ impl Store {
             apply_authorized: false,
         }))
     }
+    /// Every approval recorded for one exact revision, oldest first by ID order.
+    pub fn approvals_for(
+        &self,
+        plan_id: uuid::Uuid,
+        revision: u32,
+    ) -> Result<Vec<ApprovalReceipt>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT id FROM approvals WHERE plan_id=?1 AND revision=?2 ORDER BY id")
+            .map_err(sql)?;
+        let ids = statement
+            .query_map(params![plan_id.to_string(), revision], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(sql)?;
+        ids.map(|id| {
+            self.approval(uuid::Uuid::parse_str(&id.map_err(sql)?).map_err(|_| "APPROVAL_CORRUPT")?)
+        })
+        .collect()
+    }
     pub fn approval(&self, id: uuid::Uuid) -> Result<ApprovalReceipt> {
         let record: Option<(String, u32, String, String, Vec<u8>)> = self
             .connection

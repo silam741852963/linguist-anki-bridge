@@ -183,7 +183,7 @@ impl Store {
             || step.state == StepState::IntentRecorded
             || receipt.operation_id != step.id
             || receipt.lineage_id != journal.journal.binding.lineage_id
-            || receipt.session_epoch != journal.journal.binding.session_epoch
+            || !self.session_epoch_bound(&journal.journal, receipt.session_epoch)?
             || receipt.approved_digest != journal.journal.approval_digest
             || receipt.payload_digest != step.payload_digest
             || receipt
@@ -207,6 +207,21 @@ impl Store {
             params![id.to_string(), receipt.operation_id.to_string(), observed, body_digest, body, observed, receipt.evidence_digest],
         ).map_err(sql)?;
         Ok(())
+    }
+
+    /// The journal's own epoch, or one adopted by a recorded rebinding decision.
+    fn session_epoch_bound(
+        &self,
+        journal: &linguist_core::records::OperationJournal,
+        epoch: Uuid,
+    ) -> Result<bool> {
+        if journal.binding.session_epoch == epoch {
+            return Ok(true);
+        }
+        Ok(self
+            .binding_decisions(journal.id)?
+            .iter()
+            .any(|decision| decision.new_binding.session_epoch == epoch))
     }
 
     pub fn snapshot(&self, id: Uuid) -> Result<SnapshotRecord> {
@@ -278,7 +293,7 @@ impl Store {
                 || step.state == StepState::IntentRecorded
                 || receipt.operation_id != step.id
                 || receipt.lineage_id != journal.journal.binding.lineage_id
-                || receipt.session_epoch != journal.journal.binding.session_epoch
+                || !self.session_epoch_bound(&journal.journal, receipt.session_epoch)?
                 || receipt.approved_digest != journal.journal.approval_digest
                 || receipt.payload_digest != step.payload_digest
                 || observed != step.expected_post_digest

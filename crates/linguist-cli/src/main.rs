@@ -63,7 +63,7 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
-    /// Preview or apply an approved plan; collection apply is unavailable.
+    /// Preview an approved plan's apply preflight; collection writes need the verified native adapter.
     Apply {
         plan: uuid::Uuid,
         #[arg(long)]
@@ -72,6 +72,9 @@ enum Command {
         digest: Option<String>,
         #[arg(long = "item-id")]
         item_ids: Vec<uuid::Uuid>,
+        /// Explicitly accept the schema/full-sync warning of a mapped note-type migration.
+        #[arg(long)]
+        accept_schema_change: bool,
         #[arg(long)]
         apply: bool,
     },
@@ -987,7 +990,6 @@ fn render_human(value: &serde_json::Value) -> String {
 }
 fn unavailable_operation(command: &Command) -> Option<&'static str> {
     match command {
-        Command::Apply { .. } => Some("OP-34 apply"),
         Command::Snapshots {
             command: SnapshotCommand::Restore { .. },
         } => Some("OP-50 snapshots restore"),
@@ -1011,9 +1013,6 @@ fn unavailable_operation(command: &Command) -> Option<&'static str> {
         Command::Jobs {
             command: JobCommand::Delete { .. },
         } => Some("OP-45 jobs delete"),
-        Command::Recover {
-            command: RecoveryCommand::Reconcile { .. },
-        } => Some("OP-60 recover reconcile"),
         _ => None,
     }
 }
@@ -1056,9 +1055,24 @@ fn run(cli: Cli) -> Result<u8, String> {
     match cli.command {
         Command::Config { .. }
         | Command::Completions { .. }
-        | Command::Apply { .. }
         | Command::Cache { .. }
         | Command::Resources { .. } => unreachable!(),
+        Command::Apply {
+            plan,
+            revision,
+            digest,
+            item_ids,
+            accept_schema_change,
+            apply,
+        } => run_apply(
+            &settings,
+            plan,
+            revision,
+            digest,
+            &item_ids,
+            accept_schema_change,
+            apply,
+        ),
         Command::Snapshots { command } => {
             let env: BTreeMap<String, String> = std::env::vars().collect();
             let root = linguist_config::expand_path(
@@ -1377,8 +1391,13 @@ fn run(cli: Cli) -> Result<u8, String> {
             Ok(if dependency_unavailable { 3 } else { 0 })
         }
         Command::Recover {
-            command: RecoveryCommand::Reconcile { .. },
-        } => unreachable!(),
+            command:
+                RecoveryCommand::Reconcile {
+                    operation,
+                    apply,
+                    rebind,
+                },
+        } => run_reconcile(&settings, operation, apply, rebind),
         Command::Jobs { command } => {
             let env: BTreeMap<String, String> = std::env::vars().collect();
             if let JobCommand::Create { selector, limit } = command {
@@ -3068,6 +3087,106 @@ fn now_ms() -> Result<u64, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .map_err(|_| "CLOCK_INVALID".into())
+}
+
+fn state_root(settings: &linguist_config::Effective) -> Result<PathBuf, String> {
+    let env: BTreeMap<String, String> = std::env::vars().collect();
+    let root =
+        linguist_config::expand_path(settings.values["storage.state_dir"].as_str().unwrap(), &env)?;
+    if !root.is_absolute() {
+        return Err("STORE_PATH_MUST_BE_ABSOLUTE".into());
+    }
+    Ok(root)
+}
+
+/// OP-34 preview. Local preflight only: no lease, journal, checkpoint or Anki request.
+fn run_apply(
+    settings: &linguist_config::Effective,
+    plan: uuid::Uuid,
+    revision: Option<u32>,
+    digest: Option<String>,
+    item_ids: &[uuid::Uuid],
+    accept_schema_change: bool,
+    apply: bool,
+) -> Result<u8, String> {
+    let store = linguist_store::Store::read_only(&state_root(settings)?)?;
+    let latest = store.latest_revision(plan)?;
+    let revision = revision.unwrap_or(latest);
+    let stored = store.revision(plan, revision)?;
+    let actual = stored.approval_digest().map_err(|e| e.to_string())?;
+    if let Some(digest) = &digest
+        && digest != &actual
+    {
+        return Err("APPLY_DIGEST_MISMATCH".into());
+    }
+    if apply {
+        // ALG-APPLY is implemented over the native port, but no tested
+        // lab-native-v1 mutation transport exists. Never fall back to plain
+        // AnkiConnect writes.
+        return Err("CAPABILITY_UNAVAILABLE: apply --apply requires the verified native lab-native-v1 mutation adapter; no lease, checkpoint, journal or Anki request was made".into());
+    }
+    let items = linguist_application::apply::preview(&store, plan, revision, item_ids)?;
+    let blocked = items
+        .iter()
+        .filter(|item| !item.blockers.is_empty())
+        .count();
+    emit(&serde_json::json!({
+        "schema_version": 2,
+        "mode": "preview",
+        "plan_id": plan,
+        "revision": revision,
+        "latest_revision": latest,
+        "digest": actual,
+        "accept_schema_change": accept_schema_change,
+        "items": items,
+        "blocked_items": blocked,
+        "apply_requirements": [
+            "current invocation --apply",
+            "approval covering each selected item",
+            "verified lab-native-v1 bridge on loopback with a live collection session",
+            "verified checkpoint covering the item scope",
+            "exact installed target model and existing target deck",
+            "fresh source match; normal study is captured at apply time",
+        ],
+        "collection_writes_enabled": false,
+    }))?;
+    Ok(if blocked == 0 { 0 } else { 4 })
+}
+
+/// OP-60 local proposal. Live evidence and recovery writes need the native adapter.
+fn run_reconcile(
+    settings: &linguist_config::Effective,
+    operation: uuid::Uuid,
+    apply: bool,
+    rebind: bool,
+) -> Result<u8, String> {
+    if rebind && !apply {
+        return Err("APPLY_FLAG_REQUIRED: --rebind needs the current invocation's --apply".into());
+    }
+    let store = linguist_store::Store::read_only(&state_root(settings)?)?;
+    let journal = store.journal(operation)?;
+    let proposal = match linguist_application::apply::local_proposal(&store, operation) {
+        Ok(proposal) => Some(proposal),
+        Err(code) if code == "APPLY_OPERATION_NOT_FOUND" => None,
+        Err(code) => return Err(code),
+    };
+    if apply {
+        return Err(format!(
+            "CAPABILITY_UNAVAILABLE: recover reconcile --apply requires the verified native lab-native-v1 adapter; operation {operation} was not changed and no Anki request was made"
+        ));
+    }
+    let unresolved = journal.pending_recovery;
+    emit(&serde_json::json!({
+        "schema_version": 2,
+        "mode": "proposal",
+        "operation_id": operation,
+        "journal": journal,
+        "apply_operation": proposal,
+        "reconciliation_kind": if proposal.is_some() { "apply" } else { "unsupported_journal_kind" },
+        "live_checked": false,
+        "reconciliation_available": false,
+    }))?;
+    Ok(if unresolved { 4 } else { 0 })
 }
 
 fn run_backup(command: BackupCommand, settings: &linguist_config::Effective) -> Result<u8, String> {

@@ -804,6 +804,7 @@ fn publish_authored_records(
     })
 }
 
+pub mod apply;
 pub mod audio;
 pub mod backup;
 pub mod capture;

@@ -1669,10 +1669,6 @@ fn unfinished_catalogue_commands_fail_before_config_or_effects() {
                 "--replace",
             ],
         ),
-        (
-            "OP-34",
-            vec!["apply", id, "--revision", "1", "--digest", "abc", "--apply"],
-        ),
         ("OP-42", vec!["jobs", "retry", id, "--failed"]),
         ("OP-44", vec!["jobs", "rollback", id, "--apply"]),
         ("OP-45", vec!["jobs", "delete", id, "--execute"]),
@@ -1697,10 +1693,6 @@ fn unfinished_catalogue_commands_fail_before_config_or_effects() {
                 "--destination",
                 "/missing-out",
             ],
-        ),
-        (
-            "OP-60",
-            vec!["recover", "reconcile", id, "--apply", "--rebind"],
         ),
     ];
     for (operation, args) in cases {
