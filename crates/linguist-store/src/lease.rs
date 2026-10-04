@@ -39,6 +39,57 @@ pub enum Liveness {
     Absent,
     Unknown,
 }
+impl LeaseToken {
+    pub fn generation(&self) -> i64 {
+        self.generation
+    }
+}
+/// Durable lease row as observed now. An expired lease is not proof of death.
+pub(crate) fn status(
+    connection: &rusqlite::Connection,
+    resource: &Resource,
+) -> Result<crate::apply_job::WorkerStatus> {
+    let row: Option<(u32, i64, String, i64, i64, bool)> = connection
+        .query_row(
+            "SELECT pid,start_ticks,boot,expires_ms,generation,active FROM leases WHERE resource=?1",
+            [resource.key()?],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )
+        .optional()
+        .map_err(sql)?;
+    let Some((pid, start_ticks, boot, deadline, generation, active)) = row else {
+        return Ok(crate::apply_job::WorkerStatus {
+            lease: "none".into(),
+            expired: false,
+            owner: "not_applicable".into(),
+            generation: None,
+        });
+    };
+    if !active {
+        return Ok(crate::apply_job::WorkerStatus {
+            lease: "released".into(),
+            expired: false,
+            owner: "not_applicable".into(),
+            generation: Some(generation),
+        });
+    }
+    let owner = ProcessIdentity {
+        pid,
+        start_ticks,
+        boot: Uuid::parse_str(&boot).map_err(|_| "LEASE_CORRUPT")?,
+    };
+    Ok(crate::apply_job::WorkerStatus {
+        lease: "active".into(),
+        expired: deadline <= clock_ms()?,
+        owner: match owner.liveness() {
+            Liveness::Alive => "alive",
+            Liveness::Absent => "absent",
+            Liveness::Unknown => "unknown",
+        }
+        .into(),
+        generation: Some(generation),
+    })
+}
 impl ProcessIdentity {
     pub fn current() -> Result<Self> {
         let boot = boot()?;

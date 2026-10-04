@@ -167,7 +167,12 @@ pub fn run(
 ) -> Result<serde_json::Value, String> {
     use linguist_store::preparation::PreparationStage;
     // Read-only preflight: unavailable capabilities cannot create checkpoints or leases.
-    let definition = linguist_store::Store::read_only(root)?.preparation_job(job)?;
+    let reader = linguist_store::Store::read_only(root)?;
+    let definition = reader.preparation_job(job)?;
+    if reader.job_tombstone(job)?.is_some() {
+        return Err("JOB_TOMBSTONED: a deleted job cannot run".into());
+    }
+    drop(reader);
     let frozen = &definition.job.settings;
     if std::path::Path::new(frozen.values["storage.state_dir"].as_str().unwrap()) != root {
         return Err("PREPARATION_STORAGE_CONFLICT".into());
@@ -358,6 +363,12 @@ pub fn run(
         let halted = control.as_ref().is_some_and(|receipt| {
             receipt.event.action != linguist_store::preparation_control::ControlAction::Resume
         });
+        // Every dispatched read has its durable result, so the stop is confirmed.
+        let stop_ack = if halted {
+            store.acknowledge_preparation_stop(job, &lease)?
+        } else {
+            None
+        };
         let plan = if halted {
             None
         } else {
@@ -393,7 +404,7 @@ pub fn run(
             0
         };
         Ok(
-            serde_json::json!({"schema_version":2,"job_id":job,"stage":"source_draft","captured_this_run":captured,"failed_this_run":failed,"item_counts":counts,"error_counts":errors,"control":control,"exit_code":exit_code,"checkpoint_digest":head,"plan_published":plan.is_some(),"plan":plan,"ready":false,"writes_enabled":false}),
+            serde_json::json!({"schema_version":2,"job_id":job,"stage":"source_draft","captured_this_run":captured,"failed_this_run":failed,"item_counts":counts,"error_counts":errors,"control":control,"stop_acknowledgement":stop_ack,"worker_stopped_confirmed":stop_ack.is_some(),"exit_code":exit_code,"checkpoint_digest":head,"plan_published":plan.is_some(),"plan":plan,"ready":false,"writes_enabled":false}),
         )
     })();
     let released = store.release_lease(&lease);

@@ -277,8 +277,24 @@ enum ResourceCommand {
         destination: PathBuf,
     },
 }
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum JobModeArg {
+    Prepare,
+    Simulate,
+    Apply,
+}
+impl JobModeArg {
+    fn mode(self) -> linguist_core::records::JobMode {
+        match self {
+            Self::Prepare => linguist_core::records::JobMode::Prepare,
+            Self::Simulate => linguist_core::records::JobMode::Simulate,
+            Self::Apply => linguist_core::records::JobMode::Apply,
+        }
+    }
+}
 #[derive(Subcommand)]
 enum JobCommand {
+    /// Record a retry envelope for eligible failed items; never retries unknown outcomes.
     Retry {
         job: uuid::Uuid,
         #[arg(long = "item-id", conflicts_with = "failed")]
@@ -299,6 +315,7 @@ enum JobCommand {
         #[arg(long)]
         apply: bool,
     },
+    /// Preview or record a local tombstone of a terminal job; nothing in Anki is deleted.
     Delete {
         job: uuid::Uuid,
         #[arg(long)]
@@ -337,28 +354,62 @@ enum JobCommand {
     /// Clear a pause request and run with the job's frozen settings.
     Resume {
         job: uuid::Uuid,
+        /// Required on every resume of an apply job.
+        #[arg(long)]
+        apply: bool,
     },
     /// Prevent future dispatch; retain all checkpoints and assets.
     Cancel {
         job: uuid::Uuid,
     },
-    /// Capture pending sources using the job's frozen settings; never applies.
+    /// Run a job with its frozen settings: prepare captures sources; apply needs --apply.
     Run {
         job: uuid::Uuid,
+        /// Required on every run of an apply job; refused for prepare and simulate jobs.
+        #[arg(long)]
+        apply: bool,
     },
-    /// Freeze selected existing note IDs; never reads note content or starts workers.
+    /// Freeze a prepare selection, or an approved plan revision for simulate/apply; never runs it.
     Create {
         #[command(flatten)]
         selector: NoteSelector,
         /// Queue the first N query/deck matches in frozen order.
         #[arg(long, conflicts_with = "note_ids", requires = "NoteSelector", value_parser = clap::value_parser!(u64).range(1..=100000))]
         limit: Option<u64>,
+        #[arg(long, value_enum, default_value = "prepare")]
+        mode: JobModeArg,
+        /// Approved plan for simulate/apply jobs.
+        #[arg(long, conflicts_with = "NoteSelector")]
+        plan: Option<uuid::Uuid>,
+        #[arg(long, requires = "plan")]
+        revision: Option<u32>,
+        #[arg(long, requires = "plan")]
+        digest: Option<String>,
+        /// Approval to use; defaults to the only approval of the exact revision and digest.
+        #[arg(long, requires = "plan")]
+        approval: Option<uuid::Uuid>,
+        /// Verified checkpoint; required for apply jobs.
+        #[arg(long, requires = "plan")]
+        checkpoint: Option<uuid::Uuid>,
+        /// Protected-manifest digest checked against the checkpoint.
+        #[arg(long, requires = "checkpoint")]
+        protected_manifest: Option<String>,
+        /// Plan items to include, in plan order; default every approved item.
+        #[arg(long = "item-id", requires = "plan")]
+        item_ids: Vec<uuid::Uuid>,
+        #[arg(long, requires = "plan")]
+        accept_schema_change: bool,
     },
     List {
         #[arg(long)]
         after: Option<uuid::Uuid>,
         #[arg(long,value_parser=clap::value_parser!(u32).range(1..=10000))]
         limit: Option<u32>,
+        #[arg(long, value_enum)]
+        mode: Option<JobModeArg>,
+        /// Include tombstoned jobs.
+        #[arg(long)]
+        include_deleted: bool,
     },
     Show {
         job: uuid::Uuid,
@@ -1008,12 +1059,6 @@ fn unavailable_operation(command: &Command) -> Option<&'static str> {
         Command::Config {
             command: ConfigCommand::Import { .. },
         } => Some("OP-09 config import"),
-        Command::Jobs {
-            command: JobCommand::Retry { .. },
-        } => Some("OP-42 jobs retry"),
-        Command::Jobs {
-            command: JobCommand::Delete { .. },
-        } => Some("OP-45 jobs delete"),
         _ => None,
     }
 }
@@ -1460,7 +1505,43 @@ fn run(cli: Cli) -> Result<u8, String> {
                 return run_rollback(&settings, job, &item_ids, apply);
             }
             let env: BTreeMap<String, String> = std::env::vars().collect();
-            if let JobCommand::Create { selector, limit } = command {
+            if let JobCommand::Create {
+                selector,
+                limit,
+                mode,
+                plan,
+                revision,
+                digest,
+                approval,
+                checkpoint,
+                protected_manifest,
+                item_ids,
+                accept_schema_change,
+            } = command
+            {
+                if mode != JobModeArg::Prepare {
+                    return run_create_apply_job(
+                        &settings,
+                        &env,
+                        mode,
+                        plan.ok_or("JOB_PLAN_REQUIRED: simulate/apply jobs need --plan")?,
+                        revision,
+                        digest.ok_or(
+                            "JOB_DIGEST_REQUIRED: select --digest of the approved revision",
+                        )?,
+                        approval,
+                        checkpoint,
+                        protected_manifest,
+                        item_ids,
+                        accept_schema_change,
+                    );
+                }
+                if plan.is_some() {
+                    return Err(
+                        "JOB_MODE_ARGUMENT_CONFLICT: --plan needs --mode simulate or --mode apply"
+                            .into(),
+                    );
+                }
                 let purpose = cli
                     .purpose
                     .as_deref()
@@ -1514,12 +1595,15 @@ fn run(cli: Cli) -> Result<u8, String> {
                 )?)?;
                 return Ok(0);
             }
+            if let Some(code) = run_job_command(&root, &command)? {
+                return Ok(code);
+            }
             let control = match &command {
                 JobCommand::Pause { job } => Some((
                     *job,
                     linguist_store::preparation_control::ControlAction::Pause,
                 )),
-                JobCommand::Resume { job } => Some((
+                JobCommand::Resume { job, .. } => Some((
                     *job,
                     linguist_store::preparation_control::ControlAction::Resume,
                 )),
@@ -1529,23 +1613,31 @@ fn run(cli: Cli) -> Result<u8, String> {
                 )),
                 _ => None,
             };
+            if matches!(command, JobCommand::Resume { apply: true, .. }) {
+                return Err("JOB_MODE_NEVER_WRITES: prepare jobs capture sources only".into());
+            }
             if let Some((job, action)) = control {
                 // Unknown/missing jobs must never initialize state for a control request.
                 linguist_store::Store::read_only(&root)?.preparation_job(job)?;
-                let receipt = linguist_store::Store::open_existing(&root)?
-                    .request_preparation_control(job, action)?;
+                let mut writable = linguist_store::Store::open_existing(&root)?;
+                let receipt = writable.request_preparation_control(job, action)?;
                 if action == linguist_store::preparation_control::ControlAction::Resume {
                     let result = linguist_application::jobs::run(&root, job, &env)?;
                     let exit = result["exit_code"].as_u64().ok_or("JOB_RESULT_INVALID")? as u8;
                     emit(&result)?;
                     return Ok(exit);
                 }
+                // Confirmed only when no worker holds the lease and nothing is in flight.
+                let ack = writable.acknowledge_idle_preparation_stop(job)?;
                 emit(
-                    &serde_json::json!({"schema_version":2,"job_id":job,"control":receipt,"worker_stopped_confirmed":false,"writes_enabled":false}),
+                    &serde_json::json!({"schema_version":2,"job_id":job,"control":receipt,"stop_acknowledgement":ack,"worker_stopped_confirmed":ack.is_some(),"writes_enabled":false}),
                 )?;
                 return Ok(0);
             }
-            if let JobCommand::Run { job } = command {
+            if let JobCommand::Run { job, apply } = command {
+                if apply {
+                    return Err("JOB_MODE_NEVER_WRITES: prepare jobs capture sources only; create an apply job from an approved plan".into());
+                }
                 let result = linguist_application::jobs::run(&root, job, &env)?;
                 let exit = result["exit_code"].as_u64().ok_or("JOB_RESULT_INVALID")? as u8;
                 emit(&result)?;
@@ -1576,13 +1668,35 @@ fn run(cli: Cli) -> Result<u8, String> {
                         limit.unwrap_or(page),
                     )?)?;
                 }
-                JobCommand::List { after, limit } => {
-                    let jobs = store
+                JobCommand::List {
+                    after,
+                    limit,
+                    mode,
+                    include_deleted,
+                } => {
+                    let listed = store
                         .as_ref()
-                        .map(|s| s.list_preparation_jobs(after, limit.unwrap_or(page)))
+                        .map(|s| {
+                            s.list_jobs(
+                                after,
+                                limit.unwrap_or(page),
+                                mode.map(JobModeArg::mode),
+                                include_deleted,
+                            )
+                        })
                         .transpose()?
                         .unwrap_or_default();
-                    let next = jobs.last().map(|j| j.id);
+                    let next = listed.last().map(|j| j.id);
+                    let jobs: Vec<serde_json::Value> = listed
+                        .iter()
+                        .map(|j| {
+                            let mut value = serde_json::to_value(j).unwrap();
+                            if j.kind == "prepare" {
+                                value["checkpoint_count"] = j.event_count.into();
+                            }
+                            value
+                        })
+                        .collect();
                     emit(
                         &serde_json::json!({"schema_version":2,"jobs":jobs,"next_cursor":next,"state_exists":store.is_some(),"execution_available":false}),
                     )?;
@@ -1592,8 +1706,9 @@ fn run(cli: Cli) -> Result<u8, String> {
                         .as_ref()
                         .ok_or("PREPARATION_JOB_NOT_FOUND")?
                         .preparation_job(job)?;
+                    let store = store.as_ref().unwrap();
                     emit(
-                        &serde_json::json!({"schema_version":2,"definition":definition,"control":store.as_ref().unwrap().preparation_control(job)?,"worker_liveness":"unverified","execution_available":false,"writes_enabled":false}),
+                        &serde_json::json!({"schema_version":2,"mode":"prepare","definition":definition,"control":store.preparation_control(job)?,"stop_acknowledgement":store.preparation_stop_ack(job)?,"worker":store.job_worker_status(job)?,"tombstone":store.job_tombstone(job)?,"worker_liveness":"unverified","execution_available":false,"writes_enabled":false}),
                     )?;
                 }
                 JobCommand::Items {
@@ -2954,7 +3069,9 @@ fn error_exit(message: &str) -> u8 {
     } else if code == "DICTIONARY_ALREADY_ENRICHED" {
         5
     } else if code == "PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY"
-        || (code.starts_with("PREPARATION_") && code.ends_with("_CORRUPT"))
+        || code == "JOB_DELETE_RECOVERY_REQUIRED"
+        || ((code.starts_with("PREPARATION_") || code.starts_with("APPLY_JOB_"))
+            && code.ends_with("_CORRUPT"))
     {
         7
     } else if code == "DOCUMENT_NOT_READY" {
@@ -2964,6 +3081,10 @@ fn error_exit(message: &str) -> u8 {
             code,
             "STORAGE_RELOCATION_BLOCKED"
                 | "PREPARATION_CANCEL_IS_TERMINAL"
+                | "APPLY_JOB_CANCEL_IS_TERMINAL"
+                | "JOB_TOMBSTONED"
+                | "JOB_ALREADY_TOMBSTONED"
+                | "JOB_DELETE_WORKER_ACTIVE"
                 | "LEASE_HELD_OR_OWNER_UNVERIFIED"
         )
     {
@@ -3140,6 +3261,285 @@ fn parse_since_ms(value: &str) -> Result<u64, String> {
         seconds += (h * 3600 + m * 60 + sec) as i64;
     }
     Ok(seconds as u64 * 1000)
+}
+
+/// OP-35 for simulate/apply jobs: freeze an approved revision; never runs it.
+#[allow(clippy::too_many_arguments)]
+fn run_create_apply_job(
+    settings: &linguist_config::Effective,
+    env: &BTreeMap<String, String>,
+    mode: JobModeArg,
+    plan: uuid::Uuid,
+    revision: Option<u32>,
+    digest: String,
+    approval: Option<uuid::Uuid>,
+    checkpoint: Option<uuid::Uuid>,
+    protected_manifest: Option<String>,
+    item_ids: Vec<uuid::Uuid>,
+    accept_schema_change: bool,
+) -> Result<u8, String> {
+    use linguist_application::job_executor;
+    let frozen = linguist_application::freeze_settings(settings, env)?;
+    let root = state_root(settings)?;
+    // Unknown plans must never initialize state.
+    let reader = linguist_store::Store::read_only(&root)?;
+    let revision = match revision {
+        Some(revision) => revision,
+        None => reader.latest_revision(plan)?,
+    };
+    let approval = match approval {
+        Some(approval) => approval,
+        None => {
+            // Approval IDs carry no order: pick one only when it is unambiguous.
+            let matching: Vec<_> = reader
+                .approvals_for(plan, revision)?
+                .into_iter()
+                .filter(|a| a.approval.digest == digest)
+                .collect();
+            match matching.as_slice() {
+                [only] => only.id,
+                [] => return Err("APPLY_APPROVAL_MISSING: approve the exact revision first".into()),
+                _ => return Err("JOB_APPROVAL_AMBIGUOUS: several approvals cover this revision; pass --approval".into()),
+            }
+        }
+    };
+    drop(reader);
+    if mode == JobModeArg::Apply && protected_manifest.is_none() {
+        return Err("JOB_PROTECTED_MANIFEST_REQUIRED: apply jobs name the protected-manifest digest their checkpoint was created with".into());
+    }
+    let protected = protected_manifest.unwrap_or_else(|| "unchecked".into());
+    let mut store = linguist_store::Store::open_existing(&root)?;
+    let outcome = job_executor::create(
+        &mut store,
+        &frozen,
+        &job_executor::CreateRequest {
+            mode: mode.mode(),
+            plan_id: plan,
+            revision,
+            digest: &digest,
+            approval_id: approval,
+            item_ids,
+            checkpoint_id: checkpoint,
+            protected_manifest_digest: &protected,
+            accept_schema_change,
+            now_ms: now_ms()?,
+        },
+    )?;
+    emit(&serde_json::json!({
+        "schema_version": 2,
+        "job": outcome,
+        "execution_available": false,
+        "writes_enabled": false,
+    }))?;
+    Ok(0)
+}
+
+/// Jobs subcommands that differ by job kind. Returns `None` to let the
+/// preparation handlers run.
+fn run_job_command(root: &std::path::Path, command: &JobCommand) -> Result<Option<u8>, String> {
+    use linguist_application::job_executor;
+    use linguist_store::apply_job::JobControl;
+    let job = match command {
+        JobCommand::Retry { job, .. }
+        | JobCommand::Delete { job, .. }
+        | JobCommand::Run { job, .. }
+        | JobCommand::Resume { job, .. }
+        | JobCommand::Pause { job }
+        | JobCommand::Cancel { job }
+        | JobCommand::Show { job }
+        | JobCommand::Items { job, .. }
+        | JobCommand::Audit { job, .. } => *job,
+        _ => return Ok(None),
+    };
+    // Absent state is handled (without initialization) by the shared handlers.
+    if std::fs::symlink_metadata(root).is_err() {
+        return Ok(None);
+    }
+    let reader = linguist_store::Store::read_only(root)?;
+    if let JobCommand::Delete { execute, .. } = command {
+        let result = if *execute {
+            drop(reader);
+            let mut store = linguist_store::Store::open_existing(root)?;
+            job_executor::delete(&mut store, job, true, now_ms()?)?
+        } else {
+            let mut reader = reader;
+            job_executor::delete(&mut reader, job, false, now_ms()?)?
+        };
+        emit(&serde_json::json!({"schema_version":2,"delete":result,"writes_enabled":false}))?;
+        return Ok(Some(0));
+    }
+    let definition = match reader.apply_job(job) {
+        Ok(definition) => definition,
+        Err(code) if code == "APPLY_JOB_NOT_FOUND" => {
+            if let JobCommand::Retry {
+                item_ids,
+                failed,
+                apply,
+                ..
+            } = command
+            {
+                return prepare_retry(&reader, job, item_ids, *failed, *apply).map(Some);
+            }
+            return Ok(None);
+        }
+        Err(code) => return Err(code),
+    };
+    let apply_mode = definition.job.mode == linguist_core::records::JobMode::Apply;
+    let check_flag = |apply: bool| -> Result<(), String> {
+        match (apply_mode, apply) {
+            (false, true) => Err(
+                "JOB_MODE_NEVER_WRITES: simulate jobs perform preflight only; create an apply job"
+                    .into(),
+            ),
+            (true, false) => Err(
+                "APPLY_FLAG_REQUIRED: apply jobs need --apply on every run, resume and retry"
+                    .into(),
+            ),
+            _ => Ok(()),
+        }
+    };
+    let unavailable = |what: &str| -> String {
+        format!(
+            "CAPABILITY_UNAVAILABLE: {what} for simulate/apply jobs requires the verified native lab-native-v1 read/mutation adapter; no lease, job event or Anki request was made"
+        )
+    };
+    match command {
+        JobCommand::Run { apply, .. } => {
+            check_flag(*apply)?;
+            Err(unavailable("jobs run"))
+        }
+        JobCommand::Resume { apply, .. } => {
+            check_flag(*apply)?;
+            drop(reader);
+            let mut store = linguist_store::Store::open_existing(root)?;
+            // The resume request is durable even though execution is unavailable.
+            job_executor::request_control(&mut store, job, JobControl::Resume)?;
+            Err(unavailable("jobs resume"))
+        }
+        JobCommand::Pause { .. } | JobCommand::Cancel { .. } => {
+            let action = if matches!(command, JobCommand::Pause { .. }) {
+                JobControl::Pause
+            } else {
+                JobControl::Cancel
+            };
+            drop(reader);
+            let mut store = linguist_store::Store::open_existing(root)?;
+            let outcome = job_executor::request_control(&mut store, job, action)?;
+            emit(
+                &serde_json::json!({"schema_version":2,"job_id":job,"control":outcome,"worker_stopped_confirmed":outcome.worker_stopped_confirmed,"writes_enabled":false}),
+            )?;
+            Ok(Some(0))
+        }
+        JobCommand::Retry {
+            item_ids,
+            failed,
+            apply,
+            ..
+        } => {
+            check_flag(*apply)?;
+            drop(reader);
+            let mut store = linguist_store::Store::open_existing(root)?;
+            let outcome = job_executor::request_retry(&mut store, job, item_ids, *failed)?;
+            let exit = if outcome.accepted.is_empty() { 4 } else { 0 };
+            let flag = if apply_mode { " --apply" } else { "" };
+            emit(
+                &serde_json::json!({"schema_version":2,"retry":outcome,"execution_available":false,"next_command":format!("lab jobs run {job}{flag}"),"writes_enabled":false}),
+            )?;
+            Ok(Some(exit))
+        }
+        JobCommand::Show { .. } => {
+            let view = job_executor::show(&reader, job)?;
+            emit(
+                &serde_json::json!({"schema_version":2,"mode":definition.job.mode,"job":view,"execution_available":false,"writes_enabled":false}),
+            )?;
+            Ok(Some(0))
+        }
+        JobCommand::Items {
+            after_index, limit, ..
+        } => {
+            let limit = limit.unwrap_or(
+                definition
+                    .job
+                    .settings
+                    .values
+                    .get("output.page_size")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(100) as u32,
+            );
+            let items = job_executor::items(&reader, job, *after_index, limit)?;
+            let next = items.last().map(|i| i.index + 1);
+            emit(
+                &serde_json::json!({"schema_version":2,"job_id":job,"items":items,"next_index":next,"execution_available":false}),
+            )?;
+            Ok(Some(0))
+        }
+        JobCommand::Audit { live, .. } => {
+            if *live {
+                return Err("CAPABILITY_UNAVAILABLE: live job audit requires native collection verification".into());
+            }
+            let report = job_executor::audit(&reader, job)?;
+            let exit = if report.issues.is_empty() { 0 } else { 7 };
+            emit(&serde_json::json!({"schema_version":2,"audit":report}))?;
+            Ok(Some(exit))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// OP-42 for prepare jobs: classification only. A later `jobs run` retries
+/// every eligible failure within the frozen attempt budget.
+fn prepare_retry(
+    store: &linguist_store::Store,
+    job: uuid::Uuid,
+    item_ids: &[uuid::Uuid],
+    failed: bool,
+    apply: bool,
+) -> Result<u8, String> {
+    if apply {
+        return Err("JOB_MODE_NEVER_WRITES: prepare jobs capture sources only".into());
+    }
+    let definition = store.preparation_job(job)?;
+    let mut eligible = Vec::new();
+    let mut refused = Vec::new();
+    for offset in (0..definition.job.item_ids.len()).step_by(1000) {
+        for item in store.preparation_items(job, offset as u32, 1000)? {
+            let selected = if failed {
+                item.state == "failed"
+            } else {
+                item_ids.contains(&item.item_id)
+            };
+            if !selected {
+                continue;
+            }
+            if item.retry_eligible {
+                eligible.push(item.item_id);
+            } else {
+                let code = match item.state.as_str() {
+                    "started" => "JOB_RETRY_RECOVER_FIRST",
+                    "captured" => "JOB_RETRY_ALREADY_SUCCEEDED",
+                    "pending" => "JOB_RETRY_NOT_FAILED",
+                    _ if item.error_code.as_deref() == Some("SOURCE_CAPTURE_REVIEW_REQUIRED") => {
+                        "JOB_RETRY_REQUIRES_REVIEW"
+                    }
+                    _ => "JOB_RETRY_ATTEMPTS_EXHAUSTED",
+                };
+                refused.push(
+                    serde_json::json!({"item_id":item.item_id,"state":item.state,"code":code}),
+                );
+            }
+        }
+    }
+    if let Some(missing) = item_ids
+        .iter()
+        .find(|id| !definition.job.item_ids.contains(id))
+    {
+        return Err(format!("PREPARATION_ITEM_NOT_FOUND: {missing}"));
+    }
+    let exit = if eligible.is_empty() { 4 } else { 0 };
+    emit(
+        &serde_json::json!({"schema_version":2,"job_id":job,"mode":"prepare","eligible":eligible,"refused":refused,"envelope_recorded":false,"next_command":format!("lab jobs run {job}"),"note":"jobs run retries every eligible failure within the frozen attempt budget","writes_enabled":false}),
+    )?;
+    Ok(exit)
 }
 
 fn now_ms() -> Result<u64, String> {

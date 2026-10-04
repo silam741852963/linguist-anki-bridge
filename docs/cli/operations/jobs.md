@@ -4,6 +4,13 @@ Read [shared command rules](README.md) before implementing any handler.
 
 ## OP-35 — `jobs create`
 
+Simulate/apply modes (WP-13): `jobs create --mode simulate|apply --plan PLAN
+--digest DIGEST [--revision N] [--approval ID] [--item-id ID]...` freezes an
+approved, ready revision's items in plan order with the effective settings. Each
+item passes apply authorization at creation; nothing reads Anki or runs. Apply
+jobs also need `--checkpoint ID --protected-manifest DIGEST`; a checkpoint created
+for a group makes that group the job ID. Grammar split units are refused.
+
 Current implementation: prepare mode for existing notes. A supported `--purpose`
 and exactly one of repeated `--note-id`, `--query` or `--deck` are required.
 `--limit N` is supported for query/deck only, from 1 through 100000. Validate
@@ -38,6 +45,10 @@ Result/failure: Job ID and mode; never starts workers. The shared wrapper suppli
 
 ## OP-36 — `jobs list`
 
+Current implementation lists prepare, simulate and apply jobs by ID with `kind`,
+`item_count`, `event_count` and `tombstoned`; `--mode` filters by kind and
+tombstoned jobs appear only with `--include-deleted`. A status filter is pending.
+
 Inputs: Status/mode filters/cursor.
 
 Effects: Local read.
@@ -69,6 +80,12 @@ Effects: Local read.
 Result/failure: Unknown effects distinguished from ordinary failed items. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
 ## OP-39 — `jobs run JOB`
+
+Simulate/apply jobs (WP-13): the executor exists in the application library
+(`job_executor::run`) and is verified with a fake native port. `jobs run` of a
+simulate job refuses `--apply`; an apply job requires it. Both then return
+`CAPABILITY_UNAVAILABLE` because no native read/mutation adapter exists. Prepare
+jobs refuse `--apply`.
 
 Current implementation: prepare-mode source capture and complete draft publication,
 with concurrency controlled by frozen `jobs.prepare_workers`. No apply flag or collection writes.
@@ -138,6 +155,11 @@ Result/failure: Apply mode without --apply does not run mutation; actionable aut
 
 ## OP-40 — `jobs pause JOB`
 
+WP-13: a pause on an idle job (no active job lease, nothing in flight) is
+confirmed in the same transaction (`worker_stopped_confirmed=true`); otherwise
+the worker acknowledges after the current item's durable result. Apply/simulate
+job controls are events in the job's hash-linked history.
+
 Current prepare-mode behavior: require an existing job, append a digest-linked
 pause request to schema-seven control history, and return its receipt. Repeating
 the current action reuses that receipt without another event. Do not change the
@@ -159,6 +181,10 @@ Result/failure: Idempotent control receipt. The shared wrapper supplies typed er
 
 ## OP-41 — `jobs resume JOB`
 
+WP-13: an apply job needs `--apply` on every resume; the resume request is
+recorded before execution reports `CAPABILITY_UNAVAILABLE`. Prepare jobs refuse
+`--apply`.
+
 Current prepare-mode behavior: append/reuse a resume request, then invoke the same
 worker as `jobs run` with immutable inputs/settings. The current request is saved
 even if execution later fails capability checks or lease contention. Resume does
@@ -177,6 +203,14 @@ Result/failure: No mode change; no duplicate creations. The shared wrapper suppl
 
 ## OP-42 — `jobs retry JOB`
 
+Current implementation (WP-13): for simulate/apply jobs, record a retry envelope
+for eligible items only (transient or shared-fault halt classes within
+`jobs.max_item_attempts`); unknown outcomes return `JOB_RETRY_RECONCILE_FIRST`
+and permanent validation failures `JOB_RETRY_REQUIRES_NEW_REVISION`. Apply jobs
+need `--apply`. Running the items is a separate `jobs run`. Prepare jobs get a
+classification only; `jobs run` retries every eligible failure. Exit 4 when
+nothing is eligible.
+
 Inputs: Explicit eligible item IDs or --failed; --apply for apply mode.
 
 Effects: Local new attempts; mode-dependent effects.
@@ -188,6 +222,9 @@ Effects: Local new attempts; mode-dependent effects.
 Result/failure: Exhausted/noneligible reasons, not blanket retry. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
 ## OP-43 — `jobs cancel JOB`
+
+WP-13: cancel is terminal for every kind; the stop is confirmed immediately on
+an idle job or by the worker's acknowledgement after its current item.
 
 Current prepare-mode behavior: append/reuse a terminal cancel request. Prevent new
 dispatch and plan publication; dispatched reads can still checkpoint their result.
@@ -219,6 +256,13 @@ Result/failure: Per-item restore/recovery receipts; partial jobs explicitly repo
 
 ## OP-45 — `jobs delete JOB`
 
+Current implementation (WP-13): preview by default; `--execute` records an
+immutable local tombstone. Only terminal jobs qualify (apply/simulate: completed,
+cancelled, halted or finished with failures with nothing started or unresolved;
+prepare: cancelled, or draft published with every item captured), and an active
+job lease refuses. Tombstoned jobs refuse runs, controls, retries and events and
+are hidden from `jobs list`; every referenced record remains.
+
 Inputs: Terminal job; --execute for tombstone.
 
 Effects: Local metadata only.
@@ -230,6 +274,11 @@ Effects: Local metadata only.
 Result/failure: No Anki deletion; no automatic history pruning. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
 ## OP-46 — `jobs audit JOB`
+
+Simulate/apply jobs (WP-13): verify the definition, the whole event chain, the
+plan digest and approval scope, and per item the recorded operations' plan item
+and job group, journal agreement and stored receipts. A partial batch is reported
+as `partial=true`; `native_verified=false`; exit 7 when issues are found.
 
 Current prepare-mode implementation audits a bounded local history page.
 `--after-checkpoint N` and `--after-control N` are independent exclusive sequence

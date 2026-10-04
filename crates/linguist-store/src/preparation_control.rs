@@ -138,6 +138,9 @@ impl Store {
             .connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(sql)?;
+        if crate::apply_job::tombstoned(&tx, job)? {
+            return Err("JOB_TOMBSTONED".into());
+        }
         let previous = read(&tx, job)?;
         if let Some(previous) = &previous {
             if previous.event.action == action {

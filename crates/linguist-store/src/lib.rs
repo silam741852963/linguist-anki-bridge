@@ -9,7 +9,7 @@ use std::{
 };
 pub type Result<T> = std::result::Result<T, String>;
 const APPLICATION_ID: i64 = 0x4c414232;
-const SCHEMA: i64 = 11;
+const SCHEMA: i64 = 12;
 fn sql(e: rusqlite::Error) -> String {
     format!("STORE_SQL: {e}")
 }
@@ -246,6 +246,7 @@ impl Store {
             tx.execute_batch(checkpoint::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(apply::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(restore::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(apply_job::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
                 .map_err(sql)?;
             tx.commit().map_err(sql)?;
@@ -267,6 +268,7 @@ impl Store {
             tx.execute_batch(checkpoint::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(apply::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(restore::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(apply_job::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)
                 .map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
@@ -596,6 +598,7 @@ pub mod lease;
 pub mod validation;
 
 pub mod apply;
+pub mod apply_job;
 pub mod approval;
 pub mod checkpoint;
 pub mod preparation;

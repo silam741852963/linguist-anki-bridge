@@ -469,7 +469,8 @@ fn queued_job_controls_resume_cancel_and_explicit_migration_preserve_state() {
             .unwrap();
         assert!(pause.status.success());
         let pause: serde_json::Value = serde_json::from_slice(&pause.stdout).unwrap();
-        assert_eq!(pause["worker_stopped_confirmed"], false);
+        // No worker holds the lease and nothing is in flight: the stop is confirmed.
+        assert_eq!(pause["worker_stopped_confirmed"], true);
         if let Some(digest) = &pause_digest {
             assert_eq!(&pause["control"]["digest"], digest);
         }
@@ -1655,7 +1656,6 @@ fn config_validate_inspects_configured_helper_without_running_it() {
 }
 #[test]
 fn unfinished_catalogue_commands_fail_before_config_or_effects() {
-    let id = "11111111-1111-4111-8111-111111111111";
     let cases: Vec<(&str, Vec<&str>)> = vec![
         (
             "OP-09",
@@ -1669,8 +1669,6 @@ fn unfinished_catalogue_commands_fail_before_config_or_effects() {
                 "--replace",
             ],
         ),
-        ("OP-42", vec!["jobs", "retry", id, "--failed"]),
-        ("OP-45", vec!["jobs", "delete", id, "--execute"]),
         ("OP-55", vec!["cache", "status"]),
         ("OP-56", vec!["cache", "prune", "--execute"]),
         ("OP-57", vec!["resources", "list"]),

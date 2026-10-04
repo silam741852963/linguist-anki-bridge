@@ -649,6 +649,9 @@ impl Store {
             .connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(sql)?;
+        if crate::apply_job::tombstoned(&tx, job_id)? {
+            return Err("JOB_TOMBSTONED".into());
+        }
         if let Some(worker) = worker {
             crate::lease::validate_job_worker_token(&tx, worker, job_id)?;
             if stage == PreparationStage::Started

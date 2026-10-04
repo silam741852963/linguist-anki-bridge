@@ -1246,6 +1246,30 @@ pub fn apply_item(
     )
 }
 
+/// ALG-APPLY for one standalone item with operation and main-step IDs that the
+/// caller already recorded durably (an apply job's start event). Reusing IDs
+/// of an existing operation is refused by the store as a conflict.
+pub fn apply_item_as(
+    store: &mut Store,
+    lease: &LeaseToken,
+    port: &mut dyn ApplyPort,
+    request: &ApplyRequest,
+    operation: Uuid,
+    main_step: Uuid,
+) -> Result<ApplyItemOutcome> {
+    apply_item_with(
+        store,
+        lease,
+        port,
+        request,
+        &Slot {
+            operation,
+            main_step,
+            role: Role::Standalone,
+        },
+    )
+}
+
 /// Everything ALG-APPLY checks before a durable intent, for one item in its
 /// role. It reads the store and the collection and writes nothing.
 pub(crate) struct Checked {
@@ -1267,12 +1291,54 @@ impl Checked {
     }
 }
 
-pub(crate) fn check_item(
+/// Simulate-mode result: every ALG-APPLY preflight check passed. Nothing is
+/// written and no intent, snapshot or journal exists.
+#[derive(Clone, Debug, Serialize)]
+pub struct SimulatedItem {
+    pub item_id: Uuid,
+    pub action: ItemAction,
+    pub note_id: Option<i64>,
+    pub schema_change: bool,
+    pub media_uploads: usize,
+    pub checkpoint_checked: bool,
+}
+
+/// Preflight for a simulate job: the same checks as `check_item`, with the
+/// checkpoint gate only when the job names a checkpoint.
+pub(crate) fn simulate_item(
+    store: &Store,
+    port: &mut dyn ApplyPort,
+    request: &ApplyRequest,
+    check_checkpoint: bool,
+) -> Result<SimulatedItem> {
+    if check_checkpoint {
+        let checked = check_item(store, port, request, Role::Standalone)?;
+        return Ok(SimulatedItem {
+            item_id: request.item_id,
+            action: checked.pre.action,
+            note_id: checked.pre.observed.as_ref().map(|n| n.id),
+            schema_change: checked.pre.migration.is_some(),
+            media_uploads: checked.pre.media_steps.len(),
+            checkpoint_checked: true,
+        });
+    }
+    let (_, _, pre) = check_live(store, port, request, Role::Standalone)?;
+    Ok(SimulatedItem {
+        item_id: request.item_id,
+        action: pre.action,
+        note_id: pre.observed.as_ref().map(|n| n.id),
+        schema_change: pre.migration.is_some(),
+        media_uploads: pre.media_steps.len(),
+        checkpoint_checked: false,
+    })
+}
+
+fn check_live(
     store: &Store,
     port: &mut dyn ApplyPort,
     request: &ApplyRequest,
     role: Role,
-) -> Result<Checked> {
+) -> Result<(AuthorizedItem, CollectionBinding, Preflight)> {
     let item = authorize_role(
         store,
         request.plan_id,
@@ -1297,6 +1363,16 @@ pub(crate) fn check_item(
         );
     }
     let pre = preflight(store, port, &item, request, role)?;
+    Ok((item, current, pre))
+}
+
+pub(crate) fn check_item(
+    store: &Store,
+    port: &mut dyn ApplyPort,
+    request: &ApplyRequest,
+    role: Role,
+) -> Result<Checked> {
+    let (item, current, pre) = check_live(store, port, request, role)?;
     let schema = pre.migration.is_some();
     let (note_ids, card_ids, model_ids) = match &pre.observed {
         Some(note) => (

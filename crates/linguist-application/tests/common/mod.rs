@@ -266,6 +266,26 @@ pub fn setup(kind: Kind) -> Setup {
 
 /// Like `setup`, with a reviewed edit to the document before rendering.
 pub fn setup_with(kind: Kind, edit: impl FnOnce(&mut LearningDocument)) -> Setup {
+    setup_docs(kind, 1, edit)
+}
+
+/// `n` independent create items in one approved plan (job tests).
+pub fn setup_many(n: usize) -> Setup {
+    setup_docs(Kind::Create, n, |_| {})
+}
+
+/// A distinct copy of a vocabulary document: new ID, expression and sense.
+pub fn variant(doc: &LearningDocument, index: usize) -> LearningDocument {
+    let mut value = serde_json::to_value(doc).unwrap();
+    value["id"] = serde_json::json!(Uuid::new_v4());
+    let body = &mut value["content"]["body"];
+    body["expression"] = serde_json::json!(format!("食べる{index}"));
+    body["sense_key"] = serde_json::json!(format!("eat-food-{index}"));
+    body["meaning"] = serde_json::json!(format!("to eat ({index})"));
+    LearningDocument::from_json(&serde_json::to_vec(&value).unwrap()).unwrap()
+}
+
+fn setup_docs(kind: Kind, n: usize, edit: impl FnOnce(&mut LearningDocument)) -> Setup {
     let root = std::env::temp_dir().join(format!("lab-apply-{}", Uuid::new_v4()));
     for dir in ["out", "restore", "scratch"] {
         std::fs::create_dir_all(root.join(dir)).unwrap();
@@ -329,7 +349,15 @@ pub fn setup_with(kind: Kind, edit: impl FnOnce(&mut LearningDocument)) -> Setup
         .first()
         .map(|s| s.fields.clone())
         .unwrap_or_default();
-    let rendered = render::render(&doc, &source).unwrap();
+    let mut docs = vec![doc];
+    for index in 1..n {
+        let copy = variant(&docs[0], index);
+        docs.push(copy);
+    }
+    let rendered: Vec<_> = docs
+        .iter()
+        .map(|d| render::render(d, &source).unwrap())
+        .collect();
     let mut values = BTreeMap::new();
     values.insert(
         "purposes.japanese_vocab.target_deck".to_owned(),
@@ -354,8 +382,8 @@ pub fn setup_with(kind: Kind, edit: impl FnOnce(&mut LearningDocument)) -> Setup
         binding: Some(binding()),
         source_digest: "fixture".into(),
         selection: None,
-        documents: vec![doc],
-        rendered: vec![rendered],
+        documents: docs,
+        rendered,
         review_decisions: vec![],
     };
     finish_setup(plan, root, store, token, checkpoint)
@@ -370,9 +398,10 @@ pub fn finish_setup(
 ) -> Setup {
     let digest = store.publish_revision(&plan).unwrap();
     let evidence = linguist_core::plan_validation::inspect(&plan).unwrap();
-    let warnings: Vec<String> = evidence.items[0]
-        .issues
+    let warnings: Vec<String> = evidence
+        .items
         .iter()
+        .flat_map(|item| item.issues.iter())
         .filter(|i| i.severity == linguist_core::Severity::Warning)
         .map(|i| i.code.clone())
         .collect::<BTreeSet<_>>()
@@ -1055,6 +1084,17 @@ impl CheckpointExporter for ScopedExporter {
 /// Verified collection checkpoint covering these notes, all their cards and
 /// the given note types, created at `now_ms`.
 pub fn checkpoint_for(s: &mut Setup, notes: &[&ObservedNote], models: &[i64], now_ms: u64) -> Uuid {
+    checkpoint_for_group(s, notes, models, now_ms, None)
+}
+
+/// Like `checkpoint_for`, created for one group (`backup create --group`).
+pub fn checkpoint_for_group(
+    s: &mut Setup,
+    notes: &[&ObservedNote],
+    models: &[i64],
+    now_ms: u64,
+    group: Option<Uuid>,
+) -> Uuid {
     let mut note_ids: Vec<i64> = notes.iter().map(|n| n.id).collect();
     note_ids.sort();
     let mut cards: Vec<ScopeCard> = notes
@@ -1099,7 +1139,7 @@ pub fn checkpoint_for(s: &mut Setup, notes: &[&ObservedNote], models: &[i64], no
             scope,
             preference: ScopePreference::Affected,
             output: s.root.join("out").join(format!("{tag}.colpkg")),
-            group_id: None,
+            group_id: group,
             protected_manifest_digest: "protected-v1".into(),
             restore_target: restore,
             limits: PackageLimits {

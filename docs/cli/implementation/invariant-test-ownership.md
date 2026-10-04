@@ -11,11 +11,11 @@ This assigns each [fixed invariant](../contracts/invariants.md) a named test loc
 | INV-05 | WP-01, WP-09 | `crates/linguist-core/tests/domain.rs` readiness, cue and review cases; full workflow review acceptance pending |
 | INV-06 | WP-11 | `crates/linguist-store/tests/journal.rs` local request-started durability; disposable native boundary injection pending |
 | INV-07 | WP-11 | Disposable native timeout/crash test: unknown effect reconciles before any retry or compensation |
-| INV-08 | WP-11, WP-13 | `crates/linguist-store/tests/lease.rs` lease behavior; integrated apply/model/backup/restore writer test pending |
+| INV-08 | WP-11, WP-13 | `crates/linguist-store/tests/lease.rs` lease behavior; `crates/linguist-application/tests/jobs_apply.rs` job lease of a live owner never reclaimed and stale tokens fenced; canonical collection-writer key and integrated apply/model/backup/restore writer test pending |
 | INV-09 | WP-03, WP-11 | Disposable native migration test: retained card IDs, scheduling and review log survive every supported mapping |
 | INV-10 | WP-11, WP-12 | `crates/linguist-application/tests/restore.rs` (media collision never overwritten, uploaded media kept); `scripts/verify-native-restore.py` note types and media survive restore and deletion; live conversion/restore through the native transport pending |
 | INV-11 | WP-11 | Disposable native test: successful completion requires read-back and durable matching receipt |
-| INV-12 | WP-11, WP-13 | `crates/linguist-store/tests/store.rs` immutable revisions; interrupted native resume test pending |
+| INV-12 | WP-11, WP-13 | `crates/linguist-store/tests/store.rs` immutable revisions; `crates/linguist-application/tests/jobs_apply.rs` resume after pause, unknown outcome and lost worker keeps the revision and operation IDs with no duplicate creation (fake port); interrupted native resume test pending |
 | INV-13 | WP-12 | `crates/linguist-application/tests/restore.rs` later study kept, later edits conflict, every reverse crash boundary resumes; `scripts/verify-native-restore.py` effect-level later-review preservation; live restore through the native transport pending |
 | INV-14 | WP-14 | Retention test: unresolved journal, snapshot, accepted asset, backup and reader references resist pruning |
 | INV-15 | WP-02, WP-14 | `crates/linguist-config/tests/config.rs`; nondefault downstream consumer coverage pending |
