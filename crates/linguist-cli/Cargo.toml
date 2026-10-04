@@ -23,6 +23,10 @@ linguist-anki.workspace = true
 linguist-application.workspace = true
 linguist-provider.workspace = true
 clap_complete.workspace = true
+url.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 rusqlite.workspace = true

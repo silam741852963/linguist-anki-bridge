@@ -321,6 +321,21 @@ pub fn record(
     Ok(Some(child))
 }
 
+/// `selection.duplicate_policy=skip_exact` needs proven exact duplicates, which
+/// no search here can provide; refuse it instead of silently reviewing.
+pub fn require_policy_available(settings: &linguist_config::Effective) -> Result<(), String> {
+    match settings
+        .values
+        .get("selection.duplicate_policy")
+        .and_then(Value::as_str)
+    {
+        Some("review") | None => Ok(()),
+        Some(policy) => Err(format!(
+            "CAPABILITY_UNAVAILABLE: selection.duplicate_policy={policy} needs proven exact duplicate detection, which this build lacks; use review"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

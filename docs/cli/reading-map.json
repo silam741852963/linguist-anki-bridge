@@ -474,7 +474,7 @@
       "path": "operations/configuration.md",
       "heading": "## OP-09 \u2014 `config import`",
       "title": "OP-09 \u2014 `config import`",
-      "words": 81,
+      "words": 266,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -485,7 +485,7 @@
       "path": "operations/configuration.md",
       "heading": "## OP-10 \u2014 `config migrate`",
       "title": "OP-10 \u2014 `config migrate`",
-      "words": 63,
+      "words": 166,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -733,7 +733,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-47 \u2014 `jobs migrate`",
       "title": "OP-47 \u2014 `jobs migrate`",
-      "words": 133,
+      "words": 242,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -743,7 +743,7 @@
       "path": "operations/maintenance.md",
       "heading": "## OP-55 \u2014 `cache status`",
       "title": "OP-55 \u2014 `cache status`",
-      "words": 38,
+      "words": 91,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -753,7 +753,7 @@
       "path": "operations/maintenance.md",
       "heading": "## OP-56 \u2014 `cache prune`",
       "title": "OP-56 \u2014 `cache prune`",
-      "words": 56,
+      "words": 182,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -764,7 +764,7 @@
       "path": "operations/maintenance.md",
       "heading": "## OP-57 \u2014 `resources list`",
       "title": "OP-57 \u2014 `resources list`",
-      "words": 52,
+      "words": 98,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -774,7 +774,7 @@
       "path": "operations/maintenance.md",
       "heading": "## OP-58 \u2014 `resources install RESOURCE`",
       "title": "OP-58 \u2014 `resources install RESOURCE`",
-      "words": 86,
+      "words": 262,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

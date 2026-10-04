@@ -1507,8 +1507,18 @@ fn config_validate_reports_local_resource_gaps_separately_from_settings_errors()
 
     std::fs::write(&resource, b"{}").unwrap();
     let available = run();
-    assert!(available.status.success(), "{available:?}");
+    // The file is readable, but the custom dictionary it serves is unavailable:
+    // the setting is reported rather than silently ignored.
+    assert_eq!(available.status.code(), Some(3), "{available:?}");
     let report: serde_json::Value = serde_json::from_slice(&available.stdout).unwrap();
+    assert_eq!(
+        report["unavailable_settings"][0]["key"],
+        "dictionary.schema_path"
+    );
+    assert_eq!(
+        report["unavailable_settings"][0]["status"],
+        "dormant_unavailable_feature"
+    );
     assert!(
         report["local_resources"]["missing"]
             .as_array()
@@ -1642,9 +1652,24 @@ fn config_validate_inspects_configured_helper_without_running_it() {
 
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
     let available = run();
-    assert!(available.status.success(), "{available:?}");
+    // The helper resolves, but the browser feature it configures is unavailable.
+    assert_eq!(available.status.code(), Some(3), "{available:?}");
     assert!(available.stderr.is_empty());
     let report: serde_json::Value = serde_json::from_slice(&available.stdout).unwrap();
+    assert!(
+        report["unavailable_settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["key"] == "browser.executable")
+    );
+    assert!(
+        report["local_resources"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["key"] == "browser.executable" && check["status"] == "available")
+    );
     assert!(
         report["local_resources"]["checks"]
             .as_array()
@@ -1655,55 +1680,55 @@ fn config_validate_inspects_configured_helper_without_running_it() {
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
-fn unfinished_catalogue_commands_fail_before_config_or_effects() {
-    let cases: Vec<(&str, Vec<&str>)> = vec![
-        (
-            "OP-09",
-            vec![
-                "config",
-                "import",
-                "--file",
-                "/missing",
-                "--output",
-                "/missing-out",
-                "--replace",
-            ],
-        ),
-        ("OP-55", vec!["cache", "status"]),
-        ("OP-56", vec!["cache", "prune", "--execute"]),
-        ("OP-57", vec!["resources", "list"]),
-        (
-            "OP-58",
-            vec![
-                "resources",
-                "install",
-                "model",
-                "--source",
-                "https://example.org/x",
-                "--version",
-                "1",
-                "--sha256",
-                "abc",
-                "--license",
-                "CC0",
-                "--destination",
-                "/missing-out",
-            ],
-        ),
+fn maintenance_commands_reject_invalid_config_before_effects() {
+    // OP-09/55/56/57/58 are implemented since WP-14; an invalid configuration
+    // or unknown override still stops them before any file or state is touched.
+    let out_dir = std::env::temp_dir().join(format!("lab-maint-{}", uuid::Uuid::new_v4()));
+    let cases: Vec<Vec<String>> = vec![
+        vec!["cache".into(), "status".into()],
+        vec!["cache".into(), "prune".into(), "--execute".into()],
+        vec!["resources".into(), "list".into()],
+        vec![
+            "resources".into(),
+            "install".into(),
+            "file:model".into(),
+            "--source".into(),
+            "https://example.org/x".into(),
+            "--version".into(),
+            "1".into(),
+            "--sha256".into(),
+            "abc".into(),
+            "--license".into(),
+            "CC0-1.0".into(),
+            "--execute".into(),
+        ],
     ];
-    for (operation, args) in cases {
+    for args in cases {
         let out = cli()
             .args(["--config", "/does/not/exist", "--set", "made.up=secret"])
-            .args(args)
+            .args(&args)
             .output()
             .unwrap();
-        assert_eq!(out.status.code(), Some(3), "{operation}: {out:?}");
-        assert!(out.stdout.is_empty(), "{operation}");
-        let error: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
-        let message = error["error"].as_str().unwrap();
-        assert!(message.contains(operation), "{message}");
-        assert!(!message.contains("secret"));
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {out:?}");
+        assert!(out.stdout.is_empty());
+        assert!(!String::from_utf8_lossy(&out.stderr).contains("secret"));
     }
+    let import = cli()
+        .args([
+            "--set",
+            "made.up=secret",
+            "config",
+            "import",
+            "--file",
+            "/missing",
+            "--output",
+        ])
+        .arg(out_dir.join("candidate.toml"))
+        .output()
+        .unwrap();
+    assert_eq!(import.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&import.stderr).contains("CONFIG_IMPORT_SCOPE"));
+    assert!(!out_dir.exists());
 }
 #[test]
 fn effective_purpose_and_typed_flags_are_visible_with_provenance() {

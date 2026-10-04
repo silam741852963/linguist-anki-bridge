@@ -60,7 +60,9 @@ Import reads the original file without writing it, produces candidate v2 TOML pl
 | Taiwan/other unvalidated purpose entries | Preserve as unsupported candidate records; do not map to Japanese |
 | theme/Omarchy/TUI appearance | Retired CLI setting with report; retain original source file |
 
-Any legacy key absent from this table still receives an explicit per-key report. No promise of migration completeness is made by the current partial Rust importer.
+Any legacy key absent from this table still receives an explicit per-key report (`unknown`, blocking). The importer is `linguist_config::legacy` (OP-09); activation is OP-10 `config migrate --from-import`.
+
+Setting consumer coverage is generated into [setting-coverage.md](setting-coverage.md): each of the 156 registry entries is consumed at a named site, interpreted by the resolver, or gated behind a feature this build lacks. `config validate` reports values that need a missing feature as `unavailable_settings` (exit 3). A non-empty `purposes.<purpose>.ocr_languages` replaces `ocr.languages` for that purpose (provenance `purpose-mapping`); explicit purpose overrides, environment and flags still win.
 
 ## Configuration acceptance tests
 

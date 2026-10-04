@@ -101,7 +101,7 @@ fn sync_dir(parent: &Path) -> Result<()> {
         .and_then(|f| f.sync_all())
         .map_err(|_| "CONFIG_DIRECTORY_SYNC_FAILED".into())
 }
-fn serialize(config: &ConfigFile) -> Result<Vec<u8>> {
+pub(crate) fn serialize_config(config: &ConfigFile) -> Result<Vec<u8>> {
     let mut table = toml::Table::new();
     // Canonical quoted dotted keys keep all exact mappings without ambiguous nesting.
     for (k, v) in &config.values {
@@ -116,7 +116,7 @@ fn serialize(config: &ConfigFile) -> Result<Vec<u8>> {
         .map(String::into_bytes)
         .map_err(|_| "CONFIG_SERIALIZE".into())
 }
-fn validate_all(
+pub(crate) fn validate_candidate(
     registry: &Registry,
     file: &ConfigFile,
     environment: &BTreeMap<String, String>,
@@ -223,7 +223,7 @@ pub fn replace_with_minimal(
         .and_then(|text| ConfigFile::parse(text, &registry).ok());
     let replacement = b"[config]\nversion = 2\n";
     let after = ConfigFile::parse(std::str::from_utf8(replacement).unwrap(), &registry)?;
-    validate_all(&registry, &after, environment)?;
+    validate_candidate(&registry, &after, environment)?;
     if let Some(before) = &before {
         guard_state_move(&registry, before, &after, environment)?;
     }
@@ -382,7 +382,7 @@ pub fn edit(
         }
         None => candidate.values = target.into_iter().collect(),
     }
-    validate_all(&registry, &candidate, environment)?;
+    validate_candidate(&registry, &candidate, environment)?;
     guard_state_move(&registry, &before, &candidate, environment)?;
     let effective = resolve(
         &registry,
@@ -426,7 +426,7 @@ pub fn edit(
         })
         .collect();
     let changed = before.values != candidate.values;
-    let output = serialize(&candidate)?;
+    let output = serialize_config(&candidate)?;
     ConfigFile::parse(std::str::from_utf8(&output).unwrap(), &registry)?;
     let mut receipt = EditReceipt {
         version: 2,
@@ -467,6 +467,169 @@ pub fn edit(
         std::fs::rename(&temp, path).map_err(|_| "CONFIG_PUBLISH_IO")?;
         sync_dir(parent).map_err(|_|"CONFIG_PUBLISHED_SYNC_FAILED: configuration may have changed; inspect file and backup before retry".to_owned())?;
         Ok(())
+    })();
+    let _ = std::fs::remove_file(&temp);
+    outcome?;
+    receipt.executed = true;
+    Ok(receipt)
+}
+
+/// Keys whose durable override differs between the live file and a candidate.
+#[derive(Debug, Serialize)]
+pub struct ActivationReceipt {
+    pub version: u16,
+    pub path: PathBuf,
+    pub executed: bool,
+    pub created: bool,
+    pub backup: Option<PathBuf>,
+    pub before_digest: Option<String>,
+    pub after_digest: String,
+    pub added_keys: Vec<String>,
+    pub removed_keys: Vec<String>,
+    pub changed_keys: Vec<String>,
+    /// A live file that is not valid v2 TOML is replaced only through its backup.
+    pub live_file_valid: Option<bool>,
+}
+
+fn lock_config(path: &Path) -> Result<File> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let filename = path
+        .file_name()
+        .ok_or("INVALID_CONFIG_PATH")?
+        .to_string_lossy();
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let lock = options
+        .open(parent.join(format!(".{filename}.lock")))
+        .map_err(|_| "CONFIG_LOCK_IO")?;
+    if !lock.metadata().map_err(|_| "CONFIG_LOCK_IO")?.is_file() {
+        return Err("CONFIG_LOCK_IO".into());
+    }
+    lock.try_lock()
+        .map_err(|_| "CONFIG_EDIT_CONFLICT: another editor holds the configuration lock")?;
+    Ok(lock)
+}
+
+/// Validate a complete candidate and, with `execute`, publish it as the live
+/// configuration: the old file (if any) is first copied byte-exactly to a
+/// private backup, state relocation is guarded, and publication is atomic.
+pub fn activate(
+    path: &Path,
+    candidate: &[u8],
+    execute: bool,
+    environment: &BTreeMap<String, String>,
+) -> Result<ActivationReceipt> {
+    let registry = Registry::builtin();
+    let after = ConfigFile::parse(
+        std::str::from_utf8(candidate).map_err(|_| "CONFIG_ENCODING")?,
+        &registry,
+    )?;
+    validate_candidate(&registry, &after, environment)?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let exists = match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => true,
+        Ok(_) => return Err("CONFIG_NOT_REGULAR_FILE".into()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return Err("CONFIG_IO".into()),
+    };
+    if execute && !exists {
+        let mut directory = std::fs::DirBuilder::new();
+        directory.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            directory.mode(0o700);
+        }
+        directory.create(parent).map_err(|_| "CONFIG_PARENT_IO")?;
+    }
+    let _lock = if execute {
+        Some(lock_config(path)?)
+    } else {
+        None
+    };
+    let original = if exists { Some(bytes(path)?) } else { None };
+    let before = original
+        .as_ref()
+        .and_then(|b| std::str::from_utf8(b).ok())
+        .and_then(|text| ConfigFile::parse(text, &registry).ok());
+    if let Some(before) = &before {
+        guard_state_move(&registry, before, &after, environment)?;
+    }
+    let empty = ConfigFile::default();
+    let old = &before.as_ref().unwrap_or(&empty).values;
+    let keys: BTreeSet<&String> = old.keys().chain(after.values.keys()).collect();
+    let mut receipt = ActivationReceipt {
+        version: 2,
+        path: path.to_owned(),
+        executed: false,
+        created: !exists,
+        backup: None,
+        before_digest: original.as_deref().map(canonical::asset_digest),
+        after_digest: canonical::asset_digest(candidate),
+        added_keys: keys
+            .iter()
+            .filter(|k| !old.contains_key(**k))
+            .map(|k| (*k).clone())
+            .collect(),
+        removed_keys: keys
+            .iter()
+            .filter(|k| !after.values.contains_key(**k))
+            .map(|k| (*k).clone())
+            .collect(),
+        changed_keys: keys
+            .iter()
+            .filter(|k| {
+                old.get(**k)
+                    .is_some_and(|v| after.values.get(**k).is_some_and(|w| v != w))
+            })
+            .map(|k| (*k).clone())
+            .collect(),
+        live_file_valid: original.as_ref().map(|_| before.is_some()),
+    };
+    if !execute {
+        return Ok(receipt);
+    }
+    if let Some(original) = &original {
+        let backup = parent.join(format!(".lab-config-backup-{}.toml", uuid::Uuid::new_v4()));
+        let mut backup_file = private_file(&backup)?;
+        backup_file
+            .write_all(original)
+            .and_then(|_| backup_file.sync_all())
+            .map_err(|_| "CONFIG_BACKUP_IO")?;
+        sync_dir(parent)?;
+        receipt.backup = Some(backup);
+    }
+    let temp = parent.join(format!(".lab-config-activate-{}.tmp", uuid::Uuid::new_v4()));
+    let outcome: Result<()> = (|| {
+        let mut file = private_file(&temp)?;
+        file.write_all(candidate)
+            .and_then(|_| file.sync_all())
+            .map_err(|_| "CONFIG_WRITE_IO")?;
+        match &original {
+            Some(original) => {
+                if bytes(path)? != *original {
+                    return Err(
+                        "CONFIG_EDIT_CONFLICT: configuration changed after validation".into(),
+                    );
+                }
+                std::fs::rename(&temp, path).map_err(|_| "CONFIG_PUBLISH_IO")?;
+            }
+            None => {
+                std::fs::hard_link(&temp, path).map_err(|_| "CONFIG_EXISTS_OR_PUBLISH_FAILED")?;
+            }
+        }
+        sync_dir(parent).map_err(|_| "CONFIG_PUBLISHED_SYNC_FAILED: configuration may have changed; inspect file and backup before retry".to_owned())
     })();
     let _ = std::fs::remove_file(&temp);
     outcome?;

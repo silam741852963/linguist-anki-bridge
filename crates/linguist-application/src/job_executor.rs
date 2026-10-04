@@ -138,9 +138,12 @@ fn validate_job_settings(settings: &ResolvedSettings) -> Result<()> {
         "backup.reuse_max_age_seconds",
         "backup.max_package_gb",
         "media.max_asset_mb",
+        "anki.commit_interval_seconds",
+        "anki.native_adapter",
     ] {
         registry.validate_value(key, settings.values.get(key).ok_or("JOB_SETTING_MISSING")?)?;
     }
+    crate::apply::require_native_adapter(&settings.values)?;
     let lease = settings.values["jobs.lease_seconds"].as_u64().unwrap();
     if settings.values["jobs.heartbeat_seconds"].as_u64().unwrap() * 3 >= lease {
         return Err("JOB_HEARTBEAT_INTERVAL_INVALID".into());
@@ -570,7 +573,19 @@ fn drive(
         })
         .collect();
     let mut dispatched = Vec::new();
+    // `anki.commit_interval_seconds`: minimum gap between note mutations.
+    let interval = std::time::Duration::from_secs_f64(
+        def.job.settings.values["anki.commit_interval_seconds"]
+            .as_f64()
+            .unwrap_or(0.25),
+    );
+    let mut last_write: Option<std::time::Instant> = None;
     for item in eligible {
+        if def.job.mode == JobMode::Apply
+            && let Some(last) = last_write
+        {
+            std::thread::sleep(interval.saturating_sub(last.elapsed()));
+        }
         worker.renew()?;
         let attempt = item.attempt + 1;
         let slot = Slot {
@@ -606,6 +621,7 @@ fn drive(
                 &request,
                 &slot,
             );
+            last_write = Some(std::time::Instant::now());
             let (outcome, code, retry) = from_apply(&result);
             let (receipt, next, op) = match &result {
                 Ok(o) => (

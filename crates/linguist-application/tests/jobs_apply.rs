@@ -786,3 +786,51 @@ fn create_with(s: &mut Setup, overrides: &[(&str, serde_json::Value)]) -> Uuid {
     .unwrap()
     .job_id
 }
+
+#[test]
+fn commit_interval_paces_mutations_and_only_the_verified_native_adapter_is_accepted() {
+    let mut s = setup_many(3);
+    let frozen = settings(
+        &s.root,
+        &[("anki.native_adapter", serde_json::json!("other-v9"))],
+    );
+    let request = CreateRequest {
+        mode: JobMode::Apply,
+        plan_id: s.plan.id,
+        revision: 1,
+        digest: s.digest,
+        approval_id: s.approval,
+        item_ids: vec![],
+        checkpoint_id: Some(s.checkpoint),
+        protected_manifest_digest: "protected-v1",
+        accept_schema_change: false,
+        now_ms: 1_005_000,
+    };
+    let refused = job_executor::create(&mut s.store, &frozen, &request).unwrap_err();
+    assert!(
+        refused.starts_with("NATIVE_ADAPTER_UNSUPPORTED"),
+        "{refused}"
+    );
+    let job = create(
+        &mut s,
+        JobMode::Apply,
+        &[("anki.commit_interval_seconds", serde_json::json!(0.2))],
+    );
+    let times = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let seen = times.clone();
+    let mut port = Hooked::new(Anki::new(&s, Kind::Create));
+    port.on_mutate = Some(Box::new(move |_, _| {
+        seen.borrow_mut().push(std::time::Instant::now())
+    }));
+    let report = run(&mut s, &mut port, job, true).unwrap();
+    assert_eq!(report.stop, StopReason::Idle);
+    let times = times.borrow();
+    assert_eq!(times.len(), 3);
+    for pair in times.windows(2) {
+        assert!(
+            pair[1] - pair[0] >= std::time::Duration::from_millis(190),
+            "{:?}",
+            pair[1] - pair[0]
+        );
+    }
+}

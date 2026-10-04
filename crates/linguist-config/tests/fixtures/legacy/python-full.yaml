@@ -1,0 +1,179 @@
+anki:
+  backup_dir: /home/fixture/AnkiBackups
+  url: http://localhost:8765
+batch:
+  commit_interval_seconds: 0.25
+  max_attempts: 3
+  retry_backoff_seconds: 5.0
+  service_intervals:
+    dictionary: 1.0
+    image: 1.0
+    kanji: 1.0
+    ollama: 0.25
+    tts: 0.5
+config_version: 2
+decks:
+  english_grammar:
+    deck_name: null
+    fields:
+      audio: Pronunciation (Recording and/or IPA)
+      expression: Word
+      kanji_construction: Gender, Personal Connection, Extra Info (Back side)
+      meaning_image: Picture
+      meaning_text: Gender, Personal Connection, Extra Info (Back side)
+    note_type: 2. Picture Words
+    ocr_langs: eng
+  english_vocab:
+    deck_name: Moonlit Manuscripts
+    fields:
+      audio: Pronunciation (Recording and/or IPA)
+      expression: Word
+      kanji_construction: Gender, Personal Connection, Extra Info (Back side)
+      meaning_image: Picture
+      meaning_text: Gender, Personal Connection, Extra Info (Back side)
+    note_type: 2. Picture Words
+    ocr_langs: eng
+  german_grammar:
+    deck_name: null
+    fields:
+      audio: Pronunciation (Recording and/or IPA)
+      expression: Word
+      kanji_construction: Gender, Personal Connection, Extra Info (Back side)
+      meaning_image: Picture
+      meaning_text: Gender, Personal Connection, Extra Info (Back side)
+    note_type: 2. Picture Words
+    ocr_langs: deu+eng
+  german_vocab:
+    deck_name: null
+    fields:
+      audio: Pronunciation (Recording and/or IPA)
+      expression: Word
+      kanji_construction: Gender, Personal Connection, Extra Info (Back side)
+      meaning_image: Picture
+      meaning_text: Gender, Personal Connection, Extra Info (Back side)
+    note_type: 2. Picture Words
+    ocr_langs: deu+eng
+  japanese_grammar:
+    deck_name: 夕暮れの詞
+    fields:
+      examples: Examples
+      expression: Expression
+      meaning_text: Explanation
+    note_type: Linguist Japanese Grammar
+    ocr_langs: jpn+eng+vie
+  japanese_vocab:
+    deck_name: 森の言葉
+    fields:
+      audio: Pronunciation (Recording and/or IPA)
+      expression: Word
+      kanji_construction: Gender, Personal Connection, Extra Info (Back side)
+      meaning_image: Picture
+      meaning_text: Gender, Personal Connection, Extra Info (Back side)
+    note_type: 2. Picture Words
+    ocr_langs: jpn+eng+vie
+  taiwanese_grammar:
+    deck_name: null
+    fields:
+      audio: Pronunciation (Recording and/or IPA)
+      expression: Word
+      kanji_construction: Gender, Personal Connection, Extra Info (Back side)
+      meaning_image: Picture
+      meaning_text: Gender, Personal Connection, Extra Info (Back side)
+    note_type: 2. Picture Words
+    ocr_langs: chi_tra+eng+vie
+  taiwanese_vocab:
+    deck_name: null
+    fields:
+      audio: Pronunciation (Recording and/or IPA)
+      expression: Word
+      kanji_construction: Gender, Personal Connection, Extra Info (Back side)
+      meaning_image: Picture
+      meaning_text: Gender, Personal Connection, Extra Info (Back side)
+    note_type: 2. Picture Words
+    ocr_langs: chi_tra+eng+vie
+dictionary:
+  browser_fallback: true
+  preset: jisho
+  retry_backoff_seconds: 0.6
+  retry_count: 3
+  schema: {}
+  url_template: ''
+dry_run: true
+filters:
+  clean_word_only: false
+  remove_parentheses: true
+image_classification:
+  confirmation_margin: 0.12
+  decision_threshold: 0.5
+  llm_accept_confidence: 0.95
+  llm_adjudication: true
+  vision_model: llama3.2-vision
+image_search:
+  enabled_for_empty: true
+  suffix: ''
+kanji:
+  enabled: true
+  prompt_en: "You are a Japanese language learning assistant. Summarize the Kanji\
+    \ construction details for the word \"{word}\" based on the following raw crawled\
+    \ details.\nRaw details:\n{raw_details}\n\nRequirements:\nReturn ONLY a JSON object\
+    \ matching this schema:\n{\n  \"kanji_characters\": [\n    {\n      \"character\"\
+    : \"character string\",\n      \"meanings\": [\"meaning1\", \"meaning2\"],\n \
+    \     \"strokes\": 10,\n      \"radical\": \"radical string\",\n      \"parts\"\
+    : [\"part1\", \"part2\"]\n    }\n  ]\n}"
+  prompt_vi: "Bạn là một trợ lý học tiếng Nhật. Hãy tóm tắt cấu tạo chữ Kanji cho\
+    \ từ \"{word}\" dựa trên thông tin thô sau đây.\nThông tin thô:\n{raw_details}\n\
+    \nYêu cầu:\nTrả về DUY NHẤT một đối tượng JSON khớp với cấu trúc sau:\n{\n  \"\
+    kanji_characters\": [\n    {\n      \"character\": \"chữ Kanji\",\n      \"spell\"\
+    : \"âm Hán Việt\",\n      \"strokes\": 10,\n      \"radical\": \"bộ thủ\",\n \
+    \     \"parts\": [\"bộ phận cấu thành 1\", \"bộ phận cấu thành 2\"],\n      \"\
+    meanings\": [\"nghĩa chính 1\", \"nghĩa chính 2\"]\n    }\n  ]\n}"
+  schema:
+    baseSelector: .kanji
+    fields:
+    - name: meanings
+      selector: .kanji-details__main-meanings
+      type: text
+    - name: strokes
+      selector: .kanji-details__stroke_count strong
+      type: text
+    - name: radical
+      selector: .radicals span
+      type: text
+    - name: parts
+      selector: .parts a
+      type: text
+    name: jisho_kanji
+  source_lang: english
+  url_template: https://jisho.org/search/{char}%23kanji
+llm:
+  model: gemma3:12b
+  ollama_url: http://localhost:11434
+  system_prompt_grammar: "You are an expert language teacher. The user will provide\
+    \ raw text extracted from a grammar textbook page or article. Extract the grammar\
+    \ point, explain the meaning, detail the structure/rules, and provide three example\
+    \ sentences with {lang} translations.\nReturn the response in JSON format matching\
+    \ this schema:\n{\n  \"grammar_point\": \"Name of grammar pattern\",\n  \"meaning\"\
+    : \"General explanation and meaning\",\n  \"rules\": \"Connection and structure\
+    \ rules (how to form)\",\n  \"examples\": [\n    {\"sentence\": \"Example sentence\
+    \ in target language\", \"translation\": \"{lang} translation\"}\n  ]\n}"
+  system_prompt_vocab: "You are a helpful language learning assistant. The user provides\
+    \ an exact vocabulary word, authoritative parsed dictionary data, and possibly\
+    \ raw OCR text from dictionary screenshots. Generate usage nuances for the exact\
+    \ word and examples with {lang} translations. Extract every distinct usage nuance\
+    \ and every complete, usable example visible in dictionary-screenshot OCR. Preserve\
+    \ each original target-language example sentence. Translate any non-{lang} explanation\
+    \ or example translation into {lang}; do not copy a Vietnamese or Japanese translation\
+    \ into the translation field when {lang} is English. If fewer than three examples\
+    \ are recoverable, generate additional natural examples until there are at least\
+    \ three. Never discard screenshot examples merely to enforce a fixed example count.\n\
+    Never generate, summarize, translate, or rewrite dictionary definitions, readings,\
+    \ metadata, related entries, or senses.\nReturn the response in JSON format matching\
+    \ this schema:\n{\n  \"nuances\": \"Short notes on usage/nuances\",\n  \"examples\"\
+    : [\n    {\"sentence\": \"Example sentence in target language\", \"translation\"\
+    : \"{lang} translation\"}\n  ]\n}"
+  translation_language: English
+ocr:
+  method: tesseract
+  ollama_model: llama3.2-vision
+  ollama_url: http://localhost:11434
+  preprocess: true

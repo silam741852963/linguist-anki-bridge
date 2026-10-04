@@ -9,7 +9,15 @@ use std::{
 };
 pub type Result<T> = std::result::Result<T, String>;
 const APPLICATION_ID: i64 = 0x4c414232;
-const SCHEMA: i64 = 12;
+const SCHEMA: i64 = 13;
+static BUSY_TIMEOUT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(5000);
+/// Process-wide SQLite busy timeout for stores opened afterwards (`storage.sqlite_busy_timeout_ms`).
+pub fn set_busy_timeout_ms(ms: u64) {
+    BUSY_TIMEOUT_MS.store(ms.clamp(1, 600_000), std::sync::atomic::Ordering::Relaxed);
+}
+pub fn busy_timeout_ms() -> u64 {
+    BUSY_TIMEOUT_MS.load(std::sync::atomic::Ordering::Relaxed)
+}
 fn sql(e: rusqlite::Error) -> String {
     format!("STORE_SQL: {e}")
 }
@@ -177,7 +185,7 @@ impl Store {
         )
         .map_err(sql)?;
         connection
-            .busy_timeout(std::time::Duration::from_secs(5))
+            .busy_timeout(std::time::Duration::from_millis(busy_timeout_ms()))
             .map_err(sql)?;
         let application: i64 = connection
             .pragma_query_value(None, "application_id", |r| r.get(0))
@@ -247,6 +255,8 @@ impl Store {
             tx.execute_batch(apply::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(restore::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(apply_job::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(gc::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(legacy_jobs::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
                 .map_err(sql)?;
             tx.commit().map_err(sql)?;
@@ -269,6 +279,8 @@ impl Store {
             tx.execute_batch(apply::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(restore::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(apply_job::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(gc::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(legacy_jobs::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)
                 .map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
@@ -294,6 +306,13 @@ impl Store {
         let root = self.root.join("assets");
         let destination = root.join(&digest);
         let temp = root.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
+        // Linking and indexing share one immediate transaction so a concurrent
+        // `cache prune` (which holds the same lock) never observes a linked but
+        // unindexed asset, nor removes a file whose index row is being added.
+        let tx = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(sql)?;
         let outcome = (|| -> Result<()> {
             let mut f = private_options().open(&temp).map_err(|_| "ASSET_TEMP_IO")?;
             f.write_all(bytes)
@@ -314,12 +333,12 @@ impl Store {
         })();
         let _ = std::fs::remove_file(temp);
         outcome?;
-        self.connection
-            .execute(
-                "INSERT INTO assets(digest,size) VALUES(?1,?2) ON CONFLICT(digest) DO NOTHING",
-                params![digest, bytes.len() as i64],
-            )
-            .map_err(sql)?;
+        tx.execute(
+            "INSERT INTO assets(digest,size) VALUES(?1,?2) ON CONFLICT(digest) DO NOTHING",
+            params![digest, bytes.len() as i64],
+        )
+        .map_err(sql)?;
+        tx.commit().map_err(sql)?;
         Ok(digest)
     }
     pub fn asset(&self, digest: &str, max_bytes: u64) -> Result<Vec<u8>> {
@@ -601,6 +620,8 @@ pub mod apply;
 pub mod apply_job;
 pub mod approval;
 pub mod checkpoint;
+pub mod gc;
+pub mod legacy_jobs;
 pub mod preparation;
 pub mod preparation_control;
 pub mod restore;

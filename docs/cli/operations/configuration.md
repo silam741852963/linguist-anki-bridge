@@ -104,6 +104,8 @@ Effects: Local candidate/resource files.
 
 Result/failure: Imported/transformed/unresolved/retired keys; unresolved unsafe mappings block activation. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current behavior (WP-14): `config import --file LEGACY --output CANDIDATE.toml [--replace]` detects native JSON v1 or Python YAML (`config_version` 1/2 or absent; other versions fail). YAML is parsed by a restricted loader that refuses tags, anchors, aliases, merge keys, complex or duplicate keys, multiple documents and ambiguous YAML 1.1 scalars (octal, hexadecimal, sexagesimal, dates, non-finite numbers). Every source key gets one report record (`transferred`, `transformed`, `defaulted`, `unresolved`, `retired`, `unsupported`, `unknown`); keys absent from a Python file are also reported with `implicit_default` when the legacy runtime default applied. Overrides are written only where the value differs from the v2 builtin or purpose-preset value. Prompts and schemas are exported byte-exactly to `CANDIDATE.toml.resources/SHA256.{txt,json}`; legacy defaults are retired in favour of builtin v2 resources, custom ones stay unresolved. Blocking records (unknown keys, custom prompts/schemas, conflicting retry or endpoint values, enabled unavailable features, rejected values, configured unsupported purposes) are listed in `blocking_keys`; exit 4 when any exist. The report (`CANDIDATE.toml.import.json`) and candidate are private files; the source and the live config path are refused as outputs, and `--replace` replaces only this import's own files. `--set`, `--profile`, `--purpose` and `--offline` are refused.
+
 ## OP-10 — `config migrate`
 
 Inputs: Existing target version and --output.
@@ -115,3 +117,5 @@ Effects: Local candidate files.
 3. Validate and export diff/candidate; explicit --execute needed to activate atomically.
 
 Result/failure: Migration receipt; same-version idempotent no-op. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
+
+Current behavior (WP-14): with a v2 file, `config migrate` is the `already_current` no-op. `config migrate --from-import CANDIDATE [--accept-unresolved KEY]... [--execute]` activates an imported candidate: the candidate must match the digest in its report, every blocking key must be accepted explicitly (unknown acceptances fail), and the whole candidate is validated for every builtin purpose and profile. Without `--execute` it previews added, removed and changed keys. With `--execute` it locks the config, copies an existing live file byte-exactly to a private backup, refuses state relocation while state is nonempty, and publishes atomically (create-new when no live file exists). No version ladder beyond v2 exists yet.

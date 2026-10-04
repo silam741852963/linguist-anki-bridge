@@ -1,4 +1,6 @@
 //! Registry-backed configuration. No shell expansion or service discovery.
+pub mod coverage;
+pub mod legacy;
 pub mod resources;
 pub mod schema;
 pub use linguist_core::records::execution_setting;
@@ -561,6 +563,17 @@ pub fn resolve(
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         });
+    // A non-empty purpose OCR mapping replaces ocr.languages for that purpose;
+    // explicit purpose overrides, environment and flags still win.
+    let mut ocr_mapping = None;
+    if let Some(purpose) = &options.purpose
+        && let Some(languages) = file
+            .values
+            .get(&format!("purposes.{purpose}.ocr_languages"))
+            .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))
+    {
+        ocr_mapping = Some(languages.clone());
+    }
     for (key, origin) in profile
         .as_ref()
         .map(|p| (format!("profiles.{p}.overrides"), "profile"))
@@ -578,6 +591,12 @@ pub fn resolve(
         let record = file.values.get(&key);
         if origin == "profile" && record.is_none() {
             return Err("UNKNOWN_PROFILE".into());
+        }
+        if origin == "purpose"
+            && let Some(languages) = ocr_mapping.take()
+        {
+            values.insert("ocr.languages".into(), languages);
+            provenance.insert("ocr.languages".into(), "purpose-mapping".into());
         }
         if let Some(record) = record {
             for (k, v) in record.as_object().unwrap() {

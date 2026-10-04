@@ -344,46 +344,32 @@ fn asset_file_size_limit_failure_never_publishes_metadata() {
 
 #[test]
 fn crash_between_asset_file_and_metadata_leaves_recoverable_orphan() {
-    const VARIABLE: &str = "LAB_TEST_ASSET_ORPHAN_ROOT";
+    // Since schema 13 the link and the index row share one immediate
+    // transaction, so a writer blocked on the database lock has not linked yet.
+    // A crash after linking but before commit leaves exactly this state: a
+    // complete digest-named file without an index row.
     let bytes = b"original bytes before metadata";
-    if let Ok(root) = std::env::var(VARIABLE) {
-        let root = std::path::Path::new(&root);
-        let mut store = Store::open(root).unwrap();
-        std::fs::write(root.join("ready"), b"ready").unwrap();
-        while !root.join("go").exists() {
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        store.publish_asset(bytes, 1024).unwrap();
-        return;
-    }
     let f = Fixture::new();
     drop(f.store());
-    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "crash_between_asset_file_and_metadata_leaves_recoverable_orphan",
-        ])
-        .env(VARIABLE, &f.0)
-        .spawn()
-        .unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !f.0.join("ready").exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    assert!(f.0.join("ready").exists(), "child did not open store");
     let db = rusqlite::Connection::open(f.0.join("state.sqlite3")).unwrap();
     db.execute_batch("BEGIN IMMEDIATE").unwrap();
-    std::fs::write(f.0.join("go"), b"go").unwrap();
+    linguist_store::set_busy_timeout_ms(300);
+    let mut blocked = Store::open(&f.0).unwrap();
+    linguist_store::set_busy_timeout_ms(5000);
+    let started = std::time::Instant::now();
+    assert!(
+        blocked
+            .publish_asset(bytes, 1024)
+            .unwrap_err()
+            .starts_with("STORE_SQL")
+    );
+    assert!(started.elapsed() >= std::time::Duration::from_millis(250));
     let digest = canonical::asset_digest(bytes);
     let path = f.0.join("assets").join(&digest);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !path.exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    assert!(path.exists(), "child did not publish asset bytes");
-    child.kill().unwrap();
-    child.wait().unwrap();
+    assert!(!path.exists(), "nothing is linked while the lock is held");
     db.execute_batch("ROLLBACK").unwrap();
+    drop(blocked);
+    std::fs::write(&path, bytes).unwrap();
     let mut store = f.store();
     assert_eq!(store.asset(&digest, 1024).unwrap_err(), "ASSET_NOT_FOUND");
     assert_eq!(std::fs::read(&path).unwrap(), bytes);

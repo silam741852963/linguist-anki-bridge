@@ -7,6 +7,8 @@ use std::{
     process::ExitCode,
     sync::atomic::{AtomicU8, Ordering},
 };
+mod diagnostics;
+mod maintenance;
 mod recovery_live;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 enum OutputMode {
@@ -86,12 +88,12 @@ enum Command {
         #[command(subcommand)]
         command: SnapshotCommand,
     },
-    /// Cache reachability and pruning are pending.
+    /// Inspect and prune unreferenced local cache; never touches Anki media or history.
     Cache {
         #[command(subcommand)]
         command: CacheCommand,
     },
-    /// Resource inventory and installation are pending.
+    /// List and explicitly install pinned local resources (packs, voices, models).
     Resources {
         #[command(subcommand)]
         command: ResourceCommand,
@@ -175,9 +177,10 @@ enum BackupCommand {
         /// affected or collection; schema actions always escalate to collection.
         #[arg(long)]
         scope: String,
-        /// Create-new .colpkg path whose parent directory exists.
+        /// Create-new .colpkg path whose parent directory exists; defaults to a
+        /// new name in storage.backup_dir.
         #[arg(long)]
-        output: PathBuf,
+        output: Option<PathBuf>,
         /// JSON scope manifest (notes, cards, models, media) the package must cover.
         #[arg(long)]
         scope_manifest: Option<PathBuf>,
@@ -238,17 +241,23 @@ enum SnapshotCommand {
 }
 #[derive(Subcommand)]
 enum CacheCommand {
+    /// Totals, reachable/protected/unreferenced bytes and retention policy.
     Status {
+        /// Only this provider cache (dictionary, kanji, image, tts).
         #[arg(long)]
         provider: Option<String>,
-        #[arg(long)]
-        purpose: Option<String>,
     },
+    /// Preview pruning; --execute deletes only unreferenced local cache.
     Prune {
+        /// Override cache.unreferenced_retention_days.
         #[arg(long)]
         age_days: Option<u32>,
+        /// Override cache.max_size_mb.
         #[arg(long)]
         budget_mb: Option<u64>,
+        /// Only this provider cache; store assets are left alone.
+        #[arg(long)]
+        provider: Option<String>,
         #[arg(long)]
         execute: bool,
     },
@@ -271,10 +280,15 @@ enum ResourceCommand {
         version: String,
         #[arg(long)]
         sha256: String,
+        /// SPDX license identifier of the artifact.
         #[arg(long)]
         license: String,
+        /// New directory inside storage.resource_dir (directory kinds only).
         #[arg(long)]
-        destination: PathBuf,
+        destination: Option<PathBuf>,
+        /// Download/copy, verify and install; otherwise preview only.
+        #[arg(long)]
+        execute: bool,
     },
 }
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -345,8 +359,20 @@ enum JobCommand {
         #[arg(long)]
         live: bool,
     },
-    /// Upgrade existing local job storage after preserving a verified backup.
-    Migrate,
+    /// Upgrade existing local job storage after preserving a verified backup, or
+    /// import a legacy batch-job database as read-only history (--legacy).
+    Migrate {
+        /// Legacy batch_jobs.sqlite3 to translate (never written).
+        #[arg(long, conflicts_with_all = ["list_imports", "show_import"])]
+        legacy: Option<PathBuf>,
+        /// Keep the original database and translation in local state.
+        #[arg(long, requires = "legacy")]
+        execute: bool,
+        #[arg(long)]
+        list_imports: bool,
+        #[arg(long, conflicts_with = "list_imports")]
+        show_import: Option<uuid::Uuid>,
+    },
     /// Request a durable pause; dispatched reads finish their accounting.
     Pause {
         job: uuid::Uuid,
@@ -898,19 +924,28 @@ enum PlanCommand {
 }
 #[derive(Subcommand)]
 enum ConfigCommand {
-    /// Legacy source conversion is unavailable until full per-key accounting.
+    /// Convert a legacy Python YAML or native JSON config into a candidate TOML
+    /// plus per-key report; the source and live config are never written.
     Import {
         #[arg(long)]
         file: PathBuf,
         #[arg(long)]
         output: PathBuf,
+        /// Replace this import's own candidate/report files.
         #[arg(long)]
         replace: bool,
     },
-    /// Check an existing config version; version 2 is already current.
+    /// Check the config version (v2 is current), or activate an imported
+    /// candidate with --from-import after accepting each unresolved key.
     Migrate {
+        #[arg(long, conflicts_with = "from_import")]
+        output: Option<PathBuf>,
+        /// Candidate written by `config import`.
         #[arg(long)]
-        output: PathBuf,
+        from_import: Option<PathBuf>,
+        /// Explicitly accept one blocking legacy key (repeat for each).
+        #[arg(long = "accept-unresolved", requires = "from_import")]
+        accept_unresolved: Vec<String>,
         #[arg(long)]
         execute: bool,
     },
@@ -1035,7 +1070,13 @@ fn render_human(value: &serde_json::Value) -> String {
                 lines(&path, child, output);
             }
         } else {
-            output.push_str(prefix);
+            if diagnostics::color() {
+                output.push_str("\u{1b}[36m");
+                output.push_str(prefix);
+                output.push_str("\u{1b}[0m");
+            } else {
+                output.push_str(prefix);
+            }
             output.push_str(": ");
             output.push_str(&serde_json::to_string(value).expect("JSON value serializes"));
             output.push('\n');
@@ -1045,22 +1086,6 @@ fn render_human(value: &serde_json::Value) -> String {
     lines("result", value, &mut output);
     output.pop();
     output
-}
-fn unavailable_operation(command: &Command) -> Option<&'static str> {
-    match command {
-        Command::Cache { command } => Some(match command {
-            CacheCommand::Status { .. } => "OP-55 cache status",
-            CacheCommand::Prune { .. } => "OP-56 cache prune",
-        }),
-        Command::Resources { command } => Some(match command {
-            ResourceCommand::List { .. } => "OP-57 resources list",
-            ResourceCommand::Install { .. } => "OP-58 resources install",
-        }),
-        Command::Config {
-            command: ConfigCommand::Import { .. },
-        } => Some("OP-09 config import"),
-        _ => None,
-    }
 }
 fn run(cli: Cli) -> Result<u8, String> {
     set_output_mode(cli.output.unwrap_or(OutputMode::Human));
@@ -1078,11 +1103,6 @@ fn run(cli: Cli) -> Result<u8, String> {
             .map_err(output_write_error)?;
         return Ok(0);
     }
-    if let Some(operation) = unavailable_operation(&cli.command) {
-        return Err(format!(
-            "CAPABILITY_UNAVAILABLE: {operation} requires its verified implementation"
-        ));
-    }
     if let Command::Config { command } = &cli.command {
         return run_config(&cli, command);
     }
@@ -1098,6 +1118,80 @@ fn run(cli: Cli) -> Result<u8, String> {
         }
     }
     let vocab_command = matches!(cli.command, Command::Vocab { .. });
+    if matches!(
+        cli.command,
+        Command::Vocab { .. }
+            | Command::Grammar { .. }
+            | Command::Jobs {
+                command: JobCommand::Create { .. } | JobCommand::Run { .. }
+            }
+    ) {
+        linguist_application::duplicate_candidates::require_policy_available(&settings)?;
+    }
+    if matches!(cli.command, Command::Apply { .. } | Command::Recover { .. }) {
+        linguist_application::apply::require_native_adapter(&settings.values)?;
+    }
+    match &cli.command {
+        Command::Cache {
+            command: CacheCommand::Status { provider },
+        } => return maintenance::cache_status(&settings, provider.as_deref()),
+        Command::Cache {
+            command:
+                CacheCommand::Prune {
+                    age_days,
+                    budget_mb,
+                    provider,
+                    execute,
+                },
+        } => {
+            return maintenance::cache_prune(
+                &settings,
+                provider.as_deref(),
+                *age_days,
+                *budget_mb,
+                *execute,
+            );
+        }
+        Command::Resources {
+            command:
+                ResourceCommand::List {
+                    installed,
+                    required,
+                    resource,
+                },
+        } => {
+            return maintenance::resources_list(
+                &settings,
+                *installed,
+                *required,
+                resource.as_deref(),
+            );
+        }
+        Command::Resources {
+            command:
+                ResourceCommand::Install {
+                    resource,
+                    source,
+                    version,
+                    sha256,
+                    license,
+                    destination,
+                    execute,
+                },
+        } => {
+            return maintenance::resources_install(
+                &settings,
+                resource,
+                source,
+                version,
+                sha256,
+                license,
+                destination.as_deref(),
+                *execute,
+            );
+        }
+        _ => {}
+    }
     match cli.command {
         Command::Config { .. }
         | Command::Completions { .. }
@@ -1567,7 +1661,24 @@ fn run(cli: Cli) -> Result<u8, String> {
             if !root.is_absolute() {
                 return Err("STORE_PATH_MUST_BE_ABSOLUTE".into());
             }
-            if let JobCommand::Migrate = command {
+            if let JobCommand::Migrate {
+                legacy: Some(legacy),
+                execute,
+                ..
+            } = &command
+            {
+                return maintenance::jobs_legacy(&settings, &root, legacy, *execute);
+            }
+            if let JobCommand::Migrate {
+                list_imports,
+                show_import,
+                ..
+            } = &command
+                && (*list_imports || show_import.is_some())
+            {
+                return maintenance::jobs_legacy_list(&root, *show_import);
+            }
+            if let JobCommand::Migrate { .. } = command {
                 std::fs::symlink_metadata(&root).map_err(|_| "STORE_NOT_FOUND")?;
                 let _ = linguist_store::Store::open_existing(&root)?;
                 emit(
@@ -1734,7 +1845,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 | JobCommand::Pause { .. }
                 | JobCommand::Resume { .. }
                 | JobCommand::Cancel { .. }
-                | JobCommand::Migrate => unreachable!(),
+                | JobCommand::Migrate { .. } => unreachable!(),
             }
             Ok(0)
         }
@@ -2748,14 +2859,34 @@ fn main() -> ExitCode {
             }
         },
     };
+    let started = std::time::Instant::now();
+    let label = command_label();
     match run(cli) {
-        Ok(code) => ExitCode::from(code),
+        Ok(code) => {
+            diagnostics::record(&label, code, None, started.elapsed());
+            ExitCode::from(code)
+        }
         Err(message) if message == "OUTPUT_BROKEN_PIPE" => ExitCode::SUCCESS,
         Err(message) => {
             let _ = writeln_error(&message);
-            ExitCode::from(error_exit(&message))
+            let code = error_exit(&message);
+            diagnostics::record(&label, code, Some(&message), started.elapsed());
+            ExitCode::from(code)
         }
     }
+}
+/// Subcommand names only (e.g. `jobs migrate`); argument values are never logged.
+fn command_label() -> String {
+    let Ok(matches) = Cli::command().try_get_matches_from(std::env::args_os()) else {
+        return String::new();
+    };
+    let mut names = Vec::new();
+    let mut current = &matches;
+    while let Some((name, next)) = current.subcommand() {
+        names.push(name.to_owned());
+        current = next;
+    }
+    names.join(" ")
 }
 fn writeln_error(message: &str) -> std::io::Result<()> {
     use std::io::Write;
@@ -2804,6 +2935,7 @@ fn apply_offline_flag(
     Ok(())
 }
 fn use_settings_output(cli: &Cli, settings: &linguist_config::Effective) -> Result<(), String> {
+    diagnostics::configure(settings);
     if cli.output.is_none() {
         set_output_mode(OutputMode::from_setting(&settings.values["output.format"])?);
     }
@@ -2879,6 +3011,7 @@ fn run_config(cli: &Cli, command: &ConfigCommand) -> Result<u8, String> {
             description["resolved_key"] = serde_json::json!(key);
             description["cross_field_checks"] =
                 serde_json::json!(linguist_config::cross_field_checks(key));
+            description["coverage"] = serde_json::json!(linguist_config::coverage::row(key));
             emit(&description)?;
             return Ok(0);
         }
@@ -2893,6 +3026,18 @@ fn run_config(cli: &Cli, command: &ConfigCommand) -> Result<u8, String> {
             return Ok(0);
         }
         _ => {}
+    }
+    if let ConfigCommand::Import {
+        file,
+        output,
+        replace,
+    } = command
+    {
+        if !cli.settings.is_empty() || cli.profile.is_some() || cli.purpose.is_some() || cli.offline
+        {
+            return Err("CONFIG_IMPORT_SCOPE: import converts the legacy file only; --set, --profile, --purpose and --offline do not apply".into());
+        }
+        return maintenance::config_import(cli, file, output, *replace);
     }
     let mut options = config_options(cli, &registry)?;
     if matches!(
@@ -2934,7 +3079,22 @@ fn run_config(cli: &Cli, command: &ConfigCommand) -> Result<u8, String> {
         )?;
         return Ok(0);
     }
-    if let ConfigCommand::Migrate { output, execute } = command {
+    if let ConfigCommand::Migrate {
+        from_import: Some(candidate),
+        accept_unresolved,
+        execute,
+        ..
+    } = command
+    {
+        if !options.flags.is_empty() || options.profile.is_some() || options.purpose.is_some() {
+            return Err("CONFIG_MIGRATE_SCOPE: migration reads the durable file only".into());
+        }
+        return maintenance::config_activate(cli, candidate, accept_unresolved, *execute);
+    }
+    if let ConfigCommand::Migrate {
+        output, execute, ..
+    } = command
+    {
         if !options.flags.is_empty() || options.profile.is_some() || options.purpose.is_some() {
             return Err("CONFIG_MIGRATE_SCOPE: migration reads the durable file only".into());
         }
@@ -3020,9 +3180,10 @@ fn run_config(cli: &Cli, command: &ConfigCommand) -> Result<u8, String> {
     match command {
         ConfigCommand::Validate { .. } => {
             let resources = linguist_config::resources::inspect(&effective, &options.environment);
-            let missing = !resources.missing.is_empty();
+            let unavailable = linguist_config::coverage::unavailable_settings(&effective);
+            let missing = !resources.missing.is_empty() || !unavailable.is_empty();
             emit(
-                &serde_json::json!({"version":2,"valid":true,"fingerprint":effective.fingerprint,"runtime_resources_checked":false,"local_resources":resources}),
+                &serde_json::json!({"version":2,"valid":true,"fingerprint":effective.fingerprint,"runtime_resources_checked":false,"local_resources":resources,"unavailable_settings":unavailable}),
             )?;
             return Ok(if missing { 3 } else { 0 });
         }
@@ -3074,8 +3235,25 @@ fn error_exit(message: &str) -> u8 {
             && code.ends_with("_CORRUPT"))
     {
         7
-    } else if code == "DOCUMENT_NOT_READY" {
+    } else if code == "DOCUMENT_NOT_READY" || code == "IMPORT_ACTIVATION_BLOCKED" {
         4
+    } else if code.starts_with("GC_BLOCKED_BY_")
+        || matches!(
+            code,
+            "RESOURCE_DESTINATION_EXISTS"
+                | "RESOURCE_VERSION_INSTALLED_DIFFERENTLY"
+                | "IMPORT_OUTPUT_EXISTS"
+                | "IMPORT_CANDIDATE_CHANGED"
+        )
+    {
+        5
+    } else if matches!(
+        code,
+        "RESOURCE_DESTINATION_OUTSIDE_RESOURCE_DIR"
+            | "RESOURCE_VERSION_INVALID"
+            | "RESOURCE_DESTINATION_INVALID"
+    ) {
+        2
     } else if code.contains("CONFLICT")
         || matches!(
             code,
@@ -3125,7 +3303,9 @@ fn load_effective(cli: &Cli) -> Result<linguist_config::Effective, String> {
             );
         }
     };
-    linguist_config::resolve(&registry, &file, &options)
+    let effective = linguist_config::resolve(&registry, &file, &options)?;
+    diagnostics::configure(&effective);
+    Ok(effective)
 }
 
 fn package_limits(
@@ -3770,6 +3950,32 @@ fn run_backup(command: BackupCommand, settings: &linguist_config::Effective) -> 
             let manifest = read_scope_manifest(scope_manifest.as_deref(), max_input)?;
             let preference_setting = settings.values["backup.scope"].as_str().unwrap();
             let coverage = backup::plan_coverage(preference, &manifest);
+            let (output, output_source) = match output {
+                Some(output) => (output, "flag"),
+                None => {
+                    let directory = linguist_config::expand_path(
+                        settings.values["storage.backup_dir"].as_str().unwrap(),
+                        &std::env::vars().collect(),
+                    )?;
+                    let stamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let suffix = uuid::Uuid::new_v4().simple().to_string();
+                    (
+                        directory.join(format!("checkpoint-{stamp}-{}.colpkg", &suffix[..8])),
+                        "storage.backup_dir",
+                    )
+                }
+            };
+            if output_source == "storage.backup_dir"
+                && !output.parent().is_some_and(std::path::Path::is_dir)
+            {
+                return Err(format!(
+                    "CHECKPOINT_OUTPUT_PARENT_UNAVAILABLE: storage.backup_dir {} does not exist; create it privately (mkdir -m 700) or pass --output",
+                    output.parent().unwrap().display()
+                ));
+            }
             let (output, _) = backup::checkpoint_paths(&output, uuid::Uuid::nil())?;
             if apply {
                 // No tested native export_checkpoint adapter exists; never call an
@@ -3780,6 +3986,7 @@ fn run_backup(command: BackupCommand, settings: &linguist_config::Effective) -> 
                 "schema_version": 2,
                 "mode": "preview",
                 "output": output,
+                "output_source": output_source,
                 "scope_digest": manifest.digest()?,
                 "scope_entries": {
                     "notes": manifest.note_ids.len(),

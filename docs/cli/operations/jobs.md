@@ -335,6 +335,8 @@ Effects: Local candidate state only.
 
 Result/failure: Migration report with unsupported/ambiguous records; no resumed writes. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
+Current legacy import (WP-14): `jobs migrate --legacy PATH` previews a translation of a legacy Python or desktop `batch_jobs.sqlite3` (and its `-wal`, copied into a private scratch directory; the original is never opened for writing). Job states map to paused, completed, failed, cancelled, rolled_back or rollback_incomplete; items to pending, prepared_not_applied (artifact not imported), applied_historical, failed, skipped, reverted or `requires_review` for `committing` and `rollback_failed`; unknown states are `unsupported`. Every imported job is `runnable: false`. `--execute` stores the original database (and WAL) as assets and the report in the immutable `legacy_job_imports` table (schema 13), idempotently per database digest. `--list-imports` and `--show-import ID` read them back. Exit 4 when any item requires review.
+
 ## Current preparation queue commands
 
 OP-35 supports explicit note IDs or query/deck selectors, with a required global `--purpose` for one of the four vocabulary/grammar purposes. It accepts existing-note preparation input. Validate canonical note IDs and selection limits, freeze configured order/settings/paths, allocate ordered item UUIDs and persist an immutable definition. Query/deck creation freezes matches with profile checks; it reads no note content, starts no worker and creates no plan. Default enrichment may be queued; worker capability checks reject unavailable adapters when run.

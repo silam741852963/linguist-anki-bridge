@@ -538,6 +538,26 @@ pub fn project(
     }
 }
 
+/// The only verified companion protocol for managed collection writes.
+pub const NATIVE_ADAPTER: &str = "lab-native-v1";
+
+/// `anki.native_adapter` must name the verified companion protocol; any other
+/// value is rejected rather than silently ignored.
+pub fn require_native_adapter(
+    values: &std::collections::BTreeMap<String, serde_json::Value>,
+) -> Result<()> {
+    match values
+        .get("anki.native_adapter")
+        .and_then(serde_json::Value::as_str)
+    {
+        Some(NATIVE_ADAPTER) => Ok(()),
+        Some(other) => Err(format!(
+            "NATIVE_ADAPTER_UNSUPPORTED: anki.native_adapter={other}; only {NATIVE_ADAPTER} is verified for managed writes"
+        )),
+        None => Err("NATIVE_ADAPTER_UNSUPPORTED: anki.native_adapter is missing".into()),
+    }
+}
+
 /// Plan-time checks shared by preview and apply. They read only local state.
 pub struct AuthorizedItem {
     pub plan: PlanRevision,

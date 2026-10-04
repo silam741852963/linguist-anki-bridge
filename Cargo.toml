@@ -21,6 +21,7 @@ language-tags = "0.3"
 uuid = { version = "1", features = ["serde", "v4"] }
 clap = { version = "=4.6.7", features = ["derive"] }
 toml = "0.9"
+yaml-rust2 = { version = "=0.13.0", default-features = false }
 
 linguist-config = { path = "crates/linguist-config" }
 url = "2.5"
@@ -32,7 +33,7 @@ linguist-anki = { path = "crates/linguist-anki" }
 linguist-application = { path = "crates/linguist-application" }
 base64 = { version = "=0.23.1", default-features = false, features = ["std"] }
 csv = "=1.4.0"
-zip = { version = "=8.6.0", default-features = false }
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 zstd = "=0.14.0"
 prost = "=0.14.4"
 sha1 = "=0.11.0"

@@ -9,6 +9,9 @@ fn validate_settings(settings: &Effective) -> Result<(), String> {
         "dictionary.provider",
         "network.max_response_mb",
         "input.max_file_mb",
+        "filters.remove_parentheses",
+        "filters.clean_word_only",
+        "filters.normalize_unicode",
     ] {
         registry.validate_value(
             key,
@@ -121,6 +124,53 @@ pub fn enrich_revision(
     Ok(child)
 }
 
+/// Lookup normalization from `filters.*`. It changes only the dictionary query;
+/// the captured expression and source archives are never rewritten.
+pub fn lookup_term(expression: &str, settings: &Effective) -> Result<String, String> {
+    use unicode_normalization::UnicodeNormalization;
+    let flag = |key: &str| settings.values.get(key) == Some(&serde_json::json!(true));
+    let mut term: String = if flag("filters.normalize_unicode") {
+        expression.nfc().collect()
+    } else {
+        expression.to_owned()
+    };
+    if flag("filters.remove_parentheses") {
+        let mut out = String::with_capacity(term.len());
+        let mut depth = 0usize;
+        for c in term.chars() {
+            match c {
+                '(' | '（' => depth += 1,
+                ')' | '）' if depth > 0 => depth -= 1,
+                _ if depth == 0 => out.push(c),
+                _ => {}
+            }
+        }
+        term = out;
+    }
+    if flag("filters.clean_word_only") {
+        // Letters (kanji, kana, Latin...) and combining marks; other characters
+        // become word breaks.
+        term = term
+            .chars()
+            .map(|c| {
+                if c.is_alphabetic() || unicode_normalization::char::is_combining_mark(c) {
+                    c
+                } else {
+                    ' '
+                }
+            })
+            .collect();
+    }
+    let term = term.split_whitespace().collect::<Vec<_>>().join(" ");
+    if term.is_empty() {
+        return Err(
+            "DICTIONARY_LOOKUP_TERM_EMPTY: filters.* removed every character of the expression"
+                .into(),
+        );
+    }
+    Ok(term)
+}
+
 /// Stage enrichment atomically: provider failure leaves the caller's document unchanged.
 /// Returned response bytes must be retained before publishing the enriched revision.
 pub fn enrich_document(
@@ -164,8 +214,9 @@ pub fn enrich_document(
             if vocab.expression.trim().is_empty() {
                 return Err("VOCAB_EXPRESSION_REQUIRED".into());
             }
+            let term = lookup_term(&vocab.expression, settings)?;
             let page = if let Some(provider) = dictionary {
-                provider.lookup(&vocab.expression, &document.target_language)?
+                provider.lookup(&term, &document.target_language)?
             } else {
                 let client = linguist_dictionary::transport::DictionaryClient::for_target(
                     settings,
@@ -173,12 +224,10 @@ pub fn enrich_document(
                 )
                 .map_err(|e| format!("CAPABILITY_UNAVAILABLE: {e}"))?;
                 client
-                    .lookup(&vocab.expression, &document.target_language, 1000)
+                    .lookup(&term, &document.target_language, 1000)
                     .map_err(|e| format!("DICTIONARY_PROVIDER_FAILED: {e}"))?
             };
-            if page.query != vocab.expression
-                || canonical::asset_digest(&page.raw_bytes) != page.raw_digest
-            {
+            if page.query != term || canonical::asset_digest(&page.raw_bytes) != page.raw_digest {
                 return Err("DICTIONARY_RESPONSE_CONFLICT".into());
             }
             // Reparse port output: callers cannot fabricate rich facts unrelated to saved bytes.
