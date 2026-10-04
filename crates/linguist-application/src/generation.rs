@@ -311,8 +311,7 @@ pub fn build_request(
     let user = json!({"schema_version":2,"kind":kind,"target_language":doc.target_language,"explanation_language":doc.explanation_language,
         "accepted_content":doc.content,"context":doc.context,"sources":sources,"regions":doc.regions,"evidence":doc.evidence,
         "allowed_fields":allowed,"examples_requested":examples_requested});
-    let output_schema =
-        serde_json::to_value(schema_for!(Supplement)).map_err(|_| "GENERATION_SCHEMA_INVALID")?;
+    let output_schema = constrained_schema(kind, &allowed, examples_requested)?;
     Ok(GenerationRequest {
         system_prompt: prompt.into(),
         user_json: String::from_utf8(canonical::bytes(&user).map_err(|e| e.to_string())?)
@@ -325,6 +324,41 @@ pub fn build_request(
         allowed_fields: allowed,
         examples_requested,
     })
+}
+
+/// The supplement schema narrowed to this request: only the document's kind,
+/// fields that are not allowed must be empty, and at most `examples` new
+/// examples. Constrained decoding then cannot produce output that
+/// `validate_output` must reject; validation still runs on every reply.
+fn constrained_schema(kind: &str, allowed: &[String], examples: usize) -> Result<Value, String> {
+    let mut schema =
+        serde_json::to_value(schema_for!(Supplement)).map_err(|_| "GENERATION_SCHEMA_INVALID")?;
+    let branch = schema["oneOf"]
+        .as_array()
+        .and_then(|branches| {
+            branches
+                .iter()
+                .find(|b| b["properties"]["kind"]["const"] == kind)
+                .cloned()
+        })
+        .ok_or("GENERATION_SCHEMA_INVALID")?;
+    schema["oneOf"] = json!([branch]);
+    let definition = if kind == "vocabulary" {
+        "VocabularySupplement"
+    } else {
+        "GrammarSupplement"
+    };
+    let properties = schema["$defs"][definition]["properties"]
+        .as_object_mut()
+        .ok_or("GENERATION_SCHEMA_INVALID")?;
+    for (name, property) in properties.iter_mut() {
+        if name == "examples" {
+            property["maxItems"] = json!(examples);
+        } else if !allowed.iter().any(|field| field == name) {
+            property["enum"] = json!([""]);
+        }
+    }
+    Ok(schema)
 }
 
 pub fn parse_output(bytes: &[u8], max_bytes: u64, max_chars: usize) -> Result<Supplement, String> {

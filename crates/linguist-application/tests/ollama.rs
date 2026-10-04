@@ -230,6 +230,11 @@ impl FixtureServer {
                         serde_json::from_slice(&bytes).unwrap()
                     },
                 ));
+                // A slow server: "X-Fixture-Delay-Ms: N" delays this reply.
+                if let Some(rest) = headers.split("X-Fixture-Delay-Ms: ").nth(1) {
+                    let millis: u64 = rest.split("\r\n").next().unwrap().parse().unwrap();
+                    std::thread::sleep(std::time::Duration::from_millis(millis));
+                }
                 let _ = write!(
                     stream,
                     "HTTP/1.1 {status} Fixture\r\nConnection: close\r\nContent-Length: {}\r\n{headers}\r\n{body}",
@@ -512,6 +517,7 @@ fn candidate_generation_binds_inventory_and_separates_source_from_instructions()
     assert!(requests[3].0.starts_with("POST /api/chat "));
     let body = &requests[3].1;
     assert_eq!(body["stream"], false);
+    assert_eq!(body["think"], false);
     assert_eq!(body["truncate"], false);
     assert_eq!(body["shift"], false);
     assert_eq!(body["keep_alive"], "2m");
@@ -535,6 +541,35 @@ fn candidate_generation_binds_inventory_and_separates_source_from_instructions()
         canonical::parse::<Value>(&candidate.request_bytes).unwrap(),
         *body
     );
+}
+#[test]
+fn slow_inference_uses_the_llm_budget_not_the_network_read_timeout() {
+    // Local generation routinely outlasts network.request_timeout_seconds;
+    // only llm.timeout_seconds bounds the inference request.
+    let mut output = reply(completion_response());
+    output.1.push_str("X-Fixture-Delay-Ms: 1500\r\n");
+    let server = FixtureServer::new(vec![
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+        output,
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+    ]);
+    let mut config = settings();
+    for (key, value) in [
+        ("llm.endpoint", json!(server.endpoint)),
+        ("services.ollama.min_interval_seconds", json!(0)),
+        ("network.request_timeout_seconds", json!(1)),
+        ("llm.timeout_seconds", json!(30)),
+    ] {
+        config.values.insert(key.into(), value);
+    }
+    let client = transport::Client::from_settings(&config, &Default::default()).unwrap();
+    let candidate = client.generate_candidate(&generation_document()).unwrap();
+    assert!(!candidate.completion.raw.is_empty());
+    assert_eq!(server.worker.join().unwrap().len(), 7);
 }
 #[test]
 fn candidate_inference_failures_never_retry_or_continue_metadata_reads() {

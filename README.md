@@ -12,7 +12,14 @@ python3 docs/cli/validate.py
 
 The existing Rust/Python application, tests, contracts, packaging, scripts and historical documentation are preserved in **[legacy/](legacy/README.md)**. Run its commands from that directory. Current implementation files retain their pre-move contents; the CLI specifications describe future behavior, not a completed replacement.
 
-The new Rust workspace builds a CLI without Qt or Python. Implementation has started with domain contracts and offline document tooling; the complete workflows, configuration, persistence and native bridge remain in progress. Anki writes are unavailable.
+The new Rust workspace builds a CLI (`linguist-anki-bridge` 0.1.0) without Qt or Python. It prepares, reviews, validates, approves and exports vocabulary and grammar cards, reads Anki through AnkiConnect, and keeps durable local plans, jobs, snapshots and recovery records. **Collection writes are not available in 0.1.0**: `apply`, `snapshots restore`, `jobs rollback`, `recover reconcile`, `backup create` and `models install` preview only, and their `--apply` forms exit 3 with `CAPABILITY_UNAVAILABLE`. The native companion transport does not exist yet, so no claim of a safe revamp of a real collection is made. The [release check](docs/cli/evidence/release-2026-10-04/README.md) records which release gates pass (scoped to Anki 25.09.2 disposable collections) and which are blocked. [Command examples for 0.1.0](docs/cli/examples/commands-v0.1.0.md) list what works.
+
+Release build (locked, reproducible, with checksums; nothing is installed):
+
+```sh
+python3 scripts/release-build.py --verify-reproducible   # dist/release/
+python3 scripts/release-check.py --msrv --release-build --benchmark
+```
 
 ```sh
 cargo test --locked --workspace

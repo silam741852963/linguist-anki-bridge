@@ -1308,6 +1308,28 @@ fn render_human(value: &serde_json::Value) -> String {
     output.pop();
     output
 }
+/// Release-gate statuses recorded for this source tree (docs/cli/decisions/
+/// release-gates.json, written from WP-15 evidence). A gate pass is scoped to
+/// its recorded versions; any non-pass gate means no full CLI release claim.
+fn release_gates() -> serde_json::Value {
+    let data: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../docs/cli/decisions/release-gates.json"
+    ))
+    .unwrap_or_default();
+    let gates: serde_json::Map<String, serde_json::Value> = data["gates"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|gate| {
+            (
+                gate["id"].as_str().unwrap_or("?").to_owned(),
+                gate["status"].clone(),
+            )
+        })
+        .collect();
+    let complete = !gates.is_empty() && gates.values().all(|status| status == "pass");
+    serde_json::json!({"gates": gates, "all_passed": complete, "full_cli_release_claim": complete})
+}
 /// Commands that write local state, with a conservative estimate of how many
 /// bytes they may add beyond `storage.free_space_reserve_mb`. Pruning and
 /// read-only commands return `None`; resource installs check space themselves.
@@ -2715,7 +2737,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                         .iter()
                         .any(|check| check["required"] == true && check["status"] != "available");
                 emit(
-                    &serde_json::json!({"version":2,"collection_writes_enabled":false,"native_bridge":"not_implemented","release_gates":"not_run","services_probed":false,"offline_requested":cli.offline,"local_resources":resources,"local_engines":engines}),
+                    &serde_json::json!({"version":2,"collection_writes_enabled":false,"native_bridge":"not_implemented","release_gates":release_gates(),"services_probed":false,"offline_requested":cli.offline,"local_resources":resources,"local_engines":engines}),
                 )?;
                 return Ok(if required_missing { 3 } else { 0 });
             }
@@ -2727,7 +2749,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 let evidence = client.model_evidence()?;
                 emit(
                     &serde_json::json!({"version":2,"probe":"ollama_metadata","ollama":evidence,
-                    "metadata_ready":true,"collection_writes_enabled":false,"release_gates":"not_run",
+                    "metadata_ready":true,"collection_writes_enabled":false,"release_gates":release_gates(),
                     "raw_assets_persisted":false}),
                 )?;
                 return Ok(0);
@@ -2735,7 +2757,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             if bridge {
                 let inspection = anki_client(&settings)?.native_capabilities()?;
                 emit(
-                    &serde_json::json!({"version":2,"probe":"native_bridge","native_bridge":inspection,"release_gates":"not_run"}),
+                    &serde_json::json!({"version":2,"probe":"native_bridge","native_bridge":inspection,"release_gates":release_gates()}),
                 )?;
                 return Ok(0);
             }
@@ -2743,7 +2765,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             let capabilities = client.capabilities()?;
             let ready = capabilities.read_ready;
             emit(
-                &serde_json::json!({"version":2,"anki":capabilities,"provider_resources_checked":false,"release_gates":"not_run"}),
+                &serde_json::json!({"version":2,"anki":capabilities,"provider_resources_checked":false,"release_gates":release_gates()}),
             )?;
             Ok(if ready { 0 } else { 3 })
         }

@@ -86,6 +86,19 @@ fn request_separates_untrusted_data_preserves_facts_and_caps_supplements() {
         request.schema_digest,
         canonical::digest("generation-schema-v2", &request.output_schema).unwrap()
     );
+    // The decoding schema mirrors validate_output: one kind, disallowed
+    // fields constrained to "", and no more examples than requested.
+    let schema = &request.output_schema;
+    assert_eq!(schema["oneOf"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        schema["oneOf"][0]["properties"]["kind"]["const"],
+        "vocabulary"
+    );
+    let properties = &schema["$defs"]["VocabularySupplement"]["properties"];
+    assert_eq!(properties["spelling_prompt"]["enum"], json!([""]));
+    assert!(properties["production_prompt"].get("enum").is_none());
+    assert!(properties["usage"].get("enum").is_none());
+    assert_eq!(properties["examples"]["maxItems"], 1);
 }
 #[test]
 fn output_cannot_override_core_facts_authored_fields_or_example_provenance() {

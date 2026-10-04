@@ -845,3 +845,96 @@ fn free_space_reserve_refuses_state_writes_but_not_reads() {
         "{job:?}"
     );
 }
+
+fn split_shell(line: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut started = false;
+    for character in line.chars() {
+        match character {
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            ' ' if !quoted => {
+                if started {
+                    words.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            other => {
+                current.push(other);
+                started = true;
+            }
+        }
+    }
+    if started {
+        words.push(current);
+    }
+    words
+}
+
+#[test]
+fn versioned_command_examples_use_existing_commands_and_flags() {
+    let home = Home::new("examples");
+    let mut pages = Vec::new();
+    help_pages(&home, vec![], &mut pages);
+    let help: std::collections::BTreeMap<Vec<String>, String> = pages.into_iter().collect();
+    let children = |path: &[String]| -> Vec<String> {
+        let mut out = Vec::new();
+        let mut inside = false;
+        for line in help[path].lines() {
+            if line.starts_with("Commands:") {
+                inside = true;
+                continue;
+            }
+            if inside {
+                if !line.starts_with("  ") {
+                    inside = false;
+                    continue;
+                }
+                out.push(line.split_whitespace().next().unwrap().to_owned());
+            }
+        }
+        out
+    };
+    let version = env!("CARGO_PKG_VERSION");
+    let doc = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../docs/cli/examples/commands-v{version}.md"));
+    let text = std::fs::read_to_string(&doc).expect("examples for the current version");
+    let mut checked = 0;
+    let mut in_block = false;
+    for line in text.lines() {
+        if line.starts_with("```") {
+            in_block = line == "```sh";
+            continue;
+        }
+        if !in_block || line.trim().is_empty() {
+            continue;
+        }
+        let words = split_shell(line);
+        assert_eq!(words[0], "linguist-anki-bridge", "{line}");
+        let mut path: Vec<String> = Vec::new();
+        let mut flags = Vec::new();
+        let mut index = 1;
+        while index < words.len() {
+            let word = &words[index];
+            if let Some(flag) = word.strip_prefix("--") {
+                flags.push((path.clone(), flag.to_owned()));
+            } else if children(&path).contains(word) {
+                path.push(word.clone());
+            }
+            index += 1;
+        }
+        assert!(!path.is_empty() || line.contains("--help"), "{line}");
+        for (scope, flag) in flags {
+            let found = [scope.clone(), path.clone(), vec![]]
+                .iter()
+                .any(|p| help[p].contains(&format!("--{flag}")));
+            assert!(found, "{line}: unknown flag --{flag}");
+        }
+        checked += 1;
+    }
+    assert!(checked >= 30, "{checked}");
+}

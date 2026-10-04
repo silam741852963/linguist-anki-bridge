@@ -173,7 +173,11 @@ fn doctor_bridge_inspects_declaration_without_enabling_writes() {
         false
     );
     assert_eq!(value["native_bridge"]["collection_writes_enabled"], false);
-    assert_eq!(value["release_gates"], "not_run");
+    assert_eq!(value["release_gates"]["full_cli_release_claim"], false);
+    assert_eq!(
+        value["release_gates"]["gates"].as_object().unwrap().len(),
+        14
+    );
     assert!(!root.exists());
     let requests = server.finish();
     assert_eq!(

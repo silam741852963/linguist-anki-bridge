@@ -259,6 +259,9 @@ impl Client {
             ],
             "format":request.output_schema,
             "stream":false,
+            // Structured output only: reasoning tokens would consume the
+            // num_predict budget and end in done_reason=length.
+            "think":false,
             "truncate":false,
             "shift":false,
             "keep_alive":self.settings.values["llm.keep_alive"],
@@ -299,13 +302,9 @@ impl Client {
             )
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(request_bytes.clone())
-            .timeout(
-                remaining.min(Duration::from_secs(
-                    self.settings.values["network.request_timeout_seconds"]
-                        .as_u64()
-                        .unwrap(),
-                )),
-            )
+            // Inference is bounded by the remaining llm.timeout_seconds budget;
+            // network.request_timeout_seconds governs metadata reads only.
+            .timeout(remaining)
             .send()
             .map_err(|_| "OLLAMA_INFERENCE_OUTCOME_UNKNOWN")?;
         let status = reply.status();
