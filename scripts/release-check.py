@@ -239,7 +239,7 @@ def main():
         r.run("msrv", cargo_test + ["--workspace", "--no-fail-fast"],
               env={"PATH": f"{MSRV_BIN}:{os.environ['PATH']}", "CARGO_TARGET_DIR": "target/msrv"})
     if args.release_build:
-        r.run("release_build", ["python3", "scripts/release-build.py", "--verify-reproducible"])
+        r.run("release_build", ["python3", "scripts/release-build.py", "--verify-reproducible", "--clean"])
     if args.benchmark:
         bench = r.run("model_benchmark", ["python3", "scripts/model-benchmark.py"], timeout=7200)
         if bench["exit_code"] == 0:

@@ -164,6 +164,8 @@ def main():
     parser.add_argument("--target-dir", type=Path, default=ROOT / "target" / "release-build")
     parser.add_argument("--verify-reproducible", action="store_true",
                         help="build twice in separate target directories and compare")
+    parser.add_argument("--clean", action="store_true",
+                        help="remove both release target directories first (no cached artifacts)")
     parser.add_argument("--allow-dirty", action="store_true",
                         help="build from a working tree with tracked changes (recorded)")
     args = parser.parse_args()
@@ -180,6 +182,9 @@ def main():
         raise SystemExit(f"RELEASE_QT_DEPENDENCY: {', '.join(qt)}")
 
     target_dir = args.target_dir.resolve()
+    if args.clean:
+        for directory in (target_dir, target_dir.with_name(target_dir.name + "-verify")):
+            shutil.rmtree(directory, ignore_errors=True)
     binary, rustflags = build(target_dir, epoch)
     binary_sha = sha256(binary)
     reproducible = None
@@ -228,6 +233,7 @@ def main():
         "binary_sha256": binary_sha,
         "archive_sha256": sha256(archive),
         "reproducible_rebuild_matched": reproducible,
+        "clean_build": args.clean,
         "installed": False,
     }
     manifest_path = out / "build-manifest.json"

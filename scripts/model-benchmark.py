@@ -83,9 +83,10 @@ def main():
                 entry.update(attempted=False, generated=False,
                              error=(error.split(":")[0] or "GENERATION_NOT_REQUESTED"))
             else:
-                error = outcome.get("error")
+                skipped = outcome.get("skipped")
+                error = outcome.get("error") or skipped
                 entry.update(generated=bool(outcome.get("generated")), error=error,
-                             attempted=error not in NOT_ATTEMPTED)
+                             attempted=not skipped and error not in NOT_ATTEMPTED)
                 if outcome.get("generated"):
                     entry["issues"] = sorted({i["code"] for i in outcome["result"]["issues"]})
             items.append(entry)
