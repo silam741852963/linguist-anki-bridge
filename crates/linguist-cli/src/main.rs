@@ -10,6 +10,7 @@ use std::{
 mod diagnostics;
 mod interrupt;
 mod maintenance;
+mod native_writes;
 mod recovery_live;
 mod remedy;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
@@ -373,7 +374,10 @@ enum JobCommand {
         /// Limit the rollback to this item (repeatable).
         #[arg(long = "item-id")]
         item_ids: Vec<uuid::Uuid>,
-        /// Request the restore writes; unavailable until the native adapter is verified.
+        /// Explicitly accept the schema/full-sync warning of reverse note-type changes.
+        #[arg(long)]
+        accept_schema_change: bool,
+        /// Request the restore writes through the verified native companion.
         #[arg(long)]
         apply: bool,
     },
@@ -1635,15 +1639,34 @@ fn run(cli: Cli) -> Result<u8, String> {
                         })
                         .transpose()?;
                     if apply {
-                        // ALG-RESTORE is implemented over the native port, but no
-                        // tested lab-native-v1 mutation transport exists.
-                        return Err("CAPABILITY_UNAVAILABLE: snapshots restore --apply requires the verified native lab-native-v1 mutation adapter; no lease, checkpoint, journal or Anki request was made".into());
+                        drop(store);
+                        return native_writes::restore_snapshot(&settings, snapshot, decision);
                     }
-                    let blocked = !preview.blockers.is_empty();
+                    // Live preview through the verified companion when available;
+                    // its observed_state_digest is what a decision must name.
+                    let (live, live_error) =
+                        match native_writes::restore_preview(&settings, snapshot) {
+                            Ok(plan) => (Some(plan), None),
+                            Err(error) => (None, Some(error)),
+                        };
+                    let blocked = !preview.blockers.is_empty()
+                        || live.as_ref().is_some_and(|plan| !plan.blockers.is_empty());
+                    let template = live.as_ref().map(|plan| {
+                        serde_json::json!({
+                            "schema_version": 1, "snapshot_id": snapshot,
+                            "observed_state_digest": plan.observed_state_digest,
+                            "actor": "", "fields": {}, "decks": {}, "remove_unstudied_cards": [],
+                            "delete_created_notes": [], "accept_missing_media": [],
+                            "accept_schema_change": false,
+                        })
+                    });
                     emit(&serde_json::json!({
                         "schema_version": 2,
                         "mode": "preview",
-                        "live_checked": false,
+                        "live_checked": live.is_some(),
+                        "live": live,
+                        "live_unavailable": live_error,
+                        "decision_template": template,
                         "restore": preview,
                         "decision_digest": decision.as_ref().map(|d| d.digest()).transpose()?,
                         "restore_requirements": [
@@ -1658,7 +1681,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                             "shared note types and collection media (never deleted)",
                             "created notes unless an unchanged, unstudied note is explicitly listed",
                         ],
-                        "collection_writes_enabled": false,
+                        "collection_writes_enabled": live.is_some(),
                     }))?;
                     return Ok(if blocked { 4 } else { 0 });
                 }
@@ -1903,10 +1926,11 @@ fn run(cli: Cli) -> Result<u8, String> {
             if let JobCommand::Rollback {
                 job,
                 item_ids,
+                accept_schema_change,
                 apply,
             } = command
             {
-                return run_rollback(&settings, job, &item_ids, apply);
+                return run_rollback(&settings, job, &item_ids, accept_schema_change, apply);
             }
             let env: BTreeMap<String, String> = std::env::vars().collect();
             if let JobCommand::Create {
@@ -2737,7 +2761,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                         .iter()
                         .any(|check| check["required"] == true && check["status"] != "available");
                 emit(
-                    &serde_json::json!({"version":2,"collection_writes_enabled":false,"native_bridge":"not_implemented","release_gates":release_gates(),"services_probed":false,"offline_requested":cli.offline,"local_resources":resources,"local_engines":engines}),
+                    &serde_json::json!({"version":2,"collection_writes_enabled":false,"native_bridge":"probe with `doctor --bridge`","release_gates":release_gates(),"services_probed":false,"offline_requested":cli.offline,"local_resources":resources,"local_engines":engines}),
                 )?;
                 return Ok(if required_missing { 3 } else { 0 });
             }
@@ -2755,9 +2779,16 @@ fn run(cli: Cli) -> Result<u8, String> {
                 return Ok(0);
             }
             if bridge {
-                let inspection = anki_client(&settings)?.native_capabilities()?;
+                let client = anki_client(&settings)?;
+                let inspection = client.native_capabilities()?;
+                let verified = client.native_verified();
+                let writes = verified.is_ok();
                 emit(
-                    &serde_json::json!({"version":2,"probe":"native_bridge","native_bridge":inspection,"release_gates":release_gates()}),
+                    &serde_json::json!({"version":2,"probe":"native_bridge","native_bridge":inspection,
+                        "collection_writes_enabled":writes,
+                        "write_gate":verified.as_ref().err(),
+                        "verified_companions":linguist_anki::native::VERIFIED_COMPANIONS,
+                        "release_gates":release_gates()}),
                 )?;
                 return Ok(0);
             }
@@ -2801,9 +2832,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 _ => return Err("MODEL_PURPOSE_UNSUPPORTED".into()),
             };
             if apply {
-                // The journaled installer (linguist_application::model_install) exists, but
-                // no tested native install_model adapter does; nothing is dispatched.
-                return Err("CAPABILITY_UNAVAILABLE: models install --apply requires the verified native install_model and export_checkpoint adapters; no lease, checkpoint, journal or Anki request was made".into());
+                return native_writes::models_install(&settings, target);
             }
             let client = anki_client(&settings)?;
             let existing = client
@@ -4121,10 +4150,17 @@ fn run_apply(
         return Err("APPLY_DIGEST_MISMATCH".into());
     }
     if apply {
-        // ALG-APPLY is implemented over the native port, but no tested
-        // lab-native-v1 mutation transport exists. Never fall back to plain
-        // AnkiConnect writes.
-        return Err("CAPABILITY_UNAVAILABLE: apply --apply requires the verified native lab-native-v1 mutation adapter; no lease, checkpoint, journal or Anki request was made".into());
+        // Only the verified lab-native-v1 companion writes; never plain AnkiConnect.
+        drop(store);
+        return native_writes::apply_plan(
+            settings,
+            plan,
+            revision,
+            &actual,
+            item_ids,
+            split_group,
+            accept_schema_change,
+        );
     }
     let (item_ids, split) = match split_group {
         Some(group) => {
@@ -4199,9 +4235,8 @@ fn run_reconcile(
         Err(code) => return Err(code),
     };
     if apply {
-        return Err(format!(
-            "CAPABILITY_UNAVAILABLE: recover reconcile --apply requires the verified native lab-native-v1 adapter; operation {operation} was not changed and no Anki request was made"
-        ));
+        drop(store);
+        return native_writes::reconcile(settings, operation, rebind);
     }
     let unresolved = journal.pending_recovery;
     emit(&serde_json::json!({
@@ -4228,6 +4263,7 @@ fn run_rollback(
     settings: &linguist_config::Effective,
     group: uuid::Uuid,
     item_ids: &[uuid::Uuid],
+    accept_schema_change: bool,
     apply: bool,
 ) -> Result<u8, String> {
     let store = linguist_store::Store::read_only(&state_root(settings)?)?;
@@ -4254,7 +4290,8 @@ fn run_rollback(
         return Err("ROLLBACK_GROUP_EMPTY: no apply operation carries this group".into());
     }
     if apply {
-        return Err("CAPABILITY_UNAVAILABLE: jobs rollback --apply requires the verified native lab-native-v1 mutation adapter; no lease, checkpoint, journal or Anki request was made".into());
+        drop(store);
+        return native_writes::rollback(settings, group, item_ids, accept_schema_change);
     }
     let split = match store.split_execution(group) {
         Ok(_) => Some(linguist_application::split::status(&store, group)?),
@@ -4337,9 +4374,12 @@ fn run_backup(command: BackupCommand, settings: &linguist_config::Effective) -> 
             }
             let (output, _) = backup::checkpoint_paths(&output, uuid::Uuid::nil())?;
             if apply {
-                // No tested native export_checkpoint adapter exists; never call an
-                // unverified endpoint. Nothing was journaled or sent.
-                return Err("CAPABILITY_UNAVAILABLE: backup create --apply requires the verified native export_checkpoint adapter; no lease, journal or Anki request was made".into());
+                return native_writes::backup_create(
+                    settings,
+                    preference,
+                    scope_manifest.is_some(),
+                    (output_source == "flag").then_some(output),
+                );
             }
             emit(&serde_json::json!({
                 "schema_version": 2,

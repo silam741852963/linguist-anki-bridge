@@ -2,7 +2,7 @@
 //! unavailable capability or local limits. The error code stays the contract;
 //! `next` is advice for people and never changes the exit code.
 
-const WRITES: &str = "This build cannot write to Anki: apply, restore, checkpoint creation and model installation need the verified native adapter. Previews, review, approval and `plans export` still work; `linguist-anki-bridge doctor --local` lists what is available.";
+const WRITES: &str = "Collection writes need the verified native adapter: install the Linguist companion add-on (dist/linguist-bridge.ankiaddon) next to AnkiConnect, set an AnkiConnect API key and name its environment variable in anki.api_key_env, use a loopback anki.endpoint, open the profile, then check `linguist-anki-bridge doctor --bridge`. Previews, review, approval and `plans export` work without it.";
 
 /// Guidance for the error's leading code, or `None` when the message itself
 /// already names the fix (validation, conflicts, missing IDs).
@@ -32,7 +32,11 @@ pub fn next_step(message: &str) -> Option<&'static str> {
         "APPLY_BINDING_WEAK" => WRITES,
         "CAPABILITY_UNAVAILABLE" => {
             let detail = message.to_ascii_lowercase();
-            if detail.contains("native") || detail.contains("--apply") {
+            if detail.contains("native")
+                || detail.contains("--apply")
+                || detail.contains("managed writes")
+                || detail.contains("companion")
+            {
                 WRITES
             } else if detail.contains("provider_read_policy") || detail.contains("proxy") {
                 "A network read was refused by --offline, network.offline or the host policy. Run without --offline, list the host in network.allowed_remote_service_hosts, or prepare authored content: `--set dictionary.provider=authored`."

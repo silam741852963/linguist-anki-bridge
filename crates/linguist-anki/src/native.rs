@@ -55,6 +55,8 @@ pub enum NativeOperationState {
     Running,
     Unknown,
     FailedBeforeWrite,
+    /// Closed after an actual native read-back; still re-checked by the CLI.
+    Verified,
 }
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -67,6 +69,8 @@ pub struct NativeOperationStatus {
     pub variant: MutationVariant,
     pub state: NativeOperationState,
     pub reason: Option<String>,
+    /// Read-back receipt (verified) or refusal code (failed before write).
+    pub receipt: Option<Value>,
     pub event_digest: String,
     pub needs_recovery: bool,
     pub dispatch_newly_authorized: bool,
@@ -108,6 +112,14 @@ fn digest(value: &str) -> bool {
 }
 fn plan_digest(value: &str) -> bool {
     value.strip_prefix("lab-jcs-v1:plan:").is_some_and(digest)
+}
+/// A reviewed plan, a checkpoint export or a managed model install approval.
+fn approval_digest(value: &str) -> bool {
+    ["plan", "checkpoint", "model-install"].iter().any(|kind| {
+        value
+            .strip_prefix(&format!("lab-jcs-v1:{kind}:"))
+            .is_some_and(digest)
+    })
 }
 fn label(value: &str, limit: usize) -> bool {
     !value.trim().is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
@@ -297,20 +309,31 @@ pub fn inspect_native_operation_status(
     let status: NativeOperationStatus =
         serde_json::from_value(value).map_err(|_| "ANKI_NATIVE_STATUS_INVALID")?;
     let valid_reason = match status.state {
-        NativeOperationState::Queued | NativeOperationState::Running => status.reason.is_none(),
-        NativeOperationState::Unknown => matches!(
-            status.reason.as_deref(),
-            Some("transport_ambiguous" | "worker_crash" | "native_observation_incomplete")
-        ),
-        NativeOperationState::FailedBeforeWrite => matches!(
-            status.reason.as_deref(),
-            Some(
-                "preflight_rejected"
-                    | "operator_cancelled"
-                    | "session_changed"
-                    | "checkpoint_failed"
-            )
-        ),
+        NativeOperationState::Queued | NativeOperationState::Running => {
+            status.reason.is_none() && status.receipt.is_none()
+        }
+        NativeOperationState::Verified => {
+            status.reason.is_none() && status.receipt.as_ref().is_some_and(Value::is_object)
+        }
+        NativeOperationState::Unknown => {
+            status.receipt.is_none()
+                && matches!(
+                    status.reason.as_deref(),
+                    Some("transport_ambiguous" | "worker_crash" | "native_observation_incomplete")
+                )
+        }
+        NativeOperationState::FailedBeforeWrite => {
+            matches!(
+                status.reason.as_deref(),
+                Some(
+                    "preflight_rejected"
+                        | "operator_cancelled"
+                        | "session_changed"
+                        | "checkpoint_failed"
+                        | "worker_lost_before_write"
+                )
+            ) && status.receipt.as_ref().is_none_or(Value::is_object)
+        }
     };
     if lineage_id.is_nil()
         || operation_id.is_nil()
@@ -318,7 +341,7 @@ pub fn inspect_native_operation_status(
         || status.operation_id != operation_id
         || status.session_epoch.is_nil()
         || !digest(&status.payload_digest)
-        || !plan_digest(&status.approved_digest)
+        || !approval_digest(&status.approved_digest)
         || !digest(&status.event_digest)
         || !valid_reason
         || status.needs_recovery
@@ -364,5 +387,196 @@ impl Client {
         )?;
         self.check_profile()?;
         inspect_native_operation_status(value, lineage_id, operation_id)
+    }
+}
+
+/// Companion builds whose registration, serialized worker and effects were
+/// exercised in disposable Anki: (companion, Anki version, AnkiConnect
+/// `__init__.py` SHA-256). Anything else keeps collection writes unavailable.
+pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[(
+    "0.1.0",
+    "25.09.2",
+    "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
+)];
+const ALL_VARIANTS: [MutationVariant; 7] = [
+    MutationVariant::InstallModel,
+    MutationVariant::ExportCheckpoint,
+    MutationVariant::StoreMedia,
+    MutationVariant::CreateNote,
+    MutationVariant::UpdateNote,
+    MutationVariant::RestoreNote,
+    MutationVariant::DeleteUnstudiedCreatedNote,
+];
+
+/// A companion declaration that passed every fail-closed check for writes.
+#[derive(Debug)]
+pub struct VerifiedNative {
+    pub manifest_digest: String,
+    pub bridge_id: Uuid,
+    pub lineage_id: Uuid,
+    pub session_epoch: Uuid,
+    pub profile_fingerprint: String,
+    pub path_fingerprint: String,
+}
+
+/// Owner token from `labBegin` and the companion's staging directory.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeOwner {
+    pub owner_token: Uuid,
+    pub fence: u64,
+    pub staging_dir: String,
+}
+
+/// `labOperationStatus` result: no ledger row, or a validated status.
+#[derive(Debug)]
+pub enum NativeObservation {
+    Absent,
+    Present(NativeOperationStatus),
+}
+
+fn loopback_endpoint(endpoint: &str) -> bool {
+    url::Url::parse(endpoint).is_ok_and(|url| {
+        matches!(
+            url.host(),
+            Some(url::Host::Domain("localhost"))
+                | Some(url::Host::Ipv4(std::net::Ipv4Addr::LOCALHOST))
+                | Some(url::Host::Ipv6(std::net::Ipv6Addr::LOCALHOST))
+        )
+    })
+}
+
+impl Client {
+    /// Fail-closed write gate: pinned verified build, all seven actions and
+    /// variants, API key on both sides, loopback endpoint and a live session.
+    pub fn native_verified(&self) -> Result<VerifiedNative> {
+        if !loopback_endpoint(&self.endpoint_text) {
+            return Err(
+                "CAPABILITY_UNAVAILABLE: managed writes require a same-host loopback anki.endpoint"
+                    .into(),
+            );
+        }
+        if self.key.is_none() {
+            return Err("CAPABILITY_UNAVAILABLE: managed writes require anki.api_key_env naming the AnkiConnect API key".into());
+        }
+        let inspected = self.native_capabilities()?;
+        let declaration = &inspected.declaration;
+        if !VERIFIED_COMPANIONS.iter().any(|(companion, anki, digest)| {
+            declaration.companion_version == *companion
+                && declaration.integration.anki_version == *anki
+                && declaration.integration.anki_connect_source_digest == *digest
+        }) {
+            return Err(format!(
+                "CAPABILITY_UNAVAILABLE: companion {} on Anki {} is not a verified lab-native-v1 build",
+                declaration.companion_version, declaration.integration.anki_version
+            ));
+        }
+        if !declaration.api_key_configured
+            || ALL_VARIANTS
+                .iter()
+                .any(|variant| !declaration.mutation_variants.contains(variant))
+        {
+            return Err("CAPABILITY_UNAVAILABLE: the companion declares no mutation variants (API key or collection session missing)".into());
+        }
+        let session = declaration
+            .collection_session
+            .as_ref()
+            .ok_or("CAPABILITY_UNAVAILABLE: no live collection session")?;
+        Ok(VerifiedNative {
+            manifest_digest: inspected.manifest_digest.clone(),
+            bridge_id: declaration.bridge_id,
+            lineage_id: session.lineage_id,
+            session_epoch: session.session_epoch,
+            profile_fingerprint: session.profile_fingerprint.clone(),
+            path_fingerprint: session.path_fingerprint.clone(),
+        })
+    }
+
+    fn native_call(&self, action: Action, params: Value) -> Result<Value> {
+        self.check_profile()?;
+        let value = self.call(action, params)?;
+        self.check_profile()?;
+        Ok(value)
+    }
+
+    pub fn native_begin(&self, binding: Value, approved_digest: &str) -> Result<NativeOwner> {
+        let value = self.native_call(
+            Action::NativeBegin,
+            json!({"binding": binding, "approved_digest": approved_digest}),
+        )?;
+        let owner: NativeOwner =
+            serde_json::from_value(value).map_err(|_| "ANKI_NATIVE_OWNER_INVALID")?;
+        if owner.owner_token.is_nil() || owner.fence == 0 || owner.staging_dir.is_empty() {
+            return Err("ANKI_NATIVE_OWNER_INVALID".into());
+        }
+        Ok(owner)
+    }
+
+    pub fn native_end(&self, owner_token: Uuid, fence: u64) -> Result<()> {
+        self.native_call(
+            Action::NativeEnd,
+            json!({"owner_token": owner_token, "fence": fence}),
+        )
+        .map(|_| ())
+    }
+
+    /// Session-bound read through `labInspect`; `params` carries the kind's keys.
+    pub fn native_inspect(
+        &self,
+        session_epoch: Uuid,
+        kind: &str,
+        mut params: Value,
+    ) -> Result<Value> {
+        params["kind"] = json!(kind);
+        params["session_epoch"] = json!(session_epoch);
+        self.native_call(Action::NativeInspect, params)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn native_mutate(
+        &self,
+        lineage_id: Uuid,
+        operation_id: Uuid,
+        session_epoch: Uuid,
+        owner: &NativeOwner,
+        approved_digest: &str,
+        variant: &str,
+        payload: &str,
+    ) -> Result<NativeOperationStatus> {
+        let value = self.native_call(
+            Action::NativeMutate,
+            json!({
+                "lineage_id": lineage_id, "operation_id": operation_id,
+                "session_epoch": session_epoch, "owner_token": owner.owner_token,
+                "fence": owner.fence, "approved_digest": approved_digest,
+                "variant": variant, "payload": payload,
+            }),
+        )?;
+        inspect_native_operation_status(value, lineage_id, operation_id)
+    }
+
+    pub fn native_observe(
+        &self,
+        lineage_id: Uuid,
+        operation_id: Uuid,
+    ) -> Result<NativeObservation> {
+        let value = self.native_call(
+            Action::NativeOperationStatus,
+            json!({"lineage_id": lineage_id, "operation_id": operation_id}),
+        )?;
+        if value
+            == json!({"lineage_id": lineage_id, "operation_id": operation_id, "state": "absent"})
+        {
+            return Ok(NativeObservation::Absent);
+        }
+        inspect_native_operation_status(value, lineage_id, operation_id)
+            .map(NativeObservation::Present)
+    }
+
+    pub fn native_rebind(&self, lineage_id: Uuid, previous_epoch: Uuid) -> Result<Value> {
+        self.native_call(
+            Action::NativeRebind,
+            json!({"lineage_id": lineage_id, "previous_epoch": previous_epoch}),
+        )
     }
 }

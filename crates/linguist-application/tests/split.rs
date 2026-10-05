@@ -233,6 +233,7 @@ impl Group {
             max_media_bytes: 1024 * 1024,
             accept_schema_change: false,
             now_ms: 1_010_000,
+            new_execution_id: None,
         }
     }
     fn run(&mut self) -> SplitOutcome {

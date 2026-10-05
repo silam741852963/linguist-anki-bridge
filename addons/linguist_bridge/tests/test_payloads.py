@@ -13,8 +13,12 @@ PRE = "lab-jcs-v1:lab-apply-precondition-v1:" + "b" * 64
 OPERATION = "00000000-0000-4000-8000-000000000001"
 
 
+KIND = {"export_checkpoint": "checkpoint", "install_model": "model-install"}
+
+
 def check(variant, body):
-    validate_body(variant, body, operation_id=OPERATION, approved_digest=PLAN)
+    approved = f"lab-jcs-v1:{KIND.get(variant, 'plan')}:" + "a" * 64
+    validate_body(variant, body, operation_id=OPERATION, approved_digest=approved)
 
 
 class PayloadTest(unittest.TestCase):
@@ -71,6 +75,13 @@ class PayloadTest(unittest.TestCase):
                                                  "path": "/tmp/x.colpkg"})
         with self.assertRaisesRegex(PayloadError, "BRIDGE_OPERATION_VARIANT_UNAVAILABLE"):
             check("run_sql", {})
+        # Each variant accepts only its own approval kind.
+        with self.assertRaisesRegex(PayloadError, "BRIDGE_OPERATION_BODY_INVALID"):
+            validate_body("export_checkpoint", {"include_media": True, "include_scheduling": True},
+                          operation_id=OPERATION, approved_digest=PLAN)
+        with self.assertRaisesRegex(PayloadError, "BRIDGE_OPERATION_BODY_INVALID"):
+            validate_body("install_model", install, operation_id=OPERATION,
+                          approved_digest="lab-jcs-v1:checkpoint:" + "a" * 64)
 
     def test_manifest_digest_ignores_version_and_follows_template_ordinals(self):
         model = {"name": "M", "version": 2, "fields": ["A", "B"], "css": "x", "templates": [

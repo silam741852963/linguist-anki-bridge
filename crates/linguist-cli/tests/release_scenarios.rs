@@ -1266,6 +1266,7 @@ fn grammar_revamp_multi_unit_split_apply_rollback() {
             max_media_bytes: 64 << 20,
             accept_schema_change: false,
             now_ms: now_ms(),
+            new_execution_id: None,
         },
     )
     .unwrap();

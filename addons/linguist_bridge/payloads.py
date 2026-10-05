@@ -47,11 +47,25 @@ def _hash(value):
         raise _invalid() from None
 
 
-def _plan_digest(value):
-    if type(value) is not str or not value.startswith("lab-jcs-v1:plan:"):
+APPROVAL_KINDS = ("plan", "checkpoint", "model-install")
+VARIANT_APPROVAL = {"export_checkpoint": "checkpoint", "install_model": "model-install"}
+
+
+def _plan_digest(value, kind="plan"):
+    prefix = f"lab-jcs-v1:{kind}:"
+    if type(value) is not str or not value.startswith(prefix):
         raise _invalid()
-    _hash(value.removeprefix("lab-jcs-v1:plan:"))
+    _hash(value.removeprefix(prefix))
     return value
+
+
+def approval_digest(value):
+    """Any approval kind: a reviewed plan, a checkpoint export or a managed
+    model install. Each variant accepts only its own kind."""
+    for kind in APPROVAL_KINDS:
+        if type(value) is str and value.startswith(f"lab-jcs-v1:{kind}:"):
+            return _plan_digest(value, kind)
+    raise _invalid()
 
 
 def _precondition(value):
@@ -292,5 +306,6 @@ def validate_body(variant, body, *, operation_id, approved_digest):
     validator = VALIDATORS.get(variant)
     if validator is None:
         raise PayloadError("BRIDGE_OPERATION_VARIANT_UNAVAILABLE")
+    _plan_digest(approved_digest, VARIANT_APPROVAL.get(variant, "plan"))
     validator(body, operation_id, approved_digest)
     return None

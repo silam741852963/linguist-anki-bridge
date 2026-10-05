@@ -16,6 +16,11 @@ pub mod native;
 enum Action {
     NativeCapabilities,
     NativeOperationStatus,
+    NativeBegin,
+    NativeEnd,
+    NativeInspect,
+    NativeMutate,
+    NativeRebind,
     Version,
     Reflect,
     Profile,
@@ -37,6 +42,11 @@ impl Action {
         match self {
             Self::NativeCapabilities => "labCapabilities",
             Self::NativeOperationStatus => "labOperationStatus",
+            Self::NativeBegin => "labBegin",
+            Self::NativeEnd => "labEnd",
+            Self::NativeInspect => "labInspect",
+            Self::NativeMutate => "labMutate",
+            Self::NativeRebind => "labRebind",
             Self::Version => "version",
             Self::Reflect => "apiReflect",
             Self::Profile => "getActiveProfile",
@@ -64,6 +74,7 @@ struct Envelope {
 pub struct Client {
     http: reqwest::blocking::Client,
     endpoint: url::Url,
+    endpoint_text: String,
     key: Option<String>,
     limit: u64,
     batch: usize,
@@ -266,6 +277,10 @@ impl Client {
             .map_err(|_| "ANKI_TRANSPORT_UNAVAILABLE")?;
         Ok(Self {
             http,
+            endpoint_text: value("anki.endpoint")?
+                .as_str()
+                .ok_or("INVALID_ANKI_ENDPOINT")?
+                .to_owned(),
             endpoint,
             key,
             limit: value("network.max_response_mb")?
@@ -319,7 +334,20 @@ impl Client {
         let envelope: Envelope = canonical::parse(&bytes)
             .map_err(|_| "ANKI_PROTOCOL_INVALID: malformed envelope or unsafe numbers")?;
         if !envelope.error.is_null() {
-            return Err(format!("ANKI_ACTION_REJECTED: {}", action.name()));
+            // Companion refusals carry a bounded `BRIDGE_*` code and nothing
+            // else; every other error text stays unreported.
+            let code = envelope.error.as_str().filter(|text| {
+                action.name().starts_with("lab")
+                    && text.starts_with("BRIDGE_")
+                    && text.len() <= 100
+                    && text
+                        .bytes()
+                        .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+            });
+            return Err(match code {
+                Some(code) => format!("ANKI_ACTION_REJECTED: {}: {code}", action.name()),
+                None => format!("ANKI_ACTION_REJECTED: {}", action.name()),
+            });
         }
         Ok(envelope.result)
     }
@@ -400,6 +428,13 @@ impl Client {
         }
         *pinned = Some(actual.to_owned());
         Ok(actual.to_owned())
+    }
+    /// The configured `anki.endpoint` text, as recorded in collection bindings.
+    pub fn endpoint(&self) -> String {
+        self.endpoint_text.clone()
+    }
+    pub fn api_key_configured(&self) -> bool {
+        self.key.is_some()
     }
     pub fn check_profile(&self) -> Result<()> {
         self.checked_profile().map(|_| ())

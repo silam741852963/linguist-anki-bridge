@@ -824,6 +824,7 @@ pub mod live_validation;
 pub mod mapping;
 pub mod media;
 pub mod model_install;
+pub mod native_port;
 pub mod ocr;
 pub mod ocr_inspection;
 pub mod ollama;

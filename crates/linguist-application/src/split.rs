@@ -31,6 +31,9 @@ pub struct SplitApplyRequest<'a> {
     pub max_media_bytes: u64,
     pub accept_schema_change: bool,
     pub now_ms: u64,
+    /// Execution ID used when no execution exists yet; the caller may
+    /// pre-allocate it so the checkpoint carries the same group.
+    pub new_execution_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -145,7 +148,7 @@ fn start(
     anchor: Uuid,
     children: &[Uuid],
 ) -> Result<SplitExecutionRecord> {
-    let execution = Uuid::new_v4();
+    let execution = request.new_execution_id.unwrap_or_else(Uuid::new_v4);
     for child in children {
         apply::check_item(
             store,

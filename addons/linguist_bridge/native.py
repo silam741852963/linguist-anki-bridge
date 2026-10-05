@@ -236,13 +236,19 @@ class NativeActions:
                                      params.get("max_bytes"))
         if kind == "scope":
             notes = params.get("note_ids")
+            models = params.get("model_ids", [])
             requirement = params.get("requirement")
             _require(type(notes) is list and len(notes) <= 100000
+                     and type(models) is list and len(models) <= 1000
                      and type(requirement) is dict
                      and set(requirement) == {"scheduling", "media", "schema"}
                      and all(type(v) is bool for v in requirement.values()),
                      "BRIDGE_INSPECT_INVALID")
-            return effects.scope_manifest(col, [_wire(n) for n in notes], requirement)
+            try:
+                return effects.scope_manifest(col, [_wire(n) for n in notes], requirement,
+                                              [_wire(m) for m in models])
+            except effects.EffectError as error:
+                raise NativeError(str(error)) from None
         return self._runtime.inspect_note(str(_wire(params.get("note_id"))),
                                           params.get("session_epoch"))
 

@@ -51,6 +51,8 @@ MAIN = '''class AnkiConnect:
 ac = AnkiConnect()
 '''
 PLAN = "lab-jcs-v1:plan:" + "a" * 64
+MODEL = "lab-jcs-v1:model-install:" + "b" * 64
+CHECKPOINT = "lab-jcs-v1:checkpoint:" + "c" * 64
 
 
 class Hook(list):
@@ -163,12 +165,12 @@ class NativeRuntimeTest(unittest.TestCase):
     def session(self):
         return self.call("labCapabilities")["collection_session"]
 
-    def begin(self):
+    def begin(self, approved=PLAN):
         session = self.session()
         binding = dict(session, bridge_id=self.runtime.bridge_id)
-        binding.pop("session_epoch")
-        binding["session_epoch"] = session["session_epoch"]
-        return session, self.call("labBegin", binding=binding, approved_digest=PLAN)
+        owner = self.call("labBegin", binding=binding, approved_digest=approved)
+        owner["approved"] = approved
+        return session, owner
 
     def mutate(self, session, owner, variant, body, operation_id=None):
         operation_id = operation_id or str(uuid4())
@@ -180,21 +182,24 @@ class NativeRuntimeTest(unittest.TestCase):
         status = self.call("labMutate", lineage_id=session["lineage_id"],
                            operation_id=operation_id, session_epoch=session["session_epoch"],
                            owner_token=owner["owner_token"], fence=owner["fence"],
-                           approved_digest=PLAN, variant=variant, payload=payload)
+                           approved_digest=owner["approved"], variant=variant, payload=payload)
         return operation_id, payload, status
 
     def status(self, session, operation_id):
         return self.call("labOperationStatus", lineage_id=session["lineage_id"],
                          operation_id=operation_id)
 
-    def install(self, session, owner):
+    def install(self):
+        session, owner = self.begin(MODEL)
         model = managed_manifest()
         operation, _, queued = self.mutate(session, owner, "install_model", {
             "manifest": model, "manifest_digest": manifest.managed_digest(model),
             "expected_absent": True})
         self.assertEqual(queued["state"], "queued")
         self.scheduler.run()
-        return self.status(session, operation)
+        installed = self.status(session, operation)
+        self.call("labEnd", owner_token=owner["owner_token"], fence=owner["fence"])
+        return installed
 
     def create_body(self, deck_id):
         model = managed_manifest()
@@ -221,8 +226,8 @@ class NativeRuntimeTest(unittest.TestCase):
                 "binding": {}, "approved_digest": PLAN}})
 
     def test_install_create_update_media_and_delete_through_the_ledger(self):
+        installed = self.install()
         session, owner = self.begin()
-        installed = self.install(session, owner)
         self.assertEqual(installed["state"], "verified", installed)
         model_id = installed["receipt"]["model_id"]
         self.assertEqual(manifest.model_digest(self.col.models.get(model_id)),
@@ -298,8 +303,8 @@ class NativeRuntimeTest(unittest.TestCase):
         self.assertTrue(self.call("labEnd", owner_token=owner["owner_token"], fence=owner["fence"]))
 
     def test_stale_fence_session_change_and_in_flight_owner(self):
+        self.install()
         session, owner = self.begin()
-        self.install(session, owner)
         deck_id = self.col.decks.id("Japanese::Vocab")
         operation, _, _ = self.mutate(session, owner, "create_note", self.create_body(deck_id))
         # In-flight work blocks a new owner; it cannot be fenced out mid-run.
@@ -331,8 +336,8 @@ class NativeRuntimeTest(unittest.TestCase):
                          ("failed_before_write", "session_changed"))
 
     def test_crash_after_effect_is_classified_unknown_by_the_next_owner(self):
+        self.install()
         session, owner = self.begin()
-        self.install(session, owner)
         deck_id = self.col.decks.id("Japanese::Vocab")
         self.fault_file.write_text(json.dumps({"point": "after_effect", "action": "disk_full"}))
         operation, _, _ = self.mutate(session, owner, "create_note", self.create_body(deck_id))
@@ -355,8 +360,8 @@ class NativeRuntimeTest(unittest.TestCase):
         self.assertEqual(fresh["fence"], owner["fence"] + 1)
 
     def test_export_keeps_the_epoch_and_reports_the_package(self):
-        session, owner = self.begin()
-        self.install(session, owner)
+        self.install()
+        session, owner = self.begin(CHECKPOINT)
         operation, _, _ = self.mutate(session, owner, "export_checkpoint",
                                       {"include_media": True, "include_scheduling": True})
         self.scheduler.run()

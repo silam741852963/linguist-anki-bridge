@@ -190,14 +190,25 @@ impl Effect {
             Self::DeleteUnstudiedCreatedNote { .. } => "delete_unstudied_created_note",
         }
     }
+    /// Exact `{schema_version: 1, variant, body}` wire envelope the
+    /// companion ledger stores and hashes.
+    pub fn wire_envelope(&self) -> Result<serde_json::Value> {
+        if let Self::CreateNote { envelope } = self {
+            return Ok(envelope.clone());
+        }
+        let mut body = serde_json::to_value(self).map_err(|e| e.to_string())?;
+        body.as_object_mut()
+            .ok_or("APPLY_EFFECT_INVALID")?
+            .remove("variant");
+        Ok(serde_json::json!({"schema_version": 1, "variant": self.variant(), "body": body}))
+    }
+    /// RFC 8785 bytes of the wire envelope.
+    pub fn wire_bytes(&self) -> Result<Vec<u8>> {
+        canonical::bytes(&self.wire_envelope()?).map_err(|e| e.to_string())
+    }
     /// Raw SHA-256 of the exact canonical wire bytes.
     pub fn payload_digest(&self) -> Result<String> {
-        let bytes = match self {
-            Self::CreateNote { envelope } => canonical::bytes(envelope),
-            other => canonical::bytes(other),
-        }
-        .map_err(|e| e.to_string())?;
-        Ok(canonical::asset_digest(&bytes))
+        Ok(canonical::asset_digest(&self.wire_bytes()?))
     }
 }
 
@@ -2459,6 +2470,38 @@ pub fn reconcile(
     outcome.note_id = outcome_note;
     outcome.receipt_digest = receipt_digest;
     Ok(outcome)
+}
+
+/// The explicit `--rebind` decision for one operation: the journal's binding,
+/// the current one and the affected state observed right now.
+pub fn rebind_decision(
+    store: &Store,
+    port: &mut dyn ApplyPort,
+    operation: Uuid,
+    actor: &str,
+    decided_at: String,
+) -> Result<ResumeBindingDecision> {
+    let (_, intent) = load_intent(store, operation)?;
+    let version = store.journal(operation)?;
+    let old_binding = store
+        .binding_decisions(operation)?
+        .last()
+        .map(|d| d.new_binding.clone())
+        .unwrap_or_else(|| version.journal.binding.clone());
+    let new_binding = port.execution_binding()?;
+    let decision = ResumeBindingDecision {
+        schema_version: 1,
+        operation_id: operation,
+        approval_digest: version.journal.approval_digest.clone(),
+        old_binding,
+        new_binding,
+        observed_state_digest: current_state_digest(port, &intent)?,
+        actor: actor.into(),
+        decided_at,
+        scope: linguist_core::records::ResumeBindingScope::ContinueOperation,
+    };
+    decision.validate().map_err(|e| e.to_string())?;
+    Ok(decision)
 }
 
 /// Digest of the current affected state, which a rebinding decision must name.

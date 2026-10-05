@@ -448,11 +448,16 @@ def deck_named(col, name):
     return None
 
 
-def scope_manifest(col, note_ids, requirement):
+def scope_manifest(col, note_ids, requirement, model_ids=()):
     """Checkpoint scope: the notes' cards with their observed scheduling and
-    review counts, their models, and every collection media file."""
+    review counts, their models plus the named existing models, and every
+    collection media file."""
     notes = sorted({int(n) for n in note_ids})
     cards, models = [], set()
+    for model_id in model_ids:
+        if col.models.get(int(model_id)) is None:
+            raise EffectError("BRIDGE_MODEL_MISSING")
+        models.add(int(model_id))
     for note_id in notes:
         note = col.get_note(note_id)
         models.add(note.mid)

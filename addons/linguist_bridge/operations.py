@@ -20,7 +20,7 @@ import time
 from uuid import uuid4
 
 from .identity import IdentityError, _read as read_installation_identity
-from .payloads import PayloadError, _plan_digest, validate_body
+from .payloads import PayloadError, approval_digest, validate_body
 from .protocol import _digest, _uuid
 
 
@@ -94,7 +94,7 @@ def _hash(value):
 
 def _approval(value):
     try:
-        return _plan_digest(value)
+        return approval_digest(value)
     except PayloadError:
         raise OperationError("BRIDGE_OPERATION_APPROVAL_INVALID") from None
 
