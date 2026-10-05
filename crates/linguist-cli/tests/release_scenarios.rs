@@ -615,7 +615,7 @@ impl Scenario {
         println!("{text}");
         if let Some(dir) = path {
             std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join(format!("{name}.log")), text).unwrap();
+            std::fs::write(dir.join(format!("{name}.txt")), text).unwrap();
         }
     }
 }

@@ -74,7 +74,7 @@ class Runner:
         output = stdout + b"\n--- stderr ---\n" + stderr
         shown = [("<stdin: " + " ".join(stdin_from) + "> | ") if stdin_from else ""]
         redacted = [redact(part) for part in argv]
-        log = self.out / "logs" / f"{key}.log"
+        log = self.out / "logs" / f"{key}.txt"
         log.parent.mkdir(parents=True, exist_ok=True)
         text = redact(output.decode("utf-8", "replace"))
         log.write_text(f"$ {shown[0]}{' '.join(redacted)}\nexit {code}\n\n{text[-60000:]}",
@@ -250,7 +250,7 @@ def main():
     passed, failed = test_counts(r.text("workspace_tests"))
     qt = [line for line in r.text("qt_tree").splitlines()
           if re.search(r"(^|[-_])(qt|qml|cxx-qt|qmetaobject)([-_ ]|$)", line, re.I)]
-    scenario_names = sorted(p.stem for p in (out / "scenarios").glob("*.log")) \
+    scenario_names = sorted(p.stem for p in (out / "scenarios").glob("*.txt")) \
         if (out / "scenarios").exists() else []
     corpus = re.search(r"semantic corpus: (\{.*\})", r.text("semantic_corpus"))
     bench = {}
@@ -382,7 +382,7 @@ def main():
             status, failure = "fail", "RELEASE_CHECK_ASSERTION_FAILED"
         artifacts = sorted({r.results[k]["log"] for k in spec["keys"] if k in r.results})
         if gate_id in ("EV-05", "EV-06", "EV-08", "EV-09", "EV-10", "EV-14") and scenario_names:
-            artifacts += [str((out / "scenarios" / f"{n}.log").relative_to(ROOT)) for n in scenario_names]
+            artifacts += [str((out / "scenarios" / f"{n}.txt").relative_to(ROOT)) for n in scenario_names]
         if gate_id == "EV-11" and bench:
             artifacts.append(str((out / "model-benchmark.json").relative_to(ROOT)))
         evidence = {

@@ -1,0 +1,57 @@
+# Arch package recipe for the headless CLI. Build it yourself with makepkg;
+# nothing in this repository installs it. Collection writes stay unavailable
+# in 0.1.0 (see docs/cli/implementation/wp-15.md).
+pkgname=linguist-anki-bridge-cli-git
+_pkgname=linguist-anki-bridge
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Headless CLI to prepare and review Anki vocabulary and grammar cards (no Qt)"
+arch=('x86_64')
+url="https://github.com/silam741852963/linguist-anki-bridge"
+license=('MIT')
+depends=('gcc-libs' 'glibc')
+makedepends=('git' 'cargo')
+optdepends=(
+    'anki: AnkiConnect reads and revamp capture'
+    'ollama: local generation (default model gemma4:12b)'
+    'tesseract: OCR of source images'
+    'tesseract-data-jpn: Japanese OCR'
+    'tesseract-data-vie: Vietnamese OCR'
+)
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!lto')
+source=("git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$srcdir/$_pkgname"
+    printf "0.1.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+    cd "$srcdir/$_pkgname"
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$srcdir/$_pkgname"
+    export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+    cargo build --frozen --release -p linguist-cli
+}
+
+check() {
+    cd "$srcdir/$_pkgname"
+    cargo test --frozen --workspace
+}
+
+package() {
+    cd "$srcdir/$_pkgname"
+    install -Dm755 target/release/linguist-anki-bridge "$pkgdir/usr/bin/linguist-anki-bridge"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 docs/cli/examples/commands-v0.1.0.md "$pkgdir/usr/share/doc/$pkgname/commands.md"
+    "$pkgdir/usr/bin/linguist-anki-bridge" completions bash \
+        | install -Dm644 /dev/stdin "$pkgdir/usr/share/bash-completion/completions/linguist-anki-bridge"
+    "$pkgdir/usr/bin/linguist-anki-bridge" completions zsh \
+        | install -Dm644 /dev/stdin "$pkgdir/usr/share/zsh/site-functions/_linguist-anki-bridge"
+}
