@@ -1,0 +1,16 @@
+grammar_add
+grammar add --document /tmp/lab-release-scenario-grammar-add-9d076b7f-3ef6-49fc-aa11-b2d35298ed2e/grammar.json -> 0
+harness: bound revision 2 of 37560505-e170-47b3-8bae-12d9a8df13c4
+plans validate 37560505-e170-47b3-8bae-12d9a8df13c4 --revision 2 -> 0
+plans approve 37560505-e170-47b3-8bae-12d9a8df13c4 --revision 2 --digest lab-jcs-v1:plan:264e0797618961d02ef9da32356f7327c1daa5655a7a47cce8fd45e276daec01 --actor release-check -> 0
+apply 37560505-e170-47b3-8bae-12d9a8df13c4 --revision 2 -> 0
+apply 37560505-e170-47b3-8bae-12d9a8df13c4 --revision 2 --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: apply_item -> Committed
+snapshots list -> 0
+snapshots show c012bc5e-6740-41fe-bd97-c93a8273e58b -> 0
+recover inspect --pending -> 0
+plans show 37560505-e170-47b3-8bae-12d9a8df13c4 -> 0
+harness: verified real .colpkg checkpoint
+harness: restore -> Err("RESTORE_UNSUPPORTED: RESTORE_CREATED_NOTE_STUDIED:1791197324515: studied notes are kept; removal needs a separately authorized manual disaster-recovery procedure")
+restore refused as required: RESTORE_UNSUPPORTED: RESTORE_CREATED_NOTE_STUDIED:1791197324515: studied notes are kept; removal needs a separately authorized manual disaster-recovery procedure

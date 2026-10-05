@@ -1,0 +1,6 @@
+$ node scripts/verify-jcs-vectors.mjs
+exit 0
+
+PASS: 5 ECMAScript JCS vectors
+
+--- stderr ---

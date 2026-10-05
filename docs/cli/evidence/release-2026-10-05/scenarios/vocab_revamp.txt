@@ -1,0 +1,18 @@
+vocab_revamp
+--set purposes.japanese_vocab.fields={"expression":"Front","meaning":"Back"} --set purposes.japanese_vocab.source_model=Basic vocab revamp --note-id 1791197328935 -> 4
+plans show 9510913a-0cad-42b7-ad3d-0d2867d33807 --issues-only -> 0
+harness: reviewed migration document from the CLI capture
+harness: bound revision 2 of 9510913a-0cad-42b7-ad3d-0d2867d33807
+plans validate 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 -> 0
+plans validate 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 -> 0
+plans approve 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 --digest lab-jcs-v1:plan:82bbcd7d6e334ece6eb04ed37754c1a307b61278eef90b87762dfc3b697416ea --actor release-check -> 0
+apply 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 --accept-schema-change -> 0
+apply 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 --accept-schema-change --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: apply_item -> Committed
+snapshots list -> 0
+snapshots show e56d2500-460b-4816-956a-b2067196d662 -> 0
+recover inspect --pending -> 0
+plans show 9510913a-0cad-42b7-ad3d-0d2867d33807 -> 0
+harness: verified real .colpkg checkpoint
+harness: restore -> Ok(Some(Committed))

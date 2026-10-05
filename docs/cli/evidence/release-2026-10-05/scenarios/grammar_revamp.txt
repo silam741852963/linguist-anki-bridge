@@ -1,0 +1,21 @@
+grammar_revamp
+--set purposes.english_grammar.fields={"meaning":"Back","pattern":"Front"} --set purposes.english_grammar.source_model=Basic grammar revamp --note-id 1791197325309 -> 4
+plans show 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --issues-only -> 0
+harness: reviewed migration document from the CLI capture
+harness: bound revision 2 of 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4
+plans validate 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 -> 0
+plans validate 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 -> 0
+plans approve 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 --digest lab-jcs-v1:plan:126b87acc8b1bcd95533bbd109a8a32b090b71b788598b659bb0f81a97debbc0 --actor release-check -> 0
+apply 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 --accept-schema-change -> 0
+apply 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 --accept-schema-change --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: apply_item -> Committed
+snapshots list -> 0
+snapshots show 78421888-24b1-4424-9718-2d4f10d2a417 -> 0
+recover inspect --pending -> 0
+plans show 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 -> 0
+harness: verified real .colpkg checkpoint
+harness: restore -> Err("RESTORE_CONFLICT_UNRESOLVED: RESTORE_FIELD_CONFLICT:Meaning")
+restore without a field decision refused: RESTORE_FIELD_CONFLICT:Meaning
+harness: verified real .colpkg checkpoint
+harness: restore -> Ok(Some(Committed))

@@ -1,0 +1,47 @@
+$ cargo test --locked -p linguist-config --test coverage --test presets --test config
+exit 0
+
+
+running 14 tests
+test xdg_explicit_and_environment_path_precedence ... ok
+test config_init_is_private_atomic_and_never_replaces ... ok
+test path_expansion_is_explicit_and_never_shell_evaluated ... ok
+test url_templates_accept_only_declared_path_or_query_placeholders ... ok
+test rejects_unknown_duplicate_coercion_and_illegal_scope ... ok
+test cross_field_settings_and_env_errors_are_not_ignored ... ok
+test endpoint_policy_rejects_credentials_remote_and_offline_opt_in ... ok
+test every_registry_default_validates_and_example_resolves ... ok
+test describe_rule_metadata_and_nearby_keys_track_the_resolver ... ok
+test execution_settings_change_only_execution_fingerprint ... ok
+test selected_providers_require_their_declared_settings ... ok
+test all_override_layers_follow_precedence ... ok
+test purpose_presets_inherit_but_explicit_base_wins ... ok
+test custom_template_hosts_require_explicit_network_permission ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 6 tests
+test checked_in_coverage_document_is_current ... ok
+test every_registry_entry_has_exactly_one_coverage_row ... ok
+test unavailable_values_and_dormant_settings_are_reported ... ok
+test every_consumer_site_names_its_setting ... ok
+test purpose_ocr_mapping_replaces_ocr_languages_but_explicit_overrides_win ... ok
+test defaults_never_need_an_unavailable_feature ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 3 tests
+test builtin_purposes_are_the_four_final_presets ... ok
+test explicit_user_values_override_presets ... ok
+test each_purpose_resolves_to_its_final_values ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running tests/config.rs (target/debug/deps/config-48bf530194556c3d)
+     Running tests/coverage.rs (target/debug/deps/coverage-2821428c26afb47b)
+     Running tests/presets.rs (target/debug/deps/presets-b5b1d8f6287beaa3)

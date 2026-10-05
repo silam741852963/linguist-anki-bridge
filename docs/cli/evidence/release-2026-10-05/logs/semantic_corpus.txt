@@ -1,0 +1,15 @@
+$ cargo test --locked -p linguist-application --test semantic_corpus -- --nocapture
+exit 0
+
+
+running 2 tests
+test corpus_shape_is_balanced_and_covers_every_required_category ... ok
+semantic corpus: {"grammar_add": (30, 30), "grammar_revamp": (30, 30), "vocab_add": (30, 30), "vocab_revamp": (30, 30)}
+test every_fixture_meets_its_annotation_and_the_corpus_policy ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.64s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/semantic_corpus.rs (target/debug/deps/semantic_corpus-5d7d9de0dd93a2f8)

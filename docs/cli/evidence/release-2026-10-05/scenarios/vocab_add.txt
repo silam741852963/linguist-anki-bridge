@@ -1,0 +1,17 @@
+vocab_add
+vocab add --expression 食べる --meaning to eat --sense-key eat --target-language ja --reading たべる --tag release -> 0
+apply c09df9f9-e795-42df-b544-992f190ed584 --revision 1 -> 4
+harness: bound revision 2 of c09df9f9-e795-42df-b544-992f190ed584
+plans validate c09df9f9-e795-42df-b544-992f190ed584 --revision 2 -> 0
+plans approve c09df9f9-e795-42df-b544-992f190ed584 --revision 2 --digest lab-jcs-v1:plan:e18a83b4b78175bb8d45e2f57a9b226af4b9ca4f3405f087add9d2093f585212 --actor release-check -> 0
+apply c09df9f9-e795-42df-b544-992f190ed584 --revision 2 -> 0
+apply c09df9f9-e795-42df-b544-992f190ed584 --revision 2 --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: apply_item -> Committed
+snapshots list -> 0
+snapshots show 494d829b-697c-4d22-b68e-d49496e8e92e -> 0
+recover inspect --pending -> 0
+plans show c09df9f9-e795-42df-b544-992f190ed584 -> 0
+harness: verified real .colpkg checkpoint
+harness: restore -> Ok(Some(Committed))
+snapshots show 494d829b-697c-4d22-b68e-d49496e8e92e -> 0

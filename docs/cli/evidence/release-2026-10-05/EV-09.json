@@ -1,0 +1,105 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-09",
+ "status": "blocked",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "7824acf03203b1458a778dbb6fa404898cbcf8a1",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.10.0",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,osd",
+  "ollama": "0.35.1",
+  "kernel": "Linux 7.2.5-4-omarchy",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "crates/linguist-application/tests/split.rs": "ec59bd2c210c82c65dd1f091182c2c1fd87cc5227dcc8d3ee74702bd8f3bf394"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "release_scenarios",
+    "--",
+    "--ignored",
+    "--test-threads",
+    "1",
+    "--nocapture"
+   ],
+   "invocation_digest": "61178dfdaae07b0f6760ffac230faedad334dacc47beac9e2eb1f4f65cd30f79",
+   "exit_code": 0,
+   "output_digest": "49138352e5ef4e3396837f9287c27450a97f08b357f56b92312e572cf2f33d85"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-application",
+    "--test",
+    "jobs_apply",
+    "--test",
+    "apply",
+    "--test",
+    "restore",
+    "--test",
+    "split",
+    "--test",
+    "checkpoint_writes"
+   ],
+   "invocation_digest": "2b39bf564e329fc7cb59fd34bad27493e6d06fc8b34caee8951e1f0332ac05e9",
+   "exit_code": 0,
+   "output_digest": "d544ea6394ae49f4100a92084ce46aab6ed13c62a087fa6da94ce597c9f944f2"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "real-Anki split: sibling first, anchor keeps history, group rollback",
+   "passed": true,
+   "observed": "grammar_split scenario"
+  },
+  {
+   "name": "partial-group crash recovery rules",
+   "passed": true,
+   "observed": "fake native port only"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-05/logs/jobs_executor.txt",
+  "docs/cli/evidence/release-2026-10-05/logs/scenarios.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/grammar_add.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/grammar_revamp.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/grammar_split.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/vocab_add.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/vocab_revamp.txt"
+ ],
+ "failure_code": "SPLIT_NATIVE_CRASH_RECOVERY_UNTESTED"
+}

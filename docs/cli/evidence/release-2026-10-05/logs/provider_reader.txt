@@ -1,0 +1,38 @@
+$ cargo test --locked -p linguist-provider
+exit 0
+
+
+running 2 tests
+test tests::address_classification_denies_private_and_special_ranges ... ok
+test tests::destination_policy_rejects_private_literals_credentials_and_unlisted_hosts ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 12 tests
+test retry_after_supports_dates_and_strict_nonnegative_seconds ... ok
+test rate_and_retry_after_cannot_exceed_total_deadline ... ok
+test public_names_resolving_to_private_addresses_are_denied ... ok
+test exhausted_retries_return_last_transient_error ... ok
+test independently_constructed_readers_share_origin_rate_history ... ok
+test date_retry_after_is_honored_for_retries_and_redirects ... ok
+test exhausted_or_timed_out_reads_preserve_server_cooldown ... ok
+test redirects_are_revalidated_and_bounded ... ok
+test settings_select_offline_cache_proxy_and_endpoint_policy ... ok
+test transient_reads_retry_but_permanent_faults_do_not ... ok
+test cache_policies_serve_only_intact_unexpired_entries ... ok
+test service_semaphore_bounds_inflight_reads_within_deadline ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/deps/linguist_provider-c7a2c6891789fdfc)
+     Running tests/reader.rs (target/debug/deps/reader-f9be980ef92f343b)
+   Doc-tests linguist_provider

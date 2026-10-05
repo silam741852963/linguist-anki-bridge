@@ -1,0 +1,66 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-04",
+ "status": "blocked",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "7824acf03203b1458a778dbb6fa404898cbcf8a1",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.10.0",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,osd",
+  "ollama": "0.35.1",
+  "kernel": "Linux 7.2.5-4-omarchy",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "addons/linguist_bridge/lineage.py": "459cfed03b077a1bde77f72f5bfe5e009f942da597bf277433125d295563219a"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "addons/linguist_bridge/tests"
+   ],
+   "invocation_digest": "907d7a27ce58b01c4645f560cf71f8e701c5f036ee832c8617ebd6f5e0019d8a",
+   "exit_code": 0,
+   "output_digest": "1a8fcbf010cef643c07bd248d89adf544f19f04a0eb0638bdd8b06452806ab2f"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "lineage helper unit tests",
+   "passed": true,
+   "observed": "no live session/rebind fixture"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-05/logs/python_companion.txt"
+ ],
+ "failure_code": "NATIVE_SESSION_REBIND_UNTESTED"
+}

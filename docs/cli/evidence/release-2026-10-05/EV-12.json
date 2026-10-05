@@ -1,0 +1,113 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-12",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "7824acf03203b1458a778dbb6fa404898cbcf8a1",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.10.0",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,osd",
+  "ollama": "0.35.1",
+  "kernel": "Linux 7.2.5-4-omarchy",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "crates/linguist-application/tests/jobs_apply.rs": "d88008a984840d74f2fdd28b8908a5e9ac178ca36552191b7c35403111e8e9b3"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-store",
+    "--test",
+    "lease",
+    "--test",
+    "apply_job",
+    "--test",
+    "journal"
+   ],
+   "invocation_digest": "b5b242c05144c8e969115972c185e82a7328deebacf86c9684d5fa0ed7a9cf1d",
+   "exit_code": 0,
+   "output_digest": "35b68747ab745b271b4dd28b527aef7b51eeb11fc7df5abd7ab9f7b7509dea19"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-application",
+    "--test",
+    "jobs_apply",
+    "--test",
+    "apply",
+    "--test",
+    "restore",
+    "--test",
+    "split",
+    "--test",
+    "checkpoint_writes"
+   ],
+   "invocation_digest": "2b39bf564e329fc7cb59fd34bad27493e6d06fc8b34caee8951e1f0332ac05e9",
+   "exit_code": 0,
+   "output_digest": "d544ea6394ae49f4100a92084ce46aab6ed13c62a087fa6da94ce597c9f944f2"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "jobs_commands",
+    "--test",
+    "apply_commands",
+    "--test",
+    "restore_commands"
+   ],
+   "invocation_digest": "6cbc917237746037c86b27509ea0b596f2da8fce1857242bed03e18ea2a1aff0",
+   "exit_code": 0,
+   "output_digest": "f226081b909bc6f7d382674431af09f6a1e72b9e0d16b453903a64141efd07c4"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "lease, liveness, control, retry, mode and restart tests",
+   "passed": true,
+   "observed": "local store; fake native port"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-05/logs/jobs_and_leases.txt",
+  "docs/cli/evidence/release-2026-10-05/logs/jobs_cli.txt",
+  "docs/cli/evidence/release-2026-10-05/logs/jobs_executor.txt"
+ ],
+ "failure_code": null
+}

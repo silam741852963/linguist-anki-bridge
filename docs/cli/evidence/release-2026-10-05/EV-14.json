@@ -1,0 +1,158 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-14",
+ "status": "blocked",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "7824acf03203b1458a778dbb6fa404898cbcf8a1",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.10.0",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,osd",
+  "ollama": "0.35.1",
+  "kernel": "Linux 7.2.5-4-omarchy",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "crates/linguist-cli/tests/release_scenarios.rs": "5ee53abbdd71c895fde16c7b1ee67feb6ad808faa808fdddf55f17c26223b661",
+  "scripts/disposable-anki-lab.py": "2557d0c9be49a70ab92f68426c8956619fd1b21387df541e377b3d70955274ab"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "cargo",
+    "build",
+    "--locked",
+    "-p",
+    "linguist-cli"
+   ],
+   "invocation_digest": "a0fa114f6102ca799a3397e7dd51a2a8b69db738aedb28338d4434313632678d",
+   "exit_code": 0,
+   "output_digest": "87cf922d103ab36f0716a84683023d96548e0adff33b375bd38c8195c9a3a034"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "tree",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "-e",
+    "normal,build",
+    "--prefix",
+    "none",
+    "--format",
+    "{p}"
+   ],
+   "invocation_digest": "63f46152fef7ce228d8689ee24de8591e04e5316b6de5674d61dd29368670dc7",
+   "exit_code": 0,
+   "output_digest": "7fc3169022e8c84d20fb3cbfca169b5e229d53daf1c1f81b55ef9965cdf55e69"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "release_ux",
+    "--test",
+    "release_coverage"
+   ],
+   "invocation_digest": "43667525d575e37c30a3d497e167b00eb2ddf902aaafc836ff785fb4c5f67481",
+   "exit_code": 0,
+   "output_digest": "928a0ea927c3ad67f6c67f795e11b5edde5e3ab715ba9d9c554084e148b30591"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "release_scenarios",
+    "--",
+    "--ignored",
+    "--test-threads",
+    "1",
+    "--nocapture"
+   ],
+   "invocation_digest": "61178dfdaae07b0f6760ffac230faedad334dacc47beac9e2eb1f4f65cd30f79",
+   "exit_code": 0,
+   "output_digest": "49138352e5ef4e3396837f9287c27450a97f08b357f56b92312e572cf2f33d85"
+  },
+  {
+   "redacted_argv": [
+    "python3",
+    "scripts/op-coverage.py",
+    "--check"
+   ],
+   "invocation_digest": "bfafddb55b9cef0b4e49519011f5292c039e53129923e1368e022516f7157f05",
+   "exit_code": 0,
+   "output_digest": "d8760763be63067f00789fcf42648cb7e89259b37690e733415676ec0b8b6596"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "headless build without Qt",
+   "passed": true,
+   "observed": "0 Qt crates"
+  },
+  {
+   "name": "fresh-home, pipes, Unicode, SSH, interrupts, limits",
+   "passed": true,
+   "observed": "release_ux + release_coverage"
+  },
+  {
+   "name": "all 61 operations have command-level tests",
+   "passed": true,
+   "observed": "docs/cli/implementation/op-coverage.md"
+  },
+  {
+   "name": "four workflows prepare->review->apply->restore in disposable Anki",
+   "passed": true,
+   "observed": "grammar_add, grammar_revamp, grammar_split, vocab_add, vocab_revamp"
+  },
+  {
+   "name": "CLI --apply performs the writes itself",
+   "passed": false,
+   "observed": "harness binds plans and transports effects; CLI apply returns CAPABILITY_UNAVAILABLE"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-05/logs/build.txt",
+  "docs/cli/evidence/release-2026-10-05/logs/op_coverage.txt",
+  "docs/cli/evidence/release-2026-10-05/logs/qt_tree.txt",
+  "docs/cli/evidence/release-2026-10-05/logs/scenarios.txt",
+  "docs/cli/evidence/release-2026-10-05/logs/ux.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/grammar_add.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/grammar_revamp.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/grammar_split.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/vocab_add.txt",
+  "docs/cli/evidence/release-2026-10-05/scenarios/vocab_revamp.txt"
+ ],
+ "failure_code": "CLI_NATIVE_TRANSPORT_UNAVAILABLE"
+}

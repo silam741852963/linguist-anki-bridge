@@ -1,0 +1,17 @@
+grammar_split
+--set purposes.japanese_grammar.fields={"formation":"Formation","language":"Language","meaning":"Meaning","pattern":"Pattern"} --set purposes.japanese_grammar.source_model=Linguist Grammar v2 grammar revamp --note-id 1791197326624 -> 4
+harness: bound revision 2 of b05cd9c9-0047-447b-83c5-848cb7fd24d3
+harness: reviewed combined grammar document from the CLI capture
+plans split-grammar b05cd9c9-0047-447b-83c5-848cb7fd24d3 --request /tmp/lab-release-scenario-grammar-split-08744244-a8cf-4e1e-89eb-bee7b5624bed/split.json -> 4
+plans resolve b05cd9c9-0047-447b-83c5-848cb7fd24d3 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-release-scenario-grammar-split-08744244-a8cf-4e1e-89eb-bee7b5624bed/decision-3.json -> 4
+plans resolve b05cd9c9-0047-447b-83c5-848cb7fd24d3 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-release-scenario-grammar-split-08744244-a8cf-4e1e-89eb-bee7b5624bed/decision-4.json -> 0
+harness: bound revision 6 of b05cd9c9-0047-447b-83c5-848cb7fd24d3
+plans validate b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 -> 0
+plans validate b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 -> 0
+plans approve b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 --digest lab-jcs-v1:plan:aeec0642095e7701ef736c18bddc37b9ccd9988a2008232cdeb492872050ac6e --actor release-check -> 0
+apply b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 --split-group c581204c-3b1a-4137-ab36-54ee3342f19f -> 0
+apply b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 --split-group c581204c-3b1a-4137-ab36-54ee3342f19f --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: split group c581204c-3b1a-4137-ab36-54ee3342f19f complete (["create_note", "update_note"])
+harness: verified real .colpkg checkpoint
+harness: group rollback restored the anchor and removed the unstudied sibling

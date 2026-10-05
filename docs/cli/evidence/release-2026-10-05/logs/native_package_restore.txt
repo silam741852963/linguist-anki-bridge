@@ -1,0 +1,7 @@
+$ /usr/bin/python3.14 scripts/verify-native-package-restore.py --cli target/debug/linguist-anki-bridge
+exit 0
+
+PASS: CLI inspector verifies disposable package counts and media declaration
+PASS: disposable colpkg restores note, reviewed card and exact media bytes
+
+--- stderr ---

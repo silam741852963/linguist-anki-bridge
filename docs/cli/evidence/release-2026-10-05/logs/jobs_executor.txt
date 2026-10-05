@@ -1,0 +1,124 @@
+$ cargo test --locked -p linguist-application --test jobs_apply --test apply --test restore --test split --test checkpoint_writes
+exit 0
+
+
+running 26 tests
+test precondition_digest_matches_the_companion_vector ... ok
+test second_writer_is_rejected_by_the_collection_lease ... ok
+test missing_apply_flag_and_preview_have_zero_effects ... ok
+test copied_marker_candidates_block_for_review ... ok
+test mapped_migration_retains_card_id_history_and_scheduling ... ok
+test pending_native_operation_is_waited_on_not_resent ... ok
+test lost_request_without_ledger_row_resubmits_the_same_uuid_once ... ok
+test batch_stops_on_identity_fault_and_continues_after_item_failures ... ok
+test partial_native_migration_with_replaced_card_needs_recovery ... ok
+test crash_after_receipt_before_commit_finalizes_with_the_stored_receipt ... ok
+test intent_records_and_binding_decisions_are_immutable ... ok
+test profile_switch_or_session_change_stops_reconciliation_until_rebind ... ok
+test source_edit_between_preparation_and_apply_conflicts_and_preserves_original ... ok
+test create_commits_with_marker_snapshot_receipt_and_owner_release ... ok
+test rejected_create_fails_before_write_and_allows_a_new_attempt ... ok
+test rejection_after_verified_media_is_a_known_partial_that_can_be_superseded ... ok
+test media_collision_never_overwrites_and_identical_media_is_reused ... ok
+test migration_requires_accepted_schema_change_and_complete_mapping ... ok
+test study_between_preparation_and_apply_is_captured_fresh_and_preserved ... ok
+test timeout_after_accepted_create_reconciles_to_one_note ... ok
+test study_during_mutation_needs_recovery_without_success_claim ... ok
+test unknown_status_without_candidates_never_resubmits ... ok
+test unknown_add_with_exact_marker_candidate_is_adopted ... ok
+test authority_identity_and_checkpoint_refusals_mutate_nothing ... ok
+test weak_binding_stale_revision_and_remote_bridge_are_refused ... ok
+test disk_full_after_native_acceptance_stops_and_recovery_discovers_result ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.19s
+
+
+running 18 tests
+test coverage_always_escalates_to_collection_package ... ok
+test invalid_requests_fail_before_journal_or_export ... ok
+test truncated_package_fails_verification ... ok
+test rejected_and_unknown_exports_are_journaled_differently ... ok
+test false_api_success_without_file_is_not_a_checkpoint ... ok
+test claim_mismatch_and_foreign_path_fail ... ok
+test created_model_is_journaled_before_call_and_verified ... ok
+test content_only_checkpoint_cannot_authorize_schema_action ... ok
+test partial_model_needs_recovery_and_blocks_new_attempts ... ok
+test gate_checks_binding_scope_reuse_and_artifact_bytes ... ok
+test rejected_install_without_effect_fails_before_write ... ok
+test lost_response_reconciles_only_with_operation_evidence ... ok
+test exact_model_is_reused_and_same_name_different_manifest_blocks ... ok
+test lost_response_without_effect_closes_with_evidence_and_allows_retry ... ok
+test checkpoint_failure_guarantees_zero_model_mutation ... ok
+test crash_after_request_started_reconciles_as_unknown ... ok
+test verified_checkpoint_has_receipt_restoration_and_committed_journal ... ok
+test missing_media_scheduling_or_card_fails_scope ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+
+running 16 tests
+test apply_job_creation_requires_a_checkpoint_and_approved_ready_items ... ok
+test idle_controls_are_confirmed_but_a_held_lease_only_records_the_request ... ok
+test a_tampered_event_chain_fails_the_audit ... ok
+test permanent_failures_need_a_new_revision_and_the_stop_policy_stops_the_group ... ok
+test a_worker_lost_mid_item_is_reconciled_from_its_recorded_operation ... ok
+test simulate_never_writes_and_apply_jobs_need_the_current_flag ... ok
+test rollback_preview_and_group_rollback_use_the_job_as_group ... ok
+test delete_tombstones_only_terminal_jobs_and_keeps_every_record ... ok
+test cancel_during_sent_write_keeps_the_committed_item_and_is_terminal ... ok
+test an_identity_fault_halts_the_group_and_the_audit_reports_a_partial_batch ... ok
+test a_job_adopts_its_checkpoint_group_so_items_reuse_it_without_an_age_window ... ok
+test an_unknown_outcome_stops_dispatch_and_a_restart_reconciles_without_duplicates ... ok
+test commit_interval_paces_mutations_and_only_the_verified_native_adapter_is_accepted ... ok
+test transient_failures_are_retried_only_by_explicit_envelopes_within_the_budget ... ok
+test pause_during_sent_write_finishes_the_item_then_resume_continues_without_duplicates ... ok
+test an_expired_lease_of_a_live_worker_is_never_reclaimed ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.36s
+
+
+running 19 tests
+test local_preview_reports_apply_changes_without_live_reads ... ok
+test unknown_apply_outcome_must_be_reconciled_before_restore ... ok
+test reverse_mapping_refuses_studied_new_task_cards ... ok
+test retained_card_without_reverse_mapping_and_filtered_cards_block ... ok
+test restore_requires_apply_flag_identity_variant_and_checkpoint ... ok
+test reverse_migration_keeps_history_and_removes_only_reviewed_unstudied_cards ... ok
+test media_is_restored_before_the_fields_that_reference_it ... ok
+test missing_unarchived_media_needs_explicit_acceptance ... ok
+test snapshots_that_are_not_apply_operations_are_inspect_only ... ok
+test created_notes_are_kept_by_default_and_deleted_only_when_unchanged_and_unstudied ... ok
+test colliding_original_media_uses_a_safe_alternate_name ... ok
+test restore_after_later_study_restores_content_and_keeps_new_history ... ok
+test unknown_reverse_effect_without_evidence_stays_in_recovery ... ok
+test group_rollback_previews_and_restores_each_journaled_item ... ok
+test known_partial_restore_with_verified_media_can_be_superseded ... ok
+test crash_after_restore_receipt_or_commit_finalizes_without_new_effects ... ok
+test rejected_reverse_effect_fails_before_write_and_allows_a_new_restore ... ok
+test later_personal_edits_conflict_until_explicitly_merged ... ok
+test every_reverse_effect_crash_boundary_resumes_the_same_restore_journal ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.67s
+
+
+running 9 tests
+test native_split_review_accepts_only_the_recorded_anchor ... ok
+test a_split_unit_is_never_applied_alone ... ok
+test group_preflight_failure_writes_nothing ... ok
+test unprovable_child_outcome_stops_the_group_before_the_anchor ... ok
+test split_records_and_attempts_are_immutable ... ok
+test child_accepted_and_anchor_failed_resumes_without_duplicates ... ok
+test children_are_created_first_then_the_anchor_keeps_its_history ... ok
+test rollback_restores_the_anchor_and_protects_studied_children ... ok
+test unknown_child_outcomes_are_reconciled_on_resume_never_recreated ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.27s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/apply.rs (target/debug/deps/apply-fe1c3a737a6fff90)
+     Running tests/checkpoint_writes.rs (target/debug/deps/checkpoint_writes-cc8612711b56d0d3)
+     Running tests/jobs_apply.rs (target/debug/deps/jobs_apply-ee0d4ca22d57bf8e)
+     Running tests/restore.rs (target/debug/deps/restore-2c41adc85526ed3a)
+     Running tests/split.rs (target/debug/deps/split-79a6cbede8b907b0)

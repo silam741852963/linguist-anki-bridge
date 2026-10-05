@@ -1,0 +1,111 @@
+$ cargo test --locked -p linguist-cli --test release_scenarios -- --ignored --test-threads 1 --nocapture
+exit 0
+
+
+running 5 tests
+test grammar_add_prepare_review_apply_study_restore_keeps_history ... grammar_add
+grammar add --document /tmp/<disposable>/grammar.json -> 0
+harness: bound revision 2 of 37560505-e170-47b3-8bae-12d9a8df13c4
+plans validate 37560505-e170-47b3-8bae-12d9a8df13c4 --revision 2 -> 0
+plans approve 37560505-e170-47b3-8bae-12d9a8df13c4 --revision 2 --digest lab-jcs-v1:plan:264e0797618961d02ef9da32356f7327c1daa5655a7a47cce8fd45e276daec01 --actor release-check -> 0
+apply 37560505-e170-47b3-8bae-12d9a8df13c4 --revision 2 -> 0
+apply 37560505-e170-47b3-8bae-12d9a8df13c4 --revision 2 --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: apply_item -> Committed
+snapshots list -> 0
+snapshots show c012bc5e-6740-41fe-bd97-c93a8273e58b -> 0
+recover inspect --pending -> 0
+plans show 37560505-e170-47b3-8bae-12d9a8df13c4 -> 0
+harness: verified real .colpkg checkpoint
+harness: restore -> Err("RESTORE_UNSUPPORTED: RESTORE_CREATED_NOTE_STUDIED:1791197324515: studied notes are kept; removal needs a separately authorized manual disaster-recovery procedure")
+restore refused as required: RESTORE_UNSUPPORTED: RESTORE_CREATED_NOTE_STUDIED:1791197324515: studied notes are kept; removal needs a separately authorized manual disaster-recovery procedure
+
+ok
+test grammar_revamp_capture_migrate_study_restore ... grammar_revamp
+--set purposes.english_grammar.fields={"meaning":"Back","pattern":"Front"} --set purposes.english_grammar.source_model=Basic grammar revamp --note-id 1791197325309 -> 4
+plans show 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --issues-only -> 0
+harness: reviewed migration document from the CLI capture
+harness: bound revision 2 of 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4
+plans validate 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 -> 0
+plans validate 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 -> 0
+plans approve 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 --digest lab-jcs-v1:plan:126b87acc8b1bcd95533bbd109a8a32b090b71b788598b659bb0f81a97debbc0 --actor release-check -> 0
+apply 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 --accept-schema-change -> 0
+apply 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 --revision 2 --accept-schema-change --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: apply_item -> Committed
+snapshots list -> 0
+snapshots show 78421888-24b1-4424-9718-2d4f10d2a417 -> 0
+recover inspect --pending -> 0
+plans show 2a7e62a2-ab05-41c3-adcb-7d0aadbabed4 -> 0
+harness: verified real .colpkg checkpoint
+harness: restore -> Err("RESTORE_CONFLICT_UNRESOLVED: RESTORE_FIELD_CONFLICT:Meaning")
+restore without a field decision refused: RESTORE_FIELD_CONFLICT:Meaning
+harness: verified real .colpkg checkpoint
+harness: restore -> Ok(Some(Committed))
+
+ok
+test grammar_revamp_multi_unit_split_apply_rollback ... grammar_split
+--set purposes.japanese_grammar.fields={"formation":"Formation","language":"Language","meaning":"Meaning","pattern":"Pattern"} --set purposes.japanese_grammar.source_model=Linguist Grammar v2 grammar revamp --note-id 1791197326624 -> 4
+harness: bound revision 2 of b05cd9c9-0047-447b-83c5-848cb7fd24d3
+harness: reviewed combined grammar document from the CLI capture
+plans split-grammar b05cd9c9-0047-447b-83c5-848cb7fd24d3 --request /tmp/<disposable>/split.json -> 4
+plans resolve b05cd9c9-0047-447b-83c5-848cb7fd24d3 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/<disposable>/decision-3.json -> 4
+plans resolve b05cd9c9-0047-447b-83c5-848cb7fd24d3 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/<disposable>/decision-4.json -> 0
+harness: bound revision 6 of b05cd9c9-0047-447b-83c5-848cb7fd24d3
+plans validate b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 -> 0
+plans validate b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 -> 0
+plans approve b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 --digest lab-jcs-v1:plan:aeec0642095e7701ef736c18bddc37b9ccd9988a2008232cdeb492872050ac6e --actor release-check -> 0
+apply b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 --split-group c581204c-3b1a-4137-ab36-54ee3342f19f -> 0
+apply b05cd9c9-0047-447b-83c5-848cb7fd24d3 --revision 6 --split-group c581204c-3b1a-4137-ab36-54ee3342f19f --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: split group c581204c-3b1a-4137-ab36-54ee3342f19f complete (["create_note", "update_note"])
+harness: verified real .colpkg checkpoint
+harness: group rollback restored the anchor and removed the unstudied sibling
+
+ok
+test vocab_add_prepare_review_apply_restore ... vocab_add
+vocab add --expression 食べる --meaning to eat --sense-key eat --target-language ja --reading たべる --tag release -> 0
+apply c09df9f9-e795-42df-b544-992f190ed584 --revision 1 -> 4
+harness: bound revision 2 of c09df9f9-e795-42df-b544-992f190ed584
+plans validate c09df9f9-e795-42df-b544-992f190ed584 --revision 2 -> 0
+plans approve c09df9f9-e795-42df-b544-992f190ed584 --revision 2 --digest lab-jcs-v1:plan:e18a83b4b78175bb8d45e2f57a9b226af4b9ca4f3405f087add9d2093f585212 --actor release-check -> 0
+apply c09df9f9-e795-42df-b544-992f190ed584 --revision 2 -> 0
+apply c09df9f9-e795-42df-b544-992f190ed584 --revision 2 --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: apply_item -> Committed
+snapshots list -> 0
+snapshots show 494d829b-697c-4d22-b68e-d49496e8e92e -> 0
+recover inspect --pending -> 0
+plans show c09df9f9-e795-42df-b544-992f190ed584 -> 0
+harness: verified real .colpkg checkpoint
+harness: restore -> Ok(Some(Committed))
+snapshots show 494d829b-697c-4d22-b68e-d49496e8e92e -> 0
+
+ok
+test vocab_revamp_capture_migrate_study_restore ... vocab_revamp
+--set purposes.japanese_vocab.fields={"expression":"Front","meaning":"Back"} --set purposes.japanese_vocab.source_model=Basic vocab revamp --note-id 1791197328935 -> 4
+plans show 9510913a-0cad-42b7-ad3d-0d2867d33807 --issues-only -> 0
+harness: reviewed migration document from the CLI capture
+harness: bound revision 2 of 9510913a-0cad-42b7-ad3d-0d2867d33807
+plans validate 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 -> 0
+plans validate 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 -> 0
+plans approve 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 --digest lab-jcs-v1:plan:82bbcd7d6e334ece6eb04ed37754c1a307b61278eef90b87762dfc3b697416ea --actor release-check -> 0
+apply 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 --accept-schema-change -> 0
+apply 9510913a-0cad-42b7-ad3d-0d2867d33807 --revision 2 --accept-schema-change --apply -> 3
+harness: verified real .colpkg checkpoint
+harness: apply_item -> Committed
+snapshots list -> 0
+snapshots show e56d2500-460b-4816-956a-b2067196d662 -> 0
+recover inspect --pending -> 0
+plans show 9510913a-0cad-42b7-ad3d-0d2867d33807 -> 0
+harness: verified real .colpkg checkpoint
+harness: restore -> Ok(Some(Committed))
+
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 5.39s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/release_scenarios.rs (target/debug/deps/release_scenarios-a25c7706df96a2fa)

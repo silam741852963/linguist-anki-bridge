@@ -1,0 +1,612 @@
+$ cargo tree --locked -p linguist-cli -e normal,build --prefix none --format {p}
+exit 0
+
+linguist-cli v0.1.0 (<repo>/crates/linguist-cli)
+clap v4.6.7
+clap_builder v4.6.7
+anstream v1.0.0
+anstyle v1.0.14
+anstyle-parse v1.0.0
+utf8parse v0.2.2
+anstyle-query v1.1.5
+colorchoice v1.0.5
+is_terminal_polyfill v1.70.2
+utf8parse v0.2.2
+anstyle v1.0.14
+clap_lex v1.1.1
+strsim v0.11.1
+clap_derive v4.6.7 (proc-macro)
+heck v0.5.0
+proc-macro2 v1.0.107
+unicode-ident v1.0.26
+quote v1.0.47
+proc-macro2 v1.0.107 (*)
+syn v3.0.6
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+unicode-ident v1.0.26
+clap_complete v4.6.11
+clap v4.6.7 (*)
+libc v0.2.189
+linguist-anki v0.1.0 (<repo>/crates/linguist-anki)
+base64 v0.23.1
+linguist-config v0.1.0 (<repo>/crates/linguist-config)
+libc v0.2.189
+linguist-core v0.1.0 (<repo>/crates/linguist-core)
+ammonia v4.2.0
+cssparser v0.38.0
+dtoa-short v0.3.5
+dtoa v1.0.11
+itoa v1.0.18
+smallvec v1.16.2
+html5ever v0.40.1
+log v0.4.34
+markup5ever v0.40.0
+log v0.4.34
+tendril v0.5.1
+new_debug_unreachable v1.0.6
+web_atoms v0.3.0
+phf v0.14.0
+phf_shared v0.14.0
+siphasher v1.0.4
+string_cache v0.11.0
+new_debug_unreachable v1.0.6
+parking_lot v0.12.5
+lock_api v0.4.14
+scopeguard v1.2.0
+parking_lot_core v0.9.12
+cfg-if v1.0.5
+libc v0.2.189
+smallvec v1.16.2
+phf_shared v0.14.0 (*)
+precomputed-hash v0.1.1
+phf_codegen v0.14.0
+phf_generator v0.14.0
+fastrand v2.5.0
+phf_shared v0.14.0 (*)
+phf_shared v0.14.0 (*)
+string_cache_codegen v0.11.2
+phf_generator v0.14.0 (*)
+phf_shared v0.14.0 (*)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+memchr v2.8.3
+maplit v1.0.2
+url v2.5.8
+form_urlencoded v1.2.2
+percent-encoding v2.3.2
+idna v1.1.0
+idna_adapter v1.2.2
+icu_normalizer v2.3.0
+icu_collections v2.3.0
+displaydoc v0.2.7 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+potential_utf v0.1.6
+zerovec v0.11.8
+yoke v0.8.3
+stable_deref_trait v1.2.1
+yoke-derive v0.8.3 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+synstructure v0.14.0
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+zerofrom v0.1.8
+zerofrom-derive v0.1.8 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+synstructure v0.14.0 (*)
+zerofrom v0.1.8 (*)
+zerovec-derive v0.11.6 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+utf8_iter v1.0.4
+yoke v0.8.3 (*)
+zerofrom v0.1.8 (*)
+zerovec v0.11.8 (*)
+icu_normalizer_data v2.3.0
+icu_provider v2.3.1
+displaydoc v0.2.7 (proc-macro) (*)
+icu_locale_core v2.3.0
+displaydoc v0.2.7 (proc-macro) (*)
+litemap v0.8.3
+tinystr v0.8.4
+displaydoc v0.2.7 (proc-macro) (*)
+zerovec v0.11.8 (*)
+writeable v0.6.4
+zerovec v0.11.8 (*)
+writeable v0.6.4
+yoke v0.8.3 (*)
+zerofrom v0.1.8 (*)
+zerotrie v0.2.5
+displaydoc v0.2.7 (proc-macro) (*)
+yoke v0.8.3 (*)
+zerofrom v0.1.8 (*)
+zerovec v0.11.8 (*)
+smallvec v1.16.2
+zerovec v0.11.8 (*)
+icu_properties v2.3.0
+displaydoc v0.2.7 (proc-macro) (*)
+icu_collections v2.3.0 (*)
+icu_locale_core v2.3.0 (*)
+icu_properties_data v2.3.0
+icu_provider v2.3.1 (*)
+zerotrie v0.2.5 (*)
+zerovec v0.11.8 (*)
+smallvec v1.16.2
+utf8_iter v1.0.4
+percent-encoding v2.3.2
+language-tags v0.3.2
+schemars v1.2.2
+dyn-clone v1.0.20
+ref-cast v1.0.27
+ref-cast-impl v1.0.27 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+schemars_derive v1.2.2 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+serde_derive_internals v0.30.0
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+syn v3.0.6 (*)
+serde v1.0.229
+serde_core v1.0.229
+serde_derive v1.0.229 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+serde_json v1.0.151
+itoa v1.0.18
+memchr v2.8.3
+serde_core v1.0.229
+zmij v1.0.23
+uuid v1.26.1
+getrandom v0.4.3
+cfg-if v1.0.5
+libc v0.2.189
+serde_core v1.0.229
+serde v1.0.229 (*)
+serde_jcs v0.2.0
+ryu-js v0.2.2
+serde v1.0.229 (*)
+serde_json v1.0.151 (*)
+serde_json v1.0.151 (*)
+sha2 v0.10.9
+cfg-if v1.0.5
+cpufeatures v0.2.17
+digest v0.10.7
+block-buffer v0.10.4
+generic-array v0.14.7
+typenum v1.20.1
+version_check v0.9.5
+crypto-common v0.1.7
+generic-array v0.14.7 (*)
+typenum v1.20.1
+uuid v1.26.1 (*)
+serde v1.0.229 (*)
+serde_json v1.0.151 (*)
+toml v0.9.12+spec-1.1.0
+serde_core v1.0.229
+serde_spanned v1.1.1
+serde_core v1.0.229
+toml_datetime v0.7.5+spec-1.1.0
+serde_core v1.0.229
+toml_parser v1.1.3+spec-1.1.0
+winnow v1.0.4
+toml_writer v1.1.2+spec-1.1.0
+winnow v0.7.15
+url v2.5.8 (*)
+uuid v1.26.1 (*)
+yaml-rust2 v0.13.0
+arraydeque v0.5.1
+hashlink v0.12.2
+hashbrown v0.17.1
+foldhash v0.2.0
+serde_json v1.0.151
+itoa v1.0.18
+memchr v2.8.3
+serde_core v1.0.229
+zmij v1.0.23
+linguist-core v0.1.0 (<repo>/crates/linguist-core) (*)
+reqwest v0.13.5
+base64 v0.23.1
+bytes v1.12.1
+futures-channel v0.3.34
+futures-core v0.3.34
+futures-sink v0.3.34
+futures-core v0.3.34
+futures-util v0.3.34
+futures-core v0.3.34
+futures-io v0.3.34
+futures-sink v0.3.34
+futures-task v0.3.34
+memchr v2.8.3
+pin-project-lite v0.2.17
+slab v0.4.12
+http v1.5.0
+bytes v1.12.1
+itoa v1.0.18
+http-body v1.1.0
+bytes v1.12.1
+http v1.5.0 (*)
+http-body-util v0.1.5
+bytes v1.12.1
+futures-core v0.3.34
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+pin-project-lite v0.2.17
+hyper v1.11.1
+atomic-waker v1.1.2
+bytes v1.12.1
+futures-channel v0.3.34 (*)
+futures-core v0.3.34
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+httparse v1.10.1
+itoa v1.0.18
+pin-project-lite v0.2.17
+smallvec v1.16.2
+tokio v1.53.1
+bytes v1.12.1
+libc v0.2.189
+mio v1.2.3
+libc v0.2.189
+pin-project-lite v0.2.17
+socket2 v0.6.5
+libc v0.2.189
+want v0.3.1
+try-lock v0.2.5
+hyper-rustls v0.27.10
+http v1.5.0 (*)
+hyper v1.11.1 (*)
+hyper-util v0.1.21
+base64 v0.23.1
+bytes v1.12.1
+futures-channel v0.3.34 (*)
+futures-util v0.3.34 (*)
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+httparse v1.10.1
+hyper v1.11.1 (*)
+ipnet v2.12.2
+libc v0.2.189
+percent-encoding v2.3.2
+pin-project-lite v0.2.17
+socket2 v0.6.5 (*)
+tokio v1.53.1 (*)
+tower-service v0.3.3
+tracing v0.1.44
+pin-project-lite v0.2.17
+tracing-core v0.1.36
+once_cell v1.21.4
+rustls v0.23.45
+aws-lc-rs v1.18.1
+aws-lc-sys v0.45.0
+cc v1.5.1
+find-msvc-tools v0.1.14
+jobserver v0.1.35
+libc v0.2.189
+libc v0.2.189
+shlex v2.0.1
+cmake v0.1.58
+cc v1.5.1 (*)
+dunce v1.0.5
+fs_extra v1.3.0
+pkg-config v0.3.34
+zeroize v1.9.0
+once_cell v1.21.4
+rustls-pki-types v1.15.1
+zeroize v1.9.0
+rustls-webpki v0.103.15
+aws-lc-rs v1.18.1 (*)
+rustls-pki-types v1.15.1 (*)
+untrusted v0.9.0
+subtle v2.6.1
+zeroize v1.9.0
+tokio v1.53.1 (*)
+tokio-rustls v0.26.5
+rustls v0.23.45 (*)
+tokio v1.53.1 (*)
+tower-service v0.3.3
+hyper-util v0.1.21 (*)
+log v0.4.34
+percent-encoding v2.3.2
+pin-project-lite v0.2.17
+rustls v0.23.45 (*)
+rustls-pki-types v1.15.1 (*)
+rustls-platform-verifier v0.7.1
+log v0.4.34
+rustls v0.23.45 (*)
+rustls-native-certs v0.8.4
+openssl-probe v0.2.1
+rustls-pki-types v1.15.1 (*)
+rustls-webpki v0.103.15 (*)
+serde v1.0.229 (*)
+serde_json v1.0.151 (*)
+sync_wrapper v1.0.2
+futures-core v0.3.34
+tokio v1.53.1 (*)
+tokio-rustls v0.26.5 (*)
+tower v0.5.3
+futures-core v0.3.34
+futures-util v0.3.34 (*)
+pin-project-lite v0.2.17
+sync_wrapper v1.0.2 (*)
+tokio v1.53.1 (*)
+tower-layer v0.3.3
+tower-service v0.3.3
+tower-http v0.6.11
+bitflags v2.13.2
+bytes v1.12.1
+futures-util v0.3.34 (*)
+http v1.5.0 (*)
+http-body v1.1.0 (*)
+pin-project-lite v0.2.17
+tower v0.5.3 (*)
+tower-layer v0.3.3
+tower-service v0.3.3
+url v2.5.8 (*)
+tower-service v0.3.3
+url v2.5.8 (*)
+serde v1.0.229 (*)
+serde_json v1.0.151 (*)
+unicode-normalization v0.1.25
+tinyvec v1.13.3
+url v2.5.8 (*)
+uuid v1.26.1 (*)
+linguist-application v0.1.0 (<repo>/crates/linguist-application)
+ammonia v4.2.0 (*)
+base64 v0.23.1
+csv v1.4.0
+csv-core v0.1.13
+memchr v2.8.3
+itoa v1.0.18
+ryu v1.0.23
+serde_core v1.0.229
+html-escape v0.2.15
+httpdate v1.0.3
+image v0.25.10
+bytemuck v1.25.2
+byteorder-lite v0.1.0
+color_quant v1.1.0
+gif v0.14.2
+color_quant v1.1.0
+weezl v0.1.12
+image-webp v0.2.4
+byteorder-lite v0.1.0
+quick-error v2.0.1
+moxcms v0.8.1
+num-traits v0.2.19
+autocfg v1.5.1
+pxfm v0.1.30
+num-traits v0.2.19 (*)
+png v0.18.1
+bitflags v2.13.2
+crc32fast v1.5.2
+cfg-if v1.0.5
+fdeflate v0.3.7
+simd-adler32 v0.3.10
+flate2 v1.1.10
+crc32fast v1.5.2 (*)
+miniz_oxide v0.9.1
+adler2 v2.0.1
+simd-adler32 v0.3.10
+zlib-rs v0.6.8
+miniz_oxide v0.8.9
+adler2 v2.0.1
+simd-adler32 v0.3.10
+zune-core v0.5.3
+zune-jpeg v0.5.15
+zune-core v0.5.3
+libc v0.2.189
+linguist-anki v0.1.0 (<repo>/crates/linguist-anki) (*)
+linguist-config v0.1.0 (<repo>/crates/linguist-config) (*)
+linguist-core v0.1.0 (<repo>/crates/linguist-core) (*)
+linguist-dictionary v0.1.0 (<repo>/crates/linguist-dictionary)
+ammonia v4.2.0 (*)
+html-escape v0.2.15
+linguist-config v0.1.0 (<repo>/crates/linguist-config) (*)
+linguist-core v0.1.0 (<repo>/crates/linguist-core) (*)
+linguist-provider v0.1.0 (<repo>/crates/linguist-provider)
+httpdate v1.0.3
+libc v0.2.189
+linguist-config v0.1.0 (<repo>/crates/linguist-config) (*)
+reqwest v0.13.5 (*)
+serde v1.0.229 (*)
+serde_json v1.0.151 (*)
+sha2 v0.10.9 (*)
+url v2.5.8 (*)
+uuid v1.26.1 (*)
+percent-encoding v2.3.2
+scraper v0.27.0
+cssparser v0.37.0
+cssparser-macros v0.7.1 (proc-macro)
+quote v1.0.47 (*)
+syn v3.0.6 (*)
+dtoa-short v0.3.5 (*)
+itoa v1.0.18
+phf v0.13.1
+phf_macros v0.13.1 (proc-macro)
+phf_generator v0.13.1
+fastrand v2.5.0
+phf_shared v0.13.1
+siphasher v1.0.4
+phf_shared v0.13.1 (*)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+unicode-ident v1.0.26
+phf_shared v0.13.1 (*)
+smallvec v1.16.2
+ego-tree v0.11.0
+getopts v0.2.24
+unicode-width v0.2.2
+html5ever v0.39.0
+log v0.4.34
+markup5ever v0.39.0
+log v0.4.34
+tendril v0.5.1 (*)
+web_atoms v0.2.6
+phf v0.13.1 (*)
+string_cache v0.9.0
+new_debug_unreachable v1.0.6
+parking_lot v0.12.5 (*)
+phf_shared v0.13.1 (*)
+precomputed-hash v0.1.1
+phf_codegen v0.13.1
+phf_generator v0.13.1 (*)
+phf_shared v0.13.1 (*)
+string_cache_codegen v0.6.1
+phf_generator v0.13.1 (*)
+phf_shared v0.13.1 (*)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+precomputed-hash v0.1.1
+selectors v0.38.0
+bitflags v2.13.2
+cssparser v0.37.0 (*)
+derive_more v2.1.1
+derive_more-impl v2.1.1 (proc-macro)
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119 (*)
+rustc_version v0.4.1
+semver v1.0.28
+log v0.4.34
+new_debug_unreachable v1.0.6
+phf v0.13.1 (*)
+precomputed-hash v0.1.1
+rustc-hash v2.1.3
+servo_arc v0.4.3
+stable_deref_trait v1.2.1
+smallvec v1.16.2
+phf_codegen v0.13.1 (*)
+tendril v0.5.1 (*)
+serde v1.0.229 (*)
+serde_json v1.0.151 (*)
+url v2.5.8 (*)
+linguist-provider v0.1.0 (<repo>/crates/linguist-provider) (*)
+linguist-store v0.1.0 (<repo>/crates/linguist-store)
+libc v0.2.189
+linguist-core v0.1.0 (<repo>/crates/linguist-core) (*)
+rusqlite v0.40.2
+bitflags v2.13.2
+fallible-iterator v0.3.0
+fallible-streaming-iterator v0.1.9
+hashlink v0.12.2 (*)
+libsqlite3-sys v0.38.2
+cc v1.5.1 (*)
+pkg-config v0.3.34
+vcpkg v0.2.15
+smallvec v1.16.2
+serde v1.0.229 (*)
+serde_json v1.0.151 (*)
+uuid v1.26.1 (*)
+percent-encoding v2.3.2
+prost v0.14.4
+bytes v1.12.1
+prost-derive v0.14.4 (proc-macro)
+anyhow v1.0.104
+itertools v0.14.0
+either v1.18.0
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+syn v2.0.119 (*)
+reqwest v0.13.5 (*)
+rusqlite v0.40.2 (*)
+schemars v1.2.2 (*)
+scraper v0.27.0 (*)
+serde v1.0.229 (*)
+serde_jcs v0.2.0 (*)
+serde_json v1.0.151 (*)
+sha1 v0.11.0
+cfg-if v1.0.5
+cpufeatures v0.3.1
+digest v0.11.3
+block-buffer v0.12.1
+hybrid-array v0.4.15
+typenum v1.20.1
+const-oid v0.10.2
+crypto-common v0.2.2
+hybrid-array v0.4.15 (*)
+sha2 v0.10.9 (*)
+symphonia v0.6.1
+lazy_static v1.5.0
+symphonia-bundle-mp3 v0.6.1
+lazy_static v1.5.0
+log v0.4.34
+symphonia-core v0.6.1
+bitflags v2.13.2
+bytemuck v1.25.2
+lazy_static v1.5.0
+log v0.4.34
+num-complex v0.4.6
+num-traits v0.2.19 (*)
+smallvec v1.16.2
+symphonia-codec-pcm v0.6.1
+log v0.4.34
+symphonia-core v0.6.1 (*)
+symphonia-codec-vorbis v0.6.1
+log v0.4.34
+symphonia-common v0.6.1
+log v0.4.34
+symphonia-core v0.6.1 (*)
+symphonia-metadata v0.6.1
+lazy_static v1.5.0
+log v0.4.34
+regex-lite v0.1.9
+smallvec v1.16.2
+symphonia-core v0.6.1 (*)
+symphonia-core v0.6.1 (*)
+symphonia-core v0.6.1 (*)
+symphonia-format-ogg v0.6.1
+log v0.4.34
+symphonia-common v0.6.1 (*)
+symphonia-core v0.6.1 (*)
+symphonia-metadata v0.6.1 (*)
+symphonia-format-riff v0.6.1
+extended v0.1.0
+log v0.4.34
+symphonia-core v0.6.1 (*)
+symphonia-metadata v0.6.1 (*)
+symphonia-metadata v0.6.1 (*)
+unicase v2.6.0
+version_check v0.9.5
+unicode-normalization v0.1.25 (*)
+url v2.5.8 (*)
+uuid v1.26.1 (*)
+zip v8.6.0
+crc32fast v1.5.2 (*)
+flate2 v1.1.10 (*)
+indexmap v2.14.2
+equivalent v1.0.2
+hashbrown v0.17.1 (*)
+memchr v2.8.3
+typed-path v0.12.3
+zstd v0.14.0
+zstd-safe v8.0.0
+zstd-sys v2.1.0+zstd.1.5.7
+cc v1.5.1 (*)
+pkg-config v0.3.34
+linguist-config v0.1.0 (<repo>/crates/linguist-config) (*)
+linguist-core v0.1.0 (<repo>/crates/linguist-core) (*)
+linguist-provider v0.1.0 (<repo>/crates/linguist-provider) (*)
+linguist-store v0.1.0 (<repo>/crates/linguist-store) (*)
+serde v1.0.229 (*)
+serde_json v1.0.151 (*)
+toml v0.9.12+spec-1.1.0 (*)
+url v2.5.8 (*)
+uuid v1.26.1 (*)
+
+--- stderr ---

@@ -1,0 +1,78 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-03",
+ "status": "blocked",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "7824acf03203b1458a778dbb6fa404898cbcf8a1",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.10.0",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,osd",
+  "ollama": "0.35.1",
+  "kernel": "Linux 7.2.5-4-omarchy",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "addons/linguist_bridge/__init__.py": "14a343f45e1c0ecfe7377c2d8b474728474dc1ab75aef319fb2a7a1ab2fe8ceb",
+  "addons/linguist_bridge/addon_entrypoint.py": "9d4de790ada02e48ddb937ddc37abf89f8db694a0bb57e7f52852d0ff959e062",
+  "addons/linguist_bridge/compatibility.py": "4d04a7b9063f55764f13ce3311cbf4ce329fc48bc4e18ccbc127b5da8141eefe",
+  "addons/linguist_bridge/effects.py": "d31dcc959f55ef9cfcd61e614e5bbd12053c2d48db3a19ff16ad908f639b4d8f",
+  "addons/linguist_bridge/identity.py": "a93c141ed756c743923cbb1bc9b10472f94a0222ec567ac0ca29b79efb0ca1d8",
+  "addons/linguist_bridge/inspection.py": "40e9d27610002faf6a030966e9930761b1737bee03141d68baa6d2e7ac33a2fb",
+  "addons/linguist_bridge/lineage.py": "459cfed03b077a1bde77f72f5bfe5e009f942da597bf277433125d295563219a",
+  "addons/linguist_bridge/operations.py": "ed77d58ec97783d0dba0846242467bb82a321812d44cebb9b919248a9017acef",
+  "addons/linguist_bridge/payloads.py": "56d457035c6051506268592a7b54c02ff498d967f4cbf7f03347992df4a27dd4",
+  "addons/linguist_bridge/protocol.py": "ded2e28a38bf0a60bd406178537975f15dbdc216b6556274863df1ccc08c5784",
+  "addons/linguist_bridge/registration.py": "699085329a2de43c16630e83446e5590275ebd827dfd2ab43e9bd2e44f5c22d3",
+  "addons/linguist_bridge/session.py": "ef64e404447a7c0870613444583c981fddab5c6df608d3a501193b7240788ff1",
+  "addons/linguist_bridge/startup.py": "afcada991752f5075ef62954d77fd0a9c734654def13fe484a0a1a38df0bc719"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "addons/linguist_bridge/tests"
+   ],
+   "invocation_digest": "907d7a27ce58b01c4645f560cf71f8e701c5f036ee832c8617ebd6f5e0019d8a",
+   "exit_code": 0,
+   "output_digest": "1a8fcbf010cef643c07bd248d89adf544f19f04a0eb0638bdd8b06452806ab2f"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "companion ledger/protocol unit tests",
+   "passed": true,
+   "observed": "Anki-free"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-05/logs/python_companion.txt"
+ ],
+ "failure_code": "NATIVE_COMPANION_NOT_REGISTERED"
+}
