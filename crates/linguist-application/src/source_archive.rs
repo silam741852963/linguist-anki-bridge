@@ -204,6 +204,33 @@ pub fn archive_read_capture(
     {
         return Err("SOURCE_CAPTURE_MODEL_INVALID".into());
     }
+    // RI-05: the canonical projection, consistent with the separate reads.
+    let projection: linguist_core::model::ManifestProjection =
+        serde_json::from_value(m["manifest"].clone())
+            .map_err(|_| "SOURCE_CAPTURE_MODEL_MANIFEST_INVALID")?;
+    if projection.name != model_name
+        || model_fields.iter().map(Value::as_str).collect::<Vec<_>>()
+            != projection
+                .fields
+                .iter()
+                .map(|f| Some(f.as_str()))
+                .collect::<Vec<_>>()
+        || m["css"].as_str() != Some(projection.css.as_str())
+        || projection.templates.len() != templates.len()
+        || projection.templates.iter().any(|t| {
+            templates.get(&t.name).is_none_or(|v| {
+                v["Front"].as_str() != Some(t.front.as_str())
+                    || v["Back"].as_str() != Some(t.back.as_str())
+            })
+        })
+    {
+        return Err("SOURCE_CAPTURE_MODEL_MANIFEST_CONFLICT".into());
+    }
+    let projection_bytes = projection.bytes().map_err(|e| e.to_string())?;
+    let model_manifest = canonical::asset_digest(&projection_bytes);
+    if m["manifest_digest"].as_str() != Some(model_manifest.as_str()) {
+        return Err("SOURCE_CAPTURE_MODEL_MANIFEST_CONFLICT".into());
+    }
     let note_cards = n["cards"]
         .as_array()
         .ok_or("SOURCE_CAPTURE_CARDS_INVALID")?;
@@ -245,6 +272,7 @@ pub fn archive_read_capture(
     let template_bytes = canonical::bytes(&m["templates"]).map_err(|e| e.to_string())?;
     let template_digest = canonical::asset_digest(&template_bytes);
     assets.insert(template_digest.clone(), template_bytes);
+    assets.insert(model_manifest.clone(), projection_bytes);
     let digests: BTreeMap<_, _> = [("note", note), ("model", model), ("cards", cards)]
         .into_iter()
         .map(|(name, bytes)| {
@@ -255,6 +283,7 @@ pub fn archive_read_capture(
         .collect();
     let manifest=canonical::bytes(&json!({"schema_version":2,"kind":"anki_read_capture_v2","note_id":note_id,"payloads":digests,
         "template_manifest": template_digest,
+        "model_manifest": model_manifest,
         "media_discovery": discovery,
         "native_history_verified":false,"atomic_snapshot_verified":false,"media_bytes_archived":false})).map_err(|e|e.to_string())?;
     let digest = canonical::asset_digest(&manifest);
@@ -272,7 +301,7 @@ pub fn archive_read_capture(
             digest: digest.clone(),
             text: None,
             fields: fields.clone(),
-            model_manifest: digests["model"].clone(),
+            model_manifest,
             template_manifest: Some(template_digest),
             captured_at_unix_seconds: Some(captured_at_unix_seconds),
             tags,
@@ -289,4 +318,35 @@ pub fn archive_read_capture(
         },
         assets,
     })
+}
+
+/// Test-fixture support only: add the RI-05 `manifest`/`manifest_digest` to a
+/// hand-written model inspection whose templates map lists templates in
+/// ordinal order. Real captures get ordinals from `findModelsByName`.
+#[doc(hidden)]
+pub fn fixture_model_manifest(mut model: Value) -> Value {
+    let fields: Vec<String> = serde_json::from_value(model["fields"].clone()).unwrap_or_default();
+    let templates: Vec<linguist_core::model::Template> = model["templates"]
+        .as_object()
+        .map(|map| {
+            map.iter()
+                .enumerate()
+                .map(|(ordinal, (name, value))| linguist_core::model::Template {
+                    name: name.clone(),
+                    ordinal: ordinal as u16,
+                    front: value["Front"].as_str().unwrap_or_default().into(),
+                    back: value["Back"].as_str().unwrap_or_default().into(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let projection = linguist_core::model::ManifestProjection::new(
+        model["model"]["name"].as_str().unwrap_or_default(),
+        &fields,
+        &templates,
+        model["css"].as_str().unwrap_or_default(),
+    );
+    model["manifest_digest"] = json!(projection.digest().unwrap());
+    model["manifest"] = serde_json::to_value(projection).unwrap();
+    model
 }

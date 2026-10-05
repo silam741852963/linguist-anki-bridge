@@ -32,7 +32,7 @@ fn captured_cards(
                 .location
                 .strip_prefix("anki_note:")
                 .ok_or("PLAN_DIFF_SOURCE_LOCATION_INVALID")?
-        || manifest["payloads"]["model"] != source.model_manifest
+        || manifest["model_manifest"] != source.model_manifest
         || source
             .template_manifest
             .as_ref()
@@ -154,7 +154,9 @@ mod tests {
     #[test]
     fn diff_reads_original_card_ids_from_bound_archive() {
         let note = json!({"noteId":"123","modelName":"Legacy","fields":{"Expression":{"value":"cat","order":0}},"cards":["456"],"tags":[]});
-        let model = json!({"model":{"id":"12","name":"Legacy"},"fields":["Expression"],"templates":{"Card":{"Front":"front","Back":"back"}},"css":"style"});
+        let model = crate::source_archive::fixture_model_manifest(
+            json!({"model":{"id":"12","name":"Legacy"},"fields":["Expression"],"templates":{"Card":{"Front":"front","Back":"back"}},"css":"style"}),
+        );
         let cards =
             json!([{"cardId":"456","note":"123","ord":0,"deckId":"1","originalDeckId":"0"}]);
         let captured = crate::source_archive::archive_read_capture(

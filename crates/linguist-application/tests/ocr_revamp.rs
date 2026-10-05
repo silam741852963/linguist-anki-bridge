@@ -58,7 +58,9 @@ impl Fixture {
             .collect::<BTreeMap<_, _>>();
         let note =
             json!({"noteId":"77","modelName":"Legacy","fields":fields,"cards":["410"],"tags":[]});
-        let model = json!({"model":{"name":"Legacy","id":"12"},"fields":["Word","Media"],"templates":{"Card":{"Front":"f","Back":"b"}},"css":""});
+        let model = linguist_application::source_archive::fixture_model_manifest(
+            json!({"model":{"name":"Legacy","id":"12"},"fields":["Word","Media"],"templates":{"Card":{"Front":"f","Back":"b"}},"css":""}),
+        );
         let cards = json!([{"cardId":"410","note":"77","reps":2}]);
         let mut captured = archive_read_capture(
             &serde_json::to_vec(&note).unwrap(),

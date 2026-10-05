@@ -11,7 +11,7 @@ fn fixture() -> (Value, Value, Value) {
 fn capture(n: &Value, m: &Value, c: &Value) -> Result<CapturedSource, String> {
     archive_read_capture(
         &serde_json::to_vec_pretty(n).unwrap(),
-        &serde_json::to_vec_pretty(m).unwrap(),
+        &serde_json::to_vec_pretty(&fixture_model_manifest(m.clone())).unwrap(),
         &serde_json::to_vec_pretty(c).unwrap(),
         10000,
     )
@@ -47,6 +47,7 @@ fn raw_note_model_and_card_assets_survive_publication_without_native_history_cla
     }
     drop(store);
     let store = linguist_store::Store::read_only(&root).unwrap();
+    let m = fixture_model_manifest(m.clone());
     for (name, value) in [("note", n), ("model", m), ("cards", c)] {
         let hash = manifest["payloads"][name].as_str().unwrap();
         assert_eq!(
@@ -222,7 +223,7 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let server = std::thread::spawn(move || {
         let mut actions = Vec::new();
-        for _ in 0..34 {
+        for _ in 0..36 {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
             let mut stream = loop {
                 match listener.accept() {
@@ -271,6 +272,9 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
                 "modelFieldNames" => json!(["Expression", "Unused"]),
                 "modelTemplates" => json!({"Card":{"Front":"front","Back":"back"}}),
                 "modelStyling" => json!({"css":"style"}),
+                "findModelsByName" => json!([{"id":12,"name":"Legacy","css":"style",
+                    "flds":[{"name":"Expression","ord":0},{"name":"Unused","ord":1}],
+                    "tmpls":[{"name":"Card","ord":0,"qfmt":"front","afmt":"back"}]}]),
                 "retrieveMediaFile" => match request["params"]["filename"].as_str().unwrap() {
                     "cat.mp3" => json!(false),
                     "pic.png" => json!("AQID"),
@@ -306,7 +310,7 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
     let mut settings = resolve(&Registry::builtin(), &ConfigFile::default(), &options).unwrap();
     let client = linguist_anki::Client::from_settings(&settings, &Default::default()).unwrap();
     let draft = capture_for_revamp(&client, &settings, "japanese_vocab", "123").unwrap();
-    assert_eq!(server.join().unwrap().len(), 34);
+    assert_eq!(server.join().unwrap().len(), 36);
     assert_eq!(draft.mapping.unmapped_fields, vec!["Unused"]);
     assert_eq!(draft.mapping.missing_required_roles, vec!["meaning"]);
     let manifest: Value =
@@ -318,7 +322,7 @@ fn revamp_capture_composes_read_port_mapping_and_restart_safe_assets() {
         manifest["source_task_mapping"],
         json!({"0":"comprehension"})
     );
-    assert_eq!(manifest["source_task_mapping_verified"], false);
+    assert_eq!(manifest["source_task_mapping_verified"], true);
     assert_eq!(manifest["media_bytes_archived"], false);
     assert_eq!(manifest["media_content_verified"], false);
     assert_eq!(manifest["media"][0]["filename"], "cat.mp3");

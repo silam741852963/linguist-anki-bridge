@@ -23,7 +23,9 @@ fn setup_id(
         .map(|(index, (name, value))| ((*name).to_owned(), json!({"value":value,"order":index})))
         .collect::<BTreeMap<_, _>>();
     let note = json!({"noteId":note_id,"modelName":"Legacy","fields":fields,"cards":[card_id],"tags":["preserved"]});
-    let model = json!({"model":{"name":"Legacy","id":"12"},"fields":values.iter().map(|(name,_)|name).collect::<Vec<_>>(),"templates":{"Card":{"Front":"front","Back":"back"}},"css":"style"});
+    let model = linguist_application::source_archive::fixture_model_manifest(
+        json!({"model":{"name":"Legacy","id":"12"},"fields":values.iter().map(|(name,_)|name).collect::<Vec<_>>(),"templates":{"Card":{"Front":"front","Back":"back"}},"css":"style"}),
+    );
     let cards = json!([{"cardId":card_id,"note":note_id,"reps":5}]);
     let captured = archive_read_capture(
         &serde_json::to_vec(&note).unwrap(),

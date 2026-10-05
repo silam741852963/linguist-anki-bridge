@@ -155,7 +155,7 @@ pub fn stage_document(
             .ok_or("REVAMP_CAPTURE_MODEL_MISSING")?,
     )
     .map_err(|_| "REVAMP_CAPTURE_MODEL_INVALID")?;
-    let model_name = model["model"]["name"]
+    let model_name = model["name"]
         .as_str()
         .ok_or("REVAMP_CAPTURE_MODEL_INVALID")?;
     let mapping = crate::mapping::map_purpose_fields(

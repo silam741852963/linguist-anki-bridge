@@ -428,6 +428,9 @@ fn model_inspection_exposes_differences_and_checks_profile_after_read() {
             response(json!(target.fields)),
             response(json!(template_values)),
             response(json!({"css":target.css})),
+            response(json!([{"id":123,"name":target.name,"css":target.css,
+                "flds":target.fields.iter().enumerate().map(|(ord, name)| json!({"name":name,"ord":ord})).collect::<Vec<_>>(),
+                "tmpls":target.templates.iter().map(|t| json!({"name":t.name,"ord":t.ordinal,"qfmt":t.front,"afmt":t.back})).collect::<Vec<_>>()}])),
             response(json!(if changed { "Changed" } else { "Fixture" })),
         ]);
         let client = Client::from_settings(&settings(&server.endpoint), &BTreeMap::new()).unwrap();
@@ -438,13 +441,14 @@ fn model_inspection_exposes_differences_and_checks_profile_after_read() {
             let report = result.unwrap();
             assert!(report.content_matches_managed);
             assert!(!report.managed_verified);
-            assert!(!report.template_order_verified);
+            assert!(report.template_order_verified);
+            assert_eq!(report.manifest_digest, target.manifest_digest().unwrap());
             assert_eq!(report.compatibility.len(), 2);
             assert!(report.compatibility[0].exact_content_match);
             assert!(!report.compatibility[1].missing_fields.is_empty());
         }
         let requests = server.finish();
-        assert_eq!(requests.len(), 6);
+        assert_eq!(requests.len(), 7);
         assert!(requests.iter().all(|r| matches!(
             r["action"].as_str(),
             Some(
@@ -453,6 +457,7 @@ fn model_inspection_exposes_differences_and_checks_profile_after_read() {
                     | "modelFieldNames"
                     | "modelTemplates"
                     | "modelStyling"
+                    | "findModelsByName"
             )
         )));
     }
@@ -471,6 +476,8 @@ fn capture_cycle(note: Value, card: Value, css: &str) -> Vec<(u16, String)> {
         json!(["Expression"]),
         json!({"Card":{"Front":"front","Back":"back"}}),
         json!({"css":css}),
+        json!([{"id":12,"name":"Legacy","css":css,"flds":[{"name":"Expression","ord":0}],
+            "tmpls":[{"name":"Card","ord":0,"qfmt":"front","afmt":"back"}]}]),
         profile.clone(),
         profile.clone(),
         json!([card]),
@@ -505,7 +512,7 @@ fn repeated_capture_retains_full_payloads_and_never_claims_native_atomic_history
     assert_eq!(captured.cards[0]["originalDeckId"], "0");
     assert_eq!(captured.model.css, "css");
     let actions = server.finish();
-    assert_eq!(actions.len(), 28);
+    assert_eq!(actions.len(), 30);
     assert!(actions.iter().all(|r| {
         [
             "getActiveProfile",
@@ -514,6 +521,7 @@ fn repeated_capture_retains_full_payloads_and_never_claims_native_atomic_history
             "modelFieldNames",
             "modelTemplates",
             "modelStyling",
+            "findModelsByName",
             "cardsInfo",
         ]
         .contains(&r["action"].as_str().unwrap())
@@ -539,7 +547,7 @@ fn field_scheduler_and_model_changes_invalidate_repeated_capture() {
             client.capture_note("123").unwrap_err(),
             "ANKI_CAPTURE_SOURCE_CONFLICT"
         );
-        assert_eq!(server.finish().len(), 28);
+        assert_eq!(server.finish().len(), 30);
     }
 }
 

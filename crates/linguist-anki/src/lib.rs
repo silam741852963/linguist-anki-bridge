@@ -25,6 +25,7 @@ enum Action {
     Fields,
     Templates,
     Styling,
+    FindModels,
     FindNotes,
     FindCards,
     NotesInfo,
@@ -45,6 +46,7 @@ impl Action {
             Self::Fields => "modelFieldNames",
             Self::Templates => "modelTemplates",
             Self::Styling => "modelStyling",
+            Self::FindModels => "findModelsByName",
             Self::FindNotes => "findNotes",
             Self::FindCards => "findCards",
             Self::NotesInfo => "notesInfo",
@@ -91,6 +93,9 @@ pub struct ModelInspection {
     pub fields: Vec<String>,
     pub templates: BTreeMap<String, Value>,
     pub css: String,
+    /// RI-05 canonical projection with template ordinals from `findModelsByName`.
+    pub manifest: linguist_core::model::ManifestProjection,
+    pub manifest_digest: String,
     pub template_order_verified: bool,
     pub managed_verified: bool,
     pub content_matches_managed: bool,
@@ -460,6 +465,10 @@ impl Client {
                 Ok((name.clone(), (front.to_owned(), back.to_owned())))
             })
             .collect::<Result<BTreeMap<_, _>>>()?;
+        let manifest = self.model_manifest(&model, &fields, &template_content, &css)?;
+        let manifest_digest = manifest
+            .digest()
+            .map_err(|_| "ANKI_MODEL_MANIFEST_INVALID")?;
         self.check_profile()?;
         let compatibility = [
             linguist_core::model::vocabulary(),
@@ -478,11 +487,86 @@ impl Client {
             fields,
             templates,
             css,
-            template_order_verified: false,
+            manifest,
+            manifest_digest,
+            template_order_verified: true,
             managed_verified: false,
             content_matches_managed,
             compatibility,
         })
+    }
+    /// Template ordinals and field order from `findModelsByName`, cross-checked
+    /// against the separate field, template and styling reads.
+    fn model_manifest(
+        &self,
+        model: &NamedId,
+        fields: &[String],
+        templates: &BTreeMap<String, (String, String)>,
+        css: &str,
+    ) -> Result<linguist_core::model::ManifestProjection> {
+        let invalid = || "ANKI_MODEL_MANIFEST_INVALID".to_owned();
+        let found = self.call(Action::FindModels, json!({"modelNames":[model.name]}))?;
+        let [entry] = found.as_array().map(Vec::as_slice).ok_or_else(invalid)? else {
+            return Err(invalid());
+        };
+        if entry.get("id").map(wire_id).transpose()?.as_deref() != Some(model.id.as_str())
+            || entry["name"].as_str() != Some(model.name.as_str())
+            || entry["css"].as_str() != Some(css)
+        {
+            return Err("ANKI_MODEL_MANIFEST_CONFLICT".into());
+        }
+        let ordinal = |value: &Value| {
+            value
+                .as_u64()
+                .filter(|n| *n < 1000)
+                .map(|n| n as u16)
+                .ok_or_else(invalid)
+        };
+        let mut ordered_fields = entry["flds"]
+            .as_array()
+            .ok_or_else(invalid)?
+            .iter()
+            .map(|field| {
+                Ok((
+                    ordinal(&field["ord"])?,
+                    field["name"].as_str().ok_or_else(invalid)?.to_owned(),
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        ordered_fields.sort();
+        let ordered_fields: Vec<String> =
+            ordered_fields.into_iter().map(|(_, name)| name).collect();
+        let mut ordered = entry["tmpls"]
+            .as_array()
+            .ok_or_else(invalid)?
+            .iter()
+            .map(|template| {
+                Ok(linguist_core::model::Template {
+                    name: template["name"].as_str().ok_or_else(invalid)?.to_owned(),
+                    ordinal: ordinal(&template["ord"])?,
+                    front: template["qfmt"].as_str().ok_or_else(invalid)?.to_owned(),
+                    back: template["afmt"].as_str().ok_or_else(invalid)?.to_owned(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        ordered.sort_by_key(|template| template.ordinal);
+        let ordinals: Vec<u16> = ordered.iter().map(|t| t.ordinal).collect();
+        if ordered_fields != fields
+            || ordinals != (0..ordered.len() as u16).collect::<Vec<_>>()
+            || ordered.len() != templates.len()
+            || ordered.iter().any(|template| {
+                templates.get(&template.name)
+                    != Some(&(template.front.clone(), template.back.clone()))
+            })
+        {
+            return Err("ANKI_MODEL_MANIFEST_CONFLICT".into());
+        }
+        Ok(linguist_core::model::ManifestProjection::new(
+            &model.name,
+            fields,
+            &ordered,
+            css,
+        ))
     }
     pub fn find_notes(&self, query: &str) -> Result<Vec<String>> {
         self.check_profile()?;

@@ -58,19 +58,21 @@ pub trait ModelPort {
     fn operation_evidence(&mut self, operation_id: Uuid) -> Result<OperationEvidence>;
 }
 
+/// RI-05 canonical manifest digest (version excluded); see
+/// `linguist_core::model::ManifestProjection`.
 pub fn manifest_digest(model: &ManagedModel) -> Result<String> {
-    let bytes = canonical::bytes(model).map_err(|e| e.to_string())?;
-    Ok(canonical::asset_digest(&bytes))
+    model.manifest_digest().map_err(|e| e.to_string())
 }
 
 fn observed_digest(model: &ObservedModel) -> Result<String> {
-    manifest_digest(&ManagedModel {
-        name: model.name.clone(),
-        version: 0,
-        fields: model.fields.clone(),
-        templates: model.templates.clone(),
-        css: model.css.clone(),
-    })
+    linguist_core::model::ManifestProjection::new(
+        &model.name,
+        &model.fields,
+        &model.templates,
+        &model.css,
+    )
+    .digest()
+    .map_err(|e| e.to_string())
 }
 
 /// Exact name, field order, template names/ordinals/bytes and CSS.

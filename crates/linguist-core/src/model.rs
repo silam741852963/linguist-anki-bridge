@@ -136,6 +136,45 @@ pub struct ManagedModel {
     pub templates: Vec<Template>,
     pub css: String,
 }
+/// RI-05: the one canonical model manifest projection. Fields keep Anki field
+/// order, templates are sorted by ordinal, and the managed version is not part
+/// of it (a collection note type has no version). Read capture, apply and the
+/// companion (`addons/linguist_bridge/manifest.py`) all use this digest.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestProjection {
+    pub name: String,
+    pub fields: Vec<String>,
+    pub templates: Vec<Template>,
+    pub css: String,
+}
+impl ManifestProjection {
+    pub fn new(name: &str, fields: &[String], templates: &[Template], css: &str) -> Self {
+        let mut templates = templates.to_vec();
+        templates.sort_by_key(|template| template.ordinal);
+        Self {
+            name: name.into(),
+            fields: fields.to_vec(),
+            templates,
+            css: css.into(),
+        }
+    }
+    /// RFC 8785 bytes; the digest is their lowercase SHA-256.
+    pub fn bytes(&self) -> Result<Vec<u8>, crate::canonical::ContractError> {
+        crate::canonical::bytes(self)
+    }
+    pub fn digest(&self) -> Result<String, crate::canonical::ContractError> {
+        Ok(crate::canonical::asset_digest(&self.bytes()?))
+    }
+}
+impl ManagedModel {
+    pub fn projection(&self) -> ManifestProjection {
+        ManifestProjection::new(&self.name, &self.fields, &self.templates, &self.css)
+    }
+    pub fn manifest_digest(&self) -> Result<String, crate::canonical::ContractError> {
+        self.projection().digest()
+    }
+}
 const STYLE: &str = include_str!("../../../resources/templates/style.css");
 fn template(name: &str, ordinal: u16, front: &str, back: &str) -> Template {
     Template {
@@ -238,5 +277,39 @@ pub fn for_document(doc: &LearningDocument) -> ManagedModel {
     match doc.content {
         LearningContent::Vocabulary(_) => vocabulary(),
         LearningContent::Grammar(_) => grammar(),
+    }
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::*;
+
+    #[test]
+    fn projection_digest_matches_the_companion_vector_and_ignores_version() {
+        let template = Template {
+            name: "Recognition".into(),
+            ordinal: 0,
+            front: "{{Expression}}".into(),
+            back: "{{Meaning}}".into(),
+        };
+        let projection = ManifestProjection::new(
+            "Linguist Vocabulary v2",
+            &["Expression".into(), "Meaning".into()],
+            &[template],
+            ".card { color: black; }",
+        );
+        // Same vector as addons/linguist_bridge/tests/test_payloads.py.
+        assert_eq!(
+            projection.digest().unwrap(),
+            "3ebd381fb2210421a3a1be2416450552fa26f2282d5eef997ad2340e903fc029"
+        );
+        let mut managed = vocabulary();
+        let digest = managed.manifest_digest().unwrap();
+        managed.version += 1;
+        assert_eq!(managed.manifest_digest().unwrap(), digest);
+        managed.templates.reverse();
+        assert_eq!(managed.manifest_digest().unwrap(), digest);
+        managed.fields.reverse();
+        assert_ne!(managed.manifest_digest().unwrap(), digest);
     }
 }

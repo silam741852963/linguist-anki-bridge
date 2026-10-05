@@ -287,7 +287,10 @@ fn run_revamp(fixture: &Fixture, run: &Run) -> Outcome {
         json!([{"cardId": "1700000000101", "note": "1700000000001", "reps": input["reps"]}]);
     let mut captured = archive_read_capture(
         &serde_json::to_vec(&note).unwrap(),
-        &serde_json::to_vec(&model_json).unwrap(),
+        &serde_json::to_vec(
+            &linguist_application::source_archive::fixture_model_manifest(model_json),
+        )
+        .unwrap(),
         &serde_json::to_vec(&cards).unwrap(),
         1 << 24,
     )

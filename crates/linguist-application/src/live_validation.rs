@@ -368,7 +368,7 @@ where
         let saved_note = payload("note")?;
         let saved_model = payload("model")?;
         let saved_cards = payload("cards")?;
-        if source.model_manifest != manifest["payloads"]["model"]
+        if source.model_manifest != manifest["model_manifest"]
             || source.template_manifest.as_ref().is_some_and(|digest| {
                 manifest["template_manifest"].as_str() != Some(digest.as_str())
             })
@@ -471,6 +471,30 @@ mod tests {
             fields: vec!["Expression".into()],
             templates: BTreeMap::from([("Card".into(), json!({"Front":"front","Back":"back"}))]),
             css: "style".into(),
+            manifest: linguist_core::model::ManifestProjection::new(
+                "Legacy",
+                &["Expression".into()],
+                &[linguist_core::model::Template {
+                    name: "Card".into(),
+                    ordinal: 0,
+                    front: "front".into(),
+                    back: "back".into(),
+                }],
+                "style",
+            ),
+            manifest_digest: linguist_core::model::ManifestProjection::new(
+                "Legacy",
+                &["Expression".into()],
+                &[linguist_core::model::Template {
+                    name: "Card".into(),
+                    ordinal: 0,
+                    front: "front".into(),
+                    back: "back".into(),
+                }],
+                "style",
+            )
+            .digest()
+            .unwrap(),
             template_order_verified: false,
             managed_verified: false,
             content_matches_managed: false,

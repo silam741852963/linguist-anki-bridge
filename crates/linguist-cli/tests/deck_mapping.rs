@@ -24,7 +24,7 @@ fn map_checks_live_manifest_then_unmap_edits_local_config_only() {
     .unwrap();
     let server = std::thread::spawn(move || {
         let mut actions = Vec::new();
-        for _ in 0..15 {
+        for _ in 0..16 {
             let (mut stream, _) = listener.accept().unwrap();
             stream
                 .set_read_timeout(Some(std::time::Duration::from_secs(2)))
@@ -56,6 +56,11 @@ fn map_checks_live_manifest_then_unmap_edits_local_config_only() {
                     json!({"Recognition":{"Front":"{{Expression}}","Back":"{{Meaning}}"},"Production":{"Front":"{{Meaning}}","Back":"{{Expression}}"}})
                 }
                 "modelStyling" => json!({"css":"body{}"}),
+                "findModelsByName" => json!([{"id":21,"name":"Picture Words","css":"body{}",
+                    "flds":[{"name":"Expression","ord":0},{"name":"Meaning","ord":1},
+                            {"name":"Picture","ord":2},{"name":"Private","ord":3}],
+                    "tmpls":[{"name":"Recognition","ord":0,"qfmt":"{{Expression}}","afmt":"{{Meaning}}"},
+                             {"name":"Production","ord":1,"qfmt":"{{Meaning}}","afmt":"{{Expression}}"}]}]),
                 _ => panic!("unexpected action {action}"),
             };
             let body = json!({"result":result,"error":null}).to_string();
@@ -113,6 +118,7 @@ fn map_checks_live_manifest_then_unmap_edits_local_config_only() {
             | "modelFieldNames"
             | "modelTemplates"
             | "modelStyling"
+            | "findModelsByName"
     )));
     let saved =
         linguist_config::ConfigFile::read(&config, &linguist_config::Registry::builtin()).unwrap();

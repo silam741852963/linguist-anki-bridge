@@ -10,7 +10,7 @@ use std::{
 };
 
 const BIN: &str = env!("CARGO_BIN_EXE_linguist-anki-bridge");
-const READS: [&str; 10] = [
+const READS: [&str; 11] = [
     "version",
     "getActiveProfile",
     "apiReflect",
@@ -19,6 +19,7 @@ const READS: [&str; 10] = [
     "modelFieldNames",
     "modelTemplates",
     "modelStyling",
+    "findModelsByName",
     "findNotes",
     "findCards",
 ];
@@ -106,6 +107,15 @@ fn models(action: &str, params: &Value) -> Value {
         }
         "modelStyling" if params["modelName"] == "Basic" => json!({"css": ".card {}"}),
         "modelStyling" => json!({"css": vocabulary.css}),
+        "findModelsByName" if params["modelNames"][0] == "Basic" => {
+            json!([{"id": 1, "name": "Basic",
+            "css": ".card {}", "flds": [{"name": "Front", "ord": 0}, {"name": "Back", "ord": 1}],
+            "tmpls": [{"name": "Card 1", "ord": 0, "qfmt": "{{Front}}",
+                       "afmt": "{{FrontSide}}<hr id=answer>{{Back}}"}]}])
+        }
+        "findModelsByName" => json!([{"id": 2, "name": vocabulary.name, "css": vocabulary.css,
+            "flds": vocabulary.fields.iter().enumerate().map(|(ord, name)| json!({"name": name, "ord": ord})).collect::<Vec<_>>(),
+            "tmpls": vocabulary.templates.iter().map(|t| json!({"name": t.name, "ord": t.ordinal, "qfmt": t.front, "afmt": t.back})).collect::<Vec<_>>()}]),
         other => panic!("unexpected action {other}"),
     }
 }

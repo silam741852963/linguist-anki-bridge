@@ -213,6 +213,14 @@ fn model_install_preview_distinguishes_create_and_name_collision_without_writes(
                     }
                     "modelStyling" if state == "exact" => serde_json::json!({"css":&manifest.css}),
                     "modelStyling" => serde_json::json!({"css":"old"}),
+                    "findModelsByName" if state == "exact" => serde_json::json!([{
+                        "id":42,"name":&manifest.name,"css":&manifest.css,
+                        "flds":manifest.fields.iter().enumerate().map(|(ord, name)| serde_json::json!({"name":name,"ord":ord})).collect::<Vec<_>>(),
+                        "tmpls":manifest.templates.iter().map(|t| serde_json::json!({"name":t.name,"ord":t.ordinal,"qfmt":t.front,"afmt":t.back})).collect::<Vec<_>>()}]),
+                    "findModelsByName" => serde_json::json!([{
+                        "id":42,"name":"Linguist Vocabulary v2","css":"old",
+                        "flds":[{"name":"Expression","ord":0}],
+                        "tmpls":[{"name":"Comprehension","ord":0,"qfmt":"old","afmt":"old"}]}]),
                     _ => panic!("unexpected action {action}"),
                 };
                 let body = serde_json::json!({"result":result,"error":null}).to_string();
@@ -249,6 +257,7 @@ fn model_install_preview_distinguishes_create_and_name_collision_without_writes(
                 | "modelFieldNames"
                 | "modelTemplates"
                 | "modelStyling"
+                | "findModelsByName"
         )));
     }
     let rejected = cli()
@@ -3495,7 +3504,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             let mut held_first = None;
             let mut first_was_held = false;
             let mut second_card_reads = 0;
-            for _ in 0..28 * count + if mode == "ids" { 0 } else { 3 } {
+            for _ in 0..30 * count + if mode == "ids" { 0 } else { 3 } {
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
                 let mut stream = loop {
                     match listener.accept() {
@@ -3562,6 +3571,12 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                     ]),
                     "modelTemplates" => serde_json::json!({"Card":{"Front":"front","Back":"back"}}),
                     "modelStyling" => serde_json::json!({"css":"style"}),
+                    "findModelsByName" => {
+                        serde_json::json!([{"id":12,"name":"Legacy","css":"style",
+                        "flds":[{"name":"Word","ord":0},{"name":"Meaning","ord":1},{"name":"Pattern","ord":2},
+                                {"name":"Formation","ord":3},{"name":"Key","ord":4},{"name":"Unused","ord":5}],
+                        "tmpls":[{"name":"Card","ord":0,"qfmt":"front","afmt":"back"}]}])
+                    }
                     "cardsInfo" => {
                         let id = request["params"]["cards"][0].as_u64().unwrap();
                         if mode == "job" && id == 457 {
@@ -3670,7 +3685,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
         let actions = server.join().unwrap();
         assert_eq!(
             actions.len(),
-            28 * count + if mode == "ids" { 0 } else { 3 }
+            30 * count + if mode == "ids" { 0 } else { 3 }
         );
         if let Some(id) = job_id {
             assert_eq!(
