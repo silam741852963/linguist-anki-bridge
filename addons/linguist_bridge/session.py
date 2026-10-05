@@ -104,3 +104,30 @@ class SessionTracker:
             self.invalidate()
             raise SessionError("BRIDGE_SESSION_CONFLICT")
         return dict(self._record)
+
+    def snapshot(self):
+        """Opaque copy of the current observation for a companion-owned
+        temporary close (checkpoint export)."""
+        self._owner()
+        if self._record is None:
+            raise SessionError("BRIDGE_SESSION_UNAVAILABLE")
+        return (dict(self._record), self._handle, self._path, self._identity, self._profile)
+
+    def resume(self, snapshot, *, profile, collection_path, collection_handle):
+        """Keep the epoch across the companion's own export close/reopen only
+        when the profile, canonical path, file identity and handle object are
+        unchanged. Any other temporary close or load still gets a new epoch."""
+        self._owner()
+        record, handle, path, identity, previous_profile = snapshot
+        try:
+            current_path, current_identity = _file(collection_path)
+        except SessionError:
+            self.invalidate()
+            return False
+        if (profile != previous_profile or current_path != path or current_identity != identity
+                or collection_handle is not handle):
+            self.invalidate()
+            return False
+        self._record, self._handle, self._path, self._identity, self._profile = (
+            dict(record), handle, path, identity, previous_profile)
+        return True

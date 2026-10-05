@@ -32,17 +32,19 @@ def _source_digest(path):
             os.close(descriptor)
 
 
-def register_read_actions(module, expected_pins, manifest_supplier, status_supplier=None):
-    """Pins must come from the verified build matrix, never endpoint/user claims.
+def register_actions(module, expected_pins, actions):
+    """Additively register named bound actions with AnkiConnect's own decorator.
 
-    This function starts no server, replaces no handler and registers no controls.
-    It is not called by package import. Unknown sources/collisions fail closed.
+    Pins must come from the verified build matrix, never endpoint/user claims.
+    This starts no server, replaces no handler and never overwrites an
+    existing action. Unknown sources/collisions fail closed.
     """
     if (type(expected_pins) is not dict or set(expected_pins) != {"__init__.py", "util.py"}
-            or not callable(manifest_supplier)
-            or (status_supplier is not None and not callable(status_supplier))):
+            or type(actions) is not dict or not actions
+            or any(type(name) is not str or not name.startswith("lab") or not callable(function)
+                   for name, function in actions.items())):
         raise RegistrationError("BRIDGE_REGISTRATION_INPUT_INVALID")
-    names = ["labCapabilities"] + (["labOperationStatus"] if status_supplier is not None else [])
+    names = list(actions)
     main_path = Path(getattr(module, "__file__", ""))
     if not main_path.is_absolute() or main_path.name != "__init__.py":
         raise RegistrationError("BRIDGE_SOURCE_INVALID")
@@ -73,24 +75,6 @@ def register_read_actions(module, expected_pins, manifest_supplier, status_suppl
     if (type(before) is not dict or type(before.get("actions")) is not list
             or any(name in before["actions"] for name in names)):
         raise RegistrationError("BRIDGE_DISPATCHER_UNSUPPORTED")
-
-    def labCapabilities(self):
-        manifest = manifest_supplier()
-        if (type(manifest) is not dict or manifest.get("actions") != names
-                or manifest.get("mutation_variants") != []):
-            raise RegistrationError("BRIDGE_MANIFEST_INVALID")
-        try:
-            validated_session(manifest.get("collection_session"))
-        except ValueError:
-            raise RegistrationError("BRIDGE_MANIFEST_INVALID") from None
-        return manifest
-
-    def labOperationStatus(self, lineage_id, operation_id):
-        return status_supplier(lineage_id, operation_id)
-
-    actions = {"labCapabilities":labCapabilities}
-    if status_supplier is not None:
-        actions["labOperationStatus"] = labOperationStatus
     for name, function in actions.items():
         action = decorator()(function)
         if (action is not function or getattr(action, "api", None) is not True
@@ -110,6 +94,35 @@ def register_read_actions(module, expected_pins, manifest_supplier, status_suppl
                 delattr(cls, name)
         raise RegistrationError("BRIDGE_REGISTRATION_FAILED") from None
     return actions
+
+
+def register_read_actions(module, expected_pins, manifest_supplier, status_supplier=None):
+    """Read-only subset: `labCapabilities` and optionally `labOperationStatus`."""
+    if (not callable(manifest_supplier)
+            or (status_supplier is not None and not callable(status_supplier))):
+        raise RegistrationError("BRIDGE_REGISTRATION_INPUT_INVALID")
+    names = ["labCapabilities"] + (["labOperationStatus"] if status_supplier is not None else [])
+
+    def labCapabilities(self):
+        manifest = manifest_supplier()
+        if (type(manifest) is not dict or manifest.get("actions") != names
+                or manifest.get("mutation_variants") != []):
+            raise RegistrationError("BRIDGE_MANIFEST_INVALID")
+        try:
+            validated_session(manifest.get("collection_session"))
+        except ValueError:
+            raise RegistrationError("BRIDGE_MANIFEST_INVALID") from None
+        return manifest
+
+    def labOperationStatus(self, lineage_id, operation_id):
+        return status_supplier(lineage_id, operation_id)
+
+    actions = {"labCapabilities": labCapabilities}
+    if status_supplier is not None:
+        actions["labOperationStatus"] = labOperationStatus
+    if type(expected_pins) is not dict or set(expected_pins) != {"__init__.py", "util.py"}:
+        raise RegistrationError("BRIDGE_REGISTRATION_INPUT_INVALID")
+    return register_actions(module, expected_pins, actions)
 
 
 def register_capabilities(module, expected_pins, manifest_supplier):

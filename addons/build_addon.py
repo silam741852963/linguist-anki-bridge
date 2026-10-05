@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Build a deterministic, explicitly installable read-only Anki companion."""
+"""Build the deterministic, explicitly installable lab-native-v1 Anki companion."""
 import argparse
 import json
 import os
@@ -12,8 +12,9 @@ import zipfile
 
 SOURCE = Path(__file__).resolve().parent / "linguist_bridge"
 RUNTIME = (
-    "compatibility.py", "identity.py", "inspection.py", "lineage.py", "operations.py",
-    "payloads.py", "protocol.py", "registration.py", "session.py", "startup.py",
+    "compatibility.py", "effects.py", "identity.py", "inspection.py", "lineage.py",
+    "manifest.py", "native.py", "operations.py", "payloads.py", "protocol.py",
+    "registration.py", "session.py", "startup.py",
 )
 
 
@@ -26,7 +27,7 @@ def build(output):
         raise ValueError("ADDON_OUTPUT_PARENT_INVALID")
     manifest = json.dumps({
         "package": "linguist_bridge",
-        "name": "Linguist Anki Bridge (read-only development)",
+        "name": "Linguist Anki Bridge companion",
     }, sort_keys=True, separators=(",", ":")).encode() + b"\n"
     files = {"__init__.py": (SOURCE / "addon_entrypoint.py").read_bytes(),
              "LICENSE": (SOURCE / "LICENSE").read_bytes(),

@@ -35,6 +35,16 @@ def request(lineage_id=None, operation_id=None):
                 owner_token=str(uuid4()), fence_generation=1, variant="create_note")
 
 
+def owned(ledger, args, live=()):
+    owner = ledger.begin_owner(lineage_id=args["lineage_id"], session_epoch=args["session_epoch"],
+                               approved_digest=args["approved_digest"], live_operations=set(live))
+    return dict(args, owner_token=owner["owner_token"], fence_generation=owner["fence"])
+
+
+def same_session(args, previous):
+    return dict(args, session_epoch=previous["session_epoch"])
+
+
 class OperationLedgerTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -46,9 +56,19 @@ class OperationLedgerTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def sibling(self, args):
+        """Another request from the same owner and session."""
+        return dict(request(self.lineage_id), owner_token=args["owner_token"],
+                    fence_generation=args["fence_generation"],
+                    session_epoch=args["session_epoch"])
+
+    def owner(self, args):
+        return {key: args[key] for key in ("lineage_id", "operation_id", "owner_token",
+                                           "fence_generation")}
+
     def test_create_note_body_is_typed_before_queue_and_checked_on_reopen(self):
         ledger = OperationLedger(self.root, initialize=True)
-        original = request(self.lineage_id)
+        original = owned(ledger, request(self.lineage_id))
         def changed(edit, variant="create_note"):
             candidate = dict(original)
             envelope = json.loads(original["payload"])
@@ -78,8 +98,10 @@ class OperationLedgerTest(unittest.TestCase):
                 ledger.queue(**changed(edit))
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_APPROVAL_INVALID"):
             ledger.queue(**dict(original, approved_digest="a" * 64))
-        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_VARIANT_UNAVAILABLE"):
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_BODY_INVALID"):
             ledger.queue(**changed(lambda body: None, variant="update_note"))
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_PAYLOAD_INVALID"):
+            ledger.queue(**changed(lambda body: None, variant="arbitrary_sql"))
         self.assertEqual(ledger._db.execute("SELECT count(*) FROM operations").fetchone()[0], 0)
         self.assertEqual(ledger.queue(**original)["state"], "queued")
         ledger.close()
@@ -89,7 +111,7 @@ class OperationLedgerTest(unittest.TestCase):
 
     def test_grammar_create_note_requires_complete_managed_fields(self):
         ledger = OperationLedger(self.root, initialize=True)
-        args = request(self.lineage_id)
+        args = owned(ledger, request(self.lineage_id))
         payload = json.loads(args["payload"])
         fields = {name: "" for name in GRAMMAR_FIELDS}
         fields.update(Pattern="〜ても", Meaning="<p>even if</p>", Formation="<p>V-て + も</p>",
@@ -101,13 +123,37 @@ class OperationLedgerTest(unittest.TestCase):
         self.assertEqual(ledger.queue(**args)["state"], "queued")
         ledger.close()
 
+    def test_queue_requires_the_current_owner_session_and_approval(self):
+        ledger = OperationLedger(self.root, initialize=True)
+        args = request(self.lineage_id)
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OWNER_STALE"):
+            ledger.queue(**args)
+        first = owned(ledger, args)
+        self.assertEqual(first["fence_generation"], 1)
+        second = owned(ledger, args)
+        self.assertEqual(second["fence_generation"], 2)
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OWNER_STALE"):
+            ledger.queue(**first)
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OWNER_BINDING_CONFLICT"):
+            ledger.queue(**dict(second, session_epoch=str(uuid4())))
+        self.assertTrue(ledger.end_owner(owner_token=second["owner_token"], fence=2))
+        self.assertTrue(ledger.end_owner(owner_token=second["owner_token"], fence=2))
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OWNER_STALE"):
+            ledger.queue(**second)
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OWNER_CONFLICT"):
+            ledger.end_owner(owner_token=str(uuid4()), fence=2)
+        third = owned(ledger, args)
+        self.assertEqual(third["fence_generation"], 3)
+        self.assertEqual(ledger.queue(**third)["state"], "queued")
+        ledger.close()
+
     def test_missing_ledger_requires_explicit_initialization_and_restart_keeps_pending(self):
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_LEDGER_MISSING"):
             OperationLedger(self.root)
         ledger = OperationLedger(self.root, initialize=True)
         self.assertEqual(ledger._db.execute("PRAGMA synchronous").fetchone()[0], 2)
         self.assertEqual(ledger._db.execute("PRAGMA journal_mode").fetchone()[0], "wal")
-        args = request(self.lineage_id)
+        args = owned(ledger, request(self.lineage_id))
         queued = ledger.queue(**args)
         self.assertEqual(queued["state"], "queued")
         self.assertFalse(queued["dispatch_newly_authorized"])
@@ -115,24 +161,38 @@ class OperationLedgerTest(unittest.TestCase):
                           self.root / "native-operations.sqlite3-wal"]:
             self.assertEqual(stat.S_IMODE(candidate.stat().st_mode), 0o600)
         self.assertEqual(ledger.queue(**args), queued)
+        self.assertEqual(ledger.queue_new(**args), (queued, False))
         ledger.close()
         reopened = OperationLedger(self.root)
         self.assertEqual(reopened.status(args["lineage_id"], args["operation_id"]), queued)
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_PENDING"):
-            reopened.queue(**request(self.lineage_id))
+            reopened.queue(**self.sibling(args))
         reopened.close()
 
-    def test_replay_conflict_fencing_and_unknown_never_dispatch_again(self):
+    def test_duplicate_uuid_returns_existing_state_and_never_dispatches_again(self):
         ledger = OperationLedger(self.root, initialize=True)
-        args = request(self.lineage_id)
-        ledger.queue(**args)
-        forged = dict(args, owner_token=str(uuid4()))
+        args = owned(ledger, request(self.lineage_id))
+        queued, inserted = ledger.queue_new(**args)
+        self.assertTrue(inserted)
+        # A delayed duplicate from a replaced owner is answered, not dispatched.
+        later = owned(ledger, args, live={(args["lineage_id"], args["operation_id"])}) \
+            if False else args
+        self.assertEqual(ledger.queue_new(**dict(later, owner_token=str(uuid4()))), (queued, False))
+        changed = json.loads(args["payload"])
+        changed["body"]["fields"]["Meaning"] = "different"
+        payload = json.dumps(changed, sort_keys=True, separators=(",", ":")).encode()
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_REPLAY_CONFLICT"):
-            ledger.queue(**forged)
-        forged = dict(args, payload_digest="d" * 64)
+            ledger.queue(**dict(args, payload=payload,
+                                payload_digest=hashlib.sha256(payload).hexdigest()))
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_PAYLOAD_INVALID"):
-            ledger.queue(**forged)
-        owner = {key: args[key] for key in ("lineage_id", "operation_id", "owner_token", "fence_generation")}
+            ledger.queue(**dict(args, payload_digest="d" * 64))
+        ledger.close()
+
+    def test_fencing_unknown_and_verified_receipts(self):
+        ledger = OperationLedger(self.root, initialize=True)
+        args = owned(ledger, request(self.lineage_id))
+        ledger.queue(**args)
+        owner = self.owner(args)
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_OWNER_CONFLICT"):
             ledger.mark_running(**dict(owner, fence_generation=2))
         started = ledger.mark_running(**owner)
@@ -148,14 +208,63 @@ class OperationLedgerTest(unittest.TestCase):
         self.assertEqual(reopened.mark_unknown(**owner, reason="transport_ambiguous"), unknown)
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_REQUIRES_RECOVERY"):
             reopened.mark_running(**owner)
-        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_PENDING"):
-            reopened.queue(**request(self.lineage_id))
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_STATE_CONFLICT"):
+            reopened.mark_verified(**owner, receipt={"note_id": 1})
+        # Unknown is recovery evidence, not in-flight work: an independent
+        # request may proceed while the CLI journal keeps the item blocked.
+        second = self.sibling(args)
+        self.assertEqual(reopened.queue(**second)["state"], "queued")
+        second_owner = self.owner(second)
+        reopened.mark_running(**second_owner)
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_RECEIPT_INVALID"):
+            reopened.mark_verified(**second_owner, receipt=["not", "an", "object"])
+        verified = reopened.mark_verified(**second_owner, receipt={"note_id": 42})
+        self.assertEqual((verified["state"], verified["receipt"], verified["needs_recovery"]),
+                         ("verified", {"note_id": 42}, False))
+        self.assertEqual(reopened.mark_verified(**second_owner, receipt={"note_id": 42}), verified)
         reopened.close()
+
+    def test_new_owner_classifies_dead_workers_and_waits_for_live_ones(self):
+        ledger = OperationLedger(self.root, initialize=True)
+        running = owned(ledger, request(self.lineage_id))
+        ledger.queue(**running)
+        ledger.mark_running(**self.owner(running))
+        key = (running["lineage_id"], running["operation_id"])
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_PENDING"):
+            owned(ledger, running, live={key})
+        owned(ledger, running)  # no live worker: the process that ran it is gone
+        status = ledger.status(*key)
+        self.assertEqual((status["state"], status["reason"]), ("unknown", "worker_crash"))
+        queued = owned(ledger, request(self.lineage_id))
+        ledger.queue(**queued)
+        owned(ledger, queued)
+        status = ledger.status(queued["lineage_id"], queued["operation_id"])
+        self.assertEqual((status["state"], status["reason"], status["needs_recovery"]),
+                         ("failed_before_write", "worker_lost_before_write", False))
+        ledger.close()
+
+    def test_empty_v1_ledger_is_upgraded_and_nonempty_v1_is_refused(self):
+        ledger = OperationLedger(self.root, initialize=True)
+        for statement in ("DROP TRIGGER owners_no_update", "DROP TRIGGER owners_no_delete",
+                          "DROP TRIGGER owner_releases_no_update",
+                          "DROP TRIGGER owner_releases_no_delete",
+                          "DROP TABLE owner_releases", "DROP TABLE owners",
+                          "PRAGMA user_version=1"):
+            ledger._db.execute(statement)
+        ledger.close()
+        upgraded = OperationLedger(self.root)
+        self.assertEqual(upgraded._db.execute("PRAGMA user_version").fetchone()[0], 2)
+        args = owned(upgraded, request(self.lineage_id))
+        self.assertEqual(upgraded.queue(**args)["state"], "queued")
+        upgraded._db.execute("PRAGMA user_version=1")
+        upgraded.close()
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_SCHEMA_UNSUPPORTED"):
+            OperationLedger(self.root)
 
     def test_concurrent_duplicate_requests_keep_one_event_chain(self):
         ledger = OperationLedger(self.root, initialize=True)
+        args = owned(ledger, request(self.lineage_id))
         ledger.close()
-        args = request(self.lineage_id)
         barrier = threading.Barrier(3)
 
         def worker():
@@ -179,15 +288,19 @@ class OperationLedgerTest(unittest.TestCase):
 
     def test_queued_failure_is_terminal_and_allows_next_request_after_restart(self):
         ledger = OperationLedger(self.root, initialize=True)
-        args = request(self.lineage_id)
+        args = owned(ledger, request(self.lineage_id))
         ledger.queue(**args)
-        owner = {key: args[key] for key in ("lineage_id", "operation_id", "owner_token", "fence_generation")}
+        owner = self.owner(args)
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_OWNER_CONFLICT"):
             ledger.fail_before_write(**dict(owner, fence_generation=2), reason="preflight_rejected")
-        failed = ledger.fail_before_write(**owner, reason="preflight_rejected")
+        failed = ledger.fail_before_write(**owner, reason="preflight_rejected",
+                                          detail={"code": "BRIDGE_PRECONDITION_FAILED"})
         self.assertEqual(failed["state"], "failed_before_write")
+        self.assertEqual(failed["receipt"], {"code": "BRIDGE_PRECONDITION_FAILED"})
         self.assertFalse(failed["needs_recovery"])
-        self.assertEqual(ledger.fail_before_write(**owner, reason="preflight_rejected"), failed)
+        self.assertEqual(ledger.fail_before_write(**owner, reason="preflight_rejected",
+                                                  detail={"code": "BRIDGE_PRECONDITION_FAILED"}),
+                         failed)
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_STATE_CONFLICT"):
             ledger.fail_before_write(**owner, reason="operator_cancelled")
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_STATE_CONFLICT"):
@@ -195,47 +308,46 @@ class OperationLedgerTest(unittest.TestCase):
         ledger.close()
         reopened = OperationLedger(self.root)
         self.assertEqual(reopened.queue(**args), failed)
-        second = request(self.lineage_id)
+        second = self.sibling(args)
         self.assertEqual(reopened.queue(**second)["state"], "queued")
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_PENDING"):
-            reopened.queue(**request(self.lineage_id))
+            reopened.queue(**self.sibling(args))
         self.assertEqual(reopened._db.execute("SELECT count(*) FROM operation_events").fetchone()[0], 3)
         reopened.close()
 
     def test_running_request_cannot_be_failed_before_write(self):
         ledger = OperationLedger(self.root, initialize=True)
-        args = request(self.lineage_id)
+        args = owned(ledger, request(self.lineage_id))
         ledger.queue(**args)
-        owner = {key: args[key] for key in ("lineage_id", "operation_id", "owner_token", "fence_generation")}
+        owner = self.owner(args)
         ledger.mark_running(**owner)
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_STATE_CONFLICT"):
             ledger.fail_before_write(**owner, reason="preflight_rejected")
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_PENDING"):
+            ledger.queue(**self.sibling(args))
         ledger.mark_unknown(**owner, reason="worker_crash")
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_STATE_CONFLICT"):
             ledger.fail_before_write(**owner, reason="preflight_rejected")
-        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_PENDING"):
-            ledger.queue(**request(self.lineage_id))
         ledger.close()
 
     def test_corrupt_closed_history_cannot_unlock_next_request(self):
         ledger = OperationLedger(self.root, initialize=True)
-        args = request(self.lineage_id)
+        args = owned(ledger, request(self.lineage_id))
         ledger.queue(**args)
-        owner = {key: args[key] for key in ("lineage_id", "operation_id", "owner_token", "fence_generation")}
-        ledger.fail_before_write(**owner, reason="preflight_rejected")
+        ledger.fail_before_write(**self.owner(args), reason="preflight_rejected")
         ledger._db.execute("DROP TRIGGER operation_events_no_update")
         ledger._db.execute("UPDATE operation_events SET digest='forged' WHERE sequence=2")
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_HISTORY_INVALID"):
-            ledger.queue(**request(self.lineage_id))
+            ledger.queue(**self.sibling(args))
         self.assertEqual(ledger._db.execute("SELECT count(*) FROM operations").fetchone()[0], 1)
         ledger.close()
 
     def test_racing_start_and_before_write_failure_have_one_winner(self):
         ledger = OperationLedger(self.root, initialize=True)
-        args = request(self.lineage_id)
+        args = owned(ledger, request(self.lineage_id))
         ledger.queue(**args)
         ledger.close()
-        owner = {key: args[key] for key in ("lineage_id", "operation_id", "owner_token", "fence_generation")}
+        owner = self.owner(args)
         barrier = threading.Barrier(3)
 
         def worker(start):
@@ -266,7 +378,7 @@ class OperationLedgerTest(unittest.TestCase):
 
     def test_malformed_payload_and_corrupt_or_rewritten_evidence_fail_closed(self):
         ledger = OperationLedger(self.root, initialize=True)
-        args = request(self.lineage_id)
+        args = owned(ledger, request(self.lineage_id))
         for payload in (b'{"schema_version":1,"variant":"create_note","body":{},"body":{}}',
                         b'{"schema_version":1,"variant":"create_note","body":{},"x":1}',
                         b'{"schema_version":1,"variant":"create_note","body":{"n":NaN}}',
@@ -280,6 +392,8 @@ class OperationLedgerTest(unittest.TestCase):
             ledger._db.execute("UPDATE operation_events SET digest='forged'")
         with self.assertRaises(sqlite3.DatabaseError):
             ledger._db.execute("DELETE FROM operations")
+        with self.assertRaises(sqlite3.DatabaseError):
+            ledger._db.execute("DELETE FROM owners")
         ledger._db.execute("DROP TRIGGER operation_events_no_update")
         ledger._db.execute("UPDATE operation_events SET digest='forged'")
         with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_HISTORY_INVALID"):

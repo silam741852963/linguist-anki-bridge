@@ -6,13 +6,14 @@ import stat
 import sys
 import threading
 
-from .compatibility import read_source_pins
+from .compatibility import read_source_pins, write_supported
 from .identity import installation_identity
 from .inspection import InspectionError, inspect_note_twice
 from .lineage import LineageStore
 from .operations import OperationLedger
-from .protocol import _uuid, build_capabilities
-from .registration import RegistrationError, _source_digest, register_read_actions
+from .native import AnkiScheduler, FaultInjector, NativeActions, NativeError
+from .protocol import ACTIONS, VARIANTS, _uuid, build_capabilities
+from .registration import RegistrationError, _source_digest, register_actions, register_read_actions
 from .session import SessionError, SessionTracker, collection_path_fingerprint
 
 
@@ -44,24 +45,10 @@ class ReadOnlyRuntime:
             raise StartupError("BRIDGE_SESSION_HOOKS_UNSUPPORTED")
 
         def opened(col):
-            self._session.invalidate()
-            try:
-                window = self._main_window
-                if col is None or col is not getattr(window, "col", None):
-                    raise StartupError("BRIDGE_COLLECTION_HANDLE_INVALID")
-                manager = window.pm
-                path = manager.collectionPath()
-                lineage_id = self._lineage.lineage(
-                    collection_path_fingerprint(path), initialize=True)
-                self._session.opened(profile=manager.name, collection_path=path,
-                                     lineage_id=lineage_id, collection_handle=col)
-                self.last_session_error = None
-            except Exception as error:
-                self.last_session_error = (str(error) if isinstance(error, (StartupError, SessionError))
-                                           else "BRIDGE_SESSION_UNAVAILABLE")
+            self._on_opened(col)
 
         def invalidated(*_):
-            self._session.invalidate()
+            self._on_invalidated()
 
         callbacks = (opened, invalidated, opened, invalidated)
         try:
@@ -74,6 +61,29 @@ class ReadOnlyRuntime:
                 hook.remove(callback)
             self._hooks = []
             raise StartupError("BRIDGE_SESSION_HOOKS_UNSUPPORTED") from None
+
+    def _on_opened(self, col):
+        self._session.invalidate()
+        try:
+            window = self._main_window
+            if col is None or col is not getattr(window, "col", None):
+                raise StartupError("BRIDGE_COLLECTION_HANDLE_INVALID")
+            manager = window.pm
+            path = manager.collectionPath()
+            lineage_id = self._lineage.lineage(
+                collection_path_fingerprint(path), initialize=True)
+            self._session.opened(profile=manager.name, collection_path=path,
+                                 lineage_id=lineage_id, collection_handle=col)
+            self.last_session_error = None
+        except Exception as error:
+            self.last_session_error = (str(error) if isinstance(error, (StartupError, SessionError))
+                                       else "BRIDGE_SESSION_UNAVAILABLE")
+
+    def _on_invalidated(self):
+        self._session.invalidate()
+
+    def collection(self):
+        return getattr(self._main_window, "col", None)
 
     def observed_session(self):
         window = self._main_window
@@ -115,6 +125,83 @@ class ReadOnlyRuntime:
         self._actions = {}
         self._ledger.close()
         self._lineage.close()
+
+
+class NativeRuntime(ReadOnlyRuntime):
+    """Read actions plus authenticated controls and serialized mutations."""
+
+    def __init__(self, module, ledger, lineage, main_window, *, bridge_id, root,
+                 gui_hooks):
+        super().__init__(module, {}, ledger, lineage, main_window)
+        self.bridge_id = bridge_id
+        self.ledger = ledger
+        self._root = root
+        self._gui_hooks = gui_hooks
+        self._own_export = None
+        self.staging_dir = _private_dir(root / "staging")
+        self.exports_dir = _private_dir(root / "exports")
+
+    def export_path(self, operation_id):
+        if operation_id is None:
+            return self.exports_dir / "probe.colpkg"
+        path = self.exports_dir / f"{_uuid(operation_id)}.colpkg"
+        if path.exists() or path.is_symlink():
+            raise NativeError("BRIDGE_EXPORT_PATH_EXISTS")
+        return path
+
+    def begin_own_export(self):
+        """Snapshot the session, then announce the temporary close as aqt's
+        own exporter does, so open windows release the collection."""
+        snapshot = self._session.snapshot()
+        self._own_export = {"snapshot": snapshot, "resumed": False}
+        col = self.collection()
+        self._gui_hooks.collection_will_temporarily_close(col)
+
+    def end_own_export(self):
+        export = self._own_export
+        try:
+            col = self.collection()
+            if col is not None and getattr(col, "db", None) is None:
+                self._main_window.reopen()
+            else:
+                self._gui_hooks.collection_did_temporarily_close(col)
+            return bool(export and export["resumed"])
+        except Exception:  # noqa: BLE001 - the next load gets a new epoch
+            self._session.invalidate()
+            return False
+        finally:
+            self._own_export = None
+
+    def _on_invalidated(self):
+        self._session.invalidate()
+
+    def _on_opened(self, col):
+        export = self._own_export
+        if export is None:
+            return super()._on_opened(col)
+        try:
+            window = self._main_window
+            export["resumed"] = (col is not None and col is getattr(window, "col", None)
+                                 and self._session.resume(
+                                     export["snapshot"], profile=window.pm.name,
+                                     collection_path=window.pm.collectionPath(),
+                                     collection_handle=col))
+        except Exception:  # noqa: BLE001
+            export["resumed"] = False
+        if not export["resumed"]:
+            super()._on_opened(col)
+
+
+def _private_dir(path):
+    try:
+        path.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    info = path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise StartupError("BRIDGE_STATE_DIRECTORY_INVALID")
+    return path
 
 
 def _state_root(main_window):
@@ -184,6 +271,104 @@ def activate_read_only(*, main_window, anki_connect_module, anki_version, build_
         raise
 
 
+def activate_native(*, main_window, anki_connect_module, anki_version, build_hash,
+                    gui_hooks, scheduler=None, faults=None):
+    """Register every lab-native-v1 action after exact build/source verification.
+
+    Mutation variants are declared only for a write-compatible build, a
+    configured AnkiConnect API key and a live collection session.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        raise StartupError("BRIDGE_STARTUP_THREAD_INVALID")
+    if not write_supported(anki_version, build_hash):
+        raise StartupError("BRIDGE_WRITE_BUILD_UNSUPPORTED")
+    pins = read_source_pins(anki_version, build_hash)
+    source = Path(getattr(anki_connect_module, "__file__", ""))
+    if not source.is_absolute() or source.name != "__init__.py":
+        raise StartupError("BRIDGE_SOURCE_INVALID")
+    try:
+        if any(_source_digest(source.parent / name) != expected
+               for name, expected in pins.items()):
+            raise StartupError("BRIDGE_SOURCE_PIN_MISMATCH")
+    except RegistrationError:
+        raise StartupError("BRIDGE_SOURCE_PIN_MISMATCH") from None
+    root = _state_root(main_window)
+    bridge_id = installation_identity(root)
+    lineage = LineageStore(root)
+    try:
+        ledger = OperationLedger(root, initialize=True)
+    except BaseException:
+        lineage.close()
+        raise
+    try:
+        runtime = NativeRuntime(anki_connect_module, ledger, lineage, main_window,
+                                bridge_id=bridge_id, root=root, gui_hooks=gui_hooks)
+
+        def api_key():
+            return anki_connect_module.util.setting("apiKey")
+
+        native = NativeActions(runtime, scheduler=scheduler or AnkiScheduler(main_window),
+                               faults=faults or FaultInjector.from_environment(),
+                               api_key=api_key)
+
+        def manifest():
+            key = api_key()
+            configured = type(key) is str and bool(key.strip())
+            session = None
+            try:
+                session = runtime.observed_session()
+            except (SessionError, AttributeError):
+                pass
+            return build_capabilities(
+                bridge_id=bridge_id, anki_version=anki_version,
+                anki_connect_source_digest=pins["__init__.py"],
+                api_key_configured=configured, collection_session=session,
+                actions=ACTIONS,
+                mutation_variants=VARIANTS if configured and session is not None else (),
+            )
+
+        def wrap(function):
+            def call(*args, **kwargs):
+                try:
+                    return function(*args, **kwargs)
+                except (NativeError, InspectionError) as error:
+                    raise RuntimeError(str(error)) from None
+            return call
+
+        def labCapabilities(self):
+            return manifest()
+
+        def labOperationStatus(self, lineage_id, operation_id):
+            return wrap(native.status)(lineage_id, operation_id)
+
+        def labBegin(self, binding, approved_digest):
+            return wrap(native.begin)(binding, approved_digest)
+
+        def labEnd(self, owner_token, fence):
+            return wrap(native.end)(owner_token, fence)
+
+        def labRebind(self, lineage_id, previous_epoch):
+            return wrap(native.rebind)(lineage_id, previous_epoch)
+
+        def labInspect(self, **params):
+            return wrap(native.inspect)(params)
+
+        def labMutate(self, **params):
+            return wrap(native.mutate)(params)
+
+        actions = {"labCapabilities": labCapabilities, "labBegin": labBegin,
+                   "labInspect": labInspect, "labMutate": labMutate,
+                   "labOperationStatus": labOperationStatus, "labRebind": labRebind,
+                   "labEnd": labEnd}
+        runtime._actions = register_actions(anki_connect_module, pins, actions)
+        runtime.native = native
+        return runtime
+    except BaseException:
+        ledger.close()
+        lineage.close()
+        raise
+
+
 def discover_anki_connect(anki_version, build_hash):
     """Find the one loaded AnkiConnect module whose bytes match the pinned build."""
     pins = read_source_pins(anki_version, build_hash)
@@ -223,13 +408,25 @@ def install_read_only_hook(hook, main_window_provider, anki_version, build_hash,
             return
         try:
             module = discover_anki_connect(anki_version, build_hash)
-            runtime = activate_read_only(
-                main_window=main_window_provider(), anki_connect_module=module,
-                anki_version=anki_version, build_hash=build_hash,
-            )
+            if write_supported(anki_version, build_hash) and session_hooks is not None:
+                runtime = activate_native(
+                    main_window=main_window_provider(), anki_connect_module=module,
+                    anki_version=anki_version, build_hash=build_hash,
+                    gui_hooks=session_hooks,
+                )
+            else:
+                runtime = activate_read_only(
+                    main_window=main_window_provider(), anki_connect_module=module,
+                    anki_version=anki_version, build_hash=build_hash,
+                )
             try:
                 if session_hooks is not None:
                     runtime.bind_session_hooks(session_hooks)
+                    # On Linux/macOS the profile (and collection) loads before
+                    # main_window_did_init; observe that already-open session.
+                    col = getattr(runtime._main_window, "col", None)
+                    if col is not None:
+                        runtime._on_opened(col)
             except BaseException:
                 runtime.close()
                 raise

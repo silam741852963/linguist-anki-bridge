@@ -122,11 +122,15 @@ class RegistrationTest(unittest.TestCase):
                 "expected_absent":True}
         payload = json.dumps({"body":body,"schema_version":1,"variant":"create_note"},
                              sort_keys=True, separators=(",", ":")).encode()
+        epoch = str(uuid.uuid4())
+        owner = ledger.begin_owner(lineage_id=lineage_id, session_epoch=epoch,
+                                   approved_digest="lab-jcs-v1:plan:" + "a" * 64,
+                                   live_operations=set())
         ledger.queue(lineage_id=lineage_id, operation_id=operation_id,
                      payload=payload, payload_digest=hashlib.sha256(payload).hexdigest(),
                      approved_digest="lab-jcs-v1:plan:" + "a" * 64,
-                     session_epoch=str(uuid.uuid4()),
-                     owner_token=str(uuid.uuid4()), fence_generation=1, variant="create_note")
+                     session_epoch=epoch, owner_token=owner["owner_token"],
+                     fence_generation=owner["fence"], variant="create_note")
         registration.register_read_actions(self.module, self.pins, lambda: {
             "actions": ["labCapabilities", "labOperationStatus"],
             "mutation_variants": [], "collection_session": None,

@@ -26,3 +26,13 @@ def register_supported_read_actions(module, anki_version, build_hash,
     """Pin both the Anki build and AnkiConnect bytes before additive registration."""
     return register_read_actions(module, read_source_pins(anki_version, build_hash),
                                  manifest_supplier, status_supplier)
+
+
+# Builds whose AnkiConnect dispatcher, main-thread timer and collection
+# executor semantics the write runtime relies on. The Rust client keeps its
+# own pinned matrix and stays fail-closed for anything else.
+WRITE_COMPATIBILITY = frozenset({("25.09.2", "3d813c83")})
+
+
+def write_supported(anki_version, build_hash):
+    return (anki_version, build_hash) in WRITE_COMPATIBILITY

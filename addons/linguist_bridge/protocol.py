@@ -49,9 +49,15 @@ def validated_session(value):
         raise ValueError("NATIVE_MANIFEST_SESSION_INVALID") from None
 
 
+ACTIONS = ("labCapabilities", "labBegin", "labInspect", "labMutate", "labOperationStatus",
+           "labRebind", "labEnd")
+VARIANTS = ("install_model", "export_checkpoint", "store_media", "create_note",
+            "update_note", "restore_note", "delete_unstudied_created_note")
+
+
 def build_capabilities(*, bridge_id, anki_version, anki_connect_source_digest,
                        api_key_configured, operation_status_available=False,
-                       collection_session=None):
+                       collection_session=None, actions=None, mutation_variants=()):
     """Use a supplied durable installation ID; never allocate identity during a read.
 
     The caller must establish pinned registration before serving either read
@@ -68,7 +74,8 @@ def build_capabilities(*, bridge_id, anki_version, anki_connect_source_digest,
             "anki_connect_source_digest": _digest(anki_connect_source_digest),
         },
         "collection_session": validated_session(collection_session),
-        "actions": ["labCapabilities"] + (["labOperationStatus"] if operation_status_available else []),
-        "mutation_variants": [],
+        "actions": (list(actions) if actions is not None else
+                    ["labCapabilities"] + (["labOperationStatus"] if operation_status_available else [])),
+        "mutation_variants": list(mutation_variants),
         "api_key_configured": api_key_configured,
     }

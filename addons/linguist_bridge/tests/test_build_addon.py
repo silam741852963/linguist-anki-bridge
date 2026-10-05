@@ -11,8 +11,8 @@ from unittest.mock import patch
 import zipfile
 from uuid import uuid4
 
-SCRIPT = Path(__file__).resolve().parents[2] / "build_read_only_addon.py"
-spec = importlib.util.spec_from_file_location("build_read_only_addon", SCRIPT)
+SCRIPT = Path(__file__).resolve().parents[2] / "build_addon.py"
+spec = importlib.util.spec_from_file_location("build_addon", SCRIPT)
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 
