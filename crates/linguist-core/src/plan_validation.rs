@@ -1,4 +1,4 @@
-//! Validation evidence refers to an exact immutable revision, never an apply authorization.
+//! ALG-VALIDATE: validation evidence refers to an exact immutable revision, never an apply authorization.
 use crate::{
     Issue, Severity, canonical::ContractError, document::LearningContent, records::PlanRevision,
 };

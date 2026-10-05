@@ -1,4 +1,4 @@
-//! Source discovery only: original field bytes remain owned by the capture archive.
+//! ALG-CAPTURE: source discovery only: original field bytes remain owned by the capture archive.
 use linguist_core::validation::safe_media_name;
 use scraper::{Html, Node};
 use serde::Serialize;

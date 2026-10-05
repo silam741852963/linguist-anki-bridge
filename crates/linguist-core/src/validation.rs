@@ -1,3 +1,4 @@
+//! ALG-VALIDATE: offline semantic validation of one v2 document (issues, cues, leakage, evidence).
 use crate::{
     canonical,
     document::*,

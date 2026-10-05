@@ -1,3 +1,4 @@
+//! ALG-RENDER: render a validated v2 document into the fixed managed model fields.
 mod dictionary;
 use crate::canonical::ContractError;
 use crate::{document::*, model, records::MediaRole, validation};

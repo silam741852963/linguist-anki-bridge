@@ -225,6 +225,8 @@ def main():
                                "addons/linguist_bridge/tests"])
     r.run("docs", ["python3", "docs/cli/validate.py"])
     r.run("op_coverage", ["python3", "scripts/op-coverage.py", "--check"])
+    r.run("traceability", ["python3", "scripts/traceability.py", "--check"])
+    r.run("packages_record", ["python3", "scripts/consolidate-packages.py", "--check"])
     r.run("evidence_contract", cargo_test + ["-p", "linguist-cli", "--test", "release_evidence"])
     models = [CLI, "--output", "json", "models", "builtin"]
     for name in ["apply", "restore", "forward-mapping"]:

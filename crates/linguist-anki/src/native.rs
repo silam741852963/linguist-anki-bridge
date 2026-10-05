@@ -1,4 +1,4 @@
-//! Native companion declarations are evidence to inspect, never client-side write authorization.
+//! ALG-IDENTITY: native companion declarations are evidence to inspect, never client-side write authorization.
 use super::*;
 use std::collections::BTreeMap;
 use uuid::Uuid;

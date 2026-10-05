@@ -1,4 +1,4 @@
-//! Explicit authored segmentation of retained grammar sources; no native effects.
+//! ALG-GRAMMAR: explicit authored segmentation of retained grammar sources; no native effects.
 use linguist_core::{records::*, *};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

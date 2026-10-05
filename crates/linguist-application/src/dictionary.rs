@@ -1,4 +1,4 @@
-//! Verified dictionary facts remain separate from authored and captured field intent.
+//! ALG-VOCAB: verified dictionary facts remain separate from authored and captured field intent.
 use linguist_config::Effective;
 use linguist_core::{records::*, *};
 use std::collections::BTreeMap;

@@ -1,4 +1,4 @@
-//! Full read-only Anki capture archives. Cross-request consistency and native history stay unverified.
+//! ALG-CAPTURE: full read-only Anki capture archives. Cross-request consistency and native history stay unverified.
 use linguist_core::{
     AnkiId, canonical,
     records::{SourceArchive, SourceRecord},

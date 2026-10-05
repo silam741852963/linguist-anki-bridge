@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Durable sidecar lineage metadata. No collection mutation or operation dispatch."""
+"""ALG-IDENTITY: durable sidecar lineage metadata. No collection mutation or operation dispatch."""
 from contextlib import contextmanager
 import fcntl
 import os

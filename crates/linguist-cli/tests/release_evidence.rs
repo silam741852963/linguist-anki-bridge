@@ -90,3 +90,32 @@ fn operation_coverage_lists_existing_tests_for_all_61_operations() {
     }
     assert!(count >= 61, "{count}");
 }
+
+#[test]
+fn traceability_record_cites_existing_tests_for_every_algorithm() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let text = std::fs::read_to_string(repo.join("docs/cli/review/traceability.md")).unwrap();
+    let algorithms = text.lines().filter(|l| l.starts_with("| ALG-")).count();
+    assert_eq!(algorithms, 18);
+    for prefix in ["| D", "| RV-"] {
+        assert!(
+            text.lines().filter(|l| l.starts_with(prefix)).count() >= 15,
+            "{prefix}"
+        );
+    }
+    let listed = text
+        .split("```text")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    for entry in listed.lines().filter(|l| !l.trim().is_empty()) {
+        let (file, function) = entry.split_once("::").unwrap();
+        let source = std::fs::read_to_string(repo.join(file)).unwrap_or_default();
+        assert!(
+            source.contains(&format!("fn {function}()")),
+            "missing: {entry}"
+        );
+    }
+}

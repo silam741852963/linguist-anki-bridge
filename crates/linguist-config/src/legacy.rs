@@ -1,4 +1,4 @@
-//! Read-only import of legacy Python YAML and native JSON configuration (OP-09).
+//! ALG-CONFIG: read-only import of legacy Python YAML and native JSON configuration (OP-09).
 //!
 //! The source is parsed with a restricted YAML loader (no tags, anchors,
 //! aliases, merge keys, complex keys or multiple documents) and every source key

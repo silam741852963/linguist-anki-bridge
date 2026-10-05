@@ -1,4 +1,4 @@
-//! Time-bound read-only comparison with archived revamp sources. No native CAS claim.
+//! ALG-VALIDATE: time-bound read-only comparison with archived revamp sources. No native CAS claim.
 use linguist_core::{
     canonical,
     records::{PlanRevision, SourceRecord},

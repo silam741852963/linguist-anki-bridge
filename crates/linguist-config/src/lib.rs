@@ -1,4 +1,4 @@
-//! Registry-backed configuration. No shell expansion or service discovery.
+//! ALG-CONFIG: registry-backed configuration. No shell expansion or service discovery.
 pub mod coverage;
 pub mod legacy;
 pub mod resources;

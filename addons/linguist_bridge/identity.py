@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Private, create-new installation identity. No Anki/Qt imports or session claims."""
+"""ALG-IDENTITY: private, create-new installation identity. No Anki/Qt imports or session claims."""
 import json
 import os
 from pathlib import Path
