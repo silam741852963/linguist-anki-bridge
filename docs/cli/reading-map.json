@@ -271,7 +271,7 @@
       "path": "implementation/wp-17.md",
       "heading": "## WP-17 \u2014 native write transport and real-Anki release evidence",
       "title": "WP-17 \u2014 native write transport and real-Anki release evidence",
-      "words": 1785,
+      "words": 1818,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
