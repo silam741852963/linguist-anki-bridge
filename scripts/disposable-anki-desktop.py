@@ -90,7 +90,7 @@ def install_addons(base, ankiconnect, addon, api_key, port):
     return result.name
 
 
-def create_base(base, fsrs):
+def create_base(base, fsrs, extra_profiles=()):
     from aqt.profiles import ProfileManager
     from anki.collection import Collection
 
@@ -101,12 +101,16 @@ def create_base(base, fsrs):
     manager.meta["firstRun"] = False
     manager.setLang("en_US")
     manager.save()
-    profile = base / PROFILE
-    profile.mkdir(exist_ok=True)
-    col = Collection(str(profile / "collection.anki2"))
-    if fsrs:
-        col.set_config("fsrs", True)
-    col.close()
+    for name in extra_profiles:
+        manager.create(name)
+    manager.save()
+    for name in (PROFILE, *extra_profiles):
+        profile = base / name
+        profile.mkdir(exist_ok=True)
+        col = Collection(str(profile / "collection.anki2"))
+        if fsrs:
+            col.set_config("fsrs", True)
+        col.close()
 
 
 def call(endpoint, key, action, params=None, timeout=10):
@@ -124,6 +128,7 @@ def main():
     parser.add_argument("--addon", type=Path)
     parser.add_argument("--api-key", required=True)
     parser.add_argument("--fsrs", action="store_true")
+    parser.add_argument("--extra-profile", action="append", default=[])
     parser.add_argument("--fault-file", type=Path)
     parser.add_argument("--anki", default="/usr/bin/anki")
     parser.add_argument("--startup-timeout", type=float, default=90)
@@ -147,7 +152,7 @@ def main():
         base.mkdir(mode=0o700)
         tmp.mkdir(mode=0o700)
         port = free_port()
-        create_base(base, args.fsrs)
+        create_base(base, args.fsrs, args.extra_profile)
         name = install_addons(base, args.ankiconnect, args.addon, args.api_key, port)
         (root / MARKER).write_text(json.dumps({"port": port, "companion": name}))
     if port == USER_PORT:
@@ -215,7 +220,8 @@ def main():
     try:
         print(json.dumps({"exit_code": process.returncode}), flush=True)
     except BrokenPipeError:
-        pass
+        # The caller stopped reading; keep interpreter shutdown quiet.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
 
 
 if __name__ == "__main__":

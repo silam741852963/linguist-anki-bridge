@@ -155,6 +155,7 @@ class NativeRuntime(ReadOnlyRuntime):
         col = self.collection()
         self._gui_hooks.collection_will_temporarily_close(col)
         col.close_for_full_sync()
+        col._backend.close_collection(downgrade_to_schema11=False)
         self._main_window.reopen()
 
     def begin_own_export(self):

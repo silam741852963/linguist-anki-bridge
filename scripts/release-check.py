@@ -11,12 +11,13 @@ evidence path in `docs/cli/decisions/release-gates.json`.
 
 A gate is `pass` only when every listed command exited 0 and every assertion
 held, and only when the gate's evidence requirement is fully covered by what
-ran. Gates whose requirement needs something this tree cannot exercise (the
-native companion transport, crash injection at native boundaries, missing OCR
-language packs) are `blocked` with an explicit failure code, even when the
-partial checks listed with them passed. Nothing here installs software,
-touches a user Anki profile or applies anything to a real collection; the
-Anki checks use disposable collections.
+ran. Gates whose requirement needs something this tree cannot exercise (for
+example missing OCR language packs or nondefault consumer tests) are
+`blocked` with an explicit failure code, even when the partial checks listed
+with them passed. The native scenarios run real Anki desktop on DISPOSABLE
+base folders (`scripts/disposable-anki-desktop.py`): AnkiConnect (pinned bytes,
+`LAB_ANKICONNECT_ZIP`) and the companion built into `dist/` are installed there
+through Anki's add-on installer. Nothing here touches a user Anki profile.
 """
 
 import argparse
@@ -206,10 +207,19 @@ def main():
                                            "semantic_corpus", "--", "--nocapture"])
     r.run("ux", cargo_test + ["-p", "linguist-cli", "--test", "release_ux", "--test",
                               "release_coverage"])
-    r.run("scenarios", cargo_test + ["-p", "linguist-cli", "--test", "release_scenarios", "--",
+    addon = ROOT / "dist/linguist-bridge.ankiaddon"
+    if addon.exists():
+        addon.unlink()
+    r.run("addon_build", ["python3", "addons/build_addon.py", str(addon)])
+    r.run("native_transport", cargo_test + ["-p", "linguist-application", "--test", "native_port"]
+          + ["-p", "linguist-cli", "--test", "native_commands"])
+    r.run("scenarios", cargo_test + ["-p", "linguist-cli", "--test", "desktop_scenarios", "--",
                                      "--ignored", "--test-threads", "1", "--nocapture"],
           env={"LAB_SCENARIO_REPORT_DIR": str(out / "scenarios"),
-               "LAB_ANKI_PYTHON": ANKI_PYTHON})
+               "LAB_ANKI_PYTHON": ANKI_PYTHON, "LAB_COMPANION_ADDON": str(addon),
+               "LAB_ANKICONNECT_ZIP": os.environ.get(
+                   "LAB_ANKICONNECT_ZIP", str(ROOT / "target/lab/ankiconnect-2055492159.zip"))},
+          timeout=7200)
     r.run("jobs_and_leases", cargo_test + ["-p", "linguist-store", "--test", "lease", "--test",
                                            "apply_job", "--test", "journal"])
     r.run("jobs_executor", cargo_test + ["-p", "linguist-application", "--test", "jobs_apply",
@@ -223,6 +233,8 @@ def main():
     r.run("provider_reader", cargo_test + ["-p", "linguist-provider"])
     r.run("python_companion", ["python3", "-m", "unittest", "discover", "-s",
                                "addons/linguist_bridge/tests"])
+    r.run("python_companion_anki", [ANKI_PYTHON, "-m", "unittest", "discover", "-s",
+                                    "addons/linguist_bridge/tests"])
     r.run("docs", ["python3", "docs/cli/validate.py"])
     r.run("op_coverage", ["python3", "scripts/op-coverage.py", "--check"])
     r.run("traceability", ["python3", "scripts/traceability.py", "--check"])
@@ -274,7 +286,15 @@ def main():
     def ran(*keys):
         return all(r.ok(key) for key in keys)
 
-    scenarios_ok = r.ok("scenarios") and len(scenario_names) == 5
+    expected_scenarios = {"vocab_add", "grammar_add", "vocab_revamp", "vocab_revamp_home_deck",
+                          "grammar_split", "grammar_split_crash", "native_faults",
+                          "identity_preconditions"}
+    scenarios_ok = r.ok("scenarios") and set(scenario_names) == expected_scenarios
+    addon_sha = sha256(addon.read_bytes()) if addon.exists() else "missing"
+    faults = (out / "scenarios" / "native_faults.txt").read_text() \
+        if (out / "scenarios" / "native_faults.txt").exists() else ""
+    identity = (out / "scenarios" / "identity_preconditions.txt").read_text() \
+        if (out / "scenarios" / "identity_preconditions.txt").exists() else ""
     gates = {
         "EV-01": dict(
             keys=["domain_contracts", "jcs_vectors", "v2_schemas", "native_templates"],
@@ -294,12 +314,24 @@ def main():
                 assertion("normalized config schema covers defaults", r.ok("config_schema"), "156 entries"),
             ],
             blocked="EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE"),
-        "EV-03": dict(keys=["python_companion"], fixtures=["addons/linguist_bridge/*.py"],
-                      assertions=[assertion("companion ledger/protocol unit tests", r.ok("python_companion"), "Anki-free")],
-                      blocked="NATIVE_COMPANION_NOT_REGISTERED"),
-        "EV-04": dict(keys=["python_companion"], fixtures=["addons/linguist_bridge/lineage.py"],
-                      assertions=[assertion("lineage helper unit tests", r.ok("python_companion"), "no live session/rebind fixture")],
-                      blocked="NATIVE_SESSION_REBIND_UNTESTED"),
+        "EV-03": dict(
+            keys=["addon_build", "python_companion", "python_companion_anki", "native_transport", "scenarios"],
+            fixtures=["addons/linguist_bridge/*.py", "scripts/disposable-anki-desktop.py"],
+            assertions=[
+                assertion("companion ledger, payload and protocol tests", r.ok("python_companion"), "Anki-free"),
+                assertion("controls, owner fences and serialized mutations over a real Anki collection", r.ok("python_companion_anki"), "Anki " + matrix["anki"]),
+                assertion("transport is fail-closed: unverified build, no key, no session", r.ok("native_transport"), "scripted endpoint"),
+                assertion("companion installed through Anki's add-on installer registers all 7 actions/variants in real AnkiConnect with API key", scenarios_ok, "dist/linguist-bridge.ankiaddon sha256 " + addon_sha),
+            ], blocked=None),
+        "EV-04": dict(
+            keys=["python_companion_anki", "scenarios"],
+            fixtures=["addons/linguist_bridge/session.py", "addons/linguist_bridge/lineage.py"],
+            assertions=[
+                assertion("restart gives a new epoch; continuing needs reconcile --rebind", "rebind + reconcile adopted" in faults, "native_faults"),
+                assertion("temporary close/reopen (the hook path of full sync/import) refuses dispatch; rebind recorded", "session change: refused before write" in faults, "native_faults (reopen fault, not a real .colpkg import)"),
+                assertion("profile switch refuses the bound write", "profile switch: refused" in identity, "identity_preconditions"),
+                assertion("lost sidecar lineage refuses until bound and approved again", "lost sidecar lineage: refused" in identity, "identity_preconditions"),
+            ], blocked=None),
         "EV-05": dict(
             keys=["native_checkpoint_scope", "native_package_restore", "scenarios"],
             fixtures=["scripts/verify-native-checkpoint-scope.py", "scripts/verify-native-package-restore.py"],
@@ -310,16 +342,24 @@ def main():
             ], blocked=None),
         "EV-06": dict(
             keys=["native_forward_mapping", "native_apply", "native_restore", "scenarios"],
-            fixtures=["scripts/verify-native-forward-mapping.py", "scripts/disposable-anki-lab.py"],
+            fixtures=["scripts/verify-native-forward-mapping.py", "scripts/disposable-anki-desktop.py"],
             assertions=[
                 assertion("forward/reverse mapping keeps card IDs and history", r.ok("native_forward_mapping"), "Basic and Picture Words"),
                 assertion("apply keeps IDs, scheduling and FSRS memory state", r.ok("native_apply"), "deck moves via update_card"),
                 assertion("restore keeps later history", r.ok("native_restore"), "reverse mapping"),
                 assertion("revamp scenarios migrate and restore with FSRS on", scenarios_ok, ", ".join(scenario_names)),
             ], blocked=None),
-        "EV-07": dict(keys=["jobs_and_leases", "jobs_executor"], fixtures=["crates/linguist-store/tests/journal.rs"],
-                      assertions=[assertion("journal/dedupe/unknown-outcome rules over the fake port", ran("jobs_and_leases", "jobs_executor"), "fake native port")],
-                      blocked="NATIVE_BOUNDARY_FAULT_INJECTION_MISSING"),
+        "EV-07": dict(
+            keys=["jobs_and_leases", "jobs_executor", "scenarios"],
+            fixtures=["crates/linguist-store/tests/journal.rs", "addons/linguist_bridge/native.py"],
+            assertions=[
+                assertion("journal/dedupe/unknown-outcome rules", ran("jobs_and_leases", "jobs_executor"), "fake native port"),
+                assertion("delayed worker past the deadline: reconcile adopts", "timeout: reconcile adopted" in faults, "native_faults"),
+                assertion("crash between effect and receipt: one note, adopted", "crash after effect" in faults, "native_faults (process exit)"),
+                assertion("duplicate UUID returns the stored state; changed payload refused", "duplicate UUID" in faults, "native_faults"),
+                assertion("ENOSPC at the ledger boundary: failed before write, retry commits", "disk full" in faults, "native_faults (injected ENOSPC, not a full filesystem)"),
+                assertion("removed marker: absence unproven, stays in recovery", "removed marker" in faults, "native_faults"),
+            ], blocked=None),
         "EV-08": dict(
             keys=["semantic_corpus", "native_inspection", "scenarios"],
             fixtures=["crates/linguist-application/tests/fixtures/semantic/corpus-v1.json"],
@@ -331,15 +371,16 @@ def main():
         "EV-09": dict(keys=["scenarios", "jobs_executor"], fixtures=["crates/linguist-application/tests/split.rs"],
                       assertions=[
                           assertion("real-Anki split: sibling first, anchor keeps history, group rollback", "grammar_split" in scenario_names and r.ok("scenarios"), "grammar_split scenario"),
-                          assertion("partial-group crash recovery rules", r.ok("jobs_executor"), "fake native port only"),
-                      ], blocked="SPLIT_NATIVE_CRASH_RECOVERY_UNTESTED"),
+                          assertion("partial-group crash: unit reconciled, group resumed, sibling not re-created", "grammar_split_crash" in scenario_names and r.ok("scenarios"), "grammar_split_crash scenario"),
+                          assertion("partial-group recovery rules", r.ok("jobs_executor"), "fake native port"),
+                      ], blocked=None),
         "EV-10": dict(
             keys=["scenarios", "native_restore", "native_apply"],
-            fixtures=["crates/linguist-cli/tests/release_scenarios.rs"],
+            fixtures=["crates/linguist-cli/tests/desktop_scenarios.rs"],
             assertions=[
-                assertion("later reviews survive restore in real Anki", scenarios_ok, "vocab/grammar revamp"),
-                assertion("a later personal edit conflicts until a field decision", scenarios_ok, "grammar_revamp"),
-                assertion("home deck kept without a target mapping", scenarios_ok, "grammar_revamp"),
+                assertion("later reviews survive restore in real Anki", scenarios_ok, "vocab revamp, grammar split"),
+                assertion("a later personal edit conflicts until a field decision", scenarios_ok, "vocab_revamp_home_deck"),
+                assertion("home deck kept without a target mapping", scenarios_ok, "vocab_revamp_home_deck"),
                 assertion("filtered-deck membership blocks apply and restore", ran("native_apply", "native_restore"), "BRIDGE_FILTERED_DECK"),
             ], blocked=None),
         "EV-11": dict(
@@ -359,14 +400,14 @@ def main():
                       blocked=None),
         "EV-14": dict(
             keys=["build", "qt_tree", "ux", "scenarios", "op_coverage"],
-            fixtures=["crates/linguist-cli/tests/release_scenarios.rs", "scripts/disposable-anki-lab.py"],
+            fixtures=["crates/linguist-cli/tests/desktop_scenarios.rs", "scripts/disposable-anki-desktop.py"],
             assertions=[
                 assertion("headless build without Qt", r.ok("build") and r.ok("qt_tree") and not qt, f"{len(qt)} Qt crates"),
                 assertion("fresh-home, pipes, Unicode, SSH, interrupts, limits", r.ok("ux"), "release_ux + release_coverage"),
                 assertion("all 61 operations have command-level tests", r.ok("op_coverage"), "docs/cli/implementation/op-coverage.md"),
                 assertion("four workflows prepare->review->apply->restore in disposable Anki", scenarios_ok, ", ".join(scenario_names)),
-                assertion("CLI --apply performs the writes itself", False, "harness binds plans and transports effects; CLI apply returns CAPABILITY_UNAVAILABLE"),
-            ], blocked="CLI_NATIVE_TRANSPORT_UNAVAILABLE"),
+                assertion("every step is a CLI command (plans bind, resolve-history, apply/restore/rollback --apply)", scenarios_ok, "desktop_scenarios; the test only creates source notes, studies and observes"),
+            ], blocked=None),
     }
     summary = []
     registry_path = ROOT / "docs/cli/decisions/release-gates.json"
@@ -383,7 +424,7 @@ def main():
         else:
             status, failure = "fail", "RELEASE_CHECK_ASSERTION_FAILED"
         artifacts = sorted({r.results[k]["log"] for k in spec["keys"] if k in r.results})
-        if gate_id in ("EV-05", "EV-06", "EV-08", "EV-09", "EV-10", "EV-14") and scenario_names:
+        if gate_id in ("EV-03", "EV-04", "EV-05", "EV-06", "EV-07", "EV-08", "EV-09", "EV-10", "EV-14") and scenario_names:
             artifacts += [str((out / "scenarios" / f"{n}.txt").relative_to(ROOT)) for n in scenario_names]
         if gate_id == "EV-11" and bench:
             artifacts.append(str((out / "model-benchmark.json").relative_to(ROOT)))

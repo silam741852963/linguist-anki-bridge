@@ -18,7 +18,7 @@ A = "crates/linguist-application/tests/"
 C = "crates/linguist-cli/tests/"
 S = "crates/linguist-store/tests/"
 K = "crates/linguist-core/tests/domain.rs"
-SCEN = C + "release_scenarios.rs::"
+SCEN = C + "desktop_scenarios.rs::"
 
 ALGS = {
     "ALG-CONFIG": ("Typed registry, layered resolution, freezing, legacy import", [
@@ -51,7 +51,7 @@ ALGS = {
     "ALG-APPLY": ("Authorized, journaled, read-back-verified apply", [
         A + "apply.rs::create_commits_with_marker_snapshot_receipt_and_owner_release",
         A + "apply.rs::authority_identity_and_checkpoint_refusals_mutate_nothing",
-        SCEN + "vocab_add_prepare_review_apply_restore"]),
+        SCEN + "vocab_add_apply_study_restore"]),
     "ALG-BACKUP": ("Verified checkpoints", [
         A + "checkpoint_writes.rs::verified_checkpoint_has_receipt_restoration_and_committed_journal",
         A + "checkpoint_writes.rs::false_api_success_without_file_is_not_a_checkpoint"]),
@@ -63,7 +63,7 @@ ALGS = {
         A + "jobs_apply.rs::an_unknown_outcome_stops_dispatch_and_a_restart_reconciles_without_duplicates"]),
     "ALG-MIGRATE": ("Mapped note-type migration keeping history", [
         A + "apply.rs::mapped_migration_retains_card_id_history_and_scheduling",
-        SCEN + "vocab_revamp_capture_migrate_study_restore"]),
+        SCEN + "vocab_revamp_migrate_study_restore"]),
     "ALG-MODEL": ("Journaled managed model installation", [
         A + "checkpoint_writes.rs::created_model_is_journaled_before_call_and_verified",
         A + "checkpoint_writes.rs::partial_model_needs_recovery_and_blocks_new_attempts"]),
@@ -73,18 +73,18 @@ ALGS = {
     "ALG-RESTORE": ("Later-study-aware restore with its own journal", [
         A + "restore.rs::restore_after_later_study_restores_content_and_keeps_new_history",
         A + "restore.rs::every_reverse_effect_crash_boundary_resumes_the_same_restore_journal",
-        SCEN + "grammar_revamp_capture_migrate_study_restore"]),
+        SCEN + "vocab_revamp_home_deck_edit_conflict_restore"]),
     "ALG-GC": ("Mark-and-sweep pruning with protected history", [
         S + "gc.rs::reachable_and_transitively_referenced_assets_survive_and_orphans_are_tombstoned",
         S + "gc.rs::unresolved_recovery_blocks_pruning"]),
     "ALG-SPLIT": ("Grammar split: children first, one anchor", [
         A + "split.rs::children_are_created_first_then_the_anchor_keeps_its_history",
-        SCEN + "grammar_revamp_multi_unit_split_apply_rollback"]),
+        SCEN + "grammar_revamp_multi_unit_split_apply_study_rollback"]),
 }
 
 # D-ID -> (status, evidence)
 CONTRACTS = {
-    "D01": ("implemented", [SCEN + "vocab_add_prepare_review_apply_restore", SCEN + "grammar_revamp_capture_migrate_study_restore"]),
+    "D01": ("implemented", [SCEN + "vocab_add_apply_study_restore", SCEN + "vocab_revamp_home_deck_edit_conflict_restore"]),
     "D02": ("implemented (no aliases)", [C + "release_ux.rs::every_command_and_argument_has_help_text"]),
     "D03": ("implemented", [A + "apply.rs::missing_apply_flag_and_preview_have_zero_effects"]),
     "D04": ("implemented", [A + "jobs_apply.rs::simulate_never_writes_and_apply_jobs_need_the_current_flag"]),
@@ -96,7 +96,7 @@ CONTRACTS = {
     "D10": ("implemented", [A + "apply.rs::crash_after_receipt_before_commit_finalizes_with_the_stored_receipt"]),
     "D11": ("implemented over fake port; native ledger gated (EV-07)", [A + "apply.rs::timeout_after_accepted_create_reconciles_to_one_note"]),
     "D12": ("implemented; native crash recovery gated (EV-09)", [A + "split.rs::child_accepted_and_anchor_failed_resumes_without_duplicates"]),
-    "D13": ("implemented", [A + "restore.rs::restore_after_later_study_restores_content_and_keeps_new_history", SCEN + "vocab_revamp_capture_migrate_study_restore"]),
+    "D13": ("implemented", [A + "restore.rs::restore_after_later_study_restores_content_and_keeps_new_history", SCEN + "vocab_revamp_migrate_study_restore"]),
     "D14": ("implemented", [A + "restore.rs::every_reverse_effect_crash_boundary_resumes_the_same_restore_journal"]),
     "D15": ("implemented (no shared model deletion)", [A + "checkpoint_writes.rs::exact_model_is_reused_and_same_name_different_manifest_blocks"]),
     "D16": ("implemented", [A + "restore.rs::colliding_original_media_uses_a_safe_alternate_name", A + "maintenance.rs::provider_cache_prunes_by_retention_and_budget_but_never_unmanaged_files"]),

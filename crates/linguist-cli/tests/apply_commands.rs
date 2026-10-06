@@ -233,7 +233,7 @@ fn reconcile_proposal_is_local_and_writes_stay_unavailable() {
     let value = json(&out.stdout);
     assert_eq!(value["reconciliation_kind"], "unsupported_journal_kind");
     assert_eq!(value["live_checked"], false);
-    assert_eq!(value["reconciliation_available"], false);
+    assert_eq!(value["reconciliation_available"], true);
     let out = cli(&f)
         .args(["recover", "reconcile", &operation.to_string(), "--rebind"])
         .output()

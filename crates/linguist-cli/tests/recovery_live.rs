@@ -231,7 +231,7 @@ fn live_recovery_reads_step_identity_but_does_not_verify_native_effect() {
     let value: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(value["native_status_checked"], true);
     assert_eq!(value["live_checked"], false);
-    assert_eq!(value["reconciliation_available"], false);
+    assert_eq!(value["reconciliation_available"], true);
     assert_eq!(value["live"]["journals"][0]["binding_conflicts"], json!([]));
     assert_eq!(
         value["live"]["journals"][0]["steps"][0]["intent_conflicts"],
@@ -338,7 +338,7 @@ fn native_status_with_changed_payload_is_not_treated_as_matching_intent() {
         value["live"]["journals"][0]["steps"][0]["intent_conflicts"],
         json!(["payload_changed"])
     );
-    assert_eq!(value["reconciliation_available"], false);
+    assert_eq!(value["reconciliation_available"], true);
     assert_eq!(server.finish().len(), 6);
     std::fs::remove_dir_all(root).unwrap();
 }

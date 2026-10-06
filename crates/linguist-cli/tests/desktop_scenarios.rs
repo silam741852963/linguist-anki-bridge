@@ -49,14 +49,22 @@ struct Desktop {
 }
 
 impl Desktop {
-    fn start(dir: &Path, fsrs: bool) -> Self {
-        let addon = dir.with_extension("ankiaddon");
-        let built = Command::new("python3")
-            .arg(repo().join("addons/build_addon.py"))
-            .arg(&addon)
-            .output()
-            .unwrap();
-        assert!(built.status.success(), "{built:?}");
+    fn start(dir: &Path, fsrs: bool, launcher: &[&str]) -> Self {
+        // The release check passes the exact dist artifact; otherwise the
+        // same deterministic build is made from this checkout.
+        let addon = match std::env::var("LAB_COMPANION_ADDON") {
+            Ok(path) => PathBuf::from(path),
+            Err(_) => {
+                let addon = dir.with_extension("ankiaddon");
+                let built = Command::new("python3")
+                    .arg(repo().join("addons/build_addon.py"))
+                    .arg(&addon)
+                    .output()
+                    .unwrap();
+                assert!(built.status.success(), "{built:?}");
+                addon
+            }
+        };
         let mut desktop = Self {
             dir: dir.to_owned(),
             child: None,
@@ -73,6 +81,7 @@ impl Desktop {
         if fsrs {
             extra.push("--fsrs".into());
         }
+        extra.extend(launcher.iter().map(|arg| (*arg).to_owned()));
         desktop.launch(&extra);
         desktop
     }
@@ -245,13 +254,23 @@ impl Scenario {
         target_deck: Option<&'static str>,
         fsrs: bool,
     ) -> Self {
+        Self::with(name, purpose, target_deck, fsrs, &[])
+    }
+
+    fn with(
+        name: &str,
+        purpose: &'static str,
+        target_deck: Option<&'static str>,
+        fsrs: bool,
+        launcher: &[&str],
+    ) -> Self {
         // Short path: the private Qt socket path must stay under the limit.
         let root = PathBuf::from(format!(
             "/tmp/lab-desk-{}",
             &Uuid::new_v4().simple().to_string()[..8]
         ));
         std::fs::create_dir_all(root.join("home")).unwrap();
-        let desktop = Desktop::start(&root.join("anki"), fsrs);
+        let desktop = Desktop::start(&root.join("anki"), fsrs, launcher);
         let scenario = Self {
             root,
             desktop,
@@ -455,6 +474,13 @@ fn vocab_add_apply_study_restore() {
         false,
     );
     s.install_model("japanese_vocab");
+    // A whole-collection checkpoint on demand (OP-52), verified by restore test.
+    let backup = s.ok(&["backup", "create", "--scope", "collection", "--apply"]);
+    assert_eq!(backup["checkpoint"]["restoration_tested"], true, "{backup}");
+    assert_eq!(
+        backup["checkpoint"]["checkpoint_eligible"], true,
+        "{backup}"
+    );
     // An unbound plan is preparation/export only.
     let (plan, digest) = add_vocab(&mut s, "食べる", "to eat", "eat");
     let (code, preview, _) = s.cli(&["apply", &plan, "--revision", "1"]);
@@ -587,6 +613,7 @@ fn revamp_workflow(
     model_purpose: &str,
     expected_model: &str,
     edits: &[(&str, &str)],
+    edit_after_apply: Option<&str>,
 ) {
     let mut s = Scenario::new(name, purpose, target_deck, true);
     s.install_model(model_purpose);
@@ -707,12 +734,37 @@ fn revamp_workflow(
         Some(deck) => assert_eq!(after["cards"][0]["deck_id"], s.desktop.deck_id(deck)),
         None => assert_eq!(after["cards"][0]["deck_id"], before["cards"][0]["deck_id"]),
     }
+    if let Some(field) = edit_after_apply {
+        // A personal edit after apply conflicts until a decision names it.
+        s.desktop.call(
+            "updateNoteFields",
+            json!({"note": {"id": note_id, "fields": {field: "my own later note"}}}),
+        );
+        let (code, _, stderr) = s.restore(&snapshot, |decision, live| {
+            assert!(
+                live["conflicts"]
+                    .to_string()
+                    .contains(&format!("RESTORE_FIELD_CONFLICT:{field}")),
+                "{live}"
+            );
+            decision["accept_schema_change"] = json!(true);
+        });
+        assert_ne!(
+            code, 0,
+            "restore without a field decision must not proceed: {stderr}"
+        );
+        s.log
+            .push(format!("restore without a field decision refused: {field}"));
+    }
     // Later study, then restore: content returns, the later review stays.
     s.desktop.study(note_id);
     let studied = s.desktop.note(note_id);
     assert_eq!(studied["cards"][0]["review_count"], 3);
     let (code, restored, stderr) = s.restore(&snapshot, |decision, live| {
         decision["accept_schema_change"] = json!(!live["model"].is_null());
+        if let Some(field) = edit_after_apply {
+            decision["fields"] = json!({field: {"choice": "original"}});
+        }
         assert_eq!(live["blockers"], json!([]), "{live}");
     });
     assert_eq!(code, 0, "{stderr} {restored}");
@@ -750,6 +802,25 @@ fn vocab_revamp_migrate_study_restore() {
         "japanese_vocab",
         "Linguist Vocabulary v2",
         &[("SenseKey", "eat-food")],
+        None,
+    );
+}
+
+#[test]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+fn vocab_revamp_home_deck_edit_conflict_restore() {
+    revamp_workflow(
+        "vocab_revamp_home_deck",
+        "english_vocab",
+        "vocab",
+        None,
+        ("used to", "a past habit"),
+        json!({"expression": "Front", "meaning": "Back"}),
+        "comprehension",
+        "english_vocab",
+        "Linguist Vocabulary v2",
+        &[("SenseKey", "past-habit")],
+        Some("Meaning"),
     );
 }
 
@@ -815,67 +886,14 @@ fn review_all(s: &mut Scenario, plan: &str, anchor: Option<&str>, history_task: 
 #[test]
 #[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
 fn grammar_revamp_multi_unit_split_apply_study_rollback() {
-    let mut s = Scenario::new(
-        "grammar-split",
-        "japanese_grammar",
-        Some("Japanese::Grammar"),
-        true,
-    );
-    s.install_model("japanese_grammar");
-    let note_id = s.desktop.add_note(
-        "Linguist Grammar v2",
-        "Japanese::Grammar",
-        json!({"Pattern": "〜ても / 〜てもいい", "Meaning": "dù / được phép",
-               "Formation": "V-て + も", "Language": "ja"}),
-        &["legacy"],
-    );
-    s.desktop.study(note_id);
-    s.desktop.study(note_id);
-    let before = s.desktop.note(note_id);
-    s.settings.push(format!(
-        "purposes.japanese_grammar.fields={}",
-        json!({"pattern": "Pattern", "meaning": "Meaning", "formation": "Formation", "language": "Language"})
-    ));
-    s.settings
-        .push("purposes.japanese_grammar.source_model=Linguist Grammar v2".into());
-    let (code, drafted, stderr) = s.cli(&["grammar", "revamp", "--note-id", &note_id.to_string()]);
-    assert_eq!(code, 4, "{stderr} {drafted}");
-    let root = if drafted["plan_id"].is_string() {
-        &drafted
-    } else {
-        &drafted["result"]
-    };
-    let plan = root["plan_id"].as_str().unwrap().to_owned();
-    // CLI split: the first unit keeps the note, the second is a fresh sibling.
-    let page = s.ok(&["plans", "show", &plan, "--issues-only"]);
-    let identity = page["issues"][0]["request_identity"].clone();
-    let request = json!({
-        "schema_version": 2, "base_revision": identity["base_revision"],
-        "base_digest": identity["base_digest"], "document_id": identity["document_id"],
-        "input_digest": identity["input_digest"], "actor": "desktop-scenario", "anchor_index": 0,
-        "units": [grammar_unit("〜ても", "concession", "dù"),
-                  grammar_unit("〜てもいい", "permission", "được phép")],
-    });
-    let request_path = s.root.join("split.json");
-    std::fs::write(&request_path, request.to_string()).unwrap();
-    let (code, split, stderr) = s.cli(&[
-        "plans",
-        "split-grammar",
-        &plan,
-        "--request",
-        request_path.to_str().unwrap(),
-    ]);
-    assert!(code == 0 || code == 4, "{stderr} {split}");
-    let group = split["grammar_groups"][0]["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let anchor = split["grammar_groups"][0]["anchor_document"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let digest = review_all(&mut s, &plan, Some(&anchor), "recognition");
-    let (revision, _) = s.bind_and_approve(&plan, &digest);
+    let SplitReady {
+        mut s,
+        plan,
+        revision,
+        group,
+        note_id,
+        before,
+    } = split_ready("grammar-split");
     let rev = revision.to_string();
     let outcome = s.ok(&[
         "apply",
@@ -944,4 +962,574 @@ fn grammar_revamp_multi_unit_split_apply_study_rollback() {
     );
     assert!(s.desktop.note(sibling).is_null());
     s.report("grammar_split");
+}
+
+/// Prepare, bind and approve one vocabulary item; returns (plan, revision).
+fn approved_vocab(s: &mut Scenario, expression: &str, key: &str) -> (String, String) {
+    let (plan, digest) = add_vocab(s, expression, "meaning", key);
+    let (revision, _) = s.bind_and_approve(&plan, &digest);
+    (plan, revision.to_string())
+}
+
+fn notes_tagged(s: &Scenario, expression: &str) -> usize {
+    s.desktop
+        .call(
+            "findNotes",
+            json!({"query": format!("Expression:{expression}")}),
+        )
+        .as_array()
+        .unwrap()
+        .len()
+}
+
+/// EV-03 / EV-04 / EV-07: injected native faults in real Anki; every
+/// uncertain outcome is resolved with `recover reconcile --apply`.
+#[test]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+fn native_faults_recover_through_reconcile() {
+    let mut s = Scenario::new(
+        "native-faults",
+        "japanese_vocab",
+        Some("Japanese::Vocab"),
+        false,
+    );
+    s.install_model("japanese_vocab");
+    // Short operation deadline so a delayed native worker exceeds it.
+    s.settings.push("anki.request_timeout_seconds=5".into());
+
+    // 1. Timeout: the worker is delayed past the CLI deadline; the effect
+    // completes later and reconcile adopts the verified read-back.
+    let (plan, rev) = approved_vocab(&mut s, "遅い", "slow");
+    s.desktop.arm(
+        json!({"point": "before_running", "action": "sleep", "seconds": 12,
+                         "variant": "create_note"}),
+    );
+    let (code, timed_out, stderr) = s.cli(&["apply", &plan, "--revision", &rev, "--apply"]);
+    assert_eq!(code, 4, "{stderr} {timed_out}");
+    assert_eq!(
+        timed_out["items"][0]["state"], "needs_recovery",
+        "{timed_out}"
+    );
+    let operation = timed_out["items"][0]["operation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    std::thread::sleep(Duration::from_secs(10));
+    let reconciled = s.ok(&["recover", "reconcile", &operation, "--apply"]);
+    assert_eq!(
+        reconciled["reconcile"]["state"], "committed",
+        "{reconciled}"
+    );
+    assert_eq!(notes_tagged(&s, "遅い"), 1);
+    s.log
+        .push("timeout: reconcile adopted the delayed verified effect".into());
+
+    // 2. Crash between the native effect and its receipt: Anki exits right
+    // after the note is written. After restart (new session epoch) the
+    // operation is rebound explicitly and adopted from the read-back.
+    let (plan, rev) = approved_vocab(&mut s, "壊れる", "crash");
+    s.desktop
+        .arm(json!({"point": "after_effect", "action": "crash", "variant": "create_note"}));
+    let (code, crashed, stderr) = s.cli(&["apply", &plan, "--revision", &rev, "--apply"]);
+    assert_ne!(code, 0, "{stderr} {crashed}");
+    s.desktop.wait_for_exit();
+    s.desktop.restart();
+    assert_eq!(
+        notes_tagged(&s, "壊れる"),
+        1,
+        "the effect happened before the crash"
+    );
+    let operation = crashed["items"][0]["operation_id"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            let pending = s.ok(&["recover", "inspect", "--pending"]);
+            pending.to_string()
+        });
+    let (code, _, stderr) = s.cli(&["recover", "reconcile", &operation, "--apply"]);
+    assert_ne!(code, 0);
+    assert!(stderr.contains("SESSION_CHANGED"), "{stderr}");
+    let reconciled = s.ok(&["recover", "reconcile", &operation, "--rebind", "--apply"]);
+    assert_eq!(
+        reconciled["reconcile"]["state"], "committed",
+        "{reconciled}"
+    );
+    assert_eq!(reconciled["reconcile"]["rebound"], true);
+    assert_eq!(notes_tagged(&s, "壊れる"), 1, "never re-created");
+    s.log
+        .push("crash after effect: rebind + reconcile adopted one note".into());
+
+    // 3. Duplicate UUID: re-sending the committed step's exact intent under a
+    // new owner returns the stored receipt and creates nothing.
+    let store = linguist_store::Store::read_only(&s.root.join("state")).unwrap();
+    let record = store
+        .apply_operation(Uuid::parse_str(&operation).unwrap())
+        .unwrap();
+    let journal = store.journal(record.operation_id).unwrap().journal;
+    let intent: linguist_application::apply::ApplyIntent =
+        serde_json::from_value(record.intent.clone()).unwrap();
+    let step = intent.steps.last().unwrap();
+    let payload = String::from_utf8(step.effect.wire_bytes().unwrap()).unwrap();
+    let session = s.desktop.call("labCapabilities", json!({}))["collection_session"].clone();
+    let mut binding = serde_json::to_value(&journal.binding).unwrap();
+    binding["session_epoch"] = session["session_epoch"].clone();
+    let owner = s.desktop.call(
+        "labBegin",
+        json!({"binding": binding, "approved_digest": journal.approval_digest}),
+    );
+    let replay = |payload: &str| {
+        s.desktop.try_call(
+            "labMutate",
+            json!({"lineage_id": session["lineage_id"], "operation_id": step.step_id,
+                   "session_epoch": session["session_epoch"], "owner_token": owner["owner_token"],
+                   "fence": owner["fence"], "approved_digest": journal.approval_digest,
+                   "variant": "create_note", "payload": payload}),
+        )
+    };
+    // The crashed row stays `unknown(worker_crash)` in the companion ledger
+    // (the CLI journal adopted it from the read-back); a duplicate returns
+    // exactly that stored state and never dispatches again.
+    let stored = s.desktop.call(
+        "labOperationStatus",
+        json!({"lineage_id": session["lineage_id"], "operation_id": step.step_id}),
+    );
+    let duplicate = replay(&payload).unwrap();
+    assert_eq!(duplicate, stored, "{duplicate}");
+    assert_eq!(
+        (duplicate["state"].as_str(), duplicate["reason"].as_str()),
+        (Some("unknown"), Some("worker_crash"))
+    );
+    let changed = payload.replace("壊れる", "別物");
+    let conflict = replay(&changed).unwrap_err();
+    assert!(
+        conflict.contains("BRIDGE_OPERATION_REPLAY_CONFLICT"),
+        "{conflict}"
+    );
+    s.desktop.call(
+        "labEnd",
+        json!({"owner_token": owner["owner_token"], "fence": owner["fence"]}),
+    );
+    assert_eq!(notes_tagged(&s, "壊れる"), 1);
+    assert_eq!(notes_tagged(&s, "別物"), 0);
+    s.log
+        .push("duplicate UUID: stored receipt returned, replay conflict refused".into());
+
+    // 4. Disk full at the ledger boundary: `running` cannot be recorded, so
+    // no effect starts. Reconcile classifies the lost worker as failed
+    // before write; a new attempt then succeeds.
+    let (plan, rev) = approved_vocab(&mut s, "満杯", "full");
+    s.desktop
+        .arm(json!({"point": "before_running", "action": "disk_full", "variant": "create_note"}));
+    let (code, full, stderr) = s.cli(&["apply", &plan, "--revision", &rev, "--apply"]);
+    assert_eq!(code, 4, "{stderr} {full}");
+    let operation = full["items"][0]["operation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(notes_tagged(&s, "満杯"), 0);
+    let reconciled = s.ok(&["recover", "reconcile", &operation, "--apply"]);
+    assert_eq!(
+        reconciled["reconcile"]["state"], "failed_before_write",
+        "{reconciled}"
+    );
+    let retried = s.ok(&["apply", &plan, "--revision", &rev, "--apply"]);
+    applied(&retried);
+    assert_eq!(notes_tagged(&s, "満杯"), 1);
+    s.log
+        .push("disk full: failed before write, then a new attempt committed".into());
+
+    // 5. Session change between acceptance and the critical section: the
+    // collection is closed and reopened (as a full sync or import does). The
+    // native worker refuses; reconcile needs an explicit rebind.
+    let (plan, rev) = approved_vocab(&mut s, "変わる", "change");
+    s.desktop
+        .arm(json!({"point": "before_session_check", "action": "reopen",
+                         "variant": "create_note"}));
+    let (code, changed, stderr) = s.cli(&["apply", &plan, "--revision", &rev, "--apply"]);
+    assert_ne!(code, 0, "{stderr} {changed}");
+    let operation = changed["items"][0]["operation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(notes_tagged(&s, "変わる"), 0);
+    let (code, _, stderr) = s.cli(&["recover", "reconcile", &operation, "--apply"]);
+    assert_ne!(code, 0);
+    assert!(stderr.contains("SESSION_CHANGED"), "{stderr}");
+    let reconciled = s.ok(&["recover", "reconcile", &operation, "--rebind", "--apply"]);
+    assert_eq!(
+        reconciled["reconcile"]["state"], "failed_before_write",
+        "{reconciled}"
+    );
+    let retried = s.ok(&["apply", &plan, "--revision", &rev, "--apply"]);
+    applied(&retried);
+    assert_eq!(notes_tagged(&s, "変わる"), 1);
+    s.log
+        .push("session change: refused before write, rebind + reconcile, retry committed".into());
+
+    // 6. Removed marker: after a crash between effect and receipt the user
+    // removes the operation marker. Absence cannot be proven, so the
+    // operation stays in recovery and is never re-sent or re-created.
+    let (plan, rev) = approved_vocab(&mut s, "消す", "erase");
+    s.desktop
+        .arm(json!({"point": "after_effect", "action": "crash", "variant": "create_note"}));
+    let (_, crashed, _) = s.cli(&["apply", &plan, "--revision", &rev, "--apply"]);
+    s.desktop.wait_for_exit();
+    s.desktop.restart();
+    let operation = crashed["items"][0]["operation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let created = s
+        .desktop
+        .call("findNotes", json!({"query": "Expression:消す"}));
+    let note = created[0].as_i64().unwrap();
+    let marker = s.desktop.note(note)["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tag| tag.as_str().unwrap().starts_with("lab_op_"))
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned();
+    s.desktop
+        .call("removeTags", json!({"notes": [note], "tags": marker}));
+    let (code, unresolved, stderr) =
+        s.cli(&["recover", "reconcile", &operation, "--rebind", "--apply"]);
+    assert_eq!(code, 4, "{stderr} {unresolved}");
+    assert_eq!(
+        unresolved["reconcile"]["state"], "needs_recovery",
+        "{unresolved}"
+    );
+    let (code, _, stderr) = s.cli(&["apply", &plan, "--revision", &rev, "--apply"]);
+    assert_ne!(code, 0);
+    assert!(stderr.contains("APPLY_RECOVERY_REQUIRED"), "{stderr}");
+    assert_eq!(notes_tagged(&s, "消す"), 1, "never re-created");
+    s.log
+        .push("removed marker: absence unproven, stays in recovery, no second note".into());
+    s.report("native_faults");
+}
+
+/// Poll until the companion reports a session for `profile`'s fingerprint.
+fn wait_for_profile(desktop: &Desktop, profile: &str) {
+    let expected =
+        linguist_core::canonical::asset_digest(format!("lab-profile-v1\0{profile}").as_bytes());
+    for _ in 0..120 {
+        if let Ok(manifest) = desktop.try_call("labCapabilities", json!({}))
+            && manifest["collection_session"]["profile_fingerprint"] == expected.as_str()
+        {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    panic!("profile {profile} did not open");
+}
+
+/// INV-17 / EV-04: an approved write needs the current binding and a fresh
+/// source precondition. A profile switch, lost sidecar lineage or a source
+/// edit after approval each stop the write before any effect.
+#[test]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+fn identity_and_preconditions_block_writes() {
+    let mut s = Scenario::with(
+        "identity",
+        "japanese_vocab",
+        Some("Japanese::Vocab"),
+        false,
+        &["--extra-profile", "Other"],
+    );
+    s.install_model("japanese_vocab");
+
+    // a) Source precondition (CAS): the note changes after approval.
+    let note_id = s.desktop.add_note(
+        "Basic",
+        "Default",
+        json!({"Front": "走る", "Back": "to run"}),
+        &[],
+    );
+    s.settings.push(format!(
+        "purposes.japanese_vocab.fields={}",
+        json!({"expression": "Front", "meaning": "Back"})
+    ));
+    s.settings
+        .push("purposes.japanese_vocab.source_model=Basic".into());
+    let (code, drafted, stderr) = s.cli(&["vocab", "revamp", "--note-id", &note_id.to_string()]);
+    assert_eq!(code, 4, "{stderr}");
+    let root = if drafted["plan_id"].is_string() {
+        &drafted
+    } else {
+        &drafted["result"]
+    };
+    let plan = root["plan_id"].as_str().unwrap().to_owned();
+    let item = root["document_id"]
+        .as_str()
+        .or(root["items"][0]["document_id"].as_str())
+        .unwrap()
+        .to_owned();
+    let shown = s.ok(&["plans", "show", &plan]);
+    let patch = s.root.join("sense.json");
+    std::fs::write(&patch, json!({"schema_version": 2, "base_digest": root_digest(&shown),
+        "items": [{"document_id": item, "fields": {"SenseKey": {"intent": "set", "value": "run"}}}]}).to_string()).unwrap();
+    let (code, _, stderr) = s.cli(&[
+        "plans",
+        "edit",
+        &plan,
+        "--base-revision",
+        &shown["revision"].to_string(),
+        "--patch",
+        patch.to_str().unwrap(),
+        "--save-draft",
+    ]);
+    assert!(code == 0 || code == 4, "{stderr}");
+    let resolved = s.ok(&[
+        "plans",
+        "resolve-history",
+        &plan,
+        "--item",
+        &item,
+        "--map",
+        "0=comprehension",
+        "--actor",
+        "desktop-scenario",
+    ]);
+    let digest = resolved["digest"].as_str().unwrap().to_owned();
+    let (revision, _) = s.bind_and_approve(&plan, &digest);
+    s.desktop.call(
+        "updateNoteFields",
+        json!({"note": {"id": note_id, "fields": {"Back": "to jog"}}}),
+    );
+    let (code, refused, stderr) = s.cli(&[
+        "apply",
+        &plan,
+        "--revision",
+        &revision.to_string(),
+        "--accept-schema-change",
+        "--apply",
+    ]);
+    assert_ne!(code, 0, "{refused}");
+    assert!(
+        format!("{stderr}{refused}").contains("CONFLICT"),
+        "{stderr} {refused}"
+    );
+    let after = s.desktop.note(note_id);
+    assert_eq!(after["model_name"], "Basic");
+    assert_eq!(after["fields"]["Back"], "to jog");
+    s.log
+        .push("source edited after approval: apply refused before any effect".into());
+    s.settings.clear();
+
+    // b) Profile switch: the approved plan is bound to the Disposable profile.
+    let (plan, rev) = approved_vocab(&mut s, "話す", "speak");
+    s.desktop.call("loadProfile", json!({"name": "Other"}));
+    wait_for_profile(&s.desktop, "Other");
+    let (code, refused, stderr) = s.cli(&["apply", &plan, "--revision", &rev, "--apply"]);
+    assert_ne!(code, 0, "{refused}");
+    assert!(
+        format!("{stderr}{refused}").contains("MISMATCH") || stderr.contains("CONFLICT"),
+        "{stderr} {refused}"
+    );
+    assert_eq!(notes_tagged(&s, "話す"), 0);
+    s.desktop.call("loadProfile", json!({"name": "Disposable"}));
+    wait_for_profile(&s.desktop, "Disposable");
+    assert_eq!(notes_tagged(&s, "話す"), 0);
+    applied(&s.ok(&["apply", &plan, "--revision", &rev, "--apply"]));
+    s.log
+        .push("profile switch: refused; back on the bound profile the write commits".into());
+
+    // c) Lost sidecar lineage: the collection's lineage is unknown afterwards,
+    // so the approved binding no longer matches; bind and approve again.
+    let (plan, rev) = approved_vocab(&mut s, "聞く", "listen");
+    s.desktop.stop();
+    let state = s.root.join("anki/b/linguist-anki-bridge-native");
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(state.join(format!("native-sidecar.sqlite3{suffix}")));
+    }
+    s.desktop.launch(&[]);
+    let (code, refused, stderr) = s.cli(&["apply", &plan, "--revision", &rev, "--apply"]);
+    assert_ne!(code, 0, "{refused}");
+    assert!(
+        stderr.contains("APPLY_IDENTITY_MISMATCH"),
+        "{stderr} {refused}"
+    );
+    assert_eq!(notes_tagged(&s, "聞く"), 0);
+    let shown = s.ok(&["plans", "show", &plan]);
+    let (revision, _) = s.bind_and_approve(&plan, &root_digest(&shown));
+    applied(&s.ok(&[
+        "apply",
+        &plan,
+        "--revision",
+        &revision.to_string(),
+        "--apply",
+    ]));
+    s.log
+        .push("lost sidecar lineage: refused until bound and approved again".into());
+    s.report("identity_preconditions");
+}
+
+/// A studied managed grammar note captured, split by the CLI into an anchor
+/// and a fresh sibling, reviewed, bound and approved.
+struct SplitReady {
+    s: Scenario,
+    plan: String,
+    revision: u32,
+    group: String,
+    note_id: i64,
+    before: Value,
+}
+
+fn split_ready(name: &str) -> SplitReady {
+    let mut s = Scenario::new(name, "japanese_grammar", Some("Japanese::Grammar"), true);
+    s.install_model("japanese_grammar");
+    let note_id = s.desktop.add_note(
+        "Linguist Grammar v2",
+        "Japanese::Grammar",
+        json!({"Pattern": "〜ても / 〜てもいい", "Meaning": "dù / được phép",
+               "Formation": "V-て + も", "Language": "ja"}),
+        &["legacy"],
+    );
+    s.desktop.study(note_id);
+    s.desktop.study(note_id);
+    let before = s.desktop.note(note_id);
+    s.settings.push(format!(
+        "purposes.japanese_grammar.fields={}",
+        json!({"pattern": "Pattern", "meaning": "Meaning", "formation": "Formation", "language": "Language"})
+    ));
+    s.settings
+        .push("purposes.japanese_grammar.source_model=Linguist Grammar v2".into());
+    let (code, drafted, stderr) = s.cli(&["grammar", "revamp", "--note-id", &note_id.to_string()]);
+    assert_eq!(code, 4, "{stderr} {drafted}");
+    let root = if drafted["plan_id"].is_string() {
+        &drafted
+    } else {
+        &drafted["result"]
+    };
+    let plan = root["plan_id"].as_str().unwrap().to_owned();
+    // CLI split: the first unit keeps the note, the second is a fresh sibling.
+    let page = s.ok(&["plans", "show", &plan, "--issues-only"]);
+    let identity = page["issues"][0]["request_identity"].clone();
+    let request = json!({
+        "schema_version": 2, "base_revision": identity["base_revision"],
+        "base_digest": identity["base_digest"], "document_id": identity["document_id"],
+        "input_digest": identity["input_digest"], "actor": "desktop-scenario", "anchor_index": 0,
+        "units": [grammar_unit("〜ても", "concession", "dù"),
+                  grammar_unit("〜てもいい", "permission", "được phép")],
+    });
+    let request_path = s.root.join("split.json");
+    std::fs::write(&request_path, request.to_string()).unwrap();
+    let (code, split, stderr) = s.cli(&[
+        "plans",
+        "split-grammar",
+        &plan,
+        "--request",
+        request_path.to_str().unwrap(),
+    ]);
+    assert!(code == 0 || code == 4, "{stderr} {split}");
+    let group = split["grammar_groups"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let anchor = split["grammar_groups"][0]["anchor_document"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let digest = review_all(&mut s, &plan, Some(&anchor), "recognition");
+    let (revision, _) = s.bind_and_approve(&plan, &digest);
+    SplitReady {
+        s,
+        plan,
+        revision,
+        group,
+        note_id,
+        before,
+    }
+}
+
+/// EV-09 partial-group crash: Anki exits right after the sibling is created.
+/// After restart the unit is rebound and reconciled, and resuming the group
+/// finishes the anchor without re-creating the sibling.
+#[test]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+fn grammar_split_crash_resume() {
+    let SplitReady {
+        mut s,
+        plan,
+        revision,
+        group,
+        note_id,
+        before,
+    } = split_ready("grammar-split-crash");
+    let rev = revision.to_string();
+    s.desktop
+        .arm(json!({"point": "after_effect", "action": "crash", "variant": "create_note"}));
+    let (code, partial, stderr) = s.cli(&[
+        "apply",
+        &plan,
+        "--revision",
+        &rev,
+        "--split-group",
+        &group,
+        "--apply",
+    ]);
+    assert_ne!(code, 0, "{stderr} {partial}");
+    s.desktop.wait_for_exit();
+    s.desktop.restart();
+    let siblings = |s: &Scenario| {
+        s.desktop
+            .call("findNotes", json!({"query": "Pattern:〜てもいい"}))
+            .as_array()
+            .unwrap()
+            .len()
+    };
+    assert_eq!(siblings(&s), 1, "the sibling was written before the crash");
+    let (code, resumed, stderr) = s.cli(&[
+        "apply",
+        &plan,
+        "--revision",
+        &rev,
+        "--split-group",
+        &group,
+        "--apply",
+    ]);
+    s.log.push(format!(
+        "resume before reconcile -> {code}: {stderr} {resumed}"
+    ));
+    let pending = s.ok(&["recover", "inspect", "--pending"]);
+    let operations: Vec<String> = pending["journals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|version| version["journal"]["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(!operations.is_empty(), "{pending}");
+    for operation in &operations {
+        let reconciled = s.ok(&["recover", "reconcile", operation, "--rebind", "--apply"]);
+        assert_eq!(
+            reconciled["reconcile"]["state"], "committed",
+            "{reconciled}"
+        );
+    }
+    let finished = s.ok(&[
+        "apply",
+        &plan,
+        "--revision",
+        &rev,
+        "--split-group",
+        &group,
+        "--apply",
+    ]);
+    assert_eq!(finished["split"]["state"], "complete", "{finished}");
+    assert_eq!(siblings(&s), 1, "never re-created");
+    let anchor = s.desktop.note(note_id);
+    assert!(
+        !anchor["fields"]["Pattern"]
+            .as_str()
+            .unwrap()
+            .contains("〜てもいい")
+    );
+    assert_eq!(anchor["cards"][0]["id"], before["cards"][0]["id"]);
+    assert_eq!(
+        anchor["cards"][0]["history_digest"],
+        before["cards"][0]["history_digest"]
+    );
+    s.report("grammar_split_crash");
 }

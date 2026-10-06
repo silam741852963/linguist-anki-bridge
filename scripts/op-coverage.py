@@ -52,18 +52,23 @@ LIBRARY = {
     "OP-60": [APP + "apply.rs::timeout_after_accepted_create_reconciles_to_one_note",
               APP + "apply.rs::unknown_add_with_exact_marker_candidate_is_adopted"],
 }
-SCENARIOS = "crates/linguist-cli/tests/release_scenarios.rs::"
+SCENARIOS = "crates/linguist-cli/tests/desktop_scenarios.rs::"
 REAL_ANKI = {
-    "OP-21": ["vocab_add_prepare_review_apply_restore"],
-    "OP-22": ["vocab_revamp_capture_migrate_study_restore"],
-    "OP-23": ["grammar_add_prepare_review_apply_study_restore_keeps_history"],
-    "OP-24": ["grammar_revamp_capture_migrate_study_restore", "grammar_revamp_multi_unit_split_apply_rollback"],
-    "OP-34": ["vocab_add_prepare_review_apply_restore", "vocab_revamp_capture_migrate_study_restore"],
-    "OP-44": ["grammar_revamp_multi_unit_split_apply_rollback"],
-    "OP-50": ["vocab_add_prepare_review_apply_restore", "grammar_revamp_capture_migrate_study_restore"],
-    "OP-29": ["grammar_revamp_multi_unit_split_apply_rollback"],
+    "OP-17": ["vocab_add_apply_study_restore", "grammar_add_apply_study_restore_keeps_history"],
+    "OP-21": ["vocab_add_apply_study_restore"],
+    "OP-22": ["vocab_revamp_migrate_study_restore", "vocab_revamp_home_deck_edit_conflict_restore"],
+    "OP-23": ["grammar_add_apply_study_restore_keeps_history"],
+    "OP-24": ["grammar_revamp_multi_unit_split_apply_study_rollback", "grammar_split_crash_resume"],
+    "OP-29": ["grammar_revamp_multi_unit_split_apply_study_rollback"],
+    "OP-34": ["vocab_add_apply_study_restore", "vocab_revamp_migrate_study_restore",
+              "identity_and_preconditions_block_writes"],
+    "OP-44": ["grammar_revamp_multi_unit_split_apply_study_rollback"],
+    "OP-50": ["vocab_add_apply_study_restore", "vocab_revamp_migrate_study_restore",
+              "vocab_revamp_home_deck_edit_conflict_restore"],
+    "OP-52": ["vocab_add_apply_study_restore"],
+    "OP-60": ["native_faults_recover_through_reconcile", "grammar_split_crash_resume"],
 }
-WRITE_UNAVAILABLE = {"OP-17", "OP-34", "OP-44", "OP-50", "OP-52", "OP-60"}
+WRITE_UNAVAILABLE = set()
 
 
 def cli_tests():

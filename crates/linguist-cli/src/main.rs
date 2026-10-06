@@ -1938,7 +1938,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 .as_ref()
                 .is_some_and(|report| report.status_reads_completed > 0);
             emit(
-                &serde_json::json!({"version":2,"journals":journals,"total_pending":total_pending,"live_requested":live,"live_checked":false,"native_status_checked":native_status_checked,"live":live_report,"reconciliation_available":false,"state_exists":store.is_some()}),
+                &serde_json::json!({"version":2,"journals":journals,"total_pending":total_pending,"live_requested":live,"live_checked":false,"native_status_checked":native_status_checked,"live":live_report,"reconciliation_available":true,"reconcile_command":"linguist-anki-bridge recover reconcile OPERATION --apply","state_exists":store.is_some()}),
             )?;
             Ok(if dependency_unavailable { 3 } else { 0 })
         }
@@ -4348,7 +4348,7 @@ fn run_reconcile(
         })),
         "reconciliation_kind": if proposal.is_some() { "apply" } else if restore.is_some() { "restore" } else { "unsupported_journal_kind" },
         "live_checked": false,
-        "reconciliation_available": false,
+        "reconciliation_available": true,
     }))?;
     Ok(if unresolved { 4 } else { 0 })
 }
