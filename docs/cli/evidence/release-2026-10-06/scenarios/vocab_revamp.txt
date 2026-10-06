@@ -1,14 +1,14 @@
 vocab_revamp
 scenario vocab_revamp
 models install japanese_vocab --apply -> 0
-vocab revamp --note-id 1791282065997 -> 4
-plans show 733103dc-8722-48c0-949b-88b5d9cbd677 --issues-only -> 0
-plans show 733103dc-8722-48c0-949b-88b5d9cbd677 -> 0
-plans edit 733103dc-8722-48c0-949b-88b5d9cbd677 --base-revision 1 --patch /tmp/lab-desk-91d16cc9/review.patch.json --save-draft -> 4
-plans resolve-history 733103dc-8722-48c0-949b-88b5d9cbd677 --item 6a91c1db-60aa-4518-bedc-c82b813000b0 --map 0=comprehension --actor desktop-scenario -> 0
-plans bind 733103dc-8722-48c0-949b-88b5d9cbd677 --digest lab-jcs-v1:plan:0cfebc295a840de43477efe68890f5d0f06be5ed7baa2d65b486a8c8d9f05c30 -> 0
-plans validate 733103dc-8722-48c0-949b-88b5d9cbd677 --revision 4 -> 0
-plans approve 733103dc-8722-48c0-949b-88b5d9cbd677 --revision 4 --digest lab-jcs-v1:plan:4a1d2ed3c4a9d5f6e75ec9190b5d912bf633c62492544bf83b5831be692618d9 --actor desktop-scenario -> 0
-apply 733103dc-8722-48c0-949b-88b5d9cbd677 --revision 4 --accept-schema-change --apply -> 0
-snapshots restore 876078ed-ca1a-4e73-a21c-2c2ded7103c1 -> 0
-snapshots restore 876078ed-ca1a-4e73-a21c-2c2ded7103c1 --decision /tmp/lab-desk-91d16cc9/decision-876078ed-ca1a-4e73-a21c-2c2ded7103c1.json --apply -> 0
+vocab revamp --note-id 1791283764848 -> 4
+plans show 536abeb7-4106-4b93-a60b-ac1ca7d30ef4 --issues-only -> 0
+plans show 536abeb7-4106-4b93-a60b-ac1ca7d30ef4 -> 0
+plans edit 536abeb7-4106-4b93-a60b-ac1ca7d30ef4 --base-revision 1 --patch /tmp/lab-desk-96d3e6be/review.patch.json --save-draft -> 4
+plans resolve-history 536abeb7-4106-4b93-a60b-ac1ca7d30ef4 --item 7ec00235-dab8-4329-bbdb-be933a25b5a1 --map 0=comprehension --actor desktop-scenario -> 0
+plans bind 536abeb7-4106-4b93-a60b-ac1ca7d30ef4 --digest lab-jcs-v1:plan:f5c848da5c1ed3ab5a20bef7c88dd5e04adf7e03e89aedd14cea3b44930db8af -> 0
+plans validate 536abeb7-4106-4b93-a60b-ac1ca7d30ef4 --revision 4 -> 0
+plans approve 536abeb7-4106-4b93-a60b-ac1ca7d30ef4 --revision 4 --digest lab-jcs-v1:plan:226647aaca85745345d00b2225a744e7487efb7b4c1c3c312dce339a9cce0037 --actor desktop-scenario -> 0
+apply 536abeb7-4106-4b93-a60b-ac1ca7d30ef4 --revision 4 --accept-schema-change --apply -> 0
+snapshots restore 32592895-c85d-4707-a44f-7170b6d297a3 -> 0
+snapshots restore 32592895-c85d-4707-a44f-7170b6d297a3 --decision /tmp/lab-desk-96d3e6be/decision-32592895-c85d-4707-a44f-7170b6d297a3.json --apply -> 0

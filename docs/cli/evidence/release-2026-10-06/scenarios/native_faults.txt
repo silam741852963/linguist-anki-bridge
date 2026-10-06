@@ -2,43 +2,43 @@ native_faults
 scenario native-faults
 models install japanese_vocab --apply -> 0
 vocab add --expression 遅い --meaning meaning --sense-key slow --target-language ja --tag release -> 0
-plans bind 846f9209-0488-4d08-89c9-27814b409bfd --digest lab-jcs-v1:plan:b9b0e83a0d7347cf70076de42afd4c58efdea2a9f704a00462fe670d46be828c -> 0
-plans validate 846f9209-0488-4d08-89c9-27814b409bfd --revision 2 -> 0
-plans approve 846f9209-0488-4d08-89c9-27814b409bfd --revision 2 --digest lab-jcs-v1:plan:c6d9e9e4fdab9ea6b9cd24e3b5638e52810f9daa7f2f1a08636d4ea7fcb23fd4 --actor desktop-scenario -> 0
-apply 846f9209-0488-4d08-89c9-27814b409bfd --revision 2 --apply -> 4
-recover reconcile d9ca58ad-3008-4dae-b394-da4867b345d5 --apply -> 0
+plans bind 2c4e749e-7258-48fe-b036-35085ac4739d --digest lab-jcs-v1:plan:1c29bb5b2d10094e36b7d38d10ba5a8e5a1455ac93fe3a3582e7c5be879a057d -> 0
+plans validate 2c4e749e-7258-48fe-b036-35085ac4739d --revision 2 -> 0
+plans approve 2c4e749e-7258-48fe-b036-35085ac4739d --revision 2 --digest lab-jcs-v1:plan:c5ad993aaff9511e03e2eae3c1c1293c3071ffc2951290519b258850599a0d86 --actor desktop-scenario -> 0
+apply 2c4e749e-7258-48fe-b036-35085ac4739d --revision 2 --apply -> 4
+recover reconcile 027a39ba-d7b9-403c-8e27-e37c742d9049 --apply -> 0
 timeout: reconcile adopted the delayed verified effect
 vocab add --expression 壊れる --meaning meaning --sense-key crash --target-language ja --tag release -> 0
-plans bind 85daf2e2-df9b-4461-baf2-f34055c24361 --digest lab-jcs-v1:plan:e214d4d950e1b8fd8836c3a96f92bb2bc5fe202ca28491778405adcad81a37ea -> 0
-plans validate 85daf2e2-df9b-4461-baf2-f34055c24361 --revision 2 -> 0
-plans approve 85daf2e2-df9b-4461-baf2-f34055c24361 --revision 2 --digest lab-jcs-v1:plan:cd5362899140f9496e78caa2300751c02b91f27f299863ced84ab3a9545a33f5 --actor desktop-scenario -> 0
-apply 85daf2e2-df9b-4461-baf2-f34055c24361 --revision 2 --apply -> 4
-recover reconcile e757e941-05bd-4fc5-8aa1-35ea095da3f1 --apply -> 6
-recover reconcile e757e941-05bd-4fc5-8aa1-35ea095da3f1 --rebind --apply -> 0
+plans bind cdf5729c-6b0b-4372-9853-aee272594c86 --digest lab-jcs-v1:plan:f8ad15d0539750991ea4bd2b61458bf9c9444c0bb415a3771d7460379edaaa43 -> 0
+plans validate cdf5729c-6b0b-4372-9853-aee272594c86 --revision 2 -> 0
+plans approve cdf5729c-6b0b-4372-9853-aee272594c86 --revision 2 --digest lab-jcs-v1:plan:e9530bdccc9fbcf6cc8984e168e14def78d208ee1e4da43eb30166dfb4f52164 --actor desktop-scenario -> 0
+apply cdf5729c-6b0b-4372-9853-aee272594c86 --revision 2 --apply -> 4
+recover reconcile ea3002f4-24e6-4d62-83a4-09fed1899fa3 --apply -> 6
+recover reconcile ea3002f4-24e6-4d62-83a4-09fed1899fa3 --rebind --apply -> 0
 crash after effect: rebind + reconcile adopted one note
 duplicate UUID: stored receipt returned, replay conflict refused
 vocab add --expression 満杯 --meaning meaning --sense-key full --target-language ja --tag release -> 0
-plans bind f43a6c09-212c-414e-b223-778827329ac1 --digest lab-jcs-v1:plan:6d870bbf6eecd4d6656d567d3bc43180f2086dc3b5ef29371c383713674aeef0 -> 0
-plans validate f43a6c09-212c-414e-b223-778827329ac1 --revision 2 -> 0
-plans approve f43a6c09-212c-414e-b223-778827329ac1 --revision 2 --digest lab-jcs-v1:plan:eee3b0c5a65ad36ff5a2da74c2f50e52608e946d198da52ebfd49a6d0d498bbb --actor desktop-scenario -> 0
-apply f43a6c09-212c-414e-b223-778827329ac1 --revision 2 --apply -> 4
-recover reconcile d4989729-9f5b-4a37-89f4-cd8fc4a189c4 --apply -> 0
-apply f43a6c09-212c-414e-b223-778827329ac1 --revision 2 --apply -> 0
+plans bind 6f81f2aa-1740-40c6-a331-5735a9524a8e --digest lab-jcs-v1:plan:7a9ad32b69fd6711a744ed7d3fed11b27c89430347c7564b7307dc005cca7702 -> 0
+plans validate 6f81f2aa-1740-40c6-a331-5735a9524a8e --revision 2 -> 0
+plans approve 6f81f2aa-1740-40c6-a331-5735a9524a8e --revision 2 --digest lab-jcs-v1:plan:7026b8e07235e914ec54f52508241320072afb3d769df8a6e2e3eb125535f121 --actor desktop-scenario -> 0
+apply 6f81f2aa-1740-40c6-a331-5735a9524a8e --revision 2 --apply -> 4
+recover reconcile 0d3930eb-c684-4076-af80-3e0ced37c66a --apply -> 0
+apply 6f81f2aa-1740-40c6-a331-5735a9524a8e --revision 2 --apply -> 0
 disk full: failed before write, then a new attempt committed
 vocab add --expression 変わる --meaning meaning --sense-key change --target-language ja --tag release -> 0
-plans bind a41d8e61-dde5-4fb4-9155-6de27a730356 --digest lab-jcs-v1:plan:9bfdca77580ca18aeb033a597e6dd74ce76455285663cb27a25935c9de95bd75 -> 0
-plans validate a41d8e61-dde5-4fb4-9155-6de27a730356 --revision 2 -> 0
-plans approve a41d8e61-dde5-4fb4-9155-6de27a730356 --revision 2 --digest lab-jcs-v1:plan:c3b0574d75b9f19f4bb72c776e2bca4ff54b4d08c514ee9c20d81a2f51511bca --actor desktop-scenario -> 0
-apply a41d8e61-dde5-4fb4-9155-6de27a730356 --revision 2 --apply -> 4
-recover reconcile d666e9bc-eadc-4d4d-8856-1ec4357e15cd --apply -> 6
-recover reconcile d666e9bc-eadc-4d4d-8856-1ec4357e15cd --rebind --apply -> 0
-apply a41d8e61-dde5-4fb4-9155-6de27a730356 --revision 2 --apply -> 0
+plans bind a98f2b71-2245-4e34-80ad-0674e250a0fb --digest lab-jcs-v1:plan:2e52dd3ec9d053ea86621b51d9b8153c3c2407b417247ae478cbc4022a38d767 -> 0
+plans validate a98f2b71-2245-4e34-80ad-0674e250a0fb --revision 2 -> 0
+plans approve a98f2b71-2245-4e34-80ad-0674e250a0fb --revision 2 --digest lab-jcs-v1:plan:d6790d54d96be7fc15e73347f628acba03d1c553b9a9c4e8e4eca14480f8cfd3 --actor desktop-scenario -> 0
+apply a98f2b71-2245-4e34-80ad-0674e250a0fb --revision 2 --apply -> 4
+recover reconcile 45f127ef-452e-4f27-a867-e6c81c7b51d0 --apply -> 6
+recover reconcile 45f127ef-452e-4f27-a867-e6c81c7b51d0 --rebind --apply -> 0
+apply a98f2b71-2245-4e34-80ad-0674e250a0fb --revision 2 --apply -> 0
 session change: refused before write, rebind + reconcile, retry committed
 vocab add --expression 消す --meaning meaning --sense-key erase --target-language ja --tag release -> 0
-plans bind ba8c3b44-6b73-419b-9da3-b54ed8a249cd --digest lab-jcs-v1:plan:0246552a687c69eba93be0877f7e065e8c778e0758b88e0f8039a21b175fc2d5 -> 0
-plans validate ba8c3b44-6b73-419b-9da3-b54ed8a249cd --revision 2 -> 0
-plans approve ba8c3b44-6b73-419b-9da3-b54ed8a249cd --revision 2 --digest lab-jcs-v1:plan:ebca88b31a2e20ce09efe517c6fed920952392a34167fcf5d22ad1f438aa1a96 --actor desktop-scenario -> 0
-apply ba8c3b44-6b73-419b-9da3-b54ed8a249cd --revision 2 --apply -> 4
-recover reconcile ef46f8ad-188e-4833-8d57-26dfe4606e3a --rebind --apply -> 4
-apply ba8c3b44-6b73-419b-9da3-b54ed8a249cd --revision 2 --apply -> 2
+plans bind 828d0027-46c0-4dc7-b9b1-8c960e2eaf90 --digest lab-jcs-v1:plan:86794077781bde9aa334471c8805996cc5f8d34b19417efd33c6c30a193b6cb2 -> 0
+plans validate 828d0027-46c0-4dc7-b9b1-8c960e2eaf90 --revision 2 -> 0
+plans approve 828d0027-46c0-4dc7-b9b1-8c960e2eaf90 --revision 2 --digest lab-jcs-v1:plan:4d8edff2aa7c645f44b235ba8f4b637d4b70d870021e2e5b3965081a44750935 --actor desktop-scenario -> 0
+apply 828d0027-46c0-4dc7-b9b1-8c960e2eaf90 --revision 2 --apply -> 4
+recover reconcile 2a306124-4569-40d5-ab4d-510b90c1314c --rebind --apply -> 4
+apply 828d0027-46c0-4dc7-b9b1-8c960e2eaf90 --revision 2 --apply -> 2
 removed marker: absence unproven, stays in recovery, no second note

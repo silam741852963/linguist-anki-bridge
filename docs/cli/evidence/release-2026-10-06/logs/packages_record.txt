@@ -1,5 +1,6 @@
 $ python3 scripts/consolidate-packages.py --check
-exit 0
+exit 1
 
 
 --- stderr ---
+<repo>/docs/cli/implementation/packages.md is stale; run scripts/consolidate-packages.py

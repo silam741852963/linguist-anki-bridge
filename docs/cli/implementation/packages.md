@@ -8,7 +8,7 @@ Related records: [final review](../review/final-review-2026-10-05.md), [implemen
 
 The headless CLI prepares, reviews, validates, approves and exports vocabulary and grammar cards, reads Anki through AnkiConnect, keeps durable, recoverable local plans, jobs, snapshots and journals, and **writes to Anki through the verified `lab-native-v1` companion** (WP-17): apply, split groups, restore, rollback, reconcile, checkpoint creation and model installation run with `--apply` after a verified native checkpoint. The four workflows and native fault injection run through CLI commands against real Anki 25.09.2 desktop on disposable base folders.
 
-Release gates: EV-01 pass, EV-02 blocked, EV-03 pass, EV-04 pass, EV-05 pass, EV-06 pass, EV-07 pass, EV-08 pass, EV-09 pass, EV-10 pass, EV-11 blocked, EV-12 pass, EV-13 pass, EV-14 pass. Remaining work is listed in each package's known limits and in the [implementation pass review](../review/implementation-pass-2026-10-06.md).
+Release gates: see the [gate registry](../decisions/release-gates.json) and the latest release evidence (statuses are not copied here, so this record does not change while a release check runs). Remaining work is listed in each package's known limits and in the [implementation pass review](../review/implementation-pass-2026-10-06.md).
 
 ## Package status
 

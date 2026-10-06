@@ -7,14 +7,14 @@ test export_copies_only_a_package_matching_the_receipt ... ok
 test unverified_builds_and_missing_credentials_keep_writes_unavailable ... ok
 test mutations_poll_to_terminal_and_map_timeouts_and_refusals ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
 
 
 running 2 tests
 test an_unverified_companion_cannot_bind_or_write ... ok
 test plans_bind_records_the_verified_binding_in_a_new_revision ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
 
 
 --- stderr ---
