@@ -5,7 +5,7 @@
       "path": "configuration/README.md",
       "heading": "## ALG-CONFIG \u2014 resolve and freeze",
       "title": "ALG-CONFIG \u2014 resolve and freeze",
-      "words": 420,
+      "words": 459,
       "requires": [
         "contracts/invariants.md",
         "decisions/ux-and-operations.md"
