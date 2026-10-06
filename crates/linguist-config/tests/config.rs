@@ -387,3 +387,36 @@ fn path_expansion_is_explicit_and_never_shell_evaluated() {
         .is_err()
     );
 }
+
+#[test]
+fn only_section_key_environment_names_are_overrides() {
+    // RI-01: tool and credential variables that merely start with LAB_ are not settings.
+    let r = Registry::builtin();
+    let mut options = ResolveOptions::default();
+    for (name, value) in [
+        ("LAB_ANKI_PYTHON", "/usr/bin/python3.14"),
+        ("LAB_SECRET", "s3cret"),
+        ("LAB_ANKI__KEY", "credential"),
+        ("LAB_LLM__TEMPERATURE", "0.4"),
+    ] {
+        options.environment.insert(name.into(), value.into());
+    }
+    options
+        .flags
+        .insert("anki.api_key_env".into(), json!("LAB_ANKI__KEY"));
+    let effective = resolve(&r, &ConfigFile::default(), &options).unwrap();
+    assert_eq!(effective.values["llm.temperature"], json!(0.4));
+    assert!(
+        effective
+            .provenance
+            .values()
+            .all(|origin| !origin.contains("LAB_ANKI__KEY") && !origin.contains("LAB_SECRET"))
+    );
+    options
+        .environment
+        .insert("LAB_ANKI__ENDPONT".into(), "http://127.0.0.1:1".into());
+    assert!(
+        resolve(&r, &ConfigFile::default(), &options).is_err(),
+        "typos still fail"
+    );
+}

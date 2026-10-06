@@ -605,8 +605,21 @@ pub fn resolve(
             }
         }
     }
+    // RI-01: only `LAB_SECTION__KEY` names are setting overrides. Other
+    // `LAB_*` variables (tool variables such as LAB_ANKI_PYTHON, or a
+    // credential named by a `*.api_key_env` setting) are not settings.
+    let credential_names: BTreeSet<String> = values
+        .iter()
+        .chain(options.flags.iter())
+        .filter(|(key, _)| key.ends_with(".api_key_env"))
+        .filter_map(|(_, value)| value.as_str().map(str::to_owned))
+        .collect();
     for (name, text) in &options.environment {
-        if !name.starts_with("LAB_") || matches!(name.as_str(), "LAB_CONFIG" | "LAB_PROFILE") {
+        if !name.starts_with("LAB_")
+            || !name[4..].contains("__")
+            || matches!(name.as_str(), "LAB_CONFIG" | "LAB_PROFILE")
+            || credential_names.contains(name)
+        {
             continue;
         }
         let key = name[4..].to_ascii_lowercase().replace("__", ".");
