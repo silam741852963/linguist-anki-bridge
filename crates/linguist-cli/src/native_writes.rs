@@ -31,8 +31,9 @@ use uuid::Uuid;
 
 use crate::{emit, now_ms, package_limits, state_root};
 
-/// Writer lease for one invocation; released on every exit path by the caller.
-const LEASE_SECONDS: u64 = 1800;
+/// Writer lease for one invocation (the store's maximum), renewed after the
+/// checkpoint and before each item; released on every exit path.
+const LEASE_SECONDS: u64 = 600;
 
 fn setting_u64(settings: &linguist_config::Effective, key: &str) -> u64 {
     settings.values[key].as_u64().unwrap_or(0)
@@ -142,6 +143,7 @@ impl<'a> Writer<'a> {
             },
         );
         let _ = std::fs::remove_dir_all(&restore_target);
+        self.renew()?;
         let outcome = outcome.map_err(|failure| {
             format!(
                 "{}{}",
@@ -153,6 +155,10 @@ impl<'a> Writer<'a> {
             )
         })?;
         Ok((outcome.record.receipt.id, protected))
+    }
+
+    fn renew(&mut self) -> Result<(), String> {
+        self.store.renew_lease(&self.lease, LEASE_SECONDS)
     }
 
     fn finish(mut self) {
@@ -336,6 +342,7 @@ pub(crate) fn apply_plan(
         let mut outcomes = Vec::new();
         let mut committed = true;
         for item in &items {
+            writer.renew()?;
             let outcome = apply::apply_item(
                 &mut writer.store,
                 &writer.lease,
@@ -388,7 +395,13 @@ pub(crate) fn restore_preview(
 }
 
 fn restore_scope(plan: &restore::RestorePlan) -> (Vec<i64>, Vec<i64>) {
-    let notes = plan.note_id.into_iter().collect();
+    let mut notes: Vec<i64> = plan
+        .note_id
+        .into_iter()
+        .chain(plan.created_notes.iter().map(|created| created.note_id))
+        .collect();
+    notes.sort();
+    notes.dedup();
     let models = plan
         .model
         .as_ref()
@@ -456,6 +469,7 @@ pub(crate) fn rollback(
     group: Uuid,
     item_ids: &[Uuid],
     accept_schema_change: bool,
+    delete_unstudied_created: bool,
 ) -> Result<u8, String> {
     let client = crate::anki_client(settings)?;
     let port = connect(&client, settings)?;
@@ -497,7 +511,15 @@ pub(crate) fn rollback(
                 fields: Default::default(),
                 decks: Default::default(),
                 remove_unstudied_cards: vec![],
-                delete_created_notes: vec![],
+                delete_created_notes: if delete_unstudied_created {
+                    plan.created_notes
+                        .iter()
+                        .filter(|note| note.unchanged && !note.studied)
+                        .map(|note| note.note_id)
+                        .collect()
+                } else {
+                    vec![]
+                },
                 accept_missing_media: vec![],
                 accept_schema_change: accept_schema_change && plan.model.is_some(),
             });

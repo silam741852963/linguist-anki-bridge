@@ -46,9 +46,11 @@ class FaultInjector:
 
     The file holds one JSON object `{"point", "action", "seconds"?, "variant"?}`.
     It is consumed (renamed) the first time its point is reached, so a fault
-    fires once. Points: `before_running`, `after_effect`, `before_export`.
-    Actions: `crash` (immediate process exit), `disk_full` (ENOSPC at the
-    ledger boundary), `sleep` (delay the critical section).
+    fires once. Points: `before_session_check`, `before_running`,
+    `after_effect`, `before_export`. Actions: `crash` (immediate process
+    exit), `disk_full` (ENOSPC at the ledger boundary), `sleep` (delay the
+    critical section), `reopen` (a real temporary collection close and reopen,
+    as a full sync or import does, which starts a new session epoch).
     """
 
     def __init__(self, path=None):
@@ -75,11 +77,14 @@ class FaultInjector:
             return None
         return fault
 
-    def fire(self, point, variant):
+    def fire(self, point, variant, runtime=None):
         fault = self.take(point, variant)
         if fault is None:
             return
         action = fault.get("action")
+        if action == "reopen" and runtime is not None:
+            runtime.temporary_reopen()
+            return
         if action == "crash":
             os._exit(70)
         if action == "disk_full":
@@ -249,8 +254,12 @@ class NativeActions:
                                               [_wire(m) for m in models])
             except effects.EffectError as error:
                 raise NativeError(str(error)) from None
-        return self._runtime.inspect_note(str(_wire(params.get("note_id"))),
-                                          params.get("session_epoch"))
+        report = self._runtime.inspect_note(str(_wire(params.get("note_id"))),
+                                            params.get("session_epoch"))
+        # The raw notetype dictionary carries 64-bit field/template IDs; the
+        # canonical model projection is reported in `model` instead.
+        report.pop("model_payload", None)
+        return report
 
     def _media_bytes(self, col, name, limit):
         _require(type(limit) is int and 0 < limit <= MAX_MEDIA_READ, "BRIDGE_INSPECT_INVALID")
@@ -330,6 +339,7 @@ class NativeActions:
                 ledger.fail_before_write(**owner, reason="operator_cancelled",
                                          detail={"code": "BRIDGE_OWNER_STALE"})
                 return
+            self._faults.fire("before_session_check", variant, self._runtime)
             try:
                 session = self._session(status["session_epoch"])
                 _require(session["lineage_id"] == lineage_id, "BRIDGE_LINEAGE_MISMATCH")

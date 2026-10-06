@@ -47,8 +47,19 @@ def _hash(value):
         raise _invalid() from None
 
 
-APPROVAL_KINDS = ("plan", "checkpoint", "model-install")
-VARIANT_APPROVAL = {"export_checkpoint": "checkpoint", "install_model": "model-install"}
+APPROVAL_KINDS = ("plan", "checkpoint", "model-install", "lab-restore-decision-v1")
+RESTORE = "lab-restore-decision-v1"
+# A reviewed plan authorizes forward effects; an observed-state-bound restore
+# decision authorizes reverse effects (and re-storing archived media).
+VARIANT_APPROVAL = {
+    "create_note": ("plan",),
+    "update_note": ("plan",),
+    "store_media": ("plan", RESTORE),
+    "restore_note": (RESTORE,),
+    "delete_unstudied_created_note": (RESTORE,),
+    "export_checkpoint": ("checkpoint",),
+    "install_model": ("model-install",),
+}
 
 
 def _plan_digest(value, kind="plan"):
@@ -306,6 +317,10 @@ def validate_body(variant, body, *, operation_id, approved_digest):
     validator = VALIDATORS.get(variant)
     if validator is None:
         raise PayloadError("BRIDGE_OPERATION_VARIANT_UNAVAILABLE")
-    _plan_digest(approved_digest, VARIANT_APPROVAL.get(variant, "plan"))
+    if not any(type(approved_digest) is str
+               and approved_digest.startswith(f"lab-jcs-v1:{kind}:")
+               for kind in VARIANT_APPROVAL[variant]):
+        raise _invalid()
+    approval_digest(approved_digest)
     validator(body, operation_id, approved_digest)
     return None

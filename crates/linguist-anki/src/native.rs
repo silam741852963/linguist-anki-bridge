@@ -115,7 +115,14 @@ fn plan_digest(value: &str) -> bool {
 }
 /// A reviewed plan, a checkpoint export or a managed model install approval.
 fn approval_digest(value: &str) -> bool {
-    ["plan", "checkpoint", "model-install"].iter().any(|kind| {
+    [
+        "plan",
+        "checkpoint",
+        "model-install",
+        "lab-restore-decision-v1",
+    ]
+    .iter()
+    .any(|kind| {
         value
             .strip_prefix(&format!("lab-jcs-v1:{kind}:"))
             .is_some_and(digest)
@@ -529,6 +536,14 @@ impl Client {
     ) -> Result<Value> {
         params["kind"] = json!(kind);
         params["session_epoch"] = json!(session_epoch);
+        if kind == "note_evidence" {
+            // FSRS desired retention and decay are floats; this evidence is
+            // read, compared and digested by integer/string fields only.
+            self.check_profile()?;
+            let value = self.call_with(Action::NativeInspect, params, true)?;
+            self.check_profile()?;
+            return Ok(value);
+        }
         self.native_call(Action::NativeInspect, params)
     }
 

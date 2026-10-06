@@ -13,7 +13,9 @@ PRE = "lab-jcs-v1:lab-apply-precondition-v1:" + "b" * 64
 OPERATION = "00000000-0000-4000-8000-000000000001"
 
 
-KIND = {"export_checkpoint": "checkpoint", "install_model": "model-install"}
+KIND = {"export_checkpoint": "checkpoint", "install_model": "model-install",
+        "restore_note": "lab-restore-decision-v1",
+        "delete_unstudied_created_note": "lab-restore-decision-v1"}
 
 
 def check(variant, body):

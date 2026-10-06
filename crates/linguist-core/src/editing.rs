@@ -53,6 +53,29 @@ pub fn apply_patch(
             .ok_or_else(|| ContractError("PATCH_DOCUMENT_NOT_FOUND".into()))?;
         let old_digest = document.semantic_digest()?;
         for (key, intent) in &item.fields {
+            // Identity branch: a missing vocabulary sense key may be assigned
+            // once (for example after a revamp capture); an existing one is
+            // identity and is never rewritten by a patch.
+            if key == "SenseKey" {
+                let crate::LearningContent::Vocabulary(vocab) = &mut document.content else {
+                    return Err(ContractError("PATCH_TYPED_FIELD_REQUIRED:SenseKey".into()));
+                };
+                match intent {
+                    FieldIntent::Set(value)
+                        if vocab.sense_key.trim().is_empty() && !value.trim().is_empty() =>
+                    {
+                        vocab.sense_key = value.trim().to_owned();
+                        continue;
+                    }
+                    FieldIntent::Keep => continue,
+                    _ => {
+                        return Err(ContractError(
+                            "PATCH_IDENTITY_IMMUTABLE: SenseKey can only fill an empty sense key"
+                                .into(),
+                        ));
+                    }
+                }
+            }
             // Identity, tasks, cues and media require separate typed pipeline branches.
             if !matches!(
                 key.as_str(),

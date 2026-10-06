@@ -53,6 +53,7 @@ ac = AnkiConnect()
 PLAN = "lab-jcs-v1:plan:" + "a" * 64
 MODEL = "lab-jcs-v1:model-install:" + "b" * 64
 CHECKPOINT = "lab-jcs-v1:checkpoint:" + "c" * 64
+RESTORE = "lab-jcs-v1:lab-restore-decision-v1:" + "d" * 64
 
 
 class Hook(list):
@@ -293,7 +294,13 @@ class NativeRuntimeTest(unittest.TestCase):
         self.assertEqual((refused["state"], refused["reason"], refused["receipt"]),
                          ("failed_before_write", "preflight_rejected",
                           {"code": "BRIDGE_PRECONDITION_FAILED"}))
-        # A studied created note is never deleted.
+        # A studied created note is never deleted; reverse effects need a
+        # restore-decision owner.
+        with self.assertRaisesRegex(RuntimeError, "BRIDGE_OPERATION_BODY_INVALID"):
+            self.mutate(session, owner, "delete_unstudied_created_note", {
+                "note_id": note_id, "expected_pre_digest": effects.content_digest(after)})
+        self.call("labEnd", owner_token=owner["owner_token"], fence=owner["fence"])
+        session, owner = self.begin(RESTORE)
         operation, _, _ = self.mutate(session, owner, "delete_unstudied_created_note", {
             "note_id": note_id, "expected_pre_digest": effects.content_digest(after)})
         self.scheduler.run()

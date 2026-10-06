@@ -301,6 +301,13 @@ impl Client {
         })
     }
     fn call(&self, action: Action, params: Value) -> Result<Value> {
+        self.call_with(action, params, false)
+    }
+    /// `findModelsByName` carries Anki's 64-bit template and field IDs, which
+    /// exceed the JSON safe-integer range; only that read is parsed with
+    /// 64-bit integers, and its callers keep only names, ordinals, templates
+    /// and CSS (the model ID is still checked as a safe wire ID).
+    fn call_with(&self, action: Action, params: Value, wide_integers: bool) -> Result<Value> {
         let mut request = json!({"action":action.name(),"version":6,"params":params});
         if let Some(key) = &self.key {
             request["key"] = json!(key)
@@ -331,8 +338,13 @@ impl Client {
         if bytes.len() as u64 > self.limit {
             return Err("ANKI_RESPONSE_TOO_LARGE".into());
         }
-        let envelope: Envelope = canonical::parse(&bytes)
-            .map_err(|_| "ANKI_PROTOCOL_INVALID: malformed envelope or unsafe numbers")?;
+        let envelope: Envelope = if wide_integers {
+            serde_json::from_slice(&bytes)
+                .map_err(|_| "ANKI_PROTOCOL_INVALID: malformed envelope")?
+        } else {
+            canonical::parse(&bytes)
+                .map_err(|_| "ANKI_PROTOCOL_INVALID: malformed envelope or unsafe numbers")?
+        };
         if !envelope.error.is_null() {
             // Companion refusals carry a bounded `BRIDGE_*` code and nothing
             // else; every other error text stays unreported.
@@ -540,7 +552,7 @@ impl Client {
         css: &str,
     ) -> Result<linguist_core::model::ManifestProjection> {
         let invalid = || "ANKI_MODEL_MANIFEST_INVALID".to_owned();
-        let found = self.call(Action::FindModels, json!({"modelNames":[model.name]}))?;
+        let found = self.call_with(Action::FindModels, json!({"modelNames":[model.name]}), true)?;
         let [entry] = found.as_array().map(Vec::as_slice).ok_or_else(invalid)? else {
             return Err(invalid());
         };

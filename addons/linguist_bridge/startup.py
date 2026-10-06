@@ -149,6 +149,14 @@ class NativeRuntime(ReadOnlyRuntime):
             raise NativeError("BRIDGE_EXPORT_PATH_EXISTS")
         return path
 
+    def temporary_reopen(self):
+        """Close and reopen the collection with Anki's own hooks (fault
+        injection only); observers see a fresh session epoch."""
+        col = self.collection()
+        self._gui_hooks.collection_will_temporarily_close(col)
+        col.close_for_full_sync()
+        self._main_window.reopen()
+
     def begin_own_export(self):
         """Snapshot the session, then announce the temporary close as aqt's
         own exporter does, so open windows release the collection."""

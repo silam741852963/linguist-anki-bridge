@@ -377,6 +377,9 @@ enum JobCommand {
         /// Explicitly accept the schema/full-sync warning of reverse note-type changes.
         #[arg(long)]
         accept_schema_change: bool,
+        /// Also delete notes the group created while they are unchanged and unstudied.
+        #[arg(long)]
+        delete_unstudied_created: bool,
         /// Request the restore writes through the verified native companion.
         #[arg(long)]
         apply: bool,
@@ -1952,10 +1955,18 @@ fn run(cli: Cli) -> Result<u8, String> {
                 job,
                 item_ids,
                 accept_schema_change,
+                delete_unstudied_created,
                 apply,
             } = command
             {
-                return run_rollback(&settings, job, &item_ids, accept_schema_change, apply);
+                return run_rollback(
+                    &settings,
+                    job,
+                    &item_ids,
+                    accept_schema_change,
+                    delete_unstudied_created,
+                    apply,
+                );
             }
             let env: BTreeMap<String, String> = std::env::vars().collect();
             if let JobCommand::Create {
@@ -4349,6 +4360,7 @@ fn run_rollback(
     group: uuid::Uuid,
     item_ids: &[uuid::Uuid],
     accept_schema_change: bool,
+    delete_unstudied_created: bool,
     apply: bool,
 ) -> Result<u8, String> {
     let store = linguist_store::Store::read_only(&state_root(settings)?)?;
@@ -4376,7 +4388,13 @@ fn run_rollback(
     }
     if apply {
         drop(store);
-        return native_writes::rollback(settings, group, item_ids, accept_schema_change);
+        return native_writes::rollback(
+            settings,
+            group,
+            item_ids,
+            accept_schema_change,
+            delete_unstudied_created,
+        );
     }
     let split = match store.split_execution(group) {
         Ok(_) => Some(linguist_application::split::status(&store, group)?),
