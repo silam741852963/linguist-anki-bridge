@@ -52,6 +52,7 @@ pub fn reopenable(issue: &Issue) -> bool {
         "capture" => matches!(
             issue.code.as_str(),
             "SOURCE_HTML_TEXT_REVIEW"
+                | "SOURCE_NATIVE_HISTORY_REVIEW"
                 | "SOURCE_EXAMPLES_REVIEW"
                 | "SOURCE_MEDIA_CONTENT_REVIEW"
                 | "SOURCE_MEDIA_FORMAT_REVIEW"
@@ -730,6 +731,8 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                         && (ids.len() > 1 || matches!(&doc.content, LearningContent::Grammar(g) if !g.pattern.trim().is_empty())),
                     ReviewChoice::Duplicate { note_id, action } =>
                         crate::review::duplicate_choice_matches(issue, note_id, action),
+                    ReviewChoice::NativeHistory { .. } =>
+                        crate::review::native_history_matches(doc, issue, &r.choice),
                     ReviewChoice::Anchor(anchor) => issue.code == "GRAMMAR_SPLIT_NATIVE_REVIEW"
                         && crate::review::split_anchor_matches(doc, *anchor),
                     ReviewChoice::ContentVerified { evidence_ids } => {

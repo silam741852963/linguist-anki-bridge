@@ -231,3 +231,20 @@ An interrupted operation whose session changed resumes only through
 `recover reconcile OPERATION --rebind --apply`, which records a
 `ResumeBindingDecision` bound to the state observed at that moment. Binding the
 same collection again is a no-op.
+
+## `plans resolve-history PLAN --item ITEM --map ORDINAL=TASK --actor NAME` (RI-04)
+
+Resolves `SOURCE_NATIVE_HISTORY_REVIEW` for one revamp item. The CLI reads the
+source note's complete evidence through the verified companion (`labInspect`
+`note_evidence`: two matching bounded reads of fields, model, every card with
+scheduling, FSRS state and review rows). The evidence must equal the archived
+source (note ID, fields, tags and canonical model manifest); otherwise it fails
+with `NATIVE_HISTORY_SOURCE_CONFLICT` and the item must be prepared again.
+Each `--map` binds one source template ordinal to a requested target task;
+every observed card must be mapped (`NATIVE_HISTORY_CARD_UNMAPPED` otherwise),
+so no card or review history is dropped by the migration. The typed
+`native_history` decision records every card's ID, ordinal, deck, repetitions,
+review count and review-row digest, an evidence digest and the task map, which
+it adds to the document. The decision stays valid only while that evidence,
+the source model digest and the task map still match; apply then checks the
+live note again and keeps every mapped card's ID, scheduling and history.

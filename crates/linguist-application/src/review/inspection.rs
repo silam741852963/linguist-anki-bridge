@@ -51,7 +51,7 @@ pub fn page(
             });
             serde_json::json!({"choice":choice,"definitions":definitions,"reading":reading,"requires_authored_content":matches!(choice, ReviewChoice::Cue { .. } | ReviewChoice::Exercise { .. })})
         }).collect();
-        serde_json::json!({"index":index,"request_identity":{"schema_version":2,"base_revision":plan.revision,"base_digest":validation.plan_digest,"document_id":document.id,"issue_id":issue.id,"input_digest":item.semantic_digest},"issue":issue,"actor_required":true,"resolution_available":!templates.is_empty() || manual_media,"manual_media_decision_required":manual_media,"templates":templates})
+        serde_json::json!({"index":index,"request_identity":{"schema_version":2,"base_revision":plan.revision,"base_digest":validation.plan_digest,"document_id":document.id,"issue_id":issue.id,"input_digest":item.semantic_digest},"issue":issue,"actor_required":true,"resolution_available":!templates.is_empty() || manual_media || issue.code == "SOURCE_NATIVE_HISTORY_REVIEW","resolution_command":(issue.code == "SOURCE_NATIVE_HISTORY_REVIEW").then(|| format!("linguist-anki-bridge plans resolve-history {} --item {} --map SOURCE_ORDINAL=TASK --actor NAME", plan.id, document.id)),"manual_media_decision_required":manual_media,"templates":templates})
     }).collect();
     let end = (after_index as usize).saturating_add(entries.len());
     let next = if end < total { Some(end) } else { None };

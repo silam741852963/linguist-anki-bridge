@@ -1006,6 +1006,21 @@ enum PlanCommand {
         #[arg(long)]
         digest: String,
     },
+    /// Resolve SOURCE_NATIVE_HISTORY_REVIEW from live companion evidence:
+    /// map every source card's template ordinal to a target task.
+    ResolveHistory {
+        /// Plan ID.
+        plan: uuid::Uuid,
+        /// Revamp item whose source history is reviewed.
+        #[arg(long)]
+        item: uuid::Uuid,
+        /// SOURCE_ORDINAL=TASK, one per source card template (repeatable).
+        #[arg(long = "map", required = true)]
+        maps: Vec<String>,
+        /// Reviewer recorded in the decision.
+        #[arg(long)]
+        actor: String,
+    },
     /// Resolve a known review issue using a fingerprint-bound typed decision.
     Resolve {
         /// Plan ID.
@@ -2495,6 +2510,53 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &output,
                         include_private_archives,
                     )?)?;
+                }
+                PlanCommand::ResolveHistory {
+                    plan,
+                    item,
+                    maps,
+                    actor,
+                } => {
+                    let maps = maps
+                        .iter()
+                        .map(|entry| {
+                            let (ordinal, task) = entry
+                                .split_once('=')
+                                .ok_or("NATIVE_HISTORY_MAP_INVALID: use SOURCE_ORDINAL=TASK")?;
+                            let ordinal: u16 = ordinal.trim().parse().map_err(
+                                |_| "NATIVE_HISTORY_MAP_INVALID: use SOURCE_ORDINAL=TASK",
+                            )?;
+                            let task: linguist_core::document::Task =
+                                serde_json::from_value(serde_json::json!(task.trim()))
+                                    .map_err(|_| "NATIVE_HISTORY_MAP_INVALID: unknown task")?;
+                            Ok((ordinal, task))
+                        })
+                        .collect::<Result<Vec<_>, String>>()?;
+                    let latest = store.latest_revision(plan)?;
+                    let base = store.revision(plan, latest)?;
+                    let request = native_writes::native_history_request(
+                        &settings, &base, item, &maps, &actor,
+                    )?;
+                    let seconds = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_err(|_| "CLOCK_UNAVAILABLE")?
+                        .as_secs();
+                    let result = linguist_application::review::resolve(
+                        &store,
+                        &base,
+                        &request,
+                        format!("unix-seconds:{seconds}"),
+                    )
+                    .map_err(|e| e.to_string())?;
+                    drop(store);
+                    let digest =
+                        linguist_store::Store::open(&root)?.publish_revision(&result.revision)?;
+                    emit(
+                        &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":result.revision.revision,"digest":digest,"decision_id":result.decision_id,"ready":result.ready,"choice":request.choice,"issues":result.revision.documents.iter().map(|doc|serde_json::json!({"document_id":doc.id,"issues":doc.issues})).collect::<Vec<_>>()}),
+                    )?;
+                    if !result.ready {
+                        return Ok(4);
+                    }
                 }
                 PlanCommand::Bind { plan, digest } => {
                     let latest = store.latest_revision(plan)?;

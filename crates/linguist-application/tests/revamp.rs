@@ -979,16 +979,14 @@ fn source_content_review_is_evidence_exact_and_cannot_waive_native_history() {
             .any(|entry| entry["issue"]["code"] == "SOURCE_HTML_TEXT_REVIEW"
                 && entry["templates"][0]["choice"]["decision"] == "source_content_verified")
     );
-    assert!(
-        page["issues"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(
-                |entry| entry["issue"]["code"] == "SOURCE_NATIVE_HISTORY_REVIEW"
-                    && entry["resolution_available"] == false
-            )
-    );
+    assert!(page["issues"].as_array().unwrap().iter().any(|entry| {
+        entry["issue"]["code"] == "SOURCE_NATIVE_HISTORY_REVIEW"
+            && entry["resolution_available"] == true
+            && entry["templates"] == json!([])
+            && entry["resolution_command"]
+                .as_str()
+                .is_some_and(|c| c.contains("plans resolve-history"))
+    }));
     let resolved = resolve(&plan, &request, "unix-seconds:1".into()).unwrap();
     assert!(!resolved.ready);
     assert!(
@@ -1474,4 +1472,135 @@ fn revamp_enrichment_child_preserves_source_tasks_cards_and_parent() {
     assert!(!requested(&frozen, &child));
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// Companion `note_evidence` shaped like `inspection.py` for the fixture note.
+fn note_evidence(
+    doc: &linguist_core::LearningDocument,
+    field_order: &[&str],
+    reviews: usize,
+) -> serde_json::Value {
+    let source = &doc.sources[0];
+    let note_id = source.location.strip_prefix("anki_note:").unwrap();
+    let card_id = (note_id.parse::<u64>().unwrap() + 333).to_string();
+    let rows: Vec<_> = (0..reviews)
+        .map(|i| {
+            json!({"id": 1700000000000u64 + i as u64, "card_id": card_id, "usn": -1,
+                        "ease": 3, "interval": 1, "previous_interval": 0, "factor": 2500,
+                        "time": 1000, "type": 1})
+        })
+        .collect();
+    json!({
+        "schema_version": 1, "note_id": note_id,
+        "note": {"guid": "g", "model_id": "12", "fields": source.fields, "tags": source.tags},
+        "model": {"id": "12", "name": "Legacy",
+                  "fields": field_order,
+                  "templates": [{"ordinal": 0, "name": "Card", "front": "front", "back": "back"}],
+                  "css": "style"},
+        "cards": [{"id": card_id, "ordinal": 0, "deck_id": "1", "original_deck_id": "0",
+                   "repetitions": reviews, "reviews": rows}],
+        "repeated_reads_matched": true, "review_rows_untruncated": true,
+    })
+}
+
+#[test]
+fn native_history_evidence_resolves_review_and_maps_every_card() {
+    use linguist_core::{records::ReviewChoice, review::resolve};
+    let (capture, mut settings) = setup(
+        "english_vocab",
+        &[
+            ("Word", "cat"),
+            ("Meaning", "feline"),
+            ("Key", "cat-animal"),
+        ],
+        &[
+            ("expression", "Word"),
+            ("meaning", "Meaning"),
+            ("sense_key", "Key"),
+        ],
+    );
+    let root = std::env::temp_dir().join(format!("lab-native-history-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root.to_str().unwrap()));
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-native-history".into())]);
+    let prepared =
+        publish_capture_draft(&capture, &settings, "english_vocab", &environment).unwrap();
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let doc = plan.documents[0].clone();
+    let mut evidence = note_evidence(&doc, &["Word", "Meaning", "Key"], 2);
+    // An unmapped card ordinal is refused: no card or history is dropped.
+    let error = native_history_request(
+        &plan,
+        doc.id,
+        &evidence,
+        &[(1, Task::Comprehension)],
+        "reviewer",
+    )
+    .unwrap_err();
+    assert!(error.starts_with("NATIVE_HISTORY_CARD_UNMAPPED"), "{error}");
+    // A live note that changed since capture is refused.
+    let mut drifted = evidence.clone();
+    drifted["note"]["fields"]["Meaning"] = json!("changed");
+    let error = native_history_request(
+        &plan,
+        doc.id,
+        &drifted,
+        &[(0, Task::Comprehension)],
+        "reviewer",
+    )
+    .unwrap_err();
+    assert!(
+        error.starts_with("NATIVE_HISTORY_SOURCE_CONFLICT"),
+        "{error}"
+    );
+    let request = native_history_request(
+        &plan,
+        doc.id,
+        &evidence,
+        &[(0, Task::Comprehension)],
+        "reviewer",
+    )
+    .unwrap();
+    let ReviewChoice::NativeHistory {
+        cards, task_map, ..
+    } = &request.choice
+    else {
+        panic!("{:?}", request.choice)
+    };
+    assert_eq!(cards[0].review_count, 2);
+    assert_eq!(cards[0].repetitions, 2);
+    assert_eq!(task_map.entries[0].target_ordinal, 0);
+    let resolved = resolve(&plan, &request, "unix-seconds:1".into()).unwrap();
+    let after = &resolved.revision.documents[0];
+    assert_eq!(after.task_maps, vec![task_map.clone()]);
+    assert!(
+        !validation::validate(after)
+            .iter()
+            .any(|i| i.code == "SOURCE_NATIVE_HISTORY_REVIEW")
+    );
+    // Tampered evidence no longer resolves the issue.
+    let mut tampered = after.clone();
+    if let ReviewChoice::NativeHistory { cards, .. } = &mut tampered.reviews[0].choice {
+        cards[0].review_count = 0;
+    }
+    assert!(
+        validation::validate(&tampered)
+            .iter()
+            .any(|i| i.code == "SOURCE_NATIVE_HISTORY_REVIEW")
+    );
+    // A task the plan does not request cannot be mapped.
+    evidence["cards"][0]["ordinal"] = json!(0);
+    assert!(
+        native_history_request(
+            &plan,
+            doc.id,
+            &evidence,
+            &[(0, Task::Recognition)],
+            "reviewer"
+        )
+        .is_err()
+    );
+    let _ = std::fs::remove_dir_all(&root);
 }

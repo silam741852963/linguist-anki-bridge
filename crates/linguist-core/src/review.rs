@@ -428,6 +428,38 @@ pub fn resolve(
                 return Err(ContractError("REVIEW_DUPLICATE_CHOICE_INVALID".into()));
             }
         }
+        ReviewChoice::NativeHistory {
+            source_id,
+            task_map,
+            ..
+        } if issue.code == "SOURCE_NATIVE_HISTORY_REVIEW" => {
+            // The task map is part of the document; content facts that other
+            // decisions were checked against are unchanged, so those decisions
+            // move to the new digest and are re-validated below.
+            let prior = document.semantic_digest()?;
+            document.task_maps.retain(|map| map.source_id != *source_id);
+            document.task_maps.push(task_map.clone());
+            let current = document.semantic_digest()?;
+            let moved: BTreeSet<_> = document
+                .reviews
+                .iter()
+                .filter(|review| review.input_digest == prior)
+                .map(|review| review.id)
+                .collect();
+            for review in &mut document.reviews {
+                if moved.contains(&review.id) {
+                    review.input_digest = current.clone();
+                }
+            }
+            for decision in &mut candidate.review_decisions {
+                if moved.contains(&decision.id) {
+                    decision.input_digest = current.clone();
+                }
+            }
+            if !native_history_matches(document, issue, &request.choice) {
+                return Err(ContractError("REVIEW_NATIVE_HISTORY_MISMATCH".into()));
+            }
+        }
         // Accept ALG-SPLIT for this unit: the named anchor keeps the source
         // note and its history; every other unit becomes a fresh note.
         ReviewChoice::Anchor(anchor) if issue.code == "GRAMMAR_SPLIT_NATIVE_REVIEW" => {
@@ -655,7 +687,8 @@ fn expression_applicable(
 fn rebindable(choice: &ReviewChoice) -> bool {
     matches!(
         choice,
-        ReviewChoice::Sense(_)
+        ReviewChoice::NativeHistory { .. }
+            | ReviewChoice::Sense(_)
             | ReviewChoice::SenseWithReading { .. }
             | ReviewChoice::Media(_)
             | ReviewChoice::Duplicate { .. }
@@ -701,6 +734,64 @@ pub const OCR_REVIEW_CODES: [&str; 3] = [
     "IMAGE_CLASSIFICATION_REVIEW",
     "OCR_FAILED_REVIEW",
 ];
+
+/// A `NativeHistory` decision holds while its evidence digest, source model
+/// and task map still describe the document: every observed card's template
+/// ordinal is mapped (retained), and the map is the document's map for it.
+pub(crate) fn native_history_matches(
+    document: &crate::LearningDocument,
+    issue: &Issue,
+    choice: &ReviewChoice,
+) -> bool {
+    let ReviewChoice::NativeHistory {
+        source_id,
+        cards,
+        evidence_digest,
+        task_map,
+    } = choice
+    else {
+        return false;
+    };
+    let Some(source) = document.sources.iter().find(|s| s.id == *source_id) else {
+        return false;
+    };
+    let ordinals: BTreeSet<u16> = cards.iter().map(|card| card.ordinal).collect();
+    let ids: BTreeSet<String> = cards
+        .iter()
+        .map(|card| String::from(card.card_id.clone()))
+        .collect();
+    issue.code == "SOURCE_NATIVE_HISTORY_REVIEW"
+        && issue.source_refs == [source_id.to_string()]
+        && source.kind == "anki_read_capture_v2"
+        && !cards.is_empty()
+        && ordinals.len() == cards.len()
+        && ids.len() == cards.len()
+        && cards.iter().all(|card| {
+            card.history_digest.len() == 64
+                && card.history_digest.bytes().all(|b| b.is_ascii_hexdigit())
+        })
+        && task_map.validate().is_ok()
+        && task_map.source_id == *source_id
+        && task_map.source_model_digest == source.model_manifest
+        && document
+            .task_maps
+            .iter()
+            .filter(|m| m.source_id == *source_id)
+            .collect::<Vec<_>>()
+            == [task_map]
+        && ordinals.iter().all(|ordinal| {
+            task_map
+                .entries
+                .iter()
+                .any(|e| e.source_ordinal == *ordinal)
+        })
+        && task_map
+            .entries
+            .iter()
+            .all(|e| ordinals.contains(&e.source_ordinal))
+        && crate::records::native_history_digest(source, cards)
+            .is_ok_and(|digest| digest == *evidence_digest)
+}
 
 /// Only derived content review, never source task/history/identity or structural issues.
 pub(crate) fn source_content_verified(

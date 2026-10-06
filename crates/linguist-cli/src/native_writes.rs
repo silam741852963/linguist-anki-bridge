@@ -716,3 +716,26 @@ pub(crate) fn bind_plan(
         "next": format!("linguist-anki-bridge plans validate {} --revision {}, then plans approve", child.id, child.revision),
     }))
 }
+
+/// Live note evidence for a revamp source, turned into a typed
+/// `SOURCE_NATIVE_HISTORY_REVIEW` resolution request (RI-04).
+pub(crate) fn native_history_request(
+    settings: &linguist_config::Effective,
+    plan: &linguist_core::records::PlanRevision,
+    item: Uuid,
+    maps: &[(u16, linguist_core::document::Task)],
+    actor: &str,
+) -> Result<linguist_core::review::ResolutionRequest, String> {
+    let document = plan
+        .documents
+        .iter()
+        .find(|doc| doc.id == item)
+        .ok_or("PLAN_DOCUMENT_NOT_FOUND")?;
+    let (_, note_id) = apply::source_note(document)?
+        .ok_or("NATIVE_HISTORY_SOURCE_MISSING: the item has no captured Anki note")?;
+    let client = crate::anki_client(settings)?;
+    let mut port = connect(&client, settings)?;
+    port.refresh()?;
+    let evidence = port.note_evidence(note_id)?;
+    linguist_application::revamp::native_history_request(plan, item, &evidence, maps, actor)
+}

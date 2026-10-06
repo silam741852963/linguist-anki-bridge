@@ -648,6 +648,47 @@
         "archive"
       ]
     },
+    "NativeCardEvidence": {
+      "description": "One source card as observed through `labInspect` note evidence.",
+      "type": "object",
+      "properties": {
+        "card_id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "deck_id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "history_digest": {
+          "description": "SHA-256 of the card's canonical review rows.",
+          "type": "string"
+        },
+        "ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "repetitions": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "review_count": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "card_id",
+        "ordinal",
+        "deck_id",
+        "repetitions",
+        "review_count",
+        "history_digest"
+      ]
+    },
     "Provenance": {
       "type": "string",
       "enum": [
@@ -991,6 +1032,49 @@
                 "evidence_id",
                 "role",
                 "attribution"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "description": "Resolves `SOURCE_NATIVE_HISTORY_REVIEW` from companion note evidence:\nevery source card with its observed study, and the reviewed mapping of\neach source template ordinal to a target task. No card is dropped.",
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "native_history"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "cards": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/NativeCardEvidence"
+                  }
+                },
+                "evidence_digest": {
+                  "type": "string"
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "task_map": {
+                  "$ref": "#/$defs/SourceTaskMap"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "cards",
+                "evidence_digest",
+                "task_map"
               ]
             }
           },

@@ -947,3 +947,180 @@ fn prepare_ids(
     }
     Ok(prepared)
 }
+
+/// RI-04: a `SOURCE_NATIVE_HISTORY_REVIEW` resolution from companion note
+/// evidence (`labInspect` kind `note_evidence`, two matching bounded reads).
+/// The evidence must describe exactly the archived source (note, fields,
+/// tags and the canonical model manifest); every observed card is recorded
+/// with its study, and `maps` must map every card's template ordinal to a
+/// requested target task. Nothing here contacts Anki or writes state.
+pub fn native_history_request(
+    plan: &linguist_core::records::PlanRevision,
+    document_id: uuid::Uuid,
+    evidence: &serde_json::Value,
+    maps: &[(u16, linguist_core::document::Task)],
+    actor: &str,
+) -> Result<linguist_core::review::ResolutionRequest, String> {
+    use linguist_core::records::{
+        NativeCardEvidence, ReviewChoice, SourceTaskMap, SourceTaskMapEntry, TargetModelKind,
+        native_history_digest,
+    };
+    use linguist_core::{document::Task, model::ManifestProjection, model::Template};
+    let invalid = |code: &str| code.to_owned();
+    let document = plan
+        .documents
+        .iter()
+        .find(|doc| doc.id == document_id)
+        .ok_or("PLAN_DOCUMENT_NOT_FOUND")?;
+    let issue = linguist_core::validation::validate(document)
+        .into_iter()
+        .find(|issue| issue.code == "SOURCE_NATIVE_HISTORY_REVIEW")
+        .ok_or("REVIEW_ISSUE_NOT_UNRESOLVED: no open SOURCE_NATIVE_HISTORY_REVIEW")?;
+    let source_id: uuid::Uuid = issue
+        .source_refs
+        .first()
+        .and_then(|id| id.parse().ok())
+        .ok_or("REVIEW_ISSUE_SOURCE_INVALID")?;
+    let source = document
+        .sources
+        .iter()
+        .find(|s| s.id == source_id)
+        .ok_or("REVIEW_ISSUE_SOURCE_INVALID")?;
+    let note_id = source
+        .location
+        .strip_prefix("anki_note:")
+        .ok_or("REVIEW_ISSUE_SOURCE_INVALID")?;
+    if evidence["schema_version"] != 1
+        || evidence["note_id"].as_str() != Some(note_id)
+        || evidence["repeated_reads_matched"] != true
+        || evidence["review_rows_untruncated"] != true
+    {
+        return Err(invalid("NATIVE_HISTORY_EVIDENCE_INVALID"));
+    }
+    let fields: BTreeMap<String, String> =
+        serde_json::from_value(evidence["note"]["fields"].clone())
+            .map_err(|_| "NATIVE_HISTORY_EVIDENCE_INVALID")?;
+    let mut tags: Vec<String> = serde_json::from_value(evidence["note"]["tags"].clone())
+        .map_err(|_| "NATIVE_HISTORY_EVIDENCE_INVALID")?;
+    let mut archived_tags = source.tags.clone();
+    tags.sort();
+    archived_tags.sort();
+    let model = &evidence["model"];
+    let model_fields: Vec<String> = serde_json::from_value(model["fields"].clone())
+        .map_err(|_| "NATIVE_HISTORY_EVIDENCE_INVALID")?;
+    let templates: Vec<Template> = serde_json::from_value(model["templates"].clone())
+        .map_err(|_| "NATIVE_HISTORY_EVIDENCE_INVALID")?;
+    let manifest = ManifestProjection::new(
+        model["name"]
+            .as_str()
+            .ok_or("NATIVE_HISTORY_EVIDENCE_INVALID")?,
+        &model_fields,
+        &templates,
+        model["css"]
+            .as_str()
+            .ok_or("NATIVE_HISTORY_EVIDENCE_INVALID")?,
+    )
+    .digest()
+    .map_err(|e| e.to_string())?;
+    if fields != source.fields || tags != archived_tags || manifest != source.model_manifest {
+        return Err(invalid(
+            "NATIVE_HISTORY_SOURCE_CONFLICT: the live note no longer matches the captured source; prepare again",
+        ));
+    }
+    let mut cards = Vec::new();
+    for card in evidence["cards"]
+        .as_array()
+        .ok_or("NATIVE_HISTORY_EVIDENCE_INVALID")?
+    {
+        let reviews = card["reviews"]
+            .as_array()
+            .ok_or("NATIVE_HISTORY_EVIDENCE_INVALID")?;
+        let number = |key: &str| card[key].as_u64().ok_or("NATIVE_HISTORY_EVIDENCE_INVALID");
+        let id = |key: &str| -> Result<linguist_core::AnkiId, String> {
+            card[key]
+                .as_str()
+                .map(str::to_owned)
+                .and_then(|text| linguist_core::AnkiId::try_from(text).ok())
+                .ok_or_else(|| "NATIVE_HISTORY_EVIDENCE_INVALID".into())
+        };
+        cards.push(NativeCardEvidence {
+            card_id: id("id")?,
+            ordinal: u16::try_from(number("ordinal")?)
+                .map_err(|_| "NATIVE_HISTORY_EVIDENCE_INVALID")?,
+            deck_id: id("deck_id")?,
+            repetitions: u32::try_from(number("repetitions")?)
+                .map_err(|_| "NATIVE_HISTORY_EVIDENCE_INVALID")?,
+            review_count: u32::try_from(reviews.len())
+                .map_err(|_| "NATIVE_HISTORY_EVIDENCE_INVALID")?,
+            history_digest: canonical::asset_digest(
+                &canonical::bytes(reviews).map_err(|e| e.to_string())?,
+            ),
+        });
+    }
+    let kind = match &document.content {
+        linguist_core::LearningContent::Vocabulary(_) => TargetModelKind::Vocabulary,
+        linguist_core::LearningContent::Grammar(_) => TargetModelKind::Grammar,
+    };
+    let entries = maps
+        .iter()
+        .map(|(source_ordinal, task)| {
+            let target_ordinal = match (kind, task) {
+                (TargetModelKind::Vocabulary, Task::Comprehension) => 0,
+                (TargetModelKind::Vocabulary, Task::Production) => 1,
+                (TargetModelKind::Vocabulary, Task::Spelling) => 2,
+                (TargetModelKind::Grammar, Task::Recognition) => 0,
+                (TargetModelKind::Grammar, Task::Application) => 1,
+                _ => {
+                    return Err(
+                        "SOURCE_TASK_MAP_INVALID: task does not belong to the target model"
+                            .to_owned(),
+                    );
+                }
+            };
+            Ok(SourceTaskMapEntry {
+                source_ordinal: *source_ordinal,
+                target_task: *task,
+                target_ordinal,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let task_map = SourceTaskMap {
+        schema_version: 1,
+        source_id,
+        source_model_digest: source.model_manifest.clone(),
+        target_model: kind,
+        entries,
+    };
+    task_map.validate()?;
+    let unmapped: Vec<u16> = cards
+        .iter()
+        .map(|card| card.ordinal)
+        .filter(|ordinal| {
+            !task_map
+                .entries
+                .iter()
+                .any(|e| e.source_ordinal == *ordinal)
+        })
+        .collect();
+    if !unmapped.is_empty() {
+        return Err(format!(
+            "NATIVE_HISTORY_CARD_UNMAPPED: map every source card's template ordinal {unmapped:?}; no card or review history is dropped"
+        ));
+    }
+    let evidence_digest = native_history_digest(source, &cards).map_err(|e| e.to_string())?;
+    Ok(linguist_core::review::ResolutionRequest {
+        schema_version: 2,
+        base_revision: plan.revision,
+        base_digest: plan.approval_digest().map_err(|e| e.to_string())?,
+        document_id,
+        issue_id: issue.id,
+        input_digest: document.semantic_digest().map_err(|e| e.to_string())?,
+        actor: actor.into(),
+        choice: ReviewChoice::NativeHistory {
+            source_id,
+            cards,
+            evidence_digest,
+            task_map,
+        },
+    })
+}

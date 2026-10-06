@@ -234,6 +234,37 @@ pub enum ReviewChoice {
         attribution: String,
         license: Option<String>,
     },
+    /// Resolves `SOURCE_NATIVE_HISTORY_REVIEW` from companion note evidence:
+    /// every source card with its observed study, and the reviewed mapping of
+    /// each source template ordinal to a target task. No card is dropped.
+    NativeHistory {
+        source_id: Uuid,
+        cards: Vec<NativeCardEvidence>,
+        evidence_digest: String,
+        task_map: SourceTaskMap,
+    },
+}
+/// One source card as observed through `labInspect` note evidence.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NativeCardEvidence {
+    pub card_id: AnkiId,
+    pub ordinal: u16,
+    pub deck_id: AnkiId,
+    pub repetitions: u32,
+    pub review_count: u32,
+    /// SHA-256 of the card's canonical review rows.
+    pub history_digest: String,
+}
+/// Digest a `NativeHistory` decision must carry for its source and cards.
+pub fn native_history_digest(
+    source: &SourceRecord,
+    cards: &[NativeCardEvidence],
+) -> Result<String, crate::canonical::ContractError> {
+    crate::canonical::digest(
+        "native-history-v1",
+        &(&source.id, &source.location, &source.model_manifest, cards),
+    )
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
