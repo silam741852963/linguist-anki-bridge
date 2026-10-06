@@ -680,3 +680,39 @@ pub(crate) fn models_install(
     writer.finish();
     result
 }
+
+/// RI-03 explicit binding: a child revision bound to the verified live
+/// session's stable identity (endpoint, profile, path, bridge, lineage).
+/// Approval then covers the binding; apply compares it with the execution
+/// binding and a lineage or profile change requires binding and approving again.
+pub(crate) fn bind_plan(
+    settings: &linguist_config::Effective,
+    root: &Path,
+    base: &linguist_core::records::PlanRevision,
+) -> Result<serde_json::Value, String> {
+    let client = crate::anki_client(settings)?;
+    let mut port = connect(&client, settings)?;
+    let binding = port.refresh()?;
+    if base
+        .binding
+        .as_ref()
+        .is_some_and(|bound| apply::same_collection(bound, &binding))
+    {
+        return Ok(json!({
+            "schema_version": 2, "plan_id": base.id, "revision": base.revision,
+            "digest": base.approval_digest().map_err(|e| e.to_string())?,
+            "binding": base.binding, "noop": true,
+        }));
+    }
+    let mut child = base.clone();
+    child.revision = base.revision.checked_add(1).ok_or("REVISION_LIMIT")?;
+    child.parent_digest = Some(base.approval_digest().map_err(|e| e.to_string())?);
+    child.binding = Some(binding.clone());
+    let digest = Store::open(root)?.publish_revision(&child)?;
+    Ok(json!({
+        "schema_version": 2, "plan_id": child.id, "revision": child.revision,
+        "parent_revision": base.revision, "digest": digest, "binding": binding,
+        "noop": false,
+        "next": format!("linguist-anki-bridge plans validate {} --revision {}, then plans approve", child.id, child.revision),
+    }))
+}

@@ -996,6 +996,16 @@ enum PlanCommand {
         #[arg(long)]
         include_private_archives: bool,
     },
+    /// Bind the latest revision to the live collection (verified native
+    /// companion): publishes a child revision carrying the strong binding,
+    /// which must then be validated and approved before `apply --apply`.
+    Bind {
+        /// Plan ID.
+        plan: uuid::Uuid,
+        /// Digest of the latest revision being extended.
+        #[arg(long)]
+        digest: String,
+    },
     /// Resolve a known review issue using a fingerprint-bound typed decision.
     Resolve {
         /// Plan ID.
@@ -2485,6 +2495,19 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &output,
                         include_private_archives,
                     )?)?;
+                }
+                PlanCommand::Bind { plan, digest } => {
+                    let latest = store.latest_revision(plan)?;
+                    let base = store.revision(plan, latest)?;
+                    if base.approval_digest().map_err(|e| e.to_string())? != digest {
+                        return Err(
+                            "PLAN_BIND_BASE_CONFLICT: --digest must name the latest revision"
+                                .into(),
+                        );
+                    }
+                    drop(store);
+                    let outcome = native_writes::bind_plan(&settings, &root, &base)?;
+                    emit(&outcome)?;
                 }
                 PlanCommand::Resolve {
                     plan,
@@ -4364,7 +4387,9 @@ fn run_backup(command: BackupCommand, settings: &linguist_config::Effective) -> 
                     )
                 }
             };
-            if output_source == "storage.backup_dir"
+            // `--apply` creates storage.backup_dir privately itself.
+            if !apply
+                && output_source == "storage.backup_dir"
                 && !output.parent().is_some_and(std::path::Path::is_dir)
             {
                 return Err(format!(
@@ -4372,7 +4397,6 @@ fn run_backup(command: BackupCommand, settings: &linguist_config::Effective) -> 
                     output.parent().unwrap().display()
                 ));
             }
-            let (output, _) = backup::checkpoint_paths(&output, uuid::Uuid::nil())?;
             if apply {
                 return native_writes::backup_create(
                     settings,
@@ -4381,6 +4405,7 @@ fn run_backup(command: BackupCommand, settings: &linguist_config::Effective) -> 
                     (output_source == "flag").then_some(output),
                 );
             }
+            let (output, _) = backup::checkpoint_paths(&output, uuid::Uuid::nil())?;
             emit(&serde_json::json!({
                 "schema_version": 2,
                 "mode": "preview",

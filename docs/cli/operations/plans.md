@@ -215,3 +215,19 @@ Effects: Local approval only.
 3. Persist actor/time/item scope/accepted warnings; any semantic revision invalidates approval.
 
 Result/failure: Approval ID; invocation --apply still required later. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
+
+## `plans bind PLAN --digest DIGEST` (OP-33 prerequisite, RI-03)
+
+Binds the latest revision to the live collection before approval. Requires the
+verified `lab-native-v1` companion (`doctor --bridge`); otherwise it fails with
+`CAPABILITY_UNAVAILABLE` before any state change. It publishes a child
+revision whose `binding` records the endpoint, profile and path fingerprints,
+bridge installation and collection lineage of the current session; documents,
+renders and review decisions are unchanged. Validate and approve the new
+revision, then `apply --apply`. Apply compares this stable identity with the
+execution binding; a new session epoch on the same lineage is normal, while a
+changed profile, path, bridge or lineage needs a new `plans bind` and approval.
+An interrupted operation whose session changed resumes only through
+`recover reconcile OPERATION --rebind --apply`, which records a
+`ResumeBindingDecision` bound to the state observed at that moment. Binding the
+same collection again is a no-op.

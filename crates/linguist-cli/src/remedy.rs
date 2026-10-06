@@ -29,7 +29,9 @@ pub fn next_step(message: &str) -> Option<&'static str> {
         | "ANKI_DNS_UNAVAILABLE" => {
             "Use a loopback anki.endpoint such as http://127.0.0.1:8765, or list the host in network.allowed_remote_service_hosts (never while --offline)."
         }
-        "APPLY_BINDING_WEAK" => WRITES,
+        "APPLY_BINDING_WEAK" => {
+            "Bind the plan to the live collection with `linguist-anki-bridge plans bind PLAN --digest DIGEST` (needs the verified native companion), then validate and approve the new revision. `plans export` works without a binding."
+        }
         "CAPABILITY_UNAVAILABLE" => {
             let detail = message.to_ascii_lowercase();
             if detail.contains("native")
