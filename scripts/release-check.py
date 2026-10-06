@@ -183,6 +183,16 @@ def main():
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
+    # Earlier records in this directory are gone: mark every gate not_run
+    # until this run writes its evidence (the registry must never point at
+    # missing files, and an aborted run must not keep stale passes).
+    registry_path = ROOT / "docs/cli/decisions/release-gates.json"
+    registry = json.loads(registry_path.read_text())
+    for gate in registry["gates"]:
+        gate["status"] = "not_run"
+        gate.pop("evidence_paths", None)
+        gate.pop("failure_code", None)
+    registry_path.write_text(json.dumps(registry, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     # Provisional summary so documentation links resolve while checks run.
     (out / "README.md").write_text(f"# Release check {args.date}\n\nIn progress.\n", encoding="utf-8")
     r = Runner(out)
