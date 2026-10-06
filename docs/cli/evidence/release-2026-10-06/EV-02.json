@@ -1,0 +1,92 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-02",
+ "status": "blocked",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "e3120c4f9360d7fb442fbf90abc530e969308bac",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.10.0",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,osd",
+  "ollama": "0.35.1",
+  "kernel": "Linux 7.2.5-4-omarchy",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "docs/cli/configuration/settings-registry.json": "114c86320c1ba63d0a4b171f884f11510d9ee60096368be40a797c3345998a44",
+  "docs/cli/configuration/purpose-defaults.json": "c79a08de883dc0468b9a52e0897c634c8162331f97ef3f7eeb9105a02232a1a7"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-config",
+    "--test",
+    "coverage",
+    "--test",
+    "presets",
+    "--test",
+    "config"
+   ],
+   "invocation_digest": "f119264ac7cab47eedb4eb6f5e77f7c28e66632e06dc6197cc94836ec70903e2",
+   "exit_code": 0,
+   "output_digest": "7465d22bcb299e155e018546da9f48ec24904b15fc4713c8a0ec1cc60b8a5003"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-config-schema.py"
+   ],
+   "invocation_digest": "545334904da442d17c3fa9e7cf0ba90e3885235de1e8b1a3a226b8f2cbb7e3e2",
+   "exit_code": 0,
+   "output_digest": "6b5ef471ecb4017dda02e48edd560c567cdedabc20f6d1494822dc83939cf9bc"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "every registry entry has a consumer or reported unavailable feature",
+   "passed": true,
+   "observed": "156 entries"
+  },
+  {
+   "name": "final purpose presets",
+   "passed": true,
+   "observed": "4 presets"
+  },
+  {
+   "name": "normalized config schema covers defaults",
+   "passed": true,
+   "observed": "156 entries"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-06/logs/config_schema.txt",
+  "docs/cli/evidence/release-2026-10-06/logs/settings_coverage.txt"
+ ],
+ "failure_code": "EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE"
+}

@@ -1,0 +1,117 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-08",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "e3120c4f9360d7fb442fbf90abc530e969308bac",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.10.0",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,osd",
+  "ollama": "0.35.1",
+  "kernel": "Linux 7.2.5-4-omarchy",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "crates/linguist-application/tests/fixtures/semantic/corpus-v1.json": "a96f54dbf39f7c066494993c3a8a88be92b9846796d04fb1683e5fc21c1f98f2"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-application",
+    "--test",
+    "semantic_corpus",
+    "--",
+    "--nocapture"
+   ],
+   "invocation_digest": "ee29b8629d31b57d6dfbdfd723a3867c746ea1693b5e3cf253b6ad2ddfd41167",
+   "exit_code": 0,
+   "output_digest": "a4b2afba44e02b9438672692dab3ec9b99f1996937b81c0a564f3d7a6b0a789b"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-native-inspection.py"
+   ],
+   "invocation_digest": "5437181b99c5c2dcfc85645756472e561c325cc2611b8618d5c4e927247c6e1f",
+   "exit_code": 0,
+   "output_digest": "b500462c80ec942e0b1568164bd05bff29c7828ebe476b4c6c7a53a833023c8c"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "desktop_scenarios",
+    "--",
+    "--ignored",
+    "--test-threads",
+    "1",
+    "--nocapture"
+   ],
+   "invocation_digest": "20e337ed703325bbbeaa96024788d83947d339a8c7c750ec1d6b4d1c5b2de29c",
+   "exit_code": 0,
+   "output_digest": "c3a4dcc363cd6e3dd4ccad603dbea9f483bf3eac5d7dc184d23bfec594e062d9"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "120 fixtures preserve every source field and media byte",
+   "passed": true,
+   "observed": "{\"grammar_add\": (30, 30), \"grammar_revamp\": (30, 30), \"vocab_add\": (30, 30), \"vocab_revamp\": (30, 30)}"
+  },
+  {
+   "name": "native inspection reads note/card/review/media",
+   "passed": true,
+   "observed": "bounded helper"
+  },
+  {
+   "name": "scenario captures archive the exact Anki fields",
+   "passed": true,
+   "observed": "CLI capture vs live note"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-06/logs/native_inspection.txt",
+  "docs/cli/evidence/release-2026-10-06/logs/scenarios.txt",
+  "docs/cli/evidence/release-2026-10-06/logs/semantic_corpus.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/grammar_add.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/grammar_split.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/grammar_split_crash.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/identity_preconditions.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/native_faults.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/vocab_add.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/vocab_revamp_home_deck.txt"
+ ],
+ "failure_code": null
+}

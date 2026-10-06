@@ -1,0 +1,110 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-04",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "e3120c4f9360d7fb442fbf90abc530e969308bac",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.10.0",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,osd",
+  "ollama": "0.35.1",
+  "kernel": "Linux 7.2.5-4-omarchy",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "addons/linguist_bridge/session.py": "d5dcc7e82e44d258394f7ac595fa9a36d0b3b4bd7aa6ada4a6d66eae0e1d2698",
+  "addons/linguist_bridge/lineage.py": "36a8e8d969ac30e1bd887a3801bf21015ab32d0d0d37214791635e5dc73c6f2e"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "addons/linguist_bridge/tests"
+   ],
+   "invocation_digest": "bac84cd4093b4800ce09690fb996b634433fe572abfc075e72eec71f5cbabf6e",
+   "exit_code": 0,
+   "output_digest": "735c272db0193931cd52589ceeb1ec33064052416243046db7448f4c0da2a604"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "desktop_scenarios",
+    "--",
+    "--ignored",
+    "--test-threads",
+    "1",
+    "--nocapture"
+   ],
+   "invocation_digest": "20e337ed703325bbbeaa96024788d83947d339a8c7c750ec1d6b4d1c5b2de29c",
+   "exit_code": 0,
+   "output_digest": "c3a4dcc363cd6e3dd4ccad603dbea9f483bf3eac5d7dc184d23bfec594e062d9"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "restart gives a new epoch; continuing needs reconcile --rebind",
+   "passed": true,
+   "observed": "native_faults"
+  },
+  {
+   "name": "temporary close/reopen (the hook path of full sync/import) refuses dispatch; rebind recorded",
+   "passed": true,
+   "observed": "native_faults (reopen fault, not a real .colpkg import)"
+  },
+  {
+   "name": "profile switch refuses the bound write",
+   "passed": true,
+   "observed": "identity_preconditions"
+  },
+  {
+   "name": "lost sidecar lineage refuses until bound and approved again",
+   "passed": true,
+   "observed": "identity_preconditions"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-06/logs/python_companion_anki.txt",
+  "docs/cli/evidence/release-2026-10-06/logs/scenarios.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/grammar_add.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/grammar_split.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/grammar_split_crash.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/identity_preconditions.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/native_faults.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/vocab_add.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/vocab_revamp_home_deck.txt"
+ ],
+ "failure_code": null
+}

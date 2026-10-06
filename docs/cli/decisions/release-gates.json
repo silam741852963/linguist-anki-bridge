@@ -20,7 +20,7 @@
         "RV-15"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-01.json"
+        "docs/cli/evidence/release-2026-10-06/EV-01.json"
       ]
     },
     {
@@ -44,13 +44,13 @@
         "RV-13"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-02.json"
+        "docs/cli/evidence/release-2026-10-06/EV-02.json"
       ],
       "failure_code": "EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE"
     },
     {
       "id": "EV-03",
-      "status": "blocked",
+      "status": "pass",
       "design": "finalized",
       "owners": [
         "WP-03"
@@ -65,13 +65,12 @@
         "RV-01"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-03.json"
-      ],
-      "failure_code": "NATIVE_COMPANION_NOT_REGISTERED"
+        "docs/cli/evidence/release-2026-10-06/EV-03.json"
+      ]
     },
     {
       "id": "EV-04",
-      "status": "blocked",
+      "status": "pass",
       "design": "finalized",
       "owners": [
         "WP-03",
@@ -87,9 +86,8 @@
         "RV-03"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-04.json"
-      ],
-      "failure_code": "NATIVE_SESSION_REBIND_UNTESTED"
+        "docs/cli/evidence/release-2026-10-06/EV-04.json"
+      ]
     },
     {
       "id": "EV-05",
@@ -111,7 +109,7 @@
         "RV-02"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-05.json"
+        "docs/cli/evidence/release-2026-10-06/EV-05.json"
       ]
     },
     {
@@ -136,12 +134,12 @@
         "RV-09"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-06.json"
+        "docs/cli/evidence/release-2026-10-06/EV-06.json"
       ]
     },
     {
       "id": "EV-07",
-      "status": "blocked",
+      "status": "pass",
       "design": "finalized",
       "owners": [
         "WP-04",
@@ -159,9 +157,8 @@
         "RV-14"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-07.json"
-      ],
-      "failure_code": "NATIVE_BOUNDARY_FAULT_INJECTION_MISSING"
+        "docs/cli/evidence/release-2026-10-06/EV-07.json"
+      ]
     },
     {
       "id": "EV-08",
@@ -181,12 +178,12 @@
         "RV-10"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-08.json"
+        "docs/cli/evidence/release-2026-10-06/EV-08.json"
       ]
     },
     {
       "id": "EV-09",
-      "status": "blocked",
+      "status": "pass",
       "design": "finalized",
       "owners": [
         "WP-08",
@@ -200,9 +197,8 @@
         "RV-06"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-09.json"
-      ],
-      "failure_code": "SPLIT_NATIVE_CRASH_RECOVERY_UNTESTED"
+        "docs/cli/evidence/release-2026-10-06/EV-09.json"
+      ]
     },
     {
       "id": "EV-10",
@@ -225,7 +221,7 @@
         "RV-15"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-10.json"
+        "docs/cli/evidence/release-2026-10-06/EV-10.json"
       ]
     },
     {
@@ -252,7 +248,7 @@
         "RV-11"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-11.json"
+        "docs/cli/evidence/release-2026-10-06/EV-11.json"
       ],
       "failure_code": "OCR_BENCHMARK_LANGUAGE_PACKS_MISSING"
     },
@@ -275,7 +271,7 @@
         "RV-08"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-12.json"
+        "docs/cli/evidence/release-2026-10-06/EV-12.json"
       ]
     },
     {
@@ -297,12 +293,12 @@
         "RV-12"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-13.json"
+        "docs/cli/evidence/release-2026-10-06/EV-13.json"
       ]
     },
     {
       "id": "EV-14",
-      "status": "blocked",
+      "status": "pass",
       "design": "finalized",
       "owners": [
         "WP-01",
@@ -324,9 +320,8 @@
         "RV-09"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-05/EV-14.json"
-      ],
-      "failure_code": "CLI_NATIVE_TRANSPORT_UNAVAILABLE"
+        "docs/cli/evidence/release-2026-10-06/EV-14.json"
+      ]
     }
   ]
 }

@@ -50,7 +50,7 @@ def build_routes(files):
         'WP-09':['storage-and-wire','learning-and-providers','ux-and-operations'], 'WP-10':['native-bridge','ux-and-operations'],
         'WP-11':['native-bridge','ux-and-operations'], 'WP-12':['native-bridge','storage-and-wire'],
         'WP-13':['native-bridge','storage-and-wire','ux-and-operations'], 'WP-14':['storage-and-wire','release-gates'],
-        'WP-15':['release-gates','learning-and-providers'], 'WP-16':['release-gates']}
+        'WP-15':['release-gates','learning-and-providers'], 'WP-16':['release-gates'], 'WP-17':['native-bridge','release-gates']}
     for ident, rec in records.items():
         selected = topics.get(ident, [])
         if ident.startswith('ALG-'):
@@ -112,7 +112,7 @@ def main():
     check(saved == routes, 'Stale reading map; run validate.py --update-map')
     ids = set(routes['records'])
     check({i for i in ids if i.startswith('OP-')} == {f'OP-{i:02}' for i in range(1,62)}, 'Operation coverage')
-    check({i for i in ids if i.startswith('WP-')} == {f'WP-{i:02}' for i in range(1,17)}, 'Package coverage')
+    check({i for i in ids if i.startswith('WP-')} == {f'WP-{i:02}' for i in range(1,18)}, 'Package coverage')
     algorithms = {i for i in ids if i.startswith('ALG-')}
     check(len(algorithms) == 18, 'Algorithm coverage')
     register = json.loads((ROOT/'decisions/register.json').read_text())
@@ -159,6 +159,6 @@ def main():
     for path in ['Cargo.toml','Cargo.lock','src','crates','tests','contracts','scripts','pyproject.toml','PKGBUILD','PKGBUILD.native']:
         check((REPO/'legacy'/path).exists(), 'Missing archived implementation: ' + path)
     if errors: raise SystemExit('\n'.join(errors))
-    print(f'PASS: {len(entries)} settings/{len(index["groups"])} groups; 61 operations, 18 algorithms, 16 packages; {len(files)} Markdown files; routes, final decisions/gates/presets, links, defaults and legacy layout valid.')
+    print(f'PASS: {len(entries)} settings/{len(index["groups"])} groups; 61 operations, 18 algorithms, 17 packages; {len(files)} Markdown files; routes, final decisions/gates/presets, links, defaults and legacy layout valid.')
 
 if __name__ == '__main__': main()

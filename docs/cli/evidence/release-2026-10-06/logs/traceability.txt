@@ -1,0 +1,5 @@
+$ python3 scripts/traceability.py --check
+exit 0
+
+
+--- stderr ---

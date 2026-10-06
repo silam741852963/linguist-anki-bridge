@@ -1,0 +1,21 @@
+grammar_split
+scenario grammar-split
+models install japanese_grammar --apply -> 0
+grammar revamp --note-id 1791281745447 -> 4
+plans show 89de8e46-649b-4c5b-b295-681c5667fb02 --issues-only -> 0
+plans split-grammar 89de8e46-649b-4c5b-b295-681c5667fb02 --request /tmp/lab-desk-157c2d9f/split.json -> 4
+plans show 89de8e46-649b-4c5b-b295-681c5667fb02 --issues-only -> 0
+plans resolve-history 89de8e46-649b-4c5b-b295-681c5667fb02 --item 2e2043c0-bcbe-44ea-8432-3b125d9e4583 --map 0=recognition --actor desktop-scenario -> 4
+plans show 89de8e46-649b-4c5b-b295-681c5667fb02 --issues-only -> 0
+plans resolve 89de8e46-649b-4c5b-b295-681c5667fb02 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-157c2d9f/decision-ee12b9df-4eaa-4dd3-a2de-bcbc67173352.json -> 4
+plans show 89de8e46-649b-4c5b-b295-681c5667fb02 --issues-only -> 0
+plans resolve-history 89de8e46-649b-4c5b-b295-681c5667fb02 --item 0dc09c84-1a05-420c-9287-155c3c1e33d9 --map 0=recognition --actor desktop-scenario -> 4
+plans show 89de8e46-649b-4c5b-b295-681c5667fb02 --issues-only -> 0
+plans resolve 89de8e46-649b-4c5b-b295-681c5667fb02 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-157c2d9f/decision-6c048966-9456-4af4-8031-1b26ad30504c.json -> 0
+plans show 89de8e46-649b-4c5b-b295-681c5667fb02 --issues-only -> 0
+plans show 89de8e46-649b-4c5b-b295-681c5667fb02 -> 0
+plans bind 89de8e46-649b-4c5b-b295-681c5667fb02 --digest lab-jcs-v1:plan:d70f81be56b423e28066afff5060eb970767dd4f48c92deba56102802c54eae3 -> 0
+plans validate 89de8e46-649b-4c5b-b295-681c5667fb02 --revision 7 -> 0
+plans approve 89de8e46-649b-4c5b-b295-681c5667fb02 --revision 7 --digest lab-jcs-v1:plan:4bd89888667173a2265bfcb1f66a8f66e30cd096a0fd29922262d161f95b95f1 --actor desktop-scenario -> 0
+apply 89de8e46-649b-4c5b-b295-681c5667fb02 --revision 7 --split-group eae1ac81-c4e9-45c9-9351-56c716b24432 --apply -> 0
+jobs rollback 5718805d-e193-4890-a2b1-0e530c9872a2 --delete-unstudied-created --apply -> 0

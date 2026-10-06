@@ -1,0 +1,6 @@
+$ python3 addons/build_addon.py <repo>/dist/linguist-bridge.ankiaddon
+exit 0
+
+<repo>/dist/linguist-bridge.ankiaddon
+
+--- stderr ---

@@ -1,0 +1,20 @@
+vocab_add
+scenario vocab-add
+models install japanese_vocab --apply -> 0
+backup create --scope collection --apply -> 0
+vocab add --expression 食べる --meaning to eat --sense-key eat --target-language ja --tag release -> 0
+apply efbd9803-7036-4d79-b138-da1d3c1cc84d --revision 1 -> 4
+plans bind efbd9803-7036-4d79-b138-da1d3c1cc84d --digest lab-jcs-v1:plan:1d0acc1f8a80cdd5493316b73f153d08b31582d2ccc25fbc6c3467e6e79d1386 -> 0
+plans validate efbd9803-7036-4d79-b138-da1d3c1cc84d --revision 2 -> 0
+plans approve efbd9803-7036-4d79-b138-da1d3c1cc84d --revision 2 --digest lab-jcs-v1:plan:ce9a84ec352a7e6bfb5715744140574a3a2550f07d2634fd37191a82fc7ba489 --actor desktop-scenario -> 0
+apply efbd9803-7036-4d79-b138-da1d3c1cc84d --revision 2 --apply -> 0
+apply efbd9803-7036-4d79-b138-da1d3c1cc84d --revision 2 --apply -> 2
+snapshots restore d3c0b7c7-ae0c-4861-a8a7-dc89474701a4 -> 0
+snapshots restore d3c0b7c7-ae0c-4861-a8a7-dc89474701a4 --decision /tmp/lab-desk-22332fb3/decision-d3c0b7c7-ae0c-4861-a8a7-dc89474701a4.json --apply -> 2
+vocab add --expression 飲む --meaning to drink --sense-key drink --target-language ja --tag release -> 0
+plans bind dcec615b-d61f-4249-bbed-463793650d03 --digest lab-jcs-v1:plan:2806ee81fec08b454b86a3d1c2111bc4d9b2af7003c3e9bc823978d279cb21df -> 0
+plans validate dcec615b-d61f-4249-bbed-463793650d03 --revision 2 -> 0
+plans approve dcec615b-d61f-4249-bbed-463793650d03 --revision 2 --digest lab-jcs-v1:plan:ced1a0d872c541eae6b81c83e2e2aea82bbdb2ad9a68235f086649759be4b57e --actor desktop-scenario -> 0
+apply dcec615b-d61f-4249-bbed-463793650d03 --revision 2 --apply -> 0
+snapshots restore 6d1a23b4-4c07-40c5-8ebb-4d140163cf99 -> 0
+snapshots restore 6d1a23b4-4c07-40c5-8ebb-4d140163cf99 --decision /tmp/lab-desk-22332fb3/decision-6d1a23b4-4c07-40c5-8ebb-4d140163cf99.json --apply -> 0

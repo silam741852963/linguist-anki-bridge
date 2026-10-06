@@ -1,0 +1,6 @@
+$ python3 docs/cli/validate.py
+exit 1
+
+
+--- stderr ---
+Package coverage

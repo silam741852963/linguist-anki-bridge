@@ -1,0 +1,6 @@
+$ <stdin: target/debug/linguist-anki-bridge --output json models builtin> | /usr/bin/python3.14 scripts/verify-native-apply.py
+exit 0
+
+PASS: disposable native apply effects retain card IDs, history, scheduling and FSRS memory state; CAS, filtered-deck, preset-change and media collision refusals verified
+
+--- stderr ---

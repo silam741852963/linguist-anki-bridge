@@ -1,0 +1,5 @@
+$ python3 scripts/consolidate-packages.py --check
+exit 0
+
+
+--- stderr ---

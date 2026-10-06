@@ -32,6 +32,7 @@ Implement pure domain algorithms and fake ports first, local commands second, re
 | WP-14 | Imports/resources/cache and complete settings | WP-04, WP-06, WP-13 | OP-09–OP-10, OP-47, OP-55–OP-58 |
 | WP-15 | Packaging, UX and four-workflow release checks | WP-01–WP-14 | Every operation |
 | WP-16 | Independent safety/documentation audit | WP-15 | Every operation/settings/invariant |
+| WP-17 | Native write transport and real-Anki release evidence | WP-03, WP-10–WP-16 | OP-17, OP-34, OP-44, OP-50, OP-52, OP-60 write paths |
 
 Ranges above are ownership summaries; OP-51 export can ship before restore. WP-03 implements/verifies the selected bridge while CLI/state work advances. WP-14 resource installation core is needed by WP-06; WP-14 finishes migration/pruning rather than creating a circular dependency. WP-16 means a separate review pass, not mandated sub-agent delegation.
 
@@ -68,3 +69,4 @@ Ranges above are ownership summaries; OP-51 export can ship before restore. WP-0
 - [WP-14 — migration/pruning/setting closure](wp-14.md)
 - [WP-15 — release/UX](wp-15.md)
 - [WP-16 — final review and traceability](wp-16.md)
+- [WP-17 — native write transport and real-Anki evidence](wp-17.md)

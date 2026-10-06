@@ -1,0 +1,126 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-06",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "e3120c4f9360d7fb442fbf90abc530e969308bac",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.10.0",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,osd",
+  "ollama": "0.35.1",
+  "kernel": "Linux 7.2.5-4-omarchy",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "scripts/verify-native-forward-mapping.py": "03718b5ae354fcb9e33df18564459f34d4914e6f485a9257b5bd532faf0952aa",
+  "scripts/disposable-anki-desktop.py": "622dc4e88a32ed55c04b0633b4a85ced0e32c0b9d1d78b9adfd6f43221a4e132"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-native-forward-mapping.py"
+   ],
+   "invocation_digest": "1fa3486ae492f8cd08e1cc52520d02252827316a0f1509183469980e6cb9db3a",
+   "exit_code": 0,
+   "output_digest": "720f69217a90e5fab033b19d4e8363c8fdd8f509cda0378766f1c175e27d8788"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-native-apply.py"
+   ],
+   "invocation_digest": "ae25684831367c76a7ee6ce8994a0bef4cf5fe175ba5cbe4a48f8d556b1c0645",
+   "exit_code": 0,
+   "output_digest": "792d88ee133314649c7883b78fd9833e1d3a0e30f0d32e11375b94cf83738da0"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-native-restore.py"
+   ],
+   "invocation_digest": "e032c22dd29bb18784dfc07c1d28596c7cebe55c7b9f9227c3b45e3213fe0e6f",
+   "exit_code": 0,
+   "output_digest": "a7f4bd852fe2eb6a29d1d350b1a6e139d40bcf40d4dfaafc33ed19bcaa9b5691"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "desktop_scenarios",
+    "--",
+    "--ignored",
+    "--test-threads",
+    "1",
+    "--nocapture"
+   ],
+   "invocation_digest": "20e337ed703325bbbeaa96024788d83947d339a8c7c750ec1d6b4d1c5b2de29c",
+   "exit_code": 0,
+   "output_digest": "c3a4dcc363cd6e3dd4ccad603dbea9f483bf3eac5d7dc184d23bfec594e062d9"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "forward/reverse mapping keeps card IDs and history",
+   "passed": true,
+   "observed": "Basic and Picture Words"
+  },
+  {
+   "name": "apply keeps IDs, scheduling and FSRS memory state",
+   "passed": true,
+   "observed": "deck moves via update_card"
+  },
+  {
+   "name": "restore keeps later history",
+   "passed": true,
+   "observed": "reverse mapping"
+  },
+  {
+   "name": "revamp scenarios migrate and restore with FSRS on",
+   "passed": true,
+   "observed": "grammar_add, grammar_split, grammar_split_crash, identity_preconditions, native_faults, vocab_add, vocab_revamp, vocab_revamp_home_deck"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-06/logs/native_apply.txt",
+  "docs/cli/evidence/release-2026-10-06/logs/native_forward_mapping.txt",
+  "docs/cli/evidence/release-2026-10-06/logs/native_restore.txt",
+  "docs/cli/evidence/release-2026-10-06/logs/scenarios.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/grammar_add.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/grammar_split.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/grammar_split_crash.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/identity_preconditions.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/native_faults.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/vocab_add.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-06/scenarios/vocab_revamp_home_deck.txt"
+ ],
+ "failure_code": null
+}

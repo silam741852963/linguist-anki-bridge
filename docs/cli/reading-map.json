@@ -52,7 +52,7 @@
       "path": "implementation/wp-03.md",
       "heading": "## WP-03 \u2014 native bridge and safety gate",
       "title": "WP-03 \u2014 native bridge and safety gate",
-      "words": 135,
+      "words": 300,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
@@ -264,6 +264,18 @@
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
+        "decisions/release-gates.md"
+      ]
+    },
+    "WP-17": {
+      "path": "implementation/wp-17.md",
+      "heading": "## WP-17 \u2014 native write transport and real-Anki release evidence",
+      "title": "WP-17 \u2014 native write transport and real-Anki release evidence",
+      "words": 1785,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "decisions/native-bridge.md",
         "decisions/release-gates.md"
       ]
     },

@@ -1,0 +1,6 @@
+$ cargo build --locked -p linguist-cli
+exit 0
+
+
+--- stderr ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s

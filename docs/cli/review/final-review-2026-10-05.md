@@ -1,5 +1,7 @@
 # Final review and traceability (WP-16)
 
+> Update 2026-10-06: the write path, RI-01–RI-05 and RI-07 were closed by WP-17; see the [implementation pass review](implementation-pass-2026-10-06.md). This report is kept as the WP-16 record.
+
 Review date: 2026-10-05. Scope: the whole repository at the WP-16 commit, against the [reconciliation table](reconciliation.md), [safety review](safety.md), [failure matrix](../recovery/failure-matrix.md), [invariants](../contracts/invariants.md), the setting registry and the 61 operations. This is a fresh traceability and safety pass over code, tests and evidence. It is not a security certification. It does not replace the native evidence the blocked gates require.
 
 **Outcome:**
