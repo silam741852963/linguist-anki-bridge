@@ -7,14 +7,14 @@ exit 0
  "model_digest": "4eb23ef187e2c5462566d6a1d3bbbc2f1346d0b4327cbb66d58fffbcc9b2b05c",
  "fixtures": 56,
  "attempted": 55,
- "generated": 52,
+ "generated": 53,
  "schema_failures": 2,
- "schema_compliance": 0.9455,
+ "schema_compliance": 0.9636,
  "bounded_repair_used": false,
  "latency_seconds": {
-  "min": 7.86,
-  "median": 18.58,
-  "max": 180.17
+  "min": 5.26,
+  "median": 10.22,
+  "max": 100.76
  },
  "ollama_ps": [
   {
@@ -27,7 +27,7 @@ exit 0
   {
    "id": "VA-JA-01",
    "exit_code": 4,
-   "seconds": 16.8,
+   "seconds": 8.46,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -39,7 +39,7 @@ exit 0
   {
    "id": "VA-JA-02",
    "exit_code": 4,
-   "seconds": 16.05,
+   "seconds": 7.85,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -51,7 +51,7 @@ exit 0
   {
    "id": "VA-JA-03",
    "exit_code": 4,
-   "seconds": 12.89,
+   "seconds": 6.67,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -63,7 +63,7 @@ exit 0
   {
    "id": "VA-JA-04",
    "exit_code": 4,
-   "seconds": 9.68,
+   "seconds": 5.26,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -75,15 +75,19 @@ exit 0
   {
    "id": "VA-JA-05",
    "exit_code": 4,
-   "seconds": 9.07,
-   "generated": false,
-   "error": "GENERATION_INCOMPLETE_EXAMPLE",
-   "attempted": true
+   "seconds": 6.57,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
   },
   {
    "id": "VA-JA-06",
    "exit_code": 4,
-   "seconds": 15.19,
+   "seconds": 7.71,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -95,7 +99,7 @@ exit 0
   {
    "id": "VA-JA-07",
    "exit_code": 4,
-   "seconds": 15.29,
+   "seconds": 7.28,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -108,7 +112,7 @@ exit 0
   {
    "id": "VA-JA-08",
    "exit_code": 4,
-   "seconds": 9.95,
+   "seconds": 5.34,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -120,7 +124,7 @@ exit 0
   {
    "id": "VA-JA-09",
    "exit_code": 4,
-   "seconds": 0.12,
+   "seconds": 0.09,
    "generated": false,
    "error": "GENERATION_ACCEPTED_ANSWER_REQUIRED",
    "attempted": false
@@ -128,7 +132,7 @@ exit 0
   {
    "id": "VA-JA-10",
    "exit_code": 4,
-   "seconds": 15.3,
+   "seconds": 7.89,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -140,7 +144,7 @@ exit 0
   {
    "id": "VA-JA-11",
    "exit_code": 4,
-   "seconds": 7.86,
+   "seconds": 6.81,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -153,7 +157,7 @@ exit 0
   {
    "id": "VA-JA-12",
    "exit_code": 4,
-   "seconds": 9.24,
+   "seconds": 7.02,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -165,7 +169,7 @@ exit 0
   {
    "id": "VA-JA-15",
    "exit_code": 4,
-   "seconds": 16.51,
+   "seconds": 8.4,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -177,7 +181,7 @@ exit 0
   {
    "id": "VA-EN-01",
    "exit_code": 4,
-   "seconds": 12.79,
+   "seconds": 6.66,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -189,7 +193,7 @@ exit 0
   {
    "id": "VA-EN-02",
    "exit_code": 4,
-   "seconds": 18.83,
+   "seconds": 9.65,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -201,7 +205,7 @@ exit 0
   {
    "id": "VA-EN-03",
    "exit_code": 4,
-   "seconds": 12.77,
+   "seconds": 6.78,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -213,7 +217,7 @@ exit 0
   {
    "id": "VA-EN-04",
    "exit_code": 4,
-   "seconds": 19.69,
+   "seconds": 7.23,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -225,7 +229,7 @@ exit 0
   {
    "id": "VA-EN-05",
    "exit_code": 4,
-   "seconds": 13.47,
+   "seconds": 10.09,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -237,7 +241,7 @@ exit 0
   {
    "id": "VA-EN-06",
    "exit_code": 4,
-   "seconds": 12.17,
+   "seconds": 6.49,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -249,7 +253,7 @@ exit 0
   {
    "id": "VA-EN-07",
    "exit_code": 4,
-   "seconds": 16.62,
+   "seconds": 9.36,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -262,7 +266,7 @@ exit 0
   {
    "id": "VA-EN-08",
    "exit_code": 4,
-   "seconds": 12.48,
+   "seconds": 10.61,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -275,7 +279,7 @@ exit 0
   {
    "id": "VA-EN-09",
    "exit_code": 4,
-   "seconds": 19.44,
+   "seconds": 10.46,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -287,7 +291,7 @@ exit 0
   {
    "id": "VA-EN-10",
    "exit_code": 4,
-   "seconds": 16.12,
+   "seconds": 9.49,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -299,7 +303,7 @@ exit 0
   {
    "id": "VA-EN-11",
    "exit_code": 4,
-   "seconds": 18.24,
+   "seconds": 10.22,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -311,7 +315,7 @@ exit 0
   {
    "id": "VA-EN-14",
    "exit_code": 4,
-   "seconds": 15.27,
+   "seconds": 8.34,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -323,7 +327,7 @@ exit 0
   {
    "id": "VA-EN-15",
    "exit_code": 4,
-   "seconds": 19.13,
+   "seconds": 9.95,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -335,7 +339,7 @@ exit 0
   {
    "id": "GA-JA-01",
    "exit_code": 4,
-   "seconds": 19.87,
+   "seconds": 11.16,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -347,7 +351,7 @@ exit 0
   {
    "id": "GA-JA-02",
    "exit_code": 4,
-   "seconds": 27.39,
+   "seconds": 16.22,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -359,7 +363,7 @@ exit 0
   {
    "id": "GA-JA-03",
    "exit_code": 4,
-   "seconds": 22.97,
+   "seconds": 12.13,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -371,15 +375,19 @@ exit 0
   {
    "id": "GA-JA-04",
    "exit_code": 4,
-   "seconds": 180.17,
-   "generated": false,
-   "error": "OLLAMA_INFERENCE_OUTCOME_UNKNOWN",
-   "attempted": true
+   "seconds": 14.62,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
   },
   {
    "id": "GA-JA-05",
    "exit_code": 4,
-   "seconds": 26.62,
+   "seconds": 10.59,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -391,7 +399,7 @@ exit 0
   {
    "id": "GA-JA-06",
    "exit_code": 4,
-   "seconds": 21.01,
+   "seconds": 16.07,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -403,7 +411,7 @@ exit 0
   {
    "id": "GA-JA-07",
    "exit_code": 4,
-   "seconds": 23.64,
+   "seconds": 17.05,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -415,7 +423,7 @@ exit 0
   {
    "id": "GA-JA-08",
    "exit_code": 4,
-   "seconds": 14.92,
+   "seconds": 8.41,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -427,7 +435,7 @@ exit 0
   {
    "id": "GA-JA-09",
    "exit_code": 4,
-   "seconds": 25.32,
+   "seconds": 13.77,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -440,19 +448,15 @@ exit 0
   {
    "id": "GA-JA-10",
    "exit_code": 4,
-   "seconds": 30.29,
-   "generated": true,
-   "error": null,
-   "attempted": true,
-   "issues": [
-    "GENERATED_FACT_REVIEW",
-    "GENERATION_ENGINE_UNVERIFIED"
-   ]
+   "seconds": 99.66,
+   "generated": false,
+   "error": "OLLAMA_COMPLETION_INCOMPLETE",
+   "attempted": true
   },
   {
    "id": "GA-JA-11",
    "exit_code": 4,
-   "seconds": 27.67,
+   "seconds": 15.24,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -464,19 +468,15 @@ exit 0
   {
    "id": "GA-JA-12",
    "exit_code": 4,
-   "seconds": 21.56,
-   "generated": true,
-   "error": null,
-   "attempted": true,
-   "issues": [
-    "GENERATED_FACT_REVIEW",
-    "GENERATION_ENGINE_UNVERIFIED"
-   ]
+   "seconds": 100.76,
+   "generated": false,
+   "error": "OLLAMA_COMPLETION_INCOMPLETE",
+   "attempted": true
   },
   {
    "id": "GA-JA-13",
    "exit_code": 4,
-   "seconds": 25.05,
+   "seconds": 14.77,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -489,7 +489,7 @@ exit 0
   {
    "id": "GA-JA-14",
    "exit_code": 4,
-   "seconds": 16.38,
+   "seconds": 10.7,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -501,7 +501,7 @@ exit 0
   {
    "id": "GA-JA-15",
    "exit_code": 4,
-   "seconds": 14.16,
+   "seconds": 8.82,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -513,7 +513,7 @@ exit 0
   {
    "id": "GA-EN-01",
    "exit_code": 4,
-   "seconds": 26.02,
+   "seconds": 14.38,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -525,7 +525,7 @@ exit 0
   {
    "id": "GA-EN-02",
    "exit_code": 4,
-   "seconds": 17.27,
+   "seconds": 10.12,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -537,7 +537,7 @@ exit 0
   {
    "id": "GA-EN-03",
    "exit_code": 4,
-   "seconds": 29.93,
+   "seconds": 13.69,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -549,7 +549,7 @@ exit 0
   {
    "id": "GA-EN-04",
    "exit_code": 4,
-   "seconds": 18.78,
+   "seconds": 10.67,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -561,7 +561,7 @@ exit 0
   {
    "id": "GA-EN-05",
    "exit_code": 4,
-   "seconds": 28.72,
+   "seconds": 13.56,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -573,7 +573,7 @@ exit 0
   {
    "id": "GA-EN-06",
    "exit_code": 4,
-   "seconds": 22.5,
+   "seconds": 12.31,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -585,15 +585,19 @@ exit 0
   {
    "id": "GA-EN-07",
    "exit_code": 4,
-   "seconds": 172.61,
-   "generated": false,
-   "error": "OLLAMA_COMPLETION_INCOMPLETE",
-   "attempted": true
+   "seconds": 14.98,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
   },
   {
    "id": "GA-EN-08",
    "exit_code": 4,
-   "seconds": 20.62,
+   "seconds": 14.56,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -605,7 +609,7 @@ exit 0
   {
    "id": "GA-EN-09",
    "exit_code": 4,
-   "seconds": 16.25,
+   "seconds": 10.17,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -617,7 +621,7 @@ exit 0
   {
    "id": "GA-EN-10",
    "exit_code": 4,
-   "seconds": 29.26,
+   "seconds": 14.95,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -630,7 +634,7 @@ exit 0
   {
    "id": "GA-EN-11",
    "exit_code": 4,
-   "seconds": 18.43,
+   "seconds": 13.3,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -642,7 +646,7 @@ exit 0
   {
    "id": "GA-EN-12",
    "exit_code": 4,
-   "seconds": 21.21,
+   "seconds": 24.68,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -654,7 +658,7 @@ exit 0
   {
    "id": "GA-EN-13",
    "exit_code": 4,
-   "seconds": 27.15,
+   "seconds": 13.76,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -667,7 +671,7 @@ exit 0
   {
    "id": "GA-EN-14",
    "exit_code": 4,
-   "seconds": 28.88,
+   "seconds": 19.23,
    "generated": true,
    "error": null,
    "attempted": true,
@@ -679,13 +683,14 @@ exit 0
   {
    "id": "GA-EN-15",
    "exit_code": 4,
-   "seconds": 18.58,
+   "seconds": 8.57,
    "generated": true,
    "error": null,
    "attempted": true,
    "issues": [
     "GENERATED_FACT_REVIEW",
-    "GENERATION_ENGINE_UNVERIFIED"
+    "GENERATION_ENGINE_UNVERIFIED",
+    "REQUIRED_CONTENT"
    ]
   }
  ]

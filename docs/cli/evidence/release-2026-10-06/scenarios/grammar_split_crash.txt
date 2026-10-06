@@ -1,25 +1,25 @@
 grammar_split_crash
 scenario grammar-split-crash
 models install japanese_grammar --apply -> 0
-grammar revamp --note-id 1791283477073 -> 4
-plans show cb0ceef2-3d36-4035-bef9-02a7db672fda --issues-only -> 0
-plans split-grammar cb0ceef2-3d36-4035-bef9-02a7db672fda --request /tmp/lab-desk-e5140666/split.json -> 4
-plans show cb0ceef2-3d36-4035-bef9-02a7db672fda --issues-only -> 0
-plans resolve-history cb0ceef2-3d36-4035-bef9-02a7db672fda --item bd4d4653-5744-45c5-8bd5-bce79bbdc775 --map 0=recognition --actor desktop-scenario -> 4
-plans show cb0ceef2-3d36-4035-bef9-02a7db672fda --issues-only -> 0
-plans resolve cb0ceef2-3d36-4035-bef9-02a7db672fda GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-e5140666/decision-4013c079-8f86-415c-a736-d4261bf206be.json -> 4
-plans show cb0ceef2-3d36-4035-bef9-02a7db672fda --issues-only -> 0
-plans resolve-history cb0ceef2-3d36-4035-bef9-02a7db672fda --item 1d84a6d5-651f-4357-91e2-822f59050a16 --map 0=recognition --actor desktop-scenario -> 4
-plans show cb0ceef2-3d36-4035-bef9-02a7db672fda --issues-only -> 0
-plans resolve cb0ceef2-3d36-4035-bef9-02a7db672fda GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-e5140666/decision-45cbc486-548b-4912-9ecd-47874873e2cc.json -> 0
-plans show cb0ceef2-3d36-4035-bef9-02a7db672fda --issues-only -> 0
-plans show cb0ceef2-3d36-4035-bef9-02a7db672fda -> 0
-plans bind cb0ceef2-3d36-4035-bef9-02a7db672fda --digest lab-jcs-v1:plan:a964d6475dc04b3aa40bd1b3b314e9c536795fc2451a4ef3c1f6a14ce7ec5b10 -> 0
-plans validate cb0ceef2-3d36-4035-bef9-02a7db672fda --revision 7 -> 0
-plans approve cb0ceef2-3d36-4035-bef9-02a7db672fda --revision 7 --digest lab-jcs-v1:plan:8045bc88fa1573f787fccdae9fe887942c7717fe9ea51729fb8f9eac7cd49c80 --actor desktop-scenario -> 0
-apply cb0ceef2-3d36-4035-bef9-02a7db672fda --revision 7 --split-group 813873e1-22ba-4b3f-96d5-4a1ca913866f --apply -> 4
-apply cb0ceef2-3d36-4035-bef9-02a7db672fda --revision 7 --split-group 813873e1-22ba-4b3f-96d5-4a1ca913866f --apply -> 4
-resume before reconcile -> 4:  {"checkpoint_id":"a7084402-a12e-4598-accc-6a60200e230b","collection_writes_enabled":true,"digest":"lab-jcs-v1:plan:8045bc88fa1573f787fccdae9fe887942c7717fe9ea51729fb8f9eac7cd49c80","mode":"apply","plan_id":"cb0ceef2-3d36-4035-bef9-02a7db672fda","revision":7,"schema_version":2,"split":{"execution_id":"e9cba0c4-8117-4f55-902c-05aa7e70bb9b","grammar_group":"813873e1-22ba-4b3f-96d5-4a1ca913866f","issues":["unit 1d84a6d5-651f-4357-91e2-822f59050a16: SESSION_CHANGED: rerun with --rebind --apply after reviewing current evidence"],"next_command":"linguist-anki-bridge apply cb0ceef2-3d36-4035-bef9-02a7db672fda --revision 7 --split-group 813873e1-22ba-4b3f-96d5-4a1ca913866f --apply","plan_id":"cb0ceef2-3d36-4035-bef9-02a7db672fda","revision":7,"source_snapshot":"3b805772-52ea-48ab-9027-f2c3d9ded0e8","state":"partial","units":[{"attempts":["8ecea4b5-4ae5-4d37-95dd-25d3b4b1e8db"],"document_id":"1d84a6d5-651f-4357-91e2-822f59050a16","next_command":"linguist-anki-bridge recover reconcile 8ecea4b5-4ae5-4d37-95dd-25d3b4b1e8db --apply","note_id":null,"operation_id":"8ecea4b5-4ae5-4d37-95dd-25d3b4b1e8db","role":"child","state":"needs_recovery","status":"needs_recovery"},{"attempts":["a1df5517-4bd4-4d22-9c35-bc0bb08f6411"],"document_id":"bd4d4653-5744-45c5-8bd5-bce79bbdc775","next_command":null,"note_id":null,"operation_id":"a1df5517-4bd4-4d22-9c35-bc0bb08f6411","role":"anchor","state":null,"status":"not_started"}]}}
+grammar revamp --note-id 1791285898049 -> 4
+plans show aa5d4f2b-db9d-4301-954e-852b25d910c6 --issues-only -> 0
+plans split-grammar aa5d4f2b-db9d-4301-954e-852b25d910c6 --request /tmp/lab-desk-67aecde3/split.json -> 4
+plans show aa5d4f2b-db9d-4301-954e-852b25d910c6 --issues-only -> 0
+plans resolve-history aa5d4f2b-db9d-4301-954e-852b25d910c6 --item 99cc7641-710a-447c-8134-7648549b4b5d --map 0=recognition --actor desktop-scenario -> 4
+plans show aa5d4f2b-db9d-4301-954e-852b25d910c6 --issues-only -> 0
+plans resolve aa5d4f2b-db9d-4301-954e-852b25d910c6 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-67aecde3/decision-c491cad0-ff14-411a-85df-7afd4486c5e2.json -> 4
+plans show aa5d4f2b-db9d-4301-954e-852b25d910c6 --issues-only -> 0
+plans resolve-history aa5d4f2b-db9d-4301-954e-852b25d910c6 --item 203b8caa-f4df-49f1-82a8-d8ceb0b1bb9a --map 0=recognition --actor desktop-scenario -> 4
+plans show aa5d4f2b-db9d-4301-954e-852b25d910c6 --issues-only -> 0
+plans resolve aa5d4f2b-db9d-4301-954e-852b25d910c6 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-67aecde3/decision-87ae4569-01bd-4024-ba42-4964f1d0b821.json -> 0
+plans show aa5d4f2b-db9d-4301-954e-852b25d910c6 --issues-only -> 0
+plans show aa5d4f2b-db9d-4301-954e-852b25d910c6 -> 0
+plans bind aa5d4f2b-db9d-4301-954e-852b25d910c6 --digest lab-jcs-v1:plan:a8d86c9e23745473c3eb28f28970aab860f91ae8e7678bea709fe673f1b73855 -> 0
+plans validate aa5d4f2b-db9d-4301-954e-852b25d910c6 --revision 7 -> 0
+plans approve aa5d4f2b-db9d-4301-954e-852b25d910c6 --revision 7 --digest lab-jcs-v1:plan:6eac50d4574d2b1a3aa2b350d602c0dbee09e35485c59593ace4669c908b5985 --actor desktop-scenario -> 0
+apply aa5d4f2b-db9d-4301-954e-852b25d910c6 --revision 7 --split-group c7bc55c2-b577-4d74-9ac8-69bfcf6b4e45 --apply -> 4
+apply aa5d4f2b-db9d-4301-954e-852b25d910c6 --revision 7 --split-group c7bc55c2-b577-4d74-9ac8-69bfcf6b4e45 --apply -> 4
+resume before reconcile -> 4:  {"checkpoint_id":"af274866-54c4-4b2f-8712-1b92fc09a983","collection_writes_enabled":true,"digest":"lab-jcs-v1:plan:6eac50d4574d2b1a3aa2b350d602c0dbee09e35485c59593ace4669c908b5985","mode":"apply","plan_id":"aa5d4f2b-db9d-4301-954e-852b25d910c6","revision":7,"schema_version":2,"split":{"execution_id":"bc52fa07-a46d-4659-a8ee-46be16974ab8","grammar_group":"c7bc55c2-b577-4d74-9ac8-69bfcf6b4e45","issues":["unit 203b8caa-f4df-49f1-82a8-d8ceb0b1bb9a: SESSION_CHANGED: rerun with --rebind --apply after reviewing current evidence"],"next_command":"linguist-anki-bridge apply aa5d4f2b-db9d-4301-954e-852b25d910c6 --revision 7 --split-group c7bc55c2-b577-4d74-9ac8-69bfcf6b4e45 --apply","plan_id":"aa5d4f2b-db9d-4301-954e-852b25d910c6","revision":7,"source_snapshot":"6b5a235a-3bb4-4142-a7d9-930ffc2637fd","state":"partial","units":[{"attempts":["addb080a-4eb7-4fae-aeca-40b43dc1c8ba"],"document_id":"203b8caa-f4df-49f1-82a8-d8ceb0b1bb9a","next_command":"linguist-anki-bridge recover reconcile addb080a-4eb7-4fae-aeca-40b43dc1c8ba --apply","note_id":null,"operation_id":"addb080a-4eb7-4fae-aeca-40b43dc1c8ba","role":"child","state":"needs_recovery","status":"needs_recovery"},{"attempts":["0d95a346-f93d-4582-8829-1e565991c47f"],"document_id":"99cc7641-710a-447c-8134-7648549b4b5d","next_command":null,"note_id":null,"operation_id":"0d95a346-f93d-4582-8829-1e565991c47f","role":"anchor","state":null,"status":"not_started"}]}}
 recover inspect --pending -> 0
-recover reconcile 8ecea4b5-4ae5-4d37-95dd-25d3b4b1e8db --rebind --apply -> 0
-apply cb0ceef2-3d36-4035-bef9-02a7db672fda --revision 7 --split-group 813873e1-22ba-4b3f-96d5-4a1ca913866f --apply -> 0
+recover reconcile addb080a-4eb7-4fae-aeca-40b43dc1c8ba --rebind --apply -> 0
+apply aa5d4f2b-db9d-4301-954e-852b25d910c6 --revision 7 --split-group c7bc55c2-b577-4d74-9ac8-69bfcf6b4e45 --apply -> 0

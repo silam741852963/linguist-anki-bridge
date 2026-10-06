@@ -3,29 +3,29 @@ exit 0
 
 
 running 3 tests
-test stop_acknowledgements_need_the_worker_lease_or_an_idle_job ... ok
 test tombstones_block_controls_events_and_runs_and_are_permanent ... ok
+test stop_acknowledgements_need_the_worker_lease_or_an_idle_job ... ok
 test schema_eleven_upgrade_adds_job_tables_and_keeps_existing_jobs ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
 
 running 13 tests
 test crash_boundary_request_started_survives_process_exit ... ok
-test sent_effect_never_becomes_failed_before_write_or_unverified_commit ... ok
-test observed_failure_may_fail_before_write_but_unknown_may_not ... ok
 test pending_step_blocks_starting_any_later_effect ... ok
-test exact_verified_post_digest_is_required_and_intents_cannot_change ... ok
-test commit_requires_every_step_verified_and_is_terminal ... ok
+test sent_effect_never_becomes_failed_before_write_or_unverified_commit ... ok
 test restored_requires_a_committed_restore_receipt_and_is_terminal ... ok
-test stale_versions_and_forged_prior_objects_are_rejected ... ok
+test observed_failure_may_fail_before_write_but_unknown_may_not ... ok
+test exact_verified_post_digest_is_required_and_intents_cannot_change ... ok
 test historical_events_cannot_be_updated_or_deleted ... ok
+test commit_requires_every_step_verified_and_is_terminal ... ok
 test unknown_needs_recovery_and_cannot_be_redispatched ... ok
-test started_request_survives_restart_and_is_pending_without_blind_rewind ... ok
+test stale_versions_and_forged_prior_objects_are_rejected ... ok
 test journal_read_rejects_state_index_that_disagrees_with_body ... ok
+test started_request_survives_restart_and_is_pending_without_blind_rewind ... ok
 test schema_one_migration_has_verified_private_backup ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
 
 running 4 tests
@@ -34,11 +34,11 @@ test worker_identity_is_live_and_tokens_are_not_reentrant ... ok
 test expired_absent_worker_is_reclaimed_with_new_fencing_token ... ok
 test expired_lease_cannot_be_reclaimed_while_owner_is_alive ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
 
 --- stderr ---
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
      Running tests/apply_job.rs (target/debug/deps/apply_job-53543af7b43b5816)
      Running tests/journal.rs (target/debug/deps/journal-28e8509550d97099)
      Running tests/lease.rs (target/debug/deps/lease-ffd763e1059ee08e)

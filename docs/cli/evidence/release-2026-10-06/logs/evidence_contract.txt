@@ -11,5 +11,5 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 --- stderr ---
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
      Running tests/release_evidence.rs (target/debug/deps/release_evidence-1ad3b4e938bbc445)

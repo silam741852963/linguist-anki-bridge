@@ -1,10 +1,10 @@
 grammar_add
 scenario grammar-add
 models install japanese_grammar --apply -> 0
-grammar add --document /tmp/lab-desk-6248de09/grammar.json -> 0
-plans bind 6d66fc15-90f4-4c68-a6dd-d769d715e70b --digest lab-jcs-v1:plan:72626b81d8e91349621e8bf5e582505e1142fcf3c124bc05e41543bf987c7bd2 -> 0
-plans validate 6d66fc15-90f4-4c68-a6dd-d769d715e70b --revision 2 -> 0
-plans approve 6d66fc15-90f4-4c68-a6dd-d769d715e70b --revision 2 --digest lab-jcs-v1:plan:efe80b36041ddc0aa17ccfddf50087324c1afed1b0d799a20f657d092ca5e623 --actor desktop-scenario -> 0
-apply 6d66fc15-90f4-4c68-a6dd-d769d715e70b --revision 2 --apply -> 0
-snapshots restore 492a8b1a-c5f4-4fb4-a72b-faf63e210199 -> 0
-snapshots restore 492a8b1a-c5f4-4fb4-a72b-faf63e210199 --decision /tmp/lab-desk-6248de09/decision-492a8b1a-c5f4-4fb4-a72b-faf63e210199.json --apply -> 2
+grammar add --document /tmp/lab-desk-d1d7fcd2/grammar.json -> 0
+plans bind 64c9cee2-89a5-480c-8d60-40a3fb2ccd21 --digest lab-jcs-v1:plan:66a06772dd435217448d11ff936fa01c5e026eb00bb3d54bbeeebd0fdda26940 -> 0
+plans validate 64c9cee2-89a5-480c-8d60-40a3fb2ccd21 --revision 2 -> 0
+plans approve 64c9cee2-89a5-480c-8d60-40a3fb2ccd21 --revision 2 --digest lab-jcs-v1:plan:49d709c82067edfd86a4178309f35853c24c0d5712cd8b284664e605ee5560f5 --actor desktop-scenario -> 0
+apply 64c9cee2-89a5-480c-8d60-40a3fb2ccd21 --revision 2 --apply -> 0
+snapshots restore bd594977-af73-4838-9475-99d5efed6457 -> 0
+snapshots restore bd594977-af73-4838-9475-99d5efed6457 --decision /tmp/lab-desk-d1d7fcd2/decision-bd594977-af73-4838-9475-99d5efed6457.json --apply -> 2

@@ -40,4 +40,13 @@ Full limits: [WP-17 known limits](../implementation/wp-17.md#known-limits-revisi
 
 ## Release check
 
-See [release evidence 2026-10-06](../evidence/release-2026-10-06/README.md).
+`python3 scripts/release-check.py --msrv --release-build --benchmark` on a clean tree, 2026-10-06 ([evidence](../evidence/release-2026-10-06/README.md)): every command exits 0; 586 workspace tests pass; the 8 desktop scenarios pass against Anki 25.09.2; MSRV 1.98.1 passes; two clean release builds are byte-equal.
+
+| Gate | Status |
+| --- | --- |
+| EV-01, EV-05, EV-06, EV-08, EV-10, EV-12, EV-13 | pass (as before, now with desktop-scenario evidence where listed) |
+| EV-03, EV-04, EV-07, EV-09, EV-14 | **pass** (blocked on 2026-10-05) |
+| EV-02 | blocked: `EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE` |
+| EV-11 | blocked: `OCR_BENCHMARK_LANGUAGE_PACKS_MISSING` (jpn/vie Tesseract packs not installed); model schema compliance 53/55 = 96.4% this run, still nondeterministic across runs (RI-06) |
+
+A full CLI release claim therefore still waits on EV-02 and EV-11; the write path is no longer a blocker.

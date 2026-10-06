@@ -17,7 +17,7 @@ Workspace tests: 586 passed, 0 failed. Scenarios: grammar_add, grammar_split, gr
 | EV-08 | pass |  | ✓ 120 fixtures preserve every source field and media byte; ✓ native inspection reads note/card/review/media; ✓ scenario captures archive the exact Anki fields |
 | EV-09 | pass |  | ✓ real-Anki split: sibling first, anchor keeps history, group rollback; ✓ partial-group crash: unit reconciled, group resumed, sibling not re-created; ✓ partial-group recovery rules |
 | EV-10 | pass |  | ✓ later reviews survive restore in real Anki; ✓ a later personal edit conflicts until a field decision; ✓ home deck kept without a target mapping; ✓ filtered-deck membership blocks apply and restore |
-| EV-11 | blocked | OCR_BENCHMARK_LANGUAGE_PACKS_MISSING | ✓ 120 semantic fixtures pass with zero source loss, unsupported claims or leakage; ✗ local model schema compliance >= 95%; ✗ OCR packs for jpn and vie installed |
+| EV-11 | blocked | OCR_BENCHMARK_LANGUAGE_PACKS_MISSING | ✓ 120 semantic fixtures pass with zero source loss, unsupported claims or leakage; ✓ local model schema compliance >= 95%; ✗ OCR packs for jpn and vie installed |
 | EV-12 | pass |  | ✓ lease, liveness, control, retry, mode and restart tests |
 | EV-13 | pass |  | ✓ hash/license/path/limit/offline/private-network resource tests |
 | EV-14 | pass |  | ✓ headless build without Qt; ✓ fresh-home, pipes, Unicode, SSH, interrupts, limits; ✓ all 61 operations have command-level tests; ✓ four workflows prepare->review->apply->restore in disposable Anki; ✓ every step is a CLI command (plans bind, resolve-history, apply/restore/rollback --apply) |
@@ -26,42 +26,42 @@ Workspace tests: 586 passed, 0 failed. Scenarios: grammar_add, grammar_split, gr
 
 | Check | Exit | Seconds | Log |
 | --- | --- | --- | --- |
-| build | 0 | 1.6 | [build.txt](logs/build.txt) |
+| build | 0 | 1.5 | [build.txt](logs/build.txt) |
 | qt_tree | 0 | 0.1 | [qt_tree.txt](logs/qt_tree.txt) |
-| workspace_tests | 0 | 40.2 | [workspace_tests.txt](logs/workspace_tests.txt) |
-| clippy | 0 | 0.6 | [clippy.txt](logs/clippy.txt) |
-| fmt | 0 | 0.7 | [fmt.txt](logs/fmt.txt) |
-| domain_contracts | 0 | 0.4 | [domain_contracts.txt](logs/domain_contracts.txt) |
+| workspace_tests | 0 | 52.3 | [workspace_tests.txt](logs/workspace_tests.txt) |
+| clippy | 0 | 1.0 | [clippy.txt](logs/clippy.txt) |
+| fmt | 0 | 1.1 | [fmt.txt](logs/fmt.txt) |
+| domain_contracts | 0 | 0.7 | [domain_contracts.txt](logs/domain_contracts.txt) |
 | jcs_vectors | 0 | 0.0 | [jcs_vectors.txt](logs/jcs_vectors.txt) |
-| v2_schemas | 0 | 0.9 | [v2_schemas.txt](logs/v2_schemas.txt) |
-| config_schema | 0 | 0.3 | [config_schema.txt](logs/config_schema.txt) |
-| settings_coverage | 0 | 0.1 | [settings_coverage.txt](logs/settings_coverage.txt) |
+| v2_schemas | 0 | 1.4 | [v2_schemas.txt](logs/v2_schemas.txt) |
+| config_schema | 0 | 0.4 | [config_schema.txt](logs/config_schema.txt) |
+| settings_coverage | 0 | 0.2 | [settings_coverage.txt](logs/settings_coverage.txt) |
 | corpus_current | 0 | 0.0 | [corpus_current.txt](logs/corpus_current.txt) |
-| semantic_corpus | 0 | 3.1 | [semantic_corpus.txt](logs/semantic_corpus.txt) |
-| ux | 0 | 2.9 | [ux.txt](logs/ux.txt) |
+| semantic_corpus | 0 | 4.5 | [semantic_corpus.txt](logs/semantic_corpus.txt) |
+| ux | 0 | 4.5 | [ux.txt](logs/ux.txt) |
 | addon_build | 0 | 0.1 | [addon_build.txt](logs/addon_build.txt) |
-| native_transport | 0 | 0.8 | [native_transport.txt](logs/native_transport.txt) |
-| scenarios | 0 | 409.4 | [scenarios.txt](logs/scenarios.txt) |
-| jobs_and_leases | 0 | 0.3 | [jobs_and_leases.txt](logs/jobs_and_leases.txt) |
-| jobs_executor | 0 | 15.3 | [jobs_executor.txt](logs/jobs_executor.txt) |
-| jobs_cli | 0 | 1.0 | [jobs_cli.txt](logs/jobs_cli.txt) |
-| resources | 0 | 2.0 | [resources.txt](logs/resources.txt) |
-| resources_cli | 0 | 1.2 | [resources_cli.txt](logs/resources_cli.txt) |
-| provider_reader | 0 | 0.7 | [provider_reader.txt](logs/provider_reader.txt) |
-| python_companion | 0 | 0.8 | [python_companion.txt](logs/python_companion.txt) |
-| python_companion_anki | 0 | 1.1 | [python_companion_anki.txt](logs/python_companion_anki.txt) |
+| native_transport | 0 | 1.0 | [native_transport.txt](logs/native_transport.txt) |
+| scenarios | 0 | 412.0 | [scenarios.txt](logs/scenarios.txt) |
+| jobs_and_leases | 0 | 0.2 | [jobs_and_leases.txt](logs/jobs_and_leases.txt) |
+| jobs_executor | 0 | 14.4 | [jobs_executor.txt](logs/jobs_executor.txt) |
+| jobs_cli | 0 | 0.8 | [jobs_cli.txt](logs/jobs_cli.txt) |
+| resources | 0 | 1.9 | [resources.txt](logs/resources.txt) |
+| resources_cli | 0 | 1.0 | [resources_cli.txt](logs/resources_cli.txt) |
+| provider_reader | 0 | 0.6 | [provider_reader.txt](logs/provider_reader.txt) |
+| python_companion | 0 | 0.6 | [python_companion.txt](logs/python_companion.txt) |
+| python_companion_anki | 0 | 0.9 | [python_companion_anki.txt](logs/python_companion_anki.txt) |
 | docs | 0 | 0.2 | [docs.txt](logs/docs.txt) |
 | op_coverage | 0 | 0.1 | [op_coverage.txt](logs/op_coverage.txt) |
-| traceability | 0 | 0.6 | [traceability.txt](logs/traceability.txt) |
-| packages_record | 1 | 0.0 | [packages_record.txt](logs/packages_record.txt) |
-| evidence_contract | 0 | 0.2 | [evidence_contract.txt](logs/evidence_contract.txt) |
-| native_apply | 0 | 0.4 | [native_apply.txt](logs/native_apply.txt) |
-| native_restore | 0 | 0.4 | [native_restore.txt](logs/native_restore.txt) |
+| traceability | 0 | 0.5 | [traceability.txt](logs/traceability.txt) |
+| packages_record | 0 | 0.0 | [packages_record.txt](logs/packages_record.txt) |
+| evidence_contract | 0 | 0.1 | [evidence_contract.txt](logs/evidence_contract.txt) |
+| native_apply | 0 | 0.3 | [native_apply.txt](logs/native_apply.txt) |
+| native_restore | 0 | 0.3 | [native_restore.txt](logs/native_restore.txt) |
 | native_forward_mapping | 0 | 0.3 | [native_forward_mapping.txt](logs/native_forward_mapping.txt) |
-| native_inspection | 0 | 0.4 | [native_inspection.txt](logs/native_inspection.txt) |
-| native_templates | 0 | 0.4 | [native_templates.txt](logs/native_templates.txt) |
-| native_checkpoint_scope | 0 | 0.5 | [native_checkpoint_scope.txt](logs/native_checkpoint_scope.txt) |
-| native_package_restore | 0 | 0.4 | [native_package_restore.txt](logs/native_package_restore.txt) |
-| msrv | 0 | 53.1 | [msrv.txt](logs/msrv.txt) |
-| release_build | 0 | 489.4 | [release_build.txt](logs/release_build.txt) |
-| model_benchmark | 0 | 1354.4 | [model_benchmark.txt](logs/model_benchmark.txt) |
+| native_inspection | 0 | 0.3 | [native_inspection.txt](logs/native_inspection.txt) |
+| native_templates | 0 | 0.3 | [native_templates.txt](logs/native_templates.txt) |
+| native_checkpoint_scope | 0 | 0.4 | [native_checkpoint_scope.txt](logs/native_checkpoint_scope.txt) |
+| native_package_restore | 0 | 0.3 | [native_package_restore.txt](logs/native_package_restore.txt) |
+| msrv | 0 | 47.6 | [msrv.txt](logs/msrv.txt) |
+| release_build | 0 | 378.4 | [release_build.txt](logs/release_build.txt) |
+| model_benchmark | 0 | 779.7 | [model_benchmark.txt](logs/model_benchmark.txt) |

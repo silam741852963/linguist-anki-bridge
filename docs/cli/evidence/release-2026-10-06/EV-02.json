@@ -4,7 +4,7 @@
  "status": "blocked",
  "version_matrix": {
   "linguist-anki-bridge": "0.1.0",
-  "git_commit": "239b0449890ff81db1098edc904d8e62810f092c",
+  "git_commit": "ad13ad026805f85f6affe6379386a12cb55fc737",
   "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
   "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
   "rust_msrv_declared": "1.98.1",
@@ -55,7 +55,7 @@
    ],
    "invocation_digest": "f119264ac7cab47eedb4eb6f5e77f7c28e66632e06dc6197cc94836ec70903e2",
    "exit_code": 0,
-   "output_digest": "47589cb144f7c2f05981460a9552480062c3b4561cd53a30d01073960acd27a2"
+   "output_digest": "5ca98aefa6e452c196402cb85f22ea17df67fc0518f4ce25ed7e655e18789d26"
   },
   {
    "redacted_argv": [

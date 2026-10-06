@@ -857,7 +857,7 @@ Done when the four workflows run prepare → review → approve → `apply --app
 
 Defects found and fixed against real Anki: the store's 600 s lease limit; restore scope missing created notes; restore approvals use the restore-decision digest; `findModelsByName` returns 64-bit template/field IDs and note evidence FSRS floats; Anki's `/usr/bin/anki` shebang picks the user's Python; `close_for_full_sync` alone cannot reopen.
 
-**Checks.** `cargo test --locked --workspace` (589 passed, 8 ignored desktop scenarios), the desktop scenarios (8 passed against Anki 25.09.2), `cargo clippy -D warnings`, `cargo fmt --check`, the companion tests under `python3` (69, 5 skipped without Anki) and Anki's Python (69 passed), `docs/cli/validate.py` and the `--check` records. Release-check results are recorded in the [release evidence](../evidence/release-2026-10-06/README.md).
+**Checks.** `cargo test --locked --workspace` (586 passed, 8 ignored desktop scenarios), the desktop scenarios (8 passed against Anki 25.09.2), `cargo clippy -D warnings`, `cargo fmt --check`, the companion tests under `python3` (69, 5 skipped without Anki) and Anki's Python (69 passed), `docs/cli/validate.py` and the `--check` records. `python3 scripts/release-check.py --msrv --release-build --benchmark` (2026-10-06, clean tree): all commands exit 0; EV-01 and EV-03–EV-10, EV-12–EV-14 pass; EV-02 (`EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE`) and EV-11 (`OCR_BENCHMARK_LANGUAGE_PACKS_MISSING`) stay blocked; MSRV 1.98.1 passes; two clean release builds are byte-equal; gemma4:12b schema compliance 53/55 (96.4%). Records: [release evidence](../evidence/release-2026-10-06/README.md).
 
 #### Known limits — revisit after all packages
 

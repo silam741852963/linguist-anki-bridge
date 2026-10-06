@@ -11,30 +11,30 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 running 24 tests
-test canonical_objects_sort_but_arrays_keep_order ... ok
-test model_comparison_retains_duplicate_fields_and_exposes_template_differences ... ok
-test model_comparison_reports_exact_content_without_claiming_task_ordinals ... ok
 test field_intents_preserve_set_and_clear_distinctly ... ok
-test strict_json_rejects_duplicate_unsafe_and_trailing_input ... ok
 test canonical_bytes_and_domain_hash_match_ecmascript_vectors ... ok
-test effective_html_empty_field_blocks_rendering ... ok
-test task_cues_reject_answer_leakage_and_invalid_task_kinds ... ok
-test html_and_media_cannot_bypass_typed_controls ... ok
-test gate_and_capability_records_cannot_promote_declarations_to_tested ... ok
+test canonical_objects_sort_but_arrays_keep_order ... ok
+test model_comparison_reports_exact_content_without_claiming_task_ordinals ... ok
 test example_translation_is_required_only_across_languages ... ok
-test native_receipt_requires_readback_for_verified_effects ... ok
+test effective_html_empty_field_blocks_rendering ... ok
+test model_comparison_retains_duplicate_fields_and_exposes_template_differences ... ok
+test strict_json_rejects_duplicate_unsafe_and_trailing_input ... ok
+test gate_and_capability_records_cannot_promote_declarations_to_tested ... ok
+test html_and_media_cannot_bypass_typed_controls ... ok
 test resume_binding_decision_binds_one_operation_and_changed_epoch ... ok
-test review_is_bound_to_content_and_cannot_waive_errors ... ok
-test new_approval_binding_excludes_execution_settings_but_legacy_binding_is_stable ... ok
+test native_receipt_requires_readback_for_verified_effects ... ok
+test task_cues_reject_answer_leakage_and_invalid_task_kinds ... ok
 test declared_task_maps_bind_source_model_and_fixed_target_ordinals ... ok
-test legacy_archive_is_lossless_without_promoting_readiness ... ok
-test fixtures_render_fixed_models_and_roundtrip ... ok
+test review_is_bound_to_content_and_cannot_waive_errors ... ok
 test anki_ids_are_canonical_and_fit_the_wire_safe_integer_range ... ok
+test approval_binds_content_but_excludes_review_timestamp_and_epoch ... ok
+test fixtures_render_fixed_models_and_roundtrip ... ok
+test legacy_archive_is_lossless_without_promoting_readiness ... ok
+test new_approval_binding_excludes_execution_settings_but_legacy_binding_is_stable ... ok
 test rich_dictionary_roundtrip_keeps_all_senses_and_renders_inert_reference ... ok
 test source_media_requires_a_matching_source_archive_asset ... ok
-test approval_binds_content_but_excludes_review_timestamp_and_epoch ... ok
-test generated_contract_versions_match_the_supported_wire_versions ... ok
 test evidence_targets_and_source_spans_reject_stale_or_split_references ... ok
+test generated_contract_versions_match_the_supported_wire_versions ... ok
 
 test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
@@ -45,7 +45,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 --- stderr ---
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
      Running unittests src/lib.rs (target/debug/deps/linguist_core-9fb0e867fd41ecd8)
      Running tests/domain.rs (target/debug/deps/domain-b2ffa9a477a8953a)
    Doc-tests linguist_core

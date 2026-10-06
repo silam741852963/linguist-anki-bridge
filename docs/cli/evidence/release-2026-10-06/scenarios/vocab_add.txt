@@ -3,18 +3,18 @@ scenario vocab-add
 models install japanese_vocab --apply -> 0
 backup create --scope collection --apply -> 0
 vocab add --expression 食べる --meaning to eat --sense-key eat --target-language ja --tag release -> 0
-apply 94d793df-0b78-4771-ab39-59eb0cdeefe0 --revision 1 -> 4
-plans bind 94d793df-0b78-4771-ab39-59eb0cdeefe0 --digest lab-jcs-v1:plan:39c578bbe2cde14704eb2c95255a04f4f5631f9fc641847405d9b86b432434ab -> 0
-plans validate 94d793df-0b78-4771-ab39-59eb0cdeefe0 --revision 2 -> 0
-plans approve 94d793df-0b78-4771-ab39-59eb0cdeefe0 --revision 2 --digest lab-jcs-v1:plan:c50054988c9e1e7e9e79b89bc3a3a5e0dcc544f061921848322306f8c61bfa58 --actor desktop-scenario -> 0
-apply 94d793df-0b78-4771-ab39-59eb0cdeefe0 --revision 2 --apply -> 0
-apply 94d793df-0b78-4771-ab39-59eb0cdeefe0 --revision 2 --apply -> 2
-snapshots restore 17e61521-94c9-4a7b-b818-46f91cc673e7 -> 0
-snapshots restore 17e61521-94c9-4a7b-b818-46f91cc673e7 --decision /tmp/lab-desk-5be81f1e/decision-17e61521-94c9-4a7b-b818-46f91cc673e7.json --apply -> 2
+apply 3715ab2c-c9dd-4560-b076-e9c416c8d929 --revision 1 -> 4
+plans bind 3715ab2c-c9dd-4560-b076-e9c416c8d929 --digest lab-jcs-v1:plan:562682f3986d619e7541af56f321fa6666bbd80dc6ab29cbd73b4b4994310d38 -> 0
+plans validate 3715ab2c-c9dd-4560-b076-e9c416c8d929 --revision 2 -> 0
+plans approve 3715ab2c-c9dd-4560-b076-e9c416c8d929 --revision 2 --digest lab-jcs-v1:plan:dd03559369bee5e05ecd976d3b0f9c3890e6eb467f1055051eee2119361236f9 --actor desktop-scenario -> 0
+apply 3715ab2c-c9dd-4560-b076-e9c416c8d929 --revision 2 --apply -> 0
+apply 3715ab2c-c9dd-4560-b076-e9c416c8d929 --revision 2 --apply -> 2
+snapshots restore c1cc73e1-1e7a-474a-b8f2-d5e30de9c4f4 -> 0
+snapshots restore c1cc73e1-1e7a-474a-b8f2-d5e30de9c4f4 --decision /tmp/lab-desk-5f7f92d3/decision-c1cc73e1-1e7a-474a-b8f2-d5e30de9c4f4.json --apply -> 2
 vocab add --expression 飲む --meaning to drink --sense-key drink --target-language ja --tag release -> 0
-plans bind 0735abf3-04bd-4c6c-8258-29dda296cdb1 --digest lab-jcs-v1:plan:302aaa542ed042502c25c3556ac86d8d40bc32997cbeaf3e6a2e7b466968ff73 -> 0
-plans validate 0735abf3-04bd-4c6c-8258-29dda296cdb1 --revision 2 -> 0
-plans approve 0735abf3-04bd-4c6c-8258-29dda296cdb1 --revision 2 --digest lab-jcs-v1:plan:34f060fdedda59e257bf3a5a4a45995f1a11f5c327de604e820c9eaf604d6c88 --actor desktop-scenario -> 0
-apply 0735abf3-04bd-4c6c-8258-29dda296cdb1 --revision 2 --apply -> 0
-snapshots restore ceecce77-07c7-4b30-aa23-9004a802df41 -> 0
-snapshots restore ceecce77-07c7-4b30-aa23-9004a802df41 --decision /tmp/lab-desk-5be81f1e/decision-ceecce77-07c7-4b30-aa23-9004a802df41.json --apply -> 0
+plans bind 6b1d1fbd-739a-4ae4-a0a5-780ac50fbfb0 --digest lab-jcs-v1:plan:62a2b891d959d5973fbdd45ab7630dbf8e4255210135e75da0063fe4cda80f65 -> 0
+plans validate 6b1d1fbd-739a-4ae4-a0a5-780ac50fbfb0 --revision 2 -> 0
+plans approve 6b1d1fbd-739a-4ae4-a0a5-780ac50fbfb0 --revision 2 --digest lab-jcs-v1:plan:8f38624c3eb7b381b27b9df4f7133f338c8a068596c23831442862f84351a112 --actor desktop-scenario -> 0
+apply 6b1d1fbd-739a-4ae4-a0a5-780ac50fbfb0 --revision 2 --apply -> 0
+snapshots restore 09928edf-aa51-4fba-9850-2a88eb5c500a -> 0
+snapshots restore 09928edf-aa51-4fba-9850-2a88eb5c500a --decision /tmp/lab-desk-5f7f92d3/decision-09928edf-aa51-4fba-9850-2a88eb5c500a.json --apply -> 0
