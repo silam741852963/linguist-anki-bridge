@@ -384,7 +384,7 @@ revamp("VR-JA-06", W, L, ["kanji", "adversarial"], "Script content never reaches
 revamp("VR-JA-07", W, L, ["kanji", "mixed_image"], "Picture role with verified image bytes stays archived.",
        JV, JV_FIELDS("犬", "いぬ", "dog", p='<img src="inu.png">'),
        {**JV_MAP, "picture": "Picture"},
-       blocked(H, "SOURCE_STRUCTURED_ROLE_REVIEW", "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["inu.png"]),
+       blocked(H, "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["inu.png"]),
        media={"inu.png": PNG})
 revamp("VR-JA-08", W, L, ["kanji", "mixed_image"], "A referenced picture that cannot be read needs review.",
        JV, JV_FIELDS("猫", "ねこ", "cat", p='<img src="neko.jpg">'), {**JV_MAP, "picture": "Picture"},
@@ -395,7 +395,7 @@ revamp("VR-JA-09", W, L, ["kanji", "mixed_image"], "Corrupt image bytes are kept
 revamp("VR-JA-10", W, L, ["kanji", "shared_media"], "One file referenced by two fields is archived once.",
        JV, JV_FIELDS("山", "やま", "mountain", a="[sound:yama.mp3]", n="[sound:yama.mp3]"),
        {**JV_MAP, "audio": "Audio"},
-       blocked(H, "SOURCE_STRUCTURED_ROLE_REVIEW", media_archived=["yama.mp3"]), media={"yama.mp3": MP3})
+       blocked(H, "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["yama.mp3"]), media={"yama.mp3": MP3})
 revamp("VR-JA-11", W, L, ["kanji", "vietnamese_explanation"], "Vietnamese meaning from the source is kept.",
        JV, JV_FIELDS("勉強", "べんきょう", "học tập"), JV_MAP,
        blocked(H, staged={"meaning": "học tập"}), settings={"learning.explanation_language": "vi"})
@@ -440,7 +440,7 @@ revamp("VR-EN-07", W, L, ["adversarial"], "Encoded markup becomes literal text, 
        blocked(H, "SOURCE_HTML_TEXT_REVIEW", staged={"meaning": "<b>label</b>"}))
 revamp("VR-EN-08", W, L, ["mixed_image"], "Image with verified bytes.",
        EV, EV_FIELDS("apple", "a round fruit", img='<img src="apple.png">'), {**EV_MAP, "picture": "Image"},
-       blocked(H, "SOURCE_STRUCTURED_ROLE_REVIEW", "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["apple.png"]),
+       blocked(H, "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["apple.png"]),
        media={"apple.png": PNG})
 revamp("VR-EN-09", W, L, ["mixed_image"], "Missing image bytes need review.",
        EV, EV_FIELDS("pear", "a fruit", img='<img src="pear.png">'), {**EV_MAP, "picture": "Image"},
@@ -483,7 +483,7 @@ revamp("GR-JA-03", W, L, ["kana"], "Plain-text examples are never split automati
 revamp("GR-JA-04", W, L, ["mixed_image"], "Grammar card image is archived with its bytes.",
        JG, JG_FIELDS("〜たら", "nếu", "V-た + ら", img='<img src="tara.png">'),
        {**JG_MAP, "picture": "Image"},
-       blocked(H, "SOURCE_STRUCTURED_ROLE_REVIEW", "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["tara.png"]),
+       blocked(H, "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["tara.png"]),
        media={"tara.png": PNG})
 revamp("GR-JA-05", W, L, ["mixed_image"], "Missing grammar image needs review.",
        JG, JG_FIELDS("〜ば", "nếu", "V-ば", img='<img src="ba.png">'), {**JG_MAP, "picture": "Image"},
@@ -511,7 +511,7 @@ revamp("GR-JA-10", W, L, ["shared_media", "kana"], "Shared audio referenced twic
        "Japanese Grammar (audio)", [["Pattern", "〜けど"], ["Meaning", "nhưng"], ["Formation", "普通形 + けど"],
                                     ["Audio", "[sound:kedo.mp3]"], ["Example", "高いけど買う。[sound:kedo.mp3]"]],
        {"pattern": "Pattern", "meaning": "Meaning", "formation": "Formation", "audio": "Audio"},
-       blocked(H, "SOURCE_STRUCTURED_ROLE_REVIEW", media_archived=["kedo.mp3"]), media={"kedo.mp3": MP3})
+       blocked(H, "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["kedo.mp3"]), media={"kedo.mp3": MP3})
 revamp("GR-JA-11", W, L, ["mixed_model"], "Basic grammar card with Front/Back.",
        "Basic", [["Front", "〜すぎる"], ["Back", "quá"]], {"pattern": "Front", "meaning": "Back"},
        blocked(H, staged={"pattern": "〜すぎる"}))
@@ -550,7 +550,7 @@ revamp("GR-EN-04", W, L, ["vietnamese_explanation"], "Vietnamese meaning with ex
 revamp("GR-EN-05", W, L, ["mixed_image"], "Grammar chart image with bytes.",
        EG, EG_FIELDS("conditionals", "if-clauses", "if + present, will + V", img='<img src="cond.png">'),
        {**EG_MAP, "picture": "Image"},
-       blocked(H, "SOURCE_STRUCTURED_ROLE_REVIEW", media_archived=["cond.png"]), media={"cond.png": PNG})
+       blocked(H, "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["cond.png"]), media={"cond.png": PNG})
 revamp("GR-EN-06", W, L, ["mixed_image"], "Unreadable chart image bytes are flagged.",
        EG, EG_FIELDS("passive", "receive the action", "be + V3", img='<img src="passive.gif">'),
        {**EG_MAP, "picture": "Image"},
@@ -584,7 +584,7 @@ revamp("GR-EN-13", W, L, ["shared_media"], "Audio used in two fields is archived
        "English Grammar (audio)", [["Structure", "would rather"], ["Meaning", "prefer"], ["Form", "would rather + V"],
                                    ["Audio", "[sound:rather.ogg]"], ["Example", "I'd rather stay. [sound:rather.ogg]"]],
        {"pattern": "Structure", "meaning": "Meaning", "formation": "Form", "audio": "Audio"},
-       blocked(H, "SOURCE_STRUCTURED_ROLE_REVIEW", media_archived=["rather.ogg"]),
+       blocked(H, "SOURCE_MEDIA_CONTENT_REVIEW", media_archived=["rather.ogg"]),
        media={"rather.ogg": {"fixture": "audio/tone.ogg"}})
 revamp("GR-EN-14", W, L, ["baseline"], "Language field matching the purpose is accepted.",
        "English Grammar (lang)", [["Structure", "had better"], ["Meaning", "advice"], ["Form", "had better + V"],

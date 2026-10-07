@@ -32,6 +32,18 @@ pub struct ResolutionResult {
 /// Supported fact choices and repair skeletons; every submitted decision is revalidated.
 pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> Vec<ReviewChoice> {
     let mut choices = Vec::new();
+    if issue.code == "SOURCE_MEDIA_MISSING_REVIEW"
+        && let (Some(filename), Some(source)) = (issue.field.as_ref(), issue.source_refs.first())
+        && let Ok(source_id) = source.parse()
+    {
+        let choice = ReviewChoice::MissingMedia {
+            source_id,
+            filename: filename.clone(),
+        };
+        if missing_media_matches(document, issue, &choice) {
+            choices.push(choice);
+        }
+    }
     for task in [
         crate::Task::Production,
         crate::Task::Spelling,
@@ -428,6 +440,11 @@ pub fn resolve(
                 return Err(ContractError("REVIEW_DUPLICATE_CHOICE_INVALID".into()));
             }
         }
+        ReviewChoice::MissingMedia { .. } if issue.code == "SOURCE_MEDIA_MISSING_REVIEW" => {
+            if !missing_media_matches(document, issue, &request.choice) {
+                return Err(ContractError("REVIEW_MISSING_MEDIA_MISMATCH".into()));
+            }
+        }
         ReviewChoice::NativeHistory {
             source_id,
             task_map,
@@ -439,6 +456,13 @@ pub fn resolve(
             let prior = document.semantic_digest()?;
             document.task_maps.retain(|map| map.source_id != *source_id);
             document.task_maps.push(task_map.clone());
+            // Every mapped card keeps its task: studied history is never
+            // dropped to satisfy new-note task defaults.
+            for entry in &task_map.entries {
+                if !document.requested_tasks.contains(&entry.target_task) {
+                    document.requested_tasks.push(entry.target_task);
+                }
+            }
             let current = document.semantic_digest()?;
             let moved: BTreeSet<_> = document
                 .reviews
@@ -688,6 +712,7 @@ fn rebindable(choice: &ReviewChoice) -> bool {
     matches!(
         choice,
         ReviewChoice::NativeHistory { .. }
+            | ReviewChoice::MissingMedia { .. }
             | ReviewChoice::Sense(_)
             | ReviewChoice::SenseWithReading { .. }
             | ReviewChoice::Media(_)
@@ -734,6 +759,33 @@ pub const OCR_REVIEW_CODES: [&str; 3] = [
     "IMAGE_CLASSIFICATION_REVIEW",
     "OCR_FAILED_REVIEW",
 ];
+
+/// A `MissingMedia` decision holds while the source still references the
+/// file and the document has no archived bytes for it.
+pub(crate) fn missing_media_matches(
+    document: &crate::LearningDocument,
+    issue: &Issue,
+    choice: &ReviewChoice,
+) -> bool {
+    let ReviewChoice::MissingMedia {
+        source_id,
+        filename,
+    } = choice
+    else {
+        return false;
+    };
+    issue.code == "SOURCE_MEDIA_MISSING_REVIEW"
+        && issue.field.as_ref() == Some(filename)
+        && issue.source_refs == [source_id.to_string()]
+        && document
+            .sources
+            .iter()
+            .any(|s| s.id == *source_id && s.media_refs.contains(filename))
+        && !document.media.iter().any(|m| {
+            m.source_id == Some(*source_id)
+                && (m.original_filename.as_ref() == Some(filename) || &m.filename == filename)
+        })
+}
 
 /// A `NativeHistory` decision holds while its evidence digest, source model
 /// and task map still describe the document: every observed card's template

@@ -57,6 +57,30 @@ impl MediaDiscovery {
 
 /// Bound the complete raw input before HTML parsing. No mutation, fetching or normalization.
 /// Associations (including repeated references) are retained in deterministic field order.
+/// True when an inline `style` value could reference a resource. Plain
+/// declarations such as `color: rgb(34, 34, 34)` cannot load media; anything
+/// with CSS escapes, comments or a resource-loading construct is still
+/// treated as unsupported media syntax.
+fn style_may_load(style: &str) -> bool {
+    let compact: String = style
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect();
+    compact.contains('\\')
+        || compact.contains("/*")
+        || [
+            "url(",
+            "image",
+            "@import",
+            "expression(",
+            "src(",
+            "element(",
+        ]
+        .iter()
+        .any(|needle| compact.contains(needle))
+}
+
 pub fn discover_media(
     fields: &BTreeMap<String, String>,
     max_bytes: u64,
@@ -114,7 +138,7 @@ pub fn discover_media(
             }
             if element.attr("srcset").is_some()
                 || element.attr("background").is_some()
-                || element.attr("style").is_some()
+                || element.attr("style").is_some_and(style_may_load)
                 || name == "style"
                 || matches!(name, "iframe" | "image" | "script" | "link" | "svg" | "use")
                 || (name == "input"

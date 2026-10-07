@@ -2734,7 +2734,6 @@
     "ready": false,
     "issues": [
      "SOURCE_NATIVE_HISTORY_REVIEW",
-     "SOURCE_STRUCTURED_ROLE_REVIEW",
      "SOURCE_MEDIA_CONTENT_REVIEW"
     ],
     "media_archived": [
@@ -2934,7 +2933,7 @@
     "ready": false,
     "issues": [
      "SOURCE_NATIVE_HISTORY_REVIEW",
-     "SOURCE_STRUCTURED_ROLE_REVIEW"
+     "SOURCE_MEDIA_CONTENT_REVIEW"
     ],
     "media_archived": [
      "yama.mp3"
@@ -3646,7 +3645,6 @@
     "ready": false,
     "issues": [
      "SOURCE_NATIVE_HISTORY_REVIEW",
-     "SOURCE_STRUCTURED_ROLE_REVIEW",
      "SOURCE_MEDIA_CONTENT_REVIEW"
     ],
     "media_archived": [
@@ -4258,7 +4256,6 @@
     "ready": false,
     "issues": [
      "SOURCE_NATIVE_HISTORY_REVIEW",
-     "SOURCE_STRUCTURED_ROLE_REVIEW",
      "SOURCE_MEDIA_CONTENT_REVIEW"
     ],
     "media_archived": [
@@ -4610,7 +4607,7 @@
     "ready": false,
     "issues": [
      "SOURCE_NATIVE_HISTORY_REVIEW",
-     "SOURCE_STRUCTURED_ROLE_REVIEW"
+     "SOURCE_MEDIA_CONTENT_REVIEW"
     ],
     "media_archived": [
      "kedo.mp3"
@@ -5160,7 +5157,7 @@
     "ready": false,
     "issues": [
      "SOURCE_NATIVE_HISTORY_REVIEW",
-     "SOURCE_STRUCTURED_ROLE_REVIEW"
+     "SOURCE_MEDIA_CONTENT_REVIEW"
     ],
     "media_archived": [
      "cond.png"
@@ -5602,7 +5599,7 @@
     "ready": false,
     "issues": [
      "SOURCE_NATIVE_HISTORY_REVIEW",
-     "SOURCE_STRUCTURED_ROLE_REVIEW"
+     "SOURCE_MEDIA_CONTENT_REVIEW"
     ],
     "media_archived": [
      "rather.ogg"

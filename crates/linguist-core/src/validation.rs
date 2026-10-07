@@ -408,10 +408,16 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             )
         }
         for name in &source.media_refs {
-            if !doc.media.iter().any(|m| {
-                m.source_id == Some(source.id)
-                    && (m.original_filename.as_ref() == Some(name) || &m.filename == name)
-            }) {
+            let acknowledged_missing = doc.reviews.iter().any(|r| {
+                matches!(&r.choice, ReviewChoice::MissingMedia { source_id, filename }
+                    if *source_id == source.id && filename == name)
+            });
+            if !acknowledged_missing
+                && !doc.media.iter().any(|m| {
+                    m.source_id == Some(source.id)
+                        && (m.original_filename.as_ref() == Some(name) || &m.filename == name)
+                })
+            {
                 add(
                     "SOURCE_MEDIA_MISSING",
                     Severity::Error,
@@ -712,6 +718,26 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             issues.push(issue);
         }
     }
+    // A mapped enable field (`enable_production`, `enable_spelling`,
+    // `enable_application`) is a task candidate until the reviewed native task
+    // map for that source retains the task; its card history then decides.
+    issues.retain(|issue| {
+        if issue.code != "SOURCE_TASK_MAPPING_REVIEW" {
+            return true;
+        }
+        let task = match issue.field.as_deref() {
+            Some("enable_production") => Task::Production,
+            Some("enable_spelling") => Task::Spelling,
+            Some("enable_application") => Task::Application,
+            _ => return true,
+        };
+        !doc.task_maps.iter().any(|map| {
+            issue.source_refs == [map.source_id.to_string()]
+                && map.validate().is_ok()
+                && map.entries.iter().any(|entry| entry.target_task == task)
+                && doc.requested_tasks.contains(&task)
+        })
+    });
     let input = doc.semantic_digest().ok();
     issues.retain(|issue| {
         if issue.severity != Severity::Review {
@@ -733,6 +759,8 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                         crate::review::duplicate_choice_matches(issue, note_id, action),
                     ReviewChoice::NativeHistory { .. } =>
                         crate::review::native_history_matches(doc, issue, &r.choice),
+                    ReviewChoice::MissingMedia { .. } =>
+                        crate::review::missing_media_matches(doc, issue, &r.choice),
                     ReviewChoice::Anchor(anchor) => issue.code == "GRAMMAR_SPLIT_NATIVE_REVIEW"
                         && crate::review::split_anchor_matches(doc, *anchor),
                     ReviewChoice::ContentVerified { evidence_ids } => {

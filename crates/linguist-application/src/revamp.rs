@@ -33,6 +33,23 @@ fn source_examples(raw: &str, translation_required: bool) -> Result<Vec<SourceEx
     Ok(pairs)
 }
 
+fn strip_sound_markers(raw: &str) -> String {
+    let mut out = String::new();
+    let mut rest = raw;
+    while let Some(start) = rest.find("[sound:") {
+        out.push_str(&rest[..start]);
+        match rest[start..].find(']') {
+            Some(end) => rest = &rest[start + end + 1..],
+            None => {
+                // Malformed marker: keep it verbatim (its media issue is separate).
+                out.push_str(&rest[start..]);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
 fn visible_text(raw: &str) -> String {
     let cleaned = ammonia::Builder::default()
         .tags(std::collections::HashSet::from([
@@ -250,11 +267,23 @@ pub fn stage_document(
             continue;
         }
         if ["picture", "audio"].contains(&role.as_str()) {
-            issues.push(issue(
-                "SOURCE_STRUCTURED_ROLE_REVIEW",
-                Some(role),
-                source_id,
-            ));
+            // A field holding only discovered media references needs no extra
+            // review: each referenced file is archived and gets its own
+            // SOURCE_MEDIA_CONTENT_REVIEW (role decision) or missing-media review.
+            let referenced = manifest["media_discovery"]["references"]
+                .as_array()
+                .is_some_and(|refs| {
+                    refs.iter()
+                        .any(|r| r["field"].as_str() == Some(field.source_field.as_str()))
+                });
+            let text_only = visible_text(&strip_sound_markers(&field.raw_value));
+            if !referenced || !text_only.trim().is_empty() {
+                issues.push(issue(
+                    "SOURCE_STRUCTURED_ROLE_REVIEW",
+                    Some(role),
+                    source_id,
+                ));
+            }
             continue;
         }
         if role == "language" || role == "explanation_language" {
@@ -268,14 +297,16 @@ pub fn stage_document(
             }
             continue;
         }
-        if field.raw_value.contains("[sound:")
-            || field.raw_value.contains("{{")
-            || field.raw_value.to_ascii_lowercase().contains("<ruby")
+        if field.raw_value.contains("{{") || field.raw_value.to_ascii_lowercase().contains("<ruby")
         {
             issues.push(issue("SOURCE_RICH_FIELD_REVIEW", Some(role), source_id));
             continue;
         }
-        let derived = visible_text(&field.raw_value);
+        // `[sound:...]` markers are media references (captured separately and
+        // given a role by their own review); the remaining visible text is a
+        // derived candidate that needs the same review as HTML-derived text.
+        let without_sound = strip_sound_markers(&field.raw_value);
+        let derived = visible_text(&without_sound);
         if derived != field.raw_value.trim() {
             issues.push(issue("SOURCE_HTML_TEXT_REVIEW", Some(role), source_id));
         }

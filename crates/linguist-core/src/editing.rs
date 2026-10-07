@@ -76,6 +76,21 @@ pub fn apply_patch(
                     }
                 }
             }
+            // Missing required meaning (for example a picture-only source):
+            // the first authored value fills the content itself.
+            if key == "Meaning"
+                && let FieldIntent::Set(value) = intent
+                && !value.trim().is_empty()
+            {
+                let meaning = match &mut document.content {
+                    crate::LearningContent::Vocabulary(vocab) => &mut vocab.meaning,
+                    crate::LearningContent::Grammar(grammar) => &mut grammar.meaning,
+                };
+                if meaning.trim().is_empty() {
+                    *meaning = value.trim().to_owned();
+                    continue;
+                }
+            }
             // Identity, tasks, cues and media require separate typed pipeline branches.
             if !matches!(
                 key.as_str(),

@@ -237,6 +237,13 @@ pub enum ReviewChoice {
     /// Resolves `SOURCE_NATIVE_HISTORY_REVIEW` from companion note evidence:
     /// every source card with its observed study, and the reviewed mapping of
     /// each source template ordinal to a target task. No card is dropped.
+    /// Acknowledges that a media file the source note references is absent
+    /// from the collection at capture time. The original field (with its
+    /// reference) stays archived; no bytes exist to archive or render.
+    MissingMedia {
+        source_id: Uuid,
+        filename: String,
+    },
     NativeHistory {
         source_id: Uuid,
         cards: Vec<NativeCardEvidence>,

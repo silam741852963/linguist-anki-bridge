@@ -132,3 +132,26 @@ fn discovery_is_bounded_and_plain_text_never_becomes_an_image_reference() {
     let fields = BTreeMap::from([("F".into(), "[sound:unfinished".into())]);
     assert_eq!(discover_media(&fields, 1000, 1).unwrap().issues.len(), 1);
 }
+
+#[test]
+fn colour_styles_are_not_media_but_resource_styles_still_are() {
+    let fields = BTreeMap::from([(
+        "Word".into(),
+        r#"<span style="color: rgb(34, 34, 34);">俳優</span><b style="font-weight:bold">x</b>
+           <i style="background: URL ( a.png )"></i><i style="b\61 ckground:u\72 l(b.png)"></i>
+           <i style="/* c */ color:red"></i><i style="list-style-image:x"></i>"#
+            .into(),
+    )]);
+    let result = discover_media(&fields, 10000, 100).unwrap();
+    assert!(result.references.is_empty());
+    assert_eq!(
+        result
+            .issues
+            .iter()
+            .filter(|i| i.code == "UNSUPPORTED_MEDIA_SYNTAX")
+            .count(),
+        4,
+        "{:?}",
+        result.issues
+    );
+}
