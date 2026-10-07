@@ -75,6 +75,9 @@ fn map_checks_live_manifest_then_unmap_edits_local_config_only() {
     });
     let binary = env!("CARGO_BIN_EXE_linguist-anki-bridge");
     let mapped = Command::new(binary)
+        .env("HOME", "/tmp/lab-cli-test-no-home")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("LAB_CONFIG")
         .args([
             "--output",
             "json",
@@ -131,6 +134,9 @@ fn map_checks_live_manifest_then_unmap_edits_local_config_only() {
         "Output"
     );
     let unmapped = Command::new(binary)
+        .env("HOME", "/tmp/lab-cli-test-no-home")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("LAB_CONFIG")
         .args([
             "--output",
             "json",
@@ -150,6 +156,9 @@ fn map_checks_live_manifest_then_unmap_edits_local_config_only() {
     let unmapped: Value = serde_json::from_slice(&unmapped.stdout).unwrap();
     assert_eq!(unmapped["config"]["changed"], true);
     let again = Command::new(binary)
+        .env("HOME", "/tmp/lab-cli-test-no-home")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("LAB_CONFIG")
         .args([
             "--output",
             "json",
@@ -219,6 +228,9 @@ fn deck_show_reports_mixed_models_and_stored_source_mapping() {
         }
     });
     let output = Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"))
+        .env("HOME", "/tmp/lab-cli-test-no-home")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("LAB_CONFIG")
         .args([
             "--output",
             "json",
@@ -297,6 +309,9 @@ fn filtered_source_deck_cannot_publish_mapping() {
         }
     });
     let out = Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"))
+        .env("HOME", "/tmp/lab-cli-test-no-home")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("LAB_CONFIG")
         .args([
             "--config",
             config.to_str().unwrap(),
@@ -359,6 +374,9 @@ fn deck_pages_bind_cursor_to_exact_inventory() {
     });
     let binary = env!("CARGO_BIN_EXE_linguist-anki-bridge");
     let first = Command::new(binary)
+        .env("HOME", "/tmp/lab-cli-test-no-home")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("LAB_CONFIG")
         .args([
             "--output",
             "json",
@@ -379,6 +397,9 @@ fn deck_pages_bind_cursor_to_exact_inventory() {
     assert_eq!(first["decks"][0]["name"], "語彙 A");
     let cursor = first["next_cursor"].as_str().unwrap();
     let second = Command::new(binary)
+        .env("HOME", "/tmp/lab-cli-test-no-home")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("LAB_CONFIG")
         .args([
             "--output",
             "json",
@@ -407,6 +428,9 @@ fn unmap_without_default_config_is_no_op() {
     let root = std::env::temp_dir().join(format!("lab-unmap-absent-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"))
+        .env("HOME", "/tmp/lab-cli-test-no-home")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("LAB_CONFIG")
         .env("XDG_CONFIG_HOME", &root)
         .env_remove("LAB_CONFIG")
         .args(["--output", "json", "decks", "unmap", "japanese_vocab"])

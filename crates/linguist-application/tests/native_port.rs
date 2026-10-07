@@ -59,6 +59,10 @@ impl Companion {
                         _ => handler(&action, &request["params"]),
                     }
                 };
+                if reply.is_null() {
+                    // Simulate Anki not answering: close without a response.
+                    continue;
+                }
                 let text = reply.to_string();
                 let _ = write!(
                     stream,
@@ -372,4 +376,64 @@ fn export_copies_only_a_package_matching_the_receipt() {
         "companion copy removed after the verified copy"
     );
     std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_transient_status_failure_is_retried_until_the_deadline() {
+    let polls = Arc::new(Mutex::new(0));
+    let counter = polls.clone();
+    let sent = Arc::new(Mutex::new(String::new()));
+    let record = sent.clone();
+    let companion = Companion::start(Box::new(move |action, params| match action {
+        "labCapabilities" => ok(manifest("25.09.2", true)),
+        "labBegin" => ok(
+            json!({"owner_token": "11111111-1111-4111-8111-111111111111",
+                                "fence": 5, "staging_dir": "/nonexistent"}),
+        ),
+        "labMutate" => {
+            *record.lock().unwrap() = linguist_core::canonical::asset_digest(
+                params["payload"].as_str().unwrap().as_bytes(),
+            );
+            let operation = params["operation_id"].as_str().unwrap();
+            let mut reply = status(
+                operation,
+                "queued",
+                Value::Null,
+                Value::Null,
+                "delete_unstudied_created_note",
+            );
+            reply["payload_digest"] = json!(linguist_core::canonical::asset_digest(
+                params["payload"].as_str().unwrap().as_bytes()
+            ));
+            ok(reply)
+        }
+        "labOperationStatus" => {
+            let mut count = counter.lock().unwrap();
+            *count += 1;
+            if *count == 1 {
+                return Value::Null; // dropped connection
+            }
+            let operation = params["operation_id"].as_str().unwrap();
+            let mut reply = status(
+                operation,
+                "verified",
+                Value::Null,
+                json!({"note_id": 7}),
+                "delete_unstudied_created_note",
+            );
+            reply["payload_digest"] = json!(*sent.lock().unwrap());
+            ok(reply)
+        }
+        other => panic!("unexpected {other}"),
+    }));
+    let client = client(&companion.endpoint);
+    let mut port =
+        NativePort::connect(&client, &std::env::temp_dir(), deadlines(2000), 1 << 20).unwrap();
+    let binding = port.execution_binding().unwrap();
+    let owner = port
+        .begin(&binding, &format!("lab-jcs-v1:plan:{}", "b".repeat(64)))
+        .unwrap();
+    let request = delete_request(Uuid::new_v4(), &owner, &port);
+    assert_eq!(port.mutate(&request).unwrap(), NativeStatus::Verified);
+    assert!(*polls.lock().unwrap() >= 2, "the dropped poll was retried");
 }

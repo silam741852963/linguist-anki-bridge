@@ -12,6 +12,9 @@ fn snapshot_list_and_show_read_immutable_local_evidence_without_creating_state()
     let cli = || {
         let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"));
         command
+            .env("HOME", "/tmp/lab-cli-test-no-home")
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("LAB_CONFIG")
             .args(["--output", "json", "--set"])
             .arg(format!("storage.state_dir={}", root.display()));
         command

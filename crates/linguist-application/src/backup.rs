@@ -673,3 +673,58 @@ pub fn verify_registered(
         evidence,
     })
 }
+
+/// Close an interrupted checkpoint journal (process exit during export or
+/// verification). A native export never changes collection state, so the
+/// journal ends `failed_before_write` with `CHECKPOINT_ABANDONED`; only this
+/// operation's create-new temporary package in `output_dir` is removed. A
+/// journal whose receipt was saved is never abandoned.
+pub fn abandon_checkpoint(
+    store: &mut Store,
+    lease: &LeaseToken,
+    operation: Uuid,
+    output_dir: &Path,
+) -> Result<OperationJournal> {
+    store.validate_lease(lease)?;
+    let version = store.journal(operation)?;
+    let journal = &version.journal;
+    if journal.steps.len() != 1 || journal.steps[0].action != "export_checkpoint" {
+        return Err("CHECKPOINT_JOURNAL_REQUIRED".into());
+    }
+    if store.checkpoint(journal.backup_id).is_ok() {
+        return Err("CHECKPOINT_RECEIPT_EXISTS: the checkpoint was verified and saved".into());
+    }
+    if matches!(
+        journal.state,
+        OperationState::Committed | OperationState::FailedBeforeWrite
+    ) {
+        return Ok(journal.clone());
+    }
+    let suffix = format!(".lab-tmp-{}", operation.simple());
+    if let Ok(entries) = fs::read_dir(output_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with('.')
+                && name.ends_with(&suffix)
+                && entry.file_type().is_ok_and(|t| t.is_file())
+            {
+                fs::remove_file(entry.path()).map_err(|_| "CHECKPOINT_TEMPORARY_REMOVE_FAILED")?;
+            }
+        }
+    }
+    let mut journal = Journal { store, version };
+    journal.advance(|j| {
+        if j.steps[0].state != StepState::ObservedFailure {
+            j.steps[0].state = StepState::ObservedFailure;
+            j.steps[0].observed_digest =
+                digest("lab-checkpoint-failure-v1", &"CHECKPOINT_ABANDONED").ok();
+        }
+        j.state = OperationState::FailedBeforeWrite;
+        j.issues.push(issue(
+            "CHECKPOINT_ABANDONED",
+            "interrupted before a verified receipt; no collection state changed",
+        ));
+    })?;
+    Ok(journal.version.journal)
+}

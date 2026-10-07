@@ -253,6 +253,17 @@ impl<'a> NativePort<'a> {
                         "ANKI_NATIVE_LEDGER_ROW_MISSING after acceptance".into(),
                     ));
                 }
+                // Status reads are idempotent: a transient transport failure
+                // (Anki busy, for example while a large export closes the
+                // collection) is retried until the deadline, never treated
+                // as an outcome.
+                Err(error)
+                    if (error.starts_with("ANKI_DEPENDENCY_UNAVAILABLE")
+                        || error.starts_with("ANKI_READ_TIMEOUT"))
+                        && started.elapsed() < deadline =>
+                {
+                    continue;
+                }
                 Err(error) => return Err(PortFailure::Unknown(error)),
             };
         }

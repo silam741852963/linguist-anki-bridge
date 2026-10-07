@@ -12,7 +12,12 @@ use uuid::Uuid;
 
 fn cli() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_linguist-anki-bridge"));
-    command.args(["--output", "json"]);
+    // Never read the developer's real configuration.
+    command
+        .env_clear()
+        .env("HOME", "/tmp/lab-recovery-live-no-home")
+        .env("PATH", "/usr/bin:/bin")
+        .args(["--output", "json"]);
     command
 }
 

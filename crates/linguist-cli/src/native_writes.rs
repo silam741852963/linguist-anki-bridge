@@ -588,6 +588,38 @@ pub(crate) fn reconcile(
     let port = connect(&client, settings)?;
     let mut writer = Writer::open(port, settings)?;
     let result = (|| {
+        let journal = writer.store.journal(operation)?.journal;
+        if journal
+            .steps
+            .first()
+            .is_some_and(|s| s.action == "export_checkpoint")
+        {
+            // The companion may hold a finished export of this operation; it
+            // is ours to remove (only `exports/<operation>.colpkg`).
+            if let Ok(linguist_anki::native::NativeObservation::Present(status)) =
+                client.native_observe(journal.binding.lineage_id, operation)
+                && let Some(path) = status.receipt.as_ref().and_then(|r| r["path"].as_str())
+            {
+                let path = PathBuf::from(path);
+                if path.file_name().and_then(|n| n.to_str())
+                    == Some(format!("{operation}.colpkg").as_str())
+                    && path
+                        .parent()
+                        .and_then(|p| p.file_name())
+                        .is_some_and(|n| n == "exports")
+                {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+            let closed = backup::abandon_checkpoint(
+                &mut writer.store,
+                &writer.lease,
+                operation,
+                &backup_dir(settings)?,
+            )?;
+            emit(&json!({"schema_version": 2, "mode": "reconcile", "checkpoint_journal": closed}))?;
+            return Ok(0);
+        }
         if writer.store.model_operation(operation).is_ok() {
             let outcome = model_install::reconcile(
                 &mut writer.store,
