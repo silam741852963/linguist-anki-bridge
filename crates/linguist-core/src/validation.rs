@@ -53,6 +53,7 @@ pub fn reopenable(issue: &Issue) -> bool {
             issue.code.as_str(),
             "SOURCE_HTML_TEXT_REVIEW"
                 | "SOURCE_NATIVE_HISTORY_REVIEW"
+                | "SOURCE_MEDIA_MISSING_REVIEW"
                 | "SOURCE_EXAMPLES_REVIEW"
                 | "SOURCE_MEDIA_CONTENT_REVIEW"
                 | "SOURCE_MEDIA_FORMAT_REVIEW"
