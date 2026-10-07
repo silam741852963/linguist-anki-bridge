@@ -184,29 +184,24 @@ fn template(name: &str, ordinal: u16, front: &str, back: &str) -> Template {
         back: back.into(),
     }
 }
+const VOCABULARY_STYLE: &str = include_str!("../../../resources/templates/vocabulary-v3.css");
+/// WP-19 vocabulary model: fields only, no text cues and no provenance fields.
+/// Language and explanation language are note tags (`lab::lang::*`).
 pub fn vocabulary() -> ManagedModel {
+    let back = include_str!("../../../resources/templates/vocabulary-v3-back.html");
     ManagedModel {
-        name: "Linguist Vocabulary v2".into(),
-        version: 2,
+        name: "Linguist Vocabulary v3".into(),
+        version: 3,
         fields: [
             "Expression",
-            "Reading",
             "Pronunciation",
             "Meaning",
-            "Usage",
-            "Examples",
+            "UsageExamples",
             "Picture",
             "Audio",
             "Kanji",
-            "PersonalNotes",
-            "Source",
-            "Language",
-            "SenseKey",
             "EnableProduction",
             "EnableSpelling",
-            "ProductionPrompt",
-            "SpellingPrompt",
-            "ExplanationLanguage",
         ]
         .map(str::to_owned)
         .to_vec(),
@@ -214,23 +209,23 @@ pub fn vocabulary() -> ManagedModel {
             template(
                 "Comprehension",
                 0,
-                include_str!("../../../resources/templates/vocabulary-comprehension-front.html"),
-                include_str!("../../../resources/templates/vocabulary-back.html"),
+                include_str!("../../../resources/templates/vocabulary-v3-comprehension-front.html"),
+                back,
             ),
             template(
                 "Production",
                 1,
-                include_str!("../../../resources/templates/vocabulary-production-front.html"),
-                include_str!("../../../resources/templates/vocabulary-back.html"),
+                include_str!("../../../resources/templates/vocabulary-v3-production-front.html"),
+                back,
             ),
             template(
                 "Spelling",
                 2,
-                include_str!("../../../resources/templates/vocabulary-spelling-front.html"),
-                include_str!("../../../resources/templates/vocabulary-spelling-back.html"),
+                include_str!("../../../resources/templates/vocabulary-v3-spelling-front.html"),
+                include_str!("../../../resources/templates/vocabulary-v3-spelling-back.html"),
             ),
         ],
-        css: STYLE.into(),
+        css: VOCABULARY_STYLE.into(),
     }
 }
 pub fn grammar() -> ManagedModel {

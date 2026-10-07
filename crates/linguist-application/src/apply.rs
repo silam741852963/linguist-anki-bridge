@@ -1029,6 +1029,8 @@ fn desired_projection(
         .map(|task| task_ordinal(target, *task).ok_or_else(|| "APPLY_TASK_UNMAPPED".to_owned()))
         .collect::<Result<_>>()?;
     let mut tags = item.document.tags.clone();
+    // WP-19: language, kind, task and dictionary facts travel as tags.
+    tags.extend(linguist_core::render::tags(&item.document));
     let mut cards = Vec::new();
     let mut retained = Vec::new();
     let mut pre_state = None;

@@ -52,7 +52,7 @@ def same_history(a, b):
 def main():
     assert (version, buildhash) == ("25.09.2", "3d813c83"), (version, buildhash)
     manifests = json.load(sys.stdin)
-    vocab_manifest = next(m for m in manifests if m["name"] == "Linguist Vocabulary v2")
+    vocab_manifest = next(m for m in manifests if m["name"] == "Linguist Vocabulary v3")
     with tempfile.TemporaryDirectory(prefix="lab-native-restore-") as directory:
         col = Collection(str(Path(directory) / "disposable.anki2"))
         try:
@@ -73,8 +73,7 @@ def main():
             effects.update_note(col, {
                 "note_id": note.id, "expected_pre_digest": effects.content_digest(fresh),
                 "migration": None,
-                "fields": vocab_fields(vocab_manifest, EnableProduction="1",
-                                       ProductionPrompt="Say it"),
+                "fields": vocab_fields(vocab_manifest, EnableProduction="1"),
                 "add_tags": ["linguist"], "deck_id": target,
             }, manifest_digest)
             study(col, card_id)  # later review after apply
@@ -100,7 +99,7 @@ def main():
             # 2. Stale precondition: a user edit after the restore preview wins.
             preview = effects.observe_note(col, note.id, manifest_digest)
             user = col.get_note(note.id)
-            user["PersonalNotes"] = "user edit after preview"
+            user["Kanji"] = "user edit after preview"
             col.update_note(user)
             expect_error("BRIDGE_PRECONDITION_FAILED", effects.restore_note, col, {
                 "note_id": note.id, "expected_pre_digest": effects.content_digest(preview),
@@ -109,7 +108,7 @@ def main():
                                {"card_id": new_card, "deck_id": target}],
                 "removed_card_ids": [],
             }, manifest_digest)
-            assert col.get_note(note.id)["PersonalNotes"] == "user edit after preview"
+            assert col.get_note(note.id)["Kanji"] == "user edit after preview"
 
             # 3. Reverse mapped migration after later study.
             basic = col.models.by_name("Basic")
@@ -127,7 +126,7 @@ def main():
                 "migration": {"source_model_id": basic["id"], "target_model_id": vocab["id"],
                               "target_model_name": vocab["name"], "ordinal_map": forward},
                 "fields": vocab_fields(vocab_manifest, Expression="飲む", Meaning="to drink",
-                                       EnableProduction="1", ProductionPrompt="Say it"),
+                                       EnableProduction="1"),
                 "add_tags": ["linguist"], "deck_id": target,
             }, manifest_digest)
             migrated = effects.observe_note(col, source.id, manifest_digest)
@@ -172,7 +171,7 @@ def main():
                 "migration": {"source_model_id": basic["id"], "target_model_id": vocab["id"],
                               "target_model_name": vocab["name"], "ordinal_map": forward},
                 "fields": vocab_fields(vocab_manifest, Expression="見る", Meaning="to see",
-                                       EnableProduction="1", ProductionPrompt="Say it"),
+                                       EnableProduction="1"),
                 "add_tags": [], "deck_id": target,
             }, manifest_digest)
             expanded = effects.observe_note(col, other.id, manifest_digest)

@@ -171,6 +171,8 @@ pub enum MediaRole {
     Picture,
     Audio,
     Archive,
+    /// Animated stroke-order image for one kanji (v3 Kanji field).
+    KanjiStroke,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

@@ -52,7 +52,7 @@ def check(col, model, deck_id, fields, expected):
 def main():
     manifests = json.load(sys.stdin)
     assert [model["name"] for model in manifests] == [
-        "Linguist Vocabulary v2",
+        "Linguist Vocabulary v3",
         "Linguist Grammar v2",
     ]
     with tempfile.TemporaryDirectory(prefix="lab-template-cards-") as directory:
@@ -60,17 +60,18 @@ def main():
         try:
             deck_id = col.decks.id("Disposable template test")
             vocab, grammar = [install(col, manifest) for manifest in manifests]
-            vbase = {"Expression": "食べる", "Meaning": "to eat", "Language": "ja"}
+            # v3: fronts show fields; the answer never appears on a task front.
+            vbase = {"Expression": "食べる", "Meaning": "to eat"}
             check(col, vocab, deck_id, vbase, [0])
-            production = {**vbase, "EnableProduction": "1", "ProductionPrompt": "What action is shown?"}
+            production = {**vbase, "EnableProduction": "1", "Picture": '<img src="x.png">'}
             production_cards = check(col, vocab, deck_id, production, [0, 1])
-            assert "What action is shown?" in production_cards[1].question()
-            check(col, vocab, deck_id, {**vbase, "EnableProduction": "1"}, [0])
-            check(col, vocab, deck_id, {**vbase, "ProductionPrompt": "Cue"}, [0])
-            spelling = {**vbase, "EnableSpelling": "1", "SpellingPrompt": "Write the word you heard"}
-            check(col, vocab, deck_id, spelling, [0, 2])
-            check(col, vocab, deck_id, {**vbase, "EnableSpelling": "1"}, [0])
-            check(col, vocab, deck_id, {**vbase, "SpellingPrompt": "Cue"}, [0])
+            question = production_cards[1].question()
+            assert "to eat" in question and "x.png" in question and "食べる" not in question
+            spelling = {**vbase, "EnableSpelling": "1", "Pronunciation": "たべる"}
+            spelling_cards = check(col, vocab, deck_id, spelling, [0, 2])
+            question = spelling_cards[1].question()
+            assert "たべる" in question and "to eat" in question and "食べる" not in question
+            assert "食べる" in spelling_cards[1].answer()
             check(col, vocab, deck_id, {**production, **spelling}, [0, 1, 2])
 
             gbase = {

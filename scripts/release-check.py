@@ -319,9 +319,9 @@ def main():
             keys=["settings_coverage", "config_schema"],
             fixtures=["docs/cli/configuration/settings-registry.json", "docs/cli/configuration/purpose-defaults.json"],
             assertions=[
-                assertion("every registry entry has a consumer or reported unavailable feature", r.ok("settings_coverage"), "156 entries"),
+                assertion("every registry entry has a consumer or reported unavailable feature", r.ok("settings_coverage"), "157 entries"),
                 assertion("final purpose presets", r.ok("settings_coverage"), "4 presets"),
-                assertion("normalized config schema covers defaults", r.ok("config_schema"), "156 entries"),
+                assertion("normalized config schema covers defaults", r.ok("config_schema"), "157 entries"),
             ],
             blocked="EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE"),
         "EV-03": dict(

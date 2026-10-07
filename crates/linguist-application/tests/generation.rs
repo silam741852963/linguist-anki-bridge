@@ -25,7 +25,7 @@ fn frozen_generation_settings_bind_the_exact_builtin_prompt_bytes() {
     )]);
     let frozen = linguist_application::freeze_settings(&config, &environment).unwrap();
     for (reference, prompt) in [
-        ("builtin:vocabulary-v2", VOCABULARY_PROMPT_V2),
+        ("builtin:vocabulary-v3", VOCABULARY_PROMPT_V3),
         ("builtin:grammar-v2", GRAMMAR_PROMPT_V2),
     ] {
         assert_eq!(
@@ -35,7 +35,7 @@ fn frozen_generation_settings_bind_the_exact_builtin_prompt_bytes() {
     }
     assert_eq!(
         build_request(&document(), &config).unwrap().prompt_digest,
-        frozen.resource_hashes["builtin:vocabulary-v2"]
+        frozen.resource_hashes["builtin:vocabulary-v3"]
     );
     let grammar = LearningDocument::from_json(include_bytes!(
         "../../../contracts/v2/fixtures/grammar.json"
@@ -53,7 +53,10 @@ fn request_separates_untrusted_data_preserves_facts_and_caps_supplements() {
     doc.requested_tasks.push(Task::Production);
     if let LearningContent::Vocabulary(v) = &mut doc.content {
         v.usage.clear();
-        v.production_prompt.clear();
+        v.collocations = vec![linguist_core::document::Collocation {
+            phrase: "authored".into(),
+            gloss: String::new(),
+        }];
     }
     let original = doc.clone();
     let mut config = settings();
@@ -67,8 +70,9 @@ fn request_separates_untrusted_data_preserves_facts_and_caps_supplements() {
     assert_eq!(doc, original);
     assert_eq!(request.examples_requested, 1);
     assert!(request.allowed_fields.contains(&"usage".into()));
-    assert!(request.allowed_fields.contains(&"production_prompt".into()));
-    assert!(!request.allowed_fields.contains(&"spelling_prompt".into()));
+    assert!(request.allowed_fields.contains(&"nuance".into()));
+    assert!(!request.allowed_fields.contains(&"collocations".into()));
+    assert!(!request.allowed_fields.contains(&"production_prompt".into()));
     assert!(!request.allowed_fields.contains(&"meaning".into()));
     assert!(!request.system_prompt.contains(&doc.context));
     let data: serde_json::Value = serde_json::from_str(&request.user_json).unwrap();
@@ -95,16 +99,20 @@ fn request_separates_untrusted_data_preserves_facts_and_caps_supplements() {
         "vocabulary"
     );
     let properties = &schema["$defs"]["VocabularySupplement"]["properties"];
-    assert_eq!(properties["spelling_prompt"]["enum"], json!([""]));
-    assert!(properties["production_prompt"].get("enum").is_none());
+    assert!(properties.get("production_prompt").is_none());
+    assert_eq!(properties["collocations"]["maxItems"], 0);
+    assert_eq!(properties["nuance"]["maxItems"], 3);
     assert!(properties["usage"].get("enum").is_none());
     assert_eq!(properties["examples"]["maxItems"], 1);
 }
 #[test]
 fn output_cannot_override_core_facts_authored_fields_or_example_provenance() {
-    let doc = document();
+    let mut doc = document();
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.usage = "Authored usage.".into();
+    }
     let request = build_request(&doc, &settings()).unwrap();
-    let good = json!({"kind":"vocabulary","body":{"usage":"","examples":[],"production_prompt":"","spelling_prompt":""}});
+    let good = json!({"kind":"vocabulary","body":{"usage":"","examples":[],"nuance":[],"collocations":[]}});
     assert!(
         validate_output(
             &doc,
@@ -132,7 +140,7 @@ fn output_cannot_override_core_facts_authored_fields_or_example_provenance() {
         );
     }
     let mut wrong = good.clone();
-    wrong["body"]["spelling_prompt"] = json!("new task");
+    wrong["body"]["usage"] = json!("replaces authored usage");
     assert_eq!(
         validate_output(
             &doc,
@@ -175,7 +183,7 @@ fn output_examples_respect_budget_and_cross_language_translation() {
     let doc = document();
     let request = build_request(&doc, &settings()).unwrap();
     let output = |examples| {
-        serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":"","examples":examples,"production_prompt":"","spelling_prompt":""}})).unwrap()
+        serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":"","examples":examples,"nuance":[],"collocations":[]}})).unwrap()
     };
     let incomplete = output(json!([{"sentence":"食べる。","translation":""}]));
     assert_eq!(
@@ -207,7 +215,8 @@ fn grammar_fields_are_preserved_and_disabled_generation_is_explicit() {
     assert!(!request.allowed_fields.contains(&"meaning".into()));
     assert!(!request.allowed_fields.contains(&"formation".into()));
     assert!(!request.allowed_fields.contains(&"exercise_prompt".into()));
-    let wrong = br#"{"kind":"vocabulary","body":{"usage":"","examples":[],"production_prompt":"","spelling_prompt":""}}"#;
+    let wrong =
+        br#"{"kind":"vocabulary","body":{"usage":"","examples":[],"nuance":[],"collocations":[]}}"#;
     assert_eq!(
         validate_output(&doc, &request, wrong, 10000, 10000).unwrap_err(),
         "GENERATION_KIND_CONFLICT"
@@ -269,7 +278,7 @@ fn merge_archives_raw_output_preserves_parent_and_requires_generated_fact_review
     let original = doc.clone();
     let config = settings();
     let request = build_request(&doc, &config).unwrap();
-    let raw = br#" {"kind":"vocabulary","body":{"usage":"A meal context.","examples":[{"sentence":"New sentence.","translation":"New translation."}],"production_prompt":"","spelling_prompt":""}} "#;
+    let raw = br#" {"kind":"vocabulary","body":{"usage":"A meal context.","examples":[{"sentence":"New sentence.","translation":"New translation."}],"nuance":[],"collocations":[]}} "#;
     let draft = merge_output(&doc, &config, &request, raw, &identity(&config)).unwrap();
     assert_eq!(doc, original);
     let parent = match &doc.content {
@@ -335,7 +344,7 @@ fn merge_deduplicates_examples_and_rejects_forged_request_or_model_identity() {
         LearningContent::Vocabulary(v) => &v.examples[0],
         _ => unreachable!(),
     };
-    let bytes = serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":example.sentence,"translation":example.translation}],"production_prompt":"","spelling_prompt":""}})).unwrap();
+    let bytes = serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":example.sentence,"translation":example.translation}],"nuance":[],"collocations":[]}})).unwrap();
     let draft = merge_output(&doc, &config, &request, &bytes, &identity(&config)).unwrap();
     assert_eq!(draft.document.content, doc.content);
     assert_eq!(draft.document.evidence, doc.evidence);
@@ -364,7 +373,7 @@ fn full_provider_archive_assets_survive_store_publication_and_restart() {
     let doc = document();
     let config = settings();
     let request = build_request(&doc, &config).unwrap();
-    let bytes = br#"{"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":"A new example.","translation":"Translation."}],"production_prompt":"","spelling_prompt":""}}"#;
+    let bytes = br#"{"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":"A new example.","translation":"Translation."}],"nuance":[],"collocations":[]}}"#;
     let response = serde_json::to_vec_pretty(&json!({
         "model":config.values["llm.model"],"done":true,"done_reason":"stop",
         "message":{"role":"assistant","content":std::str::from_utf8(bytes).unwrap(),"thinking":"private fixture"},
@@ -469,7 +478,7 @@ fn explicit_user_field_intents_are_not_offered_to_generation() {
     );
     let request = build_request(&doc, &settings()).unwrap();
     assert!(!request.allowed_fields.contains(&"usage".into()));
-    let raw=br#"{"kind":"vocabulary","body":{"usage":"Replace the user edit","examples":[],"production_prompt":"","spelling_prompt":""}}"#;
+    let raw=br#"{"kind":"vocabulary","body":{"usage":"Replace the user edit","examples":[],"nuance":[],"collocations":[]}}"#;
     assert_eq!(
         validate_output(&doc, &request, raw, 10000, 10000).unwrap_err(),
         "GENERATION_FIELD_NOT_ALLOWED"
@@ -485,7 +494,7 @@ fn ollama_merge_binds_full_provider_envelope_and_rejects_invalid_content_or_fini
     let parent = doc.clone();
     let config = settings();
     let request = build_request(&doc, &config).unwrap();
-    let content = r#" {"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"production_prompt":"","spelling_prompt":""}} "#;
+    let content = r#" {"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}} "#;
     let mut envelope = json!({"model":config.values["llm.model"],"done":true,"done_reason":"stop",
         "message":{"role":"assistant","content":content,"thinking":"untrusted private reasoning"},
         "prompt_eval_count":100,"eval_count":20,"extension":{"retain":"all"}});
@@ -591,7 +600,10 @@ fn structural_repairs_share_transport_budget_and_keep_original_contract() {
 #[test]
 fn repair_limit_and_factual_failures_cannot_be_bypassed() {
     use linguist_application::generation::repair::*;
-    let doc = document();
+    let mut doc = document();
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.usage = "Authored usage.".into();
+    }
     let mut config = settings();
     config
         .values
@@ -600,7 +612,7 @@ fn repair_limit_and_factual_failures_cannot_be_bypassed() {
     let original = build_request(&doc, &config).unwrap();
     let mut budget = AttemptBudget::new(&config).unwrap();
     budget.reserve_read().unwrap();
-    let nonstructural = br#"{"kind":"vocabulary","body":{"usage":"","examples":[],"production_prompt":"","spelling_prompt":"unauthorized task"}}"#;
+    let nonstructural = br#"{"kind":"vocabulary","body":{"usage":"unauthorized usage","examples":[],"nuance":[],"collocations":[]}}"#;
     assert_eq!(
         structural_repair(&doc, &config, &original, nonstructural, &mut budget)
             .err()
@@ -631,5 +643,51 @@ fn repair_limit_and_factual_failures_cannot_be_bypassed() {
             .err()
             .unwrap(),
         "GENERATION_REQUEST_CONFLICT"
+    );
+}
+#[test]
+fn v3_nuance_and_collocations_merge_with_evidence_and_respect_bounds() {
+    let mut doc = document();
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.usage.clear();
+    }
+    let config = settings();
+    let request = build_request(&doc, &config).unwrap();
+    assert!(request.allowed_fields.contains(&"nuance".into()));
+    assert!(request.allowed_fields.contains(&"collocations".into()));
+    let raw = r#"{"kind":"vocabulary","body":{"usage":"Neutral, everyday.","examples":[],"nuance":[{"expression":"召し上がる","difference":"Honorific form for others."}],"collocations":[{"phrase":"ご飯を食べる","gloss":"eat a meal"}]}}"#;
+    let draft = merge_output(&doc, &config, &request, raw.as_bytes(), &identity(&config)).unwrap();
+    let LearningContent::Vocabulary(child) = &draft.document.content else {
+        unreachable!()
+    };
+    assert_eq!(child.nuance[0].expression, "召し上がる");
+    assert_eq!(child.collocations[0].gloss, "eat a meal");
+    for field in ["nuance", "collocations", "usage"] {
+        assert!(
+            draft
+                .document
+                .evidence
+                .iter()
+                .any(|e| e.field == field && e.provenance == linguist_core::Provenance::Generated),
+            "{field} evidence"
+        );
+    }
+    let blank = br#"{"kind":"vocabulary","body":{"usage":"","examples":[],"nuance":[{"expression":"x","difference":" "}],"collocations":[]}}"#;
+    assert_eq!(
+        validate_output(&doc, &request, blank, 10000, 10000).unwrap_err(),
+        "GENERATION_INCOMPLETE_ENTRY"
+    );
+    let many = serde_json::json!({"kind":"vocabulary","body":{"usage":"","examples":[],"nuance":[],
+        "collocations":(0..5).map(|i| serde_json::json!({"phrase":format!("p{i}"),"gloss":""})).collect::<Vec<_>>()}});
+    assert_eq!(
+        validate_output(
+            &doc,
+            &request,
+            &serde_json::to_vec(&many).unwrap(),
+            10000,
+            10000
+        )
+        .unwrap_err(),
+        "GENERATION_FIELD_NOT_ALLOWED"
     );
 }

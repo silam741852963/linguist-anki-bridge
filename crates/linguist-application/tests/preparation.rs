@@ -447,7 +447,7 @@ fn managed_duplicate_candidates_remain_review_evidence_even_when_fields_match() 
             .map(|(key, value)| (key.clone(), serde_json::json!({"value":value})))
             .collect::<serde_json::Map<_, _>>();
         let (name, term) = match kind {
-            Kind::Vocabulary => ("Linguist Vocabulary v2", "食べる"),
+            Kind::Vocabulary => ("Linguist Vocabulary v3", "食べる"),
             Kind::Grammar => ("Linguist Grammar v2", "〜ても"),
         };
         let reader = Reader {
@@ -572,7 +572,6 @@ fn schema_kind_and_provider_failures_do_not_initialize_state() {
     for (key, value) in [
         ("images.provider", serde_json::json!("custom")),
         ("audio.provider", serde_json::json!("custom")),
-        ("audio.provider", serde_json::json!("dictionary")),
     ] {
         let mut settings = f.settings.clone();
         settings
@@ -914,18 +913,10 @@ fn english_dictionary_preparation_resolves_sense_without_inventing_pronunciation
     assert_eq!(vocab.meaning, "Consume food");
 
     let reference = &resolved.revision.rendered[0].fields["Meaning"];
-    assert!(reference.starts_with("<p>Consume food</p>"));
-    for value in [
-        "Forms",
-        "eat",
-        "Wiktionary contributors",
-        "We eat food.",
-        "en.wiktionary.org",
-    ] {
-        assert!(
-            reference.contains(value),
-            "missing dictionary reference {value}"
-        );
+    assert!(reference.contains("lab-selected"));
+    assert!(reference.contains("Consume food"));
+    for value in ["Wiktionary contributors", "en.wiktionary.org", "Sense:"] {
+        assert!(!reference.contains(value), "shows provenance {value}");
     }
 
     assert!(vocab.reading.is_empty() && vocab.pronunciation.is_empty());
@@ -1048,11 +1039,12 @@ fn japanese_sense_review_requires_a_reading_for_the_selected_written_form() {
 }
 
 #[test]
-fn typed_cue_repairs_preserve_tasks_reject_leaks_and_publish_recoverable_children() {
-    use linguist_core::{Task, records::ReviewChoice, review::ResolutionRequest};
+fn v3_vocabulary_tasks_need_no_text_cues_but_spelling_needs_a_spoken_front() {
     let f = Fixture::new();
     let mut authored = input(Kind::Vocabulary);
     authored["requested_tasks"] = serde_json::json!(["comprehension", "production", "spelling"]);
+    authored["body"]["reading"] = serde_json::json!("");
+    authored["body"]["pronunciation"] = serde_json::json!("");
     let prepared = prepare_authored(
         &serde_json::to_vec(&authored).unwrap(),
         Kind::Vocabulary,
@@ -1060,106 +1052,24 @@ fn typed_cue_repairs_preserve_tasks_reject_leaks_and_publish_recoverable_childre
         &f.environment,
     )
     .unwrap();
-    let mut store = linguist_store::Store::open(&f.state()).unwrap();
+    let store = linguist_store::Store::open(&f.state()).unwrap();
     let base = store.revision(prepared.plan_id, 1).unwrap();
-    let doc = &base.documents[0];
-    let issue = doc
+    let codes: Vec<_> = base.documents[0]
         .issues
         .iter()
-        .find(|issue| {
-            issue.code == "MISSING_CUE" && issue.field.as_deref() == Some("production_prompt")
-        })
-        .unwrap();
-    let mut request = ResolutionRequest {
-        schema_version: 2,
-        base_revision: 1,
-        base_digest: prepared.digest,
-        document_id: doc.id,
-        issue_id: issue.id.clone(),
-        input_digest: doc.semantic_digest().unwrap(),
-        actor: "author".into(),
-        choice: ReviewChoice::Cue {
-            task: Task::Production,
-            text: "食べる".into(),
-        },
-    };
-    assert!(
-        linguist_application::review::resolve(&store, &base, &request, "now".into())
-            .unwrap_err()
-            .contains("CUE_CONTENT_INVALID")
-    );
-    request.choice = ReviewChoice::Cue {
-        task: Task::Spelling,
-        text: "Write the verb for consuming food.".into(),
-    };
-    assert!(linguist_application::review::resolve(&store, &base, &request, "now".into()).is_err());
-    request.choice = ReviewChoice::Cue {
-        task: Task::Production,
-        text: "x".repeat(
-            f.settings.values["input.max_record_chars"]
-                .as_u64()
-                .unwrap() as usize
-                + 1,
-        ),
-    };
-    assert!(
-        linguist_application::review::resolve(&store, &base, &request, "now".into())
-            .unwrap_err()
-            .contains("REVIEW_INPUT_LIMIT")
-    );
-    assert_eq!(store.latest_revision(base.id).unwrap(), 1);
-    request.choice = ReviewChoice::Cue {
-        task: Task::Production,
-        text: "Say the verb for consuming food.".into(),
-    };
-    let result =
-        linguist_application::review::resolve(&store, &base, &request, "now".into()).unwrap();
-    assert!(!result.ready);
-    assert_eq!(
-        result.revision.documents[0].requested_tasks,
-        base.documents[0].requested_tasks
-    );
-    store.publish_revision(&result.revision).unwrap();
-    let child = result.revision;
-    let doc = &child.documents[0];
-    let issue = doc
-        .issues
-        .iter()
-        .find(|issue| {
-            issue.code == "MISSING_CUE" && issue.field.as_deref() == Some("spelling_prompt")
-        })
-        .unwrap();
-    request.base_revision = 2;
-    request.base_digest = child.approval_digest().unwrap();
-    request.input_digest = doc.semantic_digest().unwrap();
-    request.issue_id = issue.id.clone();
-    request.choice = ReviewChoice::Cue {
-        task: Task::Spelling,
-        text: "Write the verb for consuming food.".into(),
-    };
-    let result =
-        linguist_application::review::resolve(&store, &child, &request, "now".into()).unwrap();
-    assert!(result.ready, "{:?}", result.revision.documents[0].issues);
-    assert_eq!(
-        result.revision.documents[0].sources,
-        base.documents[0].sources
-    );
-    assert_eq!(
-        result.revision.documents[0].archives,
-        base.documents[0].archives
-    );
-    assert_eq!(result.revision.rendered[0].fields["EnableProduction"], "1");
-    assert_eq!(result.revision.rendered[0].fields["EnableSpelling"], "1");
-    store.publish_revision(&result.revision).unwrap();
-    assert_eq!(store.revision(base.id, 1).unwrap(), base);
-    drop(store);
-    assert_eq!(
-        linguist_store::Store::read_only(&f.state())
-            .unwrap()
-            .revision(base.id, 3)
-            .unwrap(),
-        result.revision
-    );
+        .map(|issue| issue.code.as_str())
+        .collect();
+    assert!(!codes.contains(&"MISSING_CUE"), "{codes:?}");
+    assert!(codes.contains(&"SPELLING_CUE_MISSING"), "{codes:?}");
+    authored["body"]["pronunciation"] = serde_json::json!("たべる");
+    let prepared = prepare_authored(
+        &serde_json::to_vec(&authored).unwrap(),
+        Kind::Vocabulary,
+        &f.settings,
+        &f.environment,
+    )
+    .unwrap();
+    assert!(prepared.ready, "{:?}", prepared.issues);
 }
 
 #[test]

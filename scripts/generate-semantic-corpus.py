@@ -89,32 +89,31 @@ WIKI_BANK = {"provider": "wiktionary", "body": {"en": [
 # ---------------------------------------------------------------- vocab_add / ja
 L = "ja"
 W = "vocab_add"
-add("VA-JA-01", W, L, ["kanji", "baseline"], "Kanji verb with okurigana and reading.",
+add("VA-JA-01", W, L, ["kanji", "baseline"], "Kanji verb with okurigana; the reading is the pronunciation.",
     {"expression": "食べる", "meaning": "to eat", "sense_key": "eat", "reading": "たべる"},
-    ready(rendered_contains={"Expression": "食べる", "Reading": "たべる", "Meaning": "to eat"}))
+    ready(rendered_contains={"Expression": "食べる", "Pronunciation": "たべる", "Meaning": "to eat"}))
 add("VA-JA-02", W, L, ["kana"], "Kana-only expression keeps kana; no kanji is invented.",
     {"expression": "ありがとう", "meaning": "thank you", "sense_key": "thanks", "reading": "ありがとう"},
     ready(rendered_contains={"Expression": "ありがとう"}, rendered_excludes={"Kanji": "有"}))
-add("VA-JA-03", W, L, ["kanji", "homograph"], "はし as bridge: the sense key separates it from chopsticks.",
-    {"expression": "橋", "meaning": "bridge", "sense_key": "bridge", "reading": "はし"},
-    ready(rendered_contains={"SenseKey": "bridge", "Meaning": "bridge"}))
+add("VA-JA-03", W, L, ["kanji", "homograph"], "はし as bridge: the sense key is kept but never shown.",
+    {"expression": "橋", "meaning": "bridge", "sense_key": "bridge-sense", "reading": "はし"},
+    ready(rendered_contains={"Meaning": "bridge"}, rendered_excludes={"Meaning": "bridge-sense"}))
 add("VA-JA-04", W, L, ["kanji", "homograph"], "はし as chopsticks: same reading, different sense.",
-    {"expression": "箸", "meaning": "chopsticks", "sense_key": "chopsticks", "reading": "はし"},
-    ready(rendered_contains={"SenseKey": "chopsticks", "Meaning": "chopsticks"}))
+    {"expression": "箸", "meaning": "chopsticks", "sense_key": "chopsticks-sense", "reading": "はし"},
+    ready(rendered_contains={"Meaning": "chopsticks"}, rendered_excludes={"Meaning": "chopsticks-sense"}))
 add("VA-JA-05", W, L, ["kanji", "vietnamese_explanation"], "Vietnamese explanation is kept verbatim.",
     {"expression": "勉強", "meaning": "học tập; việc học", "sense_key": "study", "reading": "べんきょう"},
-    ready(rendered_contains={"Meaning": "học tập; việc học", "ExplanationLanguage": "vi"}), explanation="vi")
-add("VA-JA-06", W, L, ["kanji", "task_leakage"], "Production cue gives the meaning, not the answer.",
-    {"expression": "飲む", "meaning": "to drink", "sense_key": "drink",
-     "production_prompt": "Say 'to drink' in Japanese."},
-    ready(rendered_contains={"ProductionPrompt": "in Japanese."}),
+    ready(rendered_contains={"Meaning": "học tập; việc học"}), explanation="vi")
+add("VA-JA-06", W, L, ["kanji", "task_leakage"], "The Production front masks the answer inside the meaning.",
+    {"expression": "飲む", "meaning": "to drink (飲む)", "sense_key": "drink"},
+    ready(rendered_contains={"Meaning": "〜"}, rendered_excludes={"Meaning": "飲む"}),
     tasks=["comprehension", "production"])
-add("VA-JA-07", W, L, ["kanji", "task_leakage"], "Production cue containing the answer is rejected.",
-    {"expression": "飲む", "meaning": "to drink", "sense_key": "drink", "production_prompt": "飲む (to drink)"},
-    blocked("ANSWER_LEAK"), tasks=["comprehension", "production"])
-add("VA-JA-08", W, L, ["kanji", "task_leakage"], "Requested production without a cue blocks.",
+add("VA-JA-07", W, L, ["kana", "task_leakage"], "A kana-only word cannot be a Spelling card: its pronunciation is the answer.",
+    {"expression": "すごい", "meaning": "amazing", "sense_key": "amazing", "reading": "すごい"},
+    blocked("ANSWER_LEAK"), tasks=["comprehension", "spelling"])
+add("VA-JA-08", W, L, ["kanji", "task_leakage"], "Spelling without a pronunciation or audio blocks.",
     {"expression": "飲む", "meaning": "to drink", "sense_key": "drink"},
-    blocked("MISSING_CUE"), tasks=["comprehension", "production"])
+    blocked("SPELLING_CUE_MISSING"), tasks=["comprehension", "spelling"])
 add("VA-JA-09", W, L, ["kanji"], "Missing core meaning blocks; nothing is filled in.",
     {"expression": "走る", "sense_key": "run", "reading": "はしる"}, blocked("REQUIRED_CONTENT"))
 add("VA-JA-10", W, L, ["kanji", "adversarial"], "HTML/script in authored text is escaped when rendered.",
@@ -127,16 +126,16 @@ add("VA-JA-11", W, L, ["kanji"], "A generated example without evidence is an uns
 add("VA-JA-12", W, L, ["kanji", "vietnamese_explanation"], "User example with Vietnamese translation.",
     {"expression": "水", "meaning": "nước", "sense_key": "water", "reading": "みず",
      "examples": [ex("水を飲みます。", "Tôi uống nước.")]},
-    ready(rendered_contains={"Examples": "水を飲みます。"}), explanation="vi")
+    ready(rendered_contains={"UsageExamples": "を飲みます。"}), explanation="vi")
 add("VA-JA-13", W, L, ["kana", "no_dictionary_match"], "No dictionary entry: authored meaning stays, warning only.",
     {"expression": "ぴえん", "meaning": "(slang) on the verge of tears", "sense_key": "teary"},
     ready(issues=["DICTIONARY_NOT_FOUND"]), dictionary=JISHO_EMPTY)
 add("VA-JA-14", W, L, ["kanji", "homograph"], "Two dictionary entries (なま/せい): a sense must be chosen.",
     {"expression": "生"}, blocked("DICTIONARY_SENSE_REVIEW"), dictionary=JISHO_NAMA)
-add("VA-JA-15", W, L, ["kanji", "task_leakage"], "Spelling cue never shows the written form.",
-    {"expression": "猫", "meaning": "cat", "sense_key": "cat", "reading": "ねこ",
-     "spelling_prompt": "Write the kanji for ねこ (cat)."},
-    ready(rendered_contains={"SpellingPrompt": "ねこ"}), tasks=["comprehension", "spelling"])
+add("VA-JA-15", W, L, ["kanji", "task_leakage"], "The Spelling front shows the reading, never the written form.",
+    {"expression": "猫", "meaning": "cat", "sense_key": "cat", "reading": "ねこ"},
+    ready(rendered_contains={"Pronunciation": "ねこ"}, rendered_excludes={"Meaning": "猫"}),
+    tasks=["comprehension", "spelling"])
 
 # ---------------------------------------------------------------- vocab_add / en
 L = "en"
@@ -145,38 +144,35 @@ add("VA-EN-01", W, L, ["baseline"], "Plain English verb.",
     ready(rendered_contains={"Expression": "run"}))
 add("VA-EN-02", W, L, ["homograph"], "bank (finance) is distinct from bank (river).",
     {"expression": "bank", "meaning": "an institution that keeps money", "sense_key": "finance"},
-    ready(rendered_contains={"SenseKey": "finance"}))
+    ready(rendered_contains={"Meaning": "keeps money"}, rendered_excludes={"Meaning": "finance"}))
 add("VA-EN-03", W, L, ["homograph"], "bank (river) has its own sense key.",
     {"expression": "bank", "meaning": "the land beside a river", "sense_key": "river"},
-    ready(rendered_contains={"SenseKey": "river"}))
+    ready(rendered_contains={"Meaning": "beside a river"}))
 add("VA-EN-04", W, L, ["homograph"], "lead (metal) with its own pronunciation.",
     {"expression": "lead", "meaning": "a heavy grey metal", "sense_key": "metal", "pronunciation": "/lɛd/"},
     ready(rendered_contains={"Pronunciation": "/lɛd/"}))
 add("VA-EN-05", W, L, ["vietnamese_explanation"], "English word explained in Vietnamese.",
     {"expression": "necessary", "meaning": "cần thiết", "sense_key": "needed"},
-    ready(rendered_contains={"Meaning": "cần thiết", "ExplanationLanguage": "vi"}), explanation="vi")
-add("VA-EN-06", W, L, ["task_leakage"], "Spelling cue with blanks does not reveal the word.",
-    {"expression": "necessary", "meaning": "needed", "sense_key": "needed",
-     "spelling_prompt": "n_c_ss_ry (needed)"},
-    ready(), tasks=["comprehension", "spelling"])
-add("VA-EN-07", W, L, ["task_leakage"], "Spelling cue containing the word is rejected.",
-    {"expression": "necessary", "meaning": "needed", "sense_key": "needed",
-     "spelling_prompt": "Spell necessary"},
-    blocked("ANSWER_LEAK"), tasks=["comprehension", "spelling"])
-add("VA-EN-08", W, L, ["task_leakage"], "Multi-word production cue containing the phrase is rejected.",
-    {"expression": "give up", "meaning": "to stop trying", "sense_key": "quit",
-     "production_prompt": "give up = stop trying"},
-    blocked("ANSWER_LEAK"), tasks=["comprehension", "production"])
-add("VA-EN-09", W, L, ["task_leakage"], "Multi-word production cue that only defines it.",
-    {"expression": "give up", "meaning": "to stop trying", "sense_key": "quit",
-     "production_prompt": "Phrasal verb: to stop trying"},
-    ready(), tasks=["comprehension", "production"])
+    ready(rendered_contains={"Meaning": "cần thiết"}), explanation="vi")
+add("VA-EN-06", W, L, ["task_leakage"], "The Spelling front shows the pronunciation.",
+    {"expression": "necessary", "meaning": "needed", "sense_key": "needed", "pronunciation": "/ˈnɛsəsɛri/"},
+    ready(rendered_contains={"Pronunciation": "/ˈnɛsəsɛri/"}), tasks=["comprehension", "spelling"])
+add("VA-EN-07", W, L, ["task_leakage"], "English Spelling without a pronunciation or audio blocks.",
+    {"expression": "necessary", "meaning": "needed", "sense_key": "needed"},
+    blocked("SPELLING_CUE_MISSING"), tasks=["comprehension", "spelling"])
+add("VA-EN-08", W, L, ["task_leakage"], "A multi-word answer quoted in the meaning is masked on the front.",
+    {"expression": "give up", "meaning": "to stop trying (give up)", "sense_key": "quit"},
+    ready(rendered_contains={"Meaning": "〜"}, rendered_excludes={"Meaning": "give up"}),
+    tasks=["comprehension", "production"])
+add("VA-EN-09", W, L, ["task_leakage"], "Multi-word production front shows only the definition.",
+    {"expression": "give up", "meaning": "to stop trying", "sense_key": "quit"},
+    ready(rendered_contains={"Meaning": "to stop trying"}), tasks=["comprehension", "production"])
 add("VA-EN-10", W, L, ["adversarial"], "Script in the expression is escaped, not executed.",
     {"expression": "<script>alert(1)</script>run", "meaning": "to move fast", "sense_key": "move"},
     ready(rendered_excludes={"Expression": "<script"}))
 add("VA-EN-11", W, L, ["adversarial"], "Template braces in notes stay literal text.",
-    {"expression": "walk", "meaning": "to move on foot", "sense_key": "walk"},
-    ready(rendered_contains={"PersonalNotes": "{{Expression}}"}),
+    {"expression": "walk", "meaning": "to move on foot {{Expression}}", "sense_key": "walk"},
+    ready(rendered_contains={"Meaning": "{{Expression}}"}),
     extra={"personal_notes": "{{Expression}} {{#Meaning}}x{{/Meaning}}"})
 add("VA-EN-12", W, L, ["no_dictionary_match"], "Only a French section exists: no English fallback.",
     {"expression": "pain", "meaning": "physical suffering", "sense_key": "hurt"},
@@ -186,7 +182,7 @@ add("VA-EN-13", W, L, ["homograph"], "One entry with two senses and no authored 
 add("VA-EN-14", W, L, ["baseline"], "Example in the target language with an English gloss.",
     {"expression": "borrow", "meaning": "to take something to return later", "sense_key": "take-temporarily",
      "examples": [ex("Can I borrow your pen?", "May I use your pen and give it back?")]},
-    ready(rendered_contains={"Examples": "Can I borrow your pen?"}))
+    ready(rendered_contains={"UsageExamples": "your pen?"}))
 add("VA-EN-15", W, L, ["adversarial"], "Context and source summary keep control characters out of fields.",
     {"expression": "light", "meaning": "not heavy", "sense_key": "weight"},
     ready(rendered_contains={"Meaning": "not heavy"}),

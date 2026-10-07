@@ -1,0 +1,60 @@
+.card {
+  --lab-ink: #1f2328; --lab-muted: #656d76; --lab-panel: #f6f8fa; --lab-line: #d8dee4;
+  --lab-accent: #cf3a5b; --lab-accent-soft: #fbe9ee; --lab-chip: #eaeef2;
+  font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", "Noto Sans CJK JP", system-ui, sans-serif;
+  font-size: 20px; line-height: 1.55; color: var(--lab-ink); background: #fff;
+  text-align: center; margin: 0; padding: 0;
+}
+.nightMode.card, .night_mode .card {
+  --lab-ink: #e6edf3; --lab-muted: #9198a1; --lab-panel: #1c2128; --lab-line: #30363d;
+  --lab-accent: #ff7b93; --lab-accent-soft: #3a1f27; --lab-chip: #2d333b;
+  background: #0d1117;
+}
+.lab-card { max-width: 640px; margin: 0 auto; padding: 24px 16px 40px; }
+.lab-task { font-size: .7em; letter-spacing: .12em; text-transform: uppercase; color: var(--lab-muted); margin-bottom: .6em; }
+.lab-expression { font-size: 2.6em; font-weight: 600; line-height: 1.2; margin: .2em 0; }
+.lab-pronunciation { font-size: 1.15em; color: var(--lab-muted); }
+.lab-audio { margin: .6em 0; }
+.replay-button { display: inline-block; text-decoration: none; }
+.replay-button svg { width: 52px; height: 52px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.18)); transition: transform .12s ease; }
+.replay-button:hover svg { transform: scale(1.06); }
+.replay-button svg circle { fill: var(--lab-accent); stroke: none; }
+.replay-button svg path { fill: #fff; stroke: none; }
+hr#answer { border: none; border-top: 1px solid var(--lab-line); margin: 1.2em 0; }
+.lab-picture img { max-width: 100%; max-height: 40vh; object-fit: contain; border-radius: 12px; margin: .25em; }
+.lab-panel { text-align: left; background: var(--lab-panel); border: 1px solid var(--lab-line); border-radius: 12px; padding: .8em 1em; margin: .9em 0; font-size: .9em; }
+.lab-panel h4 { margin: .9em 0 .35em; font-size: .72em; letter-spacing: .1em; text-transform: uppercase; color: var(--lab-muted); }
+.lab-panel h4:first-child { margin-top: 0; }
+.lab-panel p { margin: .3em 0; }
+.lab-senses { margin: 0; padding: 0; list-style: none; counter-reset: lab-sense; }
+.lab-sense { counter-increment: lab-sense; position: relative; padding: .35em .6em .35em 2.1em; border-radius: 8px; color: var(--lab-muted); }
+.lab-sense::before { content: counter(lab-sense); position: absolute; left: .55em; top: .45em; width: 1.25em; height: 1.25em; border-radius: 50%; background: var(--lab-chip); font-size: .75em; line-height: 1.25em; text-align: center; }
+.lab-sense.lab-selected { color: var(--lab-ink); background: var(--lab-accent-soft); border-left: 4px solid var(--lab-accent); font-weight: 600; }
+.lab-sense.lab-selected::before { background: var(--lab-accent); color: #fff; }
+.lab-pos { display: inline-block; font-size: .68em; font-weight: 500; padding: .05em .55em; margin-right: .45em; border-radius: 999px; background: var(--lab-chip); color: var(--lab-muted); vertical-align: .12em; }
+.lab-gloss { font-weight: 600; }
+.lab-examples, .lab-collocations { list-style: none; margin: 0; padding: 0; }
+.lab-examples li { padding: .4em 0; border-bottom: 1px dashed var(--lab-line); }
+.lab-examples li:last-child { border-bottom: none; }
+.lab-target { font-size: 1.05em; }
+.lab-tr { color: var(--lab-muted); font-size: .9em; }
+.lab-hl { color: var(--lab-accent); font-weight: 700; }
+.lab-collocations li { display: inline-block; margin: .15em .3em .15em 0; padding: .15em .6em; border-radius: 8px; background: var(--lab-chip); }
+.lab-collocations .lab-tr { margin-left: .35em; }
+.lab-nuance { margin: 0; }
+.lab-nuance div { margin: .35em 0; }
+.lab-nuance dt { display: inline; font-weight: 700; }
+.lab-nuance dt::after { content: " — "; color: var(--lab-muted); font-weight: 400; }
+.lab-nuance dd { display: inline; margin: 0; }
+.lab-kanji-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .8em; }
+.lab-kanji { display: flex; gap: .8em; align-items: flex-start; }
+.lab-kanji-art { flex: 0 0 auto; width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid var(--lab-line); border-radius: 10px; overflow: hidden; }
+.lab-kanji-art img { width: 100%; height: 100%; object-fit: contain; border-radius: 0; margin: 0; max-height: none; }
+.lab-kanji-char { font-size: 64px; line-height: 1; color: #1f2328; }
+.lab-kanji-info { min-width: 0; }
+.lab-kanji-meanings { font-weight: 600; }
+.lab-kanji-readings { margin: .2em 0; font-size: .92em; }
+.lab-kanji-readings b { font-size: .75em; color: var(--lab-muted); margin-right: .3em; letter-spacing: .05em; }
+.lab-kanji-meta { font-size: .78em; color: var(--lab-muted); }
+.lab-type { margin: .6em 0; }
+.lab-type input { font-size: 1.1em; text-align: center; padding: .3em .6em; border-radius: 8px; border: 1px solid var(--lab-line); background: var(--lab-panel); color: var(--lab-ink); }

@@ -56,7 +56,7 @@ def study(col, card_id):
 
 def vocab_fields(manifest, **values):
     fields = {name: "" for name in manifest["fields"]}
-    fields.update({"Expression": "食べる", "Meaning": "to eat", "Language": "ja"})
+    fields.update({"Expression": "食べる", "Meaning": "to eat"})
     fields.update(values)
     return fields
 
@@ -81,7 +81,7 @@ def expect_error(code, function, *args):
 def main():
     assert (version, buildhash) == ("25.09.2", "3d813c83"), (version, buildhash)
     manifests = json.load(sys.stdin)
-    vocab_manifest = next(m for m in manifests if m["name"] == "Linguist Vocabulary v2")
+    vocab_manifest = next(m for m in manifests if m["name"] == "Linguist Vocabulary v3")
     with tempfile.TemporaryDirectory(prefix="lab-native-apply-") as directory:
         col = Collection(str(Path(directory) / "disposable.anki2"))
         try:
@@ -122,8 +122,7 @@ def main():
             update = {
                 "note_id": note.id, "expected_pre_digest": effects.content_digest(fresh),
                 "migration": None,
-                "fields": vocab_fields(vocab_manifest, EnableProduction="1",
-                                       ProductionPrompt="Say it"),
+                "fields": vocab_fields(vocab_manifest, EnableProduction="1"),
                 "add_tags": ["linguist"], "deck_id": target,
             }
             effects.update_note(col, update, manifest_digest)

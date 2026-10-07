@@ -162,6 +162,38 @@
         "history_digest"
       ]
     },
+    "Collocation": {
+      "type": "object",
+      "properties": {
+        "gloss": {
+          "type": "string"
+        },
+        "phrase": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "phrase",
+        "gloss"
+      ]
+    },
+    "Contrast": {
+      "type": "object",
+      "properties": {
+        "difference": {
+          "type": "string"
+        },
+        "expression": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "expression",
+        "difference"
+      ]
+    },
     "DictionaryEntry": {
       "type": "object",
       "properties": {
@@ -534,6 +566,77 @@
         "message"
       ]
     },
+    "KanjiDetail": {
+      "type": "object",
+      "properties": {
+        "character": {
+          "type": "string"
+        },
+        "jlpt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "kun_readings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "meanings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "on_readings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "parts": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "radical": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "stroke_digest": {
+          "description": "Digest of the `kanji_stroke` media asset animating this character, if any.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "strokes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "default": null,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "character",
+        "meanings"
+      ]
+    },
     "Language": {
       "type": "string"
     },
@@ -641,11 +744,20 @@
       ]
     },
     "MediaRole": {
-      "type": "string",
-      "enum": [
-        "picture",
-        "audio",
-        "archive"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "picture",
+            "audio",
+            "archive"
+          ]
+        },
+        {
+          "description": "Animated stroke-order image for one kanji (v3 Kanji field).",
+          "type": "string",
+          "const": "kanji_stroke"
+        }
       ]
     },
     "NativeCardEvidence": {
@@ -1042,7 +1154,38 @@
           ]
         },
         {
-          "description": "Resolves `SOURCE_NATIVE_HISTORY_REVIEW` from companion note evidence:\nevery source card with its observed study, and the reviewed mapping of\neach source template ordinal to a target task. No card is dropped.",
+          "description": "Resolves `SOURCE_NATIVE_HISTORY_REVIEW` from companion note evidence:\nevery source card with its observed study, and the reviewed mapping of\neach source template ordinal to a target task. No card is dropped.\nAcknowledges that a media file the source note references is absent\nfrom the collection at capture time. The original field (with its\nreference) stays archived; no bytes exist to archive or render.",
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "missing_media"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "filename": {
+                  "type": "string"
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "filename"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
           "type": "object",
           "properties": {
             "decision": {
@@ -1444,6 +1587,13 @@
     "Vocabulary": {
       "type": "object",
       "properties": {
+        "collocations": {
+          "description": "v3: common word combinations with a short gloss.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Collocation"
+          }
+        },
         "dictionary": {
           "type": "array",
           "default": [],
@@ -1465,10 +1615,25 @@
           "type": "string",
           "default": ""
         },
+        "kanji_details": {
+          "description": "v3: structured per-character kanji facts; replaces the plain `kanji` text.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KanjiDetail"
+          }
+        },
         "meaning": {
           "type": "string"
         },
+        "nuance": {
+          "description": "v3: how this word differs from near-synonyms (purple-flag study groups).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Contrast"
+          }
+        },
         "production_prompt": {
+          "description": "Legacy v2 text cues. The v3 model shows fields instead and never renders them.",
           "type": "string",
           "default": ""
         },

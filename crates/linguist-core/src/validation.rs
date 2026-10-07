@@ -149,39 +149,30 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
     }
     let (required, answer, allowed): (Vec<(&str, &str)>, &str, &[Task]) = match &doc.content {
         LearningContent::Vocabulary(v) => {
-            if tasks.contains(&Task::Production) {
-                if v.production_prompt.trim().is_empty() {
-                    add(
-                        "MISSING_CUE",
-                        Severity::Error,
-                        Some("production_prompt"),
-                        "Production requires a reviewed specific cue.",
-                    )
-                }
-                if answer_leaks(&v.production_prompt, &v.expression, &doc.target_language) {
-                    add(
-                        "ANSWER_LEAK",
-                        Severity::Error,
-                        Some("production_prompt"),
-                        "Production cue exposes the answer.",
-                    )
-                }
-            }
+            // v3 fronts show fields, not text cues: Production shows Picture and
+            // Meaning (masked), Spelling shows Audio, Pronunciation and Meaning.
             if tasks.contains(&Task::Spelling) {
-                if v.spelling_prompt.trim().is_empty() {
+                let spoken = if v.pronunciation.trim().is_empty() {
+                    &v.reading
+                } else {
+                    &v.pronunciation
+                };
+                let has_audio = doc.media.iter().any(|m| m.role == MediaRole::Audio);
+                if spoken.trim().is_empty() && !has_audio {
                     add(
-                        "MISSING_CUE",
+                        "SPELLING_CUE_MISSING",
                         Severity::Error,
-                        Some("spelling_prompt"),
-                        "Spelling requires an appropriate text/audio cue.",
+                        Some("pronunciation"),
+                        "Spelling needs a pronunciation or audio on its front.",
                     )
                 }
-                if answer_leaks(&v.spelling_prompt, &v.expression, &doc.target_language) {
+                let squash = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+                if !spoken.trim().is_empty() && squash(spoken) == squash(&v.expression) {
                     add(
                         "ANSWER_LEAK",
                         Severity::Error,
-                        Some("spelling_prompt"),
-                        "Spelling cue exposes the exact answer.",
+                        Some("pronunciation"),
+                        "The Spelling front shows the pronunciation, which equals the written form.",
                     )
                 }
             }
@@ -347,6 +338,11 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                 asset.mime.as_str(),
                 "audio/mpeg" | "audio/ogg" | "audio/wav"
             ),
+            MediaRole::KanjiStroke => {
+                asset.mime == "image/gif"
+                    && matches!(&doc.content, LearningContent::Vocabulary(v)
+                        if v.kanji_details.iter().any(|k| k.stroke_digest.as_deref() == Some(asset.digest.as_str())))
+            }
             MediaRole::Archive => true,
         };
         if !valid {

@@ -182,7 +182,7 @@ fn later_personal_edits_conflict_until_explicitly_merged() {
         note.fields
             .insert("Meaning".into(), "to eat (my note)".into());
         note.fields
-            .insert("PersonalNotes".into(), "remember the kanji".into());
+            .insert("Kanji".into(), "remember the kanji".into());
         note.tags.push("mine".into());
         note.cards[0].deck_id = 777;
     }
@@ -197,11 +197,7 @@ fn later_personal_edits_conflict_until_explicitly_merged() {
         plan.conflicts
             .contains(&"RESTORE_DECK_CONFLICT:20".to_owned())
     );
-    let personal = plan
-        .fields
-        .iter()
-        .find(|f| f.field == "PersonalNotes")
-        .unwrap();
+    let personal = plan.fields.iter().find(|f| f.field == "Kanji").unwrap();
     assert!(!personal.conflict);
     assert_eq!(personal.restored.as_deref(), Some("remember the kanji"));
     // No global force: an undecided conflict refuses with zero effects.
@@ -256,7 +252,7 @@ fn later_personal_edits_conflict_until_explicitly_merged() {
     );
     let note = &anki.notes[&10];
     assert_eq!(note.fields["Meaning"], "to consume; to eat (my note)");
-    assert_eq!(note.fields["PersonalNotes"], "remember the kanji");
+    assert_eq!(note.fields["Kanji"], "remember the kanji");
     assert_eq!(note.fields["Expression"], "食べる");
     let mut tags = note.tags.clone();
     tags.sort();
@@ -841,7 +837,16 @@ fn local_preview_reports_apply_changes_without_live_reads() {
             .contains(&"Meaning".to_owned())
             || !local.fields_changed_by_apply.is_empty()
     );
-    assert_eq!(local.tags_added_by_apply, vec!["linguist".to_owned()]);
+    assert_eq!(
+        local.tags_added_by_apply,
+        [
+            "lab::explain::en",
+            "lab::kind::vocabulary",
+            "lab::lang::ja",
+            "lab::task::comprehension",
+            "linguist",
+        ]
+    );
     assert_eq!(local.deck_moves, vec![(20, Some(HOME_DECK), TARGET_DECK)]);
     assert!(local.blockers.is_empty());
 }

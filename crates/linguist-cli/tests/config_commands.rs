@@ -202,7 +202,7 @@ fn model_install_preview_distinguishes_create_and_name_collision_without_writes(
                 let result = match action {
                     "getActiveProfile" => serde_json::json!("Fixture"),
                     "modelNamesAndIds" if state != "missing" => {
-                        serde_json::json!({"Linguist Vocabulary v2":42})
+                        serde_json::json!({"Linguist Vocabulary v3":42})
                     }
                     "modelNamesAndIds" => serde_json::json!({}),
                     "modelFieldNames" if state == "exact" => serde_json::json!(&manifest.fields),
@@ -218,7 +218,7 @@ fn model_install_preview_distinguishes_create_and_name_collision_without_writes(
                         "flds":manifest.fields.iter().enumerate().map(|(ord, name)| serde_json::json!({"name":name,"ord":ord})).collect::<Vec<_>>(),
                         "tmpls":manifest.templates.iter().map(|t| serde_json::json!({"name":t.name,"ord":t.ordinal,"qfmt":t.front,"afmt":t.back})).collect::<Vec<_>>()}]),
                     "findModelsByName" => serde_json::json!([{
-                        "id":42,"name":"Linguist Vocabulary v2","css":"old",
+                        "id":42,"name":"Linguist Vocabulary v3","css":"old",
                         "flds":[{"name":"Expression","ord":0}],
                         "tmpls":[{"name":"Comprehension","ord":0,"qfmt":"old","afmt":"old"}]}]),
                     _ => panic!("unexpected action {action}"),
@@ -247,7 +247,7 @@ fn model_install_preview_distinguishes_create_and_name_collision_without_writes(
             output.status.code(),
             Some(if state == "collision" { 4 } else { 0 })
         );
-        assert_eq!(result["target"]["name"], "Linguist Vocabulary v2");
+        assert_eq!(result["target"]["name"], "Linguist Vocabulary v3");
         assert_eq!(result["apply_eligible"], false);
         assert_eq!(result["writes_enabled"], false);
         assert!(actions.iter().all(|action| matches!(
@@ -3101,7 +3101,7 @@ fn duplicate_candidates_command_reads_managed_note_without_changing_plan() {
                 }
                 "notesInfo" => {
                     assert_eq!(request["params"]["notes"], serde_json::json!([123]));
-                    serde_json::json!([{"noteId":123,"modelName":"Linguist Vocabulary v2","fields":fields}])
+                    serde_json::json!([{"noteId":123,"modelName":"Linguist Vocabulary v3","fields":fields}])
                 }
                 _ => panic!("unexpected action: {action}"),
             };
@@ -4018,7 +4018,7 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     let root = std::env::temp_dir().join(format!("lab-cue-cli-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
     let input = root.join("input.json");
-    std::fs::write(&input, br#"{"schema_version":2,"kind":"vocabulary","target_language":"en","requested_tasks":["comprehension","production"],"body":{"expression":"eat","meaning":"consume food","sense_key":"food"}}"#).unwrap();
+    std::fs::write(&input, r#"{"schema_version":2,"kind":"grammar","target_language":"ja","explanation_language":"en","requested_tasks":["recognition"],"body":{"pattern":"〜ても","meaning":"even if","formation":"Verb te-form + も","use_key":"concession","recognition_prompt":"","examples":[{"sentence":"雨が降っても行きます。","translation":"I will go even if it rains.","provenance":"user"}]}}"#).unwrap();
     let state = format!("storage.state_dir={}/state", root.display());
     let out = cli()
         .args([
@@ -4030,7 +4030,7 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
             "dictionary.provider=authored",
             "--set",
             "images.search_when_missing=false",
-            "vocab",
+            "grammar",
             "add",
             "--document",
             input.to_str().unwrap(),
@@ -4046,7 +4046,9 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     let issue = doc
         .issues
         .iter()
-        .find(|issue| issue.code == "MISSING_CUE")
+        .find(|issue| {
+            issue.code == "REQUIRED_CONTENT" && issue.field.as_deref() == Some("recognition_prompt")
+        })
         .unwrap();
     let request = linguist_core::review::ResolutionRequest {
         schema_version: 2,
@@ -4057,8 +4059,8 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
         input_digest: doc.semantic_digest().unwrap(),
         actor: "author".into(),
         choice: linguist_core::records::ReviewChoice::Cue {
-            task: linguist_core::Task::Production,
-            text: "Name the verb for consuming food.".into(),
+            task: linguist_core::Task::Recognition,
+            text: "What relation does this pattern express?".into(),
         },
     };
     let compact = cli()
@@ -4093,7 +4095,7 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     );
     assert_eq!(
         page["issues"][0]["templates"][0]["choice"]["value"]["task"],
-        "production"
+        "recognition"
     );
     assert_eq!(page["issues"][0]["actor_required"], true);
     assert_eq!(page["archives_included"], false);
@@ -4184,8 +4186,8 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
         base.documents[0].requested_tasks
     );
     assert_eq!(
-        child.rendered[0].fields["ProductionPrompt"],
-        "Name the verb for consuming food."
+        child.rendered[0].fields["RecognitionPrompt"],
+        "What relation does this pattern express?"
     );
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
@@ -4557,7 +4559,8 @@ fn vocabulary_and_grammar_adds_review_to_readiness_with_ordinary_commands() {
         ])
         .output()
         .unwrap();
-    assert_eq!(vocab.status.code(), Some(4), "{vocab:?}");
+    // v3 needs no text cues: a reading is enough for the Spelling front.
+    assert_eq!(vocab.status.code(), Some(0), "{vocab:?}");
     let value: serde_json::Value = serde_json::from_slice(&vocab.stdout).unwrap();
     assert!(
         value["next_commands"]
@@ -4630,7 +4633,7 @@ fn editor_mode_applies_a_typed_draft_and_abort_keeps_the_parent() {
     let editor = root.join("editor.sh");
     std::fs::write(
         &editor,
-        "#!/bin/sh\nexec /usr/bin/sed -i 's/\"fields\": {}/\"fields\": {\"Usage\": {\"intent\": \"set\", \"value\": \"Edited usage\"}}/' \"$1\"\n",
+        "#!/bin/sh\nexec /usr/bin/sed -i 's/\"fields\": {}/\"fields\": {\"UsageExamples\": {\"intent\": \"set\", \"value\": \"Edited usage\"}}/' \"$1\"\n",
     )
     .unwrap();
     let abort = root.join("abort.sh");
@@ -4710,7 +4713,7 @@ fn editor_mode_applies_a_typed_draft_and_abort_keeps_the_parent() {
     let store = linguist_store::Store::read_only(&root.join("state")).unwrap();
     let id = uuid::Uuid::parse_str(&plan).unwrap();
     assert_eq!(
-        store.revision(id, 2).unwrap().documents[0].edits["Usage"],
+        store.revision(id, 2).unwrap().documents[0].edits["UsageExamples"],
         linguist_core::FieldIntent::Set("Edited usage".into())
     );
     // The private draft directory is removed.

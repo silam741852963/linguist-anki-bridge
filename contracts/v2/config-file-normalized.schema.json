@@ -406,6 +406,14 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "kanji.stroke_order": {
+          "default": true,
+          "description": "Fetch a stroke-order GIF per kanji from the KanjiVG-based mistval/kanji_images set (raw.githubusercontent.com).",
+          "type": "boolean",
+          "x-consumer": "kanji adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "kanji.url_template": {
           "default": "https://jisho.org/search/{char}%23kanji",
           "description": "Validated URL template.",
@@ -571,7 +579,7 @@
           "x-sensitive": false
         },
         "llm.prompts.vocabulary": {
-          "default": "builtin:vocabulary-v2",
+          "default": "builtin:vocabulary-v3",
           "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
           "maxLength": 1048576,
           "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
@@ -1536,6 +1544,14 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "kanji.stroke_order": {
+          "default": true,
+          "description": "Fetch a stroke-order GIF per kanji from the KanjiVG-based mistval/kanji_images set (raw.githubusercontent.com).",
+          "type": "boolean",
+          "x-consumer": "kanji adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "kanji.url_template": {
           "default": "https://jisho.org/search/{char}%23kanji",
           "description": "Validated URL template.",
@@ -1701,7 +1717,7 @@
           "x-sensitive": false
         },
         "llm.prompts.vocabulary": {
-          "default": "builtin:vocabulary-v2",
+          "default": "builtin:vocabulary-v3",
           "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
           "maxLength": 1048576,
           "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
@@ -2826,6 +2842,14 @@
       "x-scope": "purpose",
       "x-sensitive": false
     },
+    "kanji.stroke_order": {
+      "default": true,
+      "description": "Fetch a stroke-order GIF per kanji from the KanjiVG-based mistval/kanji_images set (raw.githubusercontent.com).",
+      "type": "boolean",
+      "x-consumer": "kanji adapter",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
     "kanji.url_template": {
       "default": "https://jisho.org/search/{char}%23kanji",
       "description": "Validated URL template.",
@@ -2991,7 +3015,7 @@
       "x-sensitive": false
     },
     "llm.prompts.vocabulary": {
-      "default": "builtin:vocabulary-v2",
+      "default": "builtin:vocabulary-v3",
       "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
       "maxLength": 1048576,
       "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",

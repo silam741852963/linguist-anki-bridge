@@ -266,7 +266,7 @@ fn fixtures_render_fixed_models_and_roundtrip() {
         assert_eq!(
             rendered.fields.len(),
             if matches!(doc.content, LearningContent::Vocabulary(_)) {
-                18
+                9
             } else {
                 15
             }
@@ -314,20 +314,19 @@ fn rich_dictionary_roundtrip_keeps_all_senses_and_renders_inert_reference() {
     });
     let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
     let meaning = &rendered.fields["Meaning"];
-    assert!(meaning.starts_with("<p>consume food</p>"));
-    assert!(meaning.contains("Sense: consume-food (selected)"));
-    assert!(meaning.contains("Sense: erode"));
-    assert_eq!(meaning.matches("(selected)").count(), 1);
-    for text in [
+    // WP-19: senses only, the selection marked by class, no provenance text.
+    assert!(meaning.starts_with("<ol class=\"lab-senses\">"));
+    assert_eq!(meaning.matches("lab-selected").count(), 1);
+    assert!(meaning.contains("wear away"));
+    for hidden in [
+        "Sense:",
+        "(selected)",
         "Wiktionary contributors",
         "We eat rice.",
-        "wear away",
-        "restrictions",
-        "antonyms",
-        "retained",
-        "meal",
+        "consume-food",
+        "https://",
     ] {
-        assert!(meaning.contains(text), "missing {text}: {meaning}");
+        assert!(!meaning.contains(hidden), "shows {hidden}: {meaning}");
     }
     for active in ["<script", "<img", "href=", "src=\"x"] {
         assert!(
@@ -335,15 +334,23 @@ fn rich_dictionary_roundtrip_keeps_all_senses_and_renders_inert_reference() {
             "active provider markup: {meaning}"
         );
     }
-    assert!(meaning.contains("&lt;img src=x onerror=alert(1)&gt;"));
-    assert!(meaning.find("consume food").unwrap() < meaning.find("wear away").unwrap());
+    let selected = meaning.find("lab-selected").unwrap();
+    assert!(selected < meaning.find("wear away").unwrap());
+    let tags = render::tags(&doc);
+    assert!(tags.contains(&"lab::lang::en".to_string()), "{tags:?}");
+    assert!(
+        tags.contains(&"lab::kind::vocabulary".to_string()),
+        "{tags:?}"
+    );
 }
 #[test]
 fn task_cues_reject_answer_leakage_and_invalid_task_kinds() {
+    // v3 Spelling fronts show the pronunciation: a kana-only word would leak.
     let mut doc = vocabulary();
-    doc.requested_tasks.push(Task::Production);
+    doc.requested_tasks.push(Task::Spelling);
     if let LearningContent::Vocabulary(v) = &mut doc.content {
-        v.production_prompt = "食べる means what?".into();
+        v.expression = "たべる".into();
+        v.pronunciation = "た べる".into();
     }
     assert!(
         validation::validate(&doc)
@@ -899,11 +906,113 @@ fn model_comparison_retains_duplicate_fields_and_exposes_template_differences() 
     assert!(!report.field_order_matches);
     assert!(!report.css_matches);
     assert_eq!(report.duplicate_source_fields, vec!["Expression"]);
-    assert_eq!(report.fields[0].source_ordinals, vec![1, 18]);
+    assert_eq!(report.fields[0].source_ordinals, vec![1, 9]);
     assert_eq!(report.unexpected_fields, vec!["Audio and IPA"]);
     assert_eq!(report.unexpected_templates, vec!["User task"]);
     assert!(!report.templates[0].front_matches);
     assert!(report.templates[0].back_matches);
     assert!(!report.templates[2].present);
     assert_eq!(report.templates[2].target_ordinal, 2);
+}
+#[test]
+fn v3_vocabulary_renders_fixed_sections_kanji_strokes_and_tags() {
+    use linguist_core::records::{MediaAsset, MediaOwner, MediaRole};
+    let mut doc = vocabulary();
+    let stroke = "c".repeat(64);
+    doc.requested_tasks = vec![Task::Comprehension, Task::Production, Task::Spelling];
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.pronunciation = String::new();
+        v.reading = "たべる".into();
+        v.usage = "Neutral; <any> meal.".into();
+        v.nuance = vec![Contrast {
+            expression: "召し上がる".into(),
+            difference: "Honorific; use for a superior's eating.".into(),
+        }];
+        v.collocations = vec![Collocation {
+            phrase: "ご飯を食べる".into(),
+            gloss: "eat a meal".into(),
+        }];
+        v.examples = vec![Example {
+            sentence: "朝ご飯を食べる。".into(),
+            translation: "I eat breakfast.".into(),
+            provenance: Provenance::User,
+            evidence_ids: vec![],
+        }];
+        v.kanji = "legacy text is dropped".into();
+        v.kanji_details = vec![KanjiDetail {
+            character: "食".into(),
+            meanings: vec!["eat".into(), "food".into()],
+            on_readings: vec!["ショク".into()],
+            kun_readings: vec!["た.べる".into()],
+            strokes: Some(9),
+            radical: Some("食 — eat".into()),
+            parts: vec!["人".into(), "良".into()],
+            jlpt: Some("N5".into()),
+            stroke_digest: Some(stroke.clone()),
+        }];
+    }
+    doc.media.push(MediaAsset {
+        digest: stroke.clone(),
+        filename: format!("lab_{stroke}.gif"),
+        original_filename: Some("98df.gif".into()),
+        size_bytes: 10,
+        mime: "image/gif".into(),
+        owner: MediaOwner::App,
+        role: MediaRole::KanjiStroke,
+        source_id: None,
+        attribution: "KanjiVG".into(),
+        license: Some("CC-BY-SA-3.0".into()),
+    });
+    assert!(validation::ready(&doc), "{:?}", validation::validate(&doc));
+    let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
+    assert_eq!(rendered.model.name, "Linguist Vocabulary v3");
+    assert_eq!(
+        rendered.fields.keys().cloned().collect::<Vec<_>>(),
+        [
+            "Audio",
+            "EnableProduction",
+            "EnableSpelling",
+            "Expression",
+            "Kanji",
+            "Meaning",
+            "Picture",
+            "Pronunciation",
+            "UsageExamples"
+        ]
+    );
+    assert_eq!(rendered.fields["Pronunciation"], "たべる");
+    assert_eq!(rendered.fields["EnableSpelling"], "1");
+    let usage = &rendered.fields["UsageExamples"];
+    for text in [
+        "<h4>Usage</h4><p>Neutral; &lt;any&gt; meal.</p>",
+        "<dt>召し上がる</dt><dd>Honorific; use for a superior&#39;s eating.</dd>",
+        "ご飯を<b class=\"lab-hl\">食べる</b>",
+        "<div class=\"lab-tr\">I eat breakfast.</div>",
+    ] {
+        assert!(usage.contains(text), "missing {text}: {usage}");
+    }
+    let kanji = &rendered.fields["Kanji"];
+    assert!(kanji.contains(&format!("<img src=\"lab_{stroke}.gif\">")));
+    assert!(kanji.contains("<b>ON</b>ショク"));
+    assert!(kanji.contains("9 strokes · radical 食 — eat · parts 人 良 · N5"));
+    assert!(!kanji.contains("legacy text"));
+    assert!(rendered.media_digests.contains(&stroke));
+    let tags = render::tags(&doc);
+    for tag in [
+        "lab::lang::ja",
+        "lab::kind::vocabulary",
+        "lab::task::spelling",
+        "lab::has::kanji",
+    ] {
+        assert!(tags.contains(&tag.to_owned()), "{tags:?}");
+    }
+    // A stroke asset no kanji detail points to is not a valid render input.
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.kanji_details[0].stroke_digest = None;
+    }
+    assert!(
+        validation::validate(&doc)
+            .iter()
+            .any(|issue| issue.code == "INVALID_MEDIA_TYPE")
+    );
 }

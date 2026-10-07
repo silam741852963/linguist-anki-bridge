@@ -98,6 +98,7 @@ pub fn apply_patch(
                     | "Reading"
                     | "Pronunciation"
                     | "Usage"
+                    | "UsageExamples"
                     | "Kanji"
                     | "Formation"
                     | "Source"

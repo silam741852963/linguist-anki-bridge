@@ -684,7 +684,7 @@ fn inference_draft_archives_wire_and_model_evidence_and_recovers_after_restart()
     use linguist_core::{LearningContent, records::*, validation};
     let mut output = completion_response();
     output["message"]["content"] = json!(
-        r#"{"kind":"vocabulary","body":{"usage":"Candidate usage.","examples":[],"production_prompt":"","spelling_prompt":""}}"#
+        r#"{"kind":"vocabulary","body":{"usage":"Candidate usage.","examples":[],"nuance":[],"collocations":[]}}"#
     );
     let response = reply(output);
     let raw = response.2.as_bytes().to_vec();
@@ -780,7 +780,7 @@ fn inference_draft_rejects_schema_invalid_and_protected_field_output() {
     for (content, expected) in [
         ("malformed", "GENERATION_OUTPUT_SCHEMA_INVALID"),
         (
-            r#"{"kind":"vocabulary","body":{"usage":"Changed authored usage","examples":[],"production_prompt":"","spelling_prompt":""}}"#,
+            r#"{"kind":"vocabulary","body":{"usage":"Changed authored usage","examples":[],"nuance":[],"collocations":[]}}"#,
             "GENERATION_FIELD_NOT_ALLOWED",
         ),
     ] {
@@ -812,7 +812,7 @@ fn candidate_publication_freezes_current_settings_and_keeps_engine_blocker() {
     use linguist_core::{LearningContent, records::PlanRevision};
     let mut output = completion_response();
     output["message"]["content"] = json!(
-        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"production_prompt":"","spelling_prompt":""}}"#
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
     );
     let server = FixtureServer::new(vec![
         reply(inventory()),
@@ -971,7 +971,7 @@ fn pending_generation_runs_eligible_items_and_reports_the_rest() {
     use linguist_core::{LearningContent, records::PlanRevision};
     let mut output = completion_response();
     output["message"]["content"] = json!(
-        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"production_prompt":"","spelling_prompt":""}}"#
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
     );
     let server = FixtureServer::new(vec![
         reply(inventory()),
@@ -1047,7 +1047,7 @@ fn generation_regeneration_replaces_generated_usage_and_keeps_authored_fields() 
     let output = |usage: &str| {
         let mut output = completion_response();
         output["message"]["content"] = json!(format!(
-            r#"{{"kind":"vocabulary","body":{{"usage":"{usage}","examples":[],"production_prompt":"","spelling_prompt":""}}}}"#
+            r#"{{"kind":"vocabulary","body":{{"usage":"{usage}","examples":[],"nuance":[],"collocations":[]}}}}"#
         ));
         output
     };

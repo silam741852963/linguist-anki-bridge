@@ -1212,14 +1212,13 @@ fn mapped_enable_fields_retain_task_candidates_without_claiming_native_mapping()
                 && e.provenance == Provenance::Source)
     );
     assert!(linguist_core::render::render(&document, &capture.captured.source.fields).is_err());
-    for field in ["production_prompt", "spelling_prompt"] {
-        assert!(
-            document
-                .issues
-                .iter()
-                .any(|issue| issue.code == "MISSING_CUE" && issue.field.as_deref() == Some(field))
-        );
-    }
+    // v3 fronts show fields: no text cue is requested for any task.
+    assert!(
+        !document
+            .issues
+            .iter()
+            .any(|issue| issue.code == "MISSING_CUE")
+    );
     let (capture, settings) = setup(
         "english_grammar",
         &[
@@ -1463,7 +1462,9 @@ fn revamp_enrichment_child_preserves_source_tasks_cards_and_parent() {
     let LearningContent::Vocabulary(vocab) = &after.content else {
         panic!()
     };
-    assert!(vocab.kanji.starts_with("食 — eat"));
+    assert!(vocab.kanji.is_empty());
+    assert_eq!(vocab.kanji_details[0].character, "食");
+    assert_eq!(vocab.kanji_details[0].meanings[0], "eat");
     assert_eq!(vocab.meaning, "to eat");
     // The source-only parent remains intact and the enrichment ran once.
     assert_eq!(store.revision(prepared.plan_id, 1).unwrap(), base);

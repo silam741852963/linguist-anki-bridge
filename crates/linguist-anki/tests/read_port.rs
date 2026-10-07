@@ -424,7 +424,7 @@ fn model_inspection_exposes_differences_and_checks_profile_after_read() {
     for changed in [false, true] {
         let server = Server::new(vec![
             response(json!("Fixture")),
-            response(json!({"Linguist Vocabulary v2":123})),
+            response(json!({"Linguist Vocabulary v3":123})),
             response(json!(target.fields)),
             response(json!(template_values)),
             response(json!({"css":target.css})),

@@ -181,6 +181,7 @@ kanji.explanation_language = "en"
 
 # Validated URL template.
 kanji.url_template = "https://jisho.org/search/{char}%23kanji"
+kanji.stroke_order = true
 
 # Pinned extraction schema.
 kanji.schema = "builtin:jisho-kanji-v2"
@@ -234,7 +235,7 @@ llm.seed = 0
 llm.keep_alive = "5m"
 
 # Versioned builtin or pinned file path; trusted user instruction resource.
-llm.prompts.vocabulary = "builtin:vocabulary-v2"
+llm.prompts.vocabulary = "builtin:vocabulary-v3"
 
 # Versioned builtin or pinned file path; trusted user instruction resource.
 llm.prompts.grammar = "builtin:grammar-v2"

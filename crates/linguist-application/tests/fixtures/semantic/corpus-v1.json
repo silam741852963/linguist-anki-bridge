@@ -11,7 +11,7 @@
     "kanji",
     "baseline"
    ],
-   "rationale": "Kanji verb with okurigana and reading.",
+   "rationale": "Kanji verb with okurigana; the reading is the pronunciation.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
@@ -30,7 +30,7 @@
     "issues": [],
     "rendered_contains": {
      "Expression": "食べる",
-     "Reading": "たべる",
+     "Pronunciation": "たべる",
      "Meaning": "to eat"
     }
    }
@@ -79,7 +79,7 @@
     "kanji",
     "homograph"
    ],
-   "rationale": "はし as bridge: the sense key separates it from chopsticks.",
+   "rationale": "はし as bridge: the sense key is kept but never shown.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
@@ -87,7 +87,7 @@
     "body": {
      "expression": "橋",
      "meaning": "bridge",
-     "sense_key": "bridge",
+     "sense_key": "bridge-sense",
      "reading": "はし"
     }
    },
@@ -97,8 +97,10 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "SenseKey": "bridge",
      "Meaning": "bridge"
+    },
+    "rendered_excludes": {
+     "Meaning": "bridge-sense"
     }
    }
   },
@@ -120,7 +122,7 @@
     "body": {
      "expression": "箸",
      "meaning": "chopsticks",
-     "sense_key": "chopsticks",
+     "sense_key": "chopsticks-sense",
      "reading": "はし"
     }
    },
@@ -130,8 +132,10 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "SenseKey": "chopsticks",
      "Meaning": "chopsticks"
+    },
+    "rendered_excludes": {
+     "Meaning": "chopsticks-sense"
     }
    }
   },
@@ -164,8 +168,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "Meaning": "học tập; việc học",
-     "ExplanationLanguage": "vi"
+     "Meaning": "học tập; việc học"
     }
    }
   },
@@ -179,16 +182,15 @@
     "kanji",
     "task_leakage"
    ],
-   "rationale": "Production cue gives the meaning, not the answer.",
+   "rationale": "The Production front masks the answer inside the meaning.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
     "target_language": "ja",
     "body": {
      "expression": "飲む",
-     "meaning": "to drink",
-     "sense_key": "drink",
-     "production_prompt": "Say 'to drink' in Japanese."
+     "meaning": "to drink (飲む)",
+     "sense_key": "drink"
     },
     "requested_tasks": [
      "comprehension",
@@ -201,7 +203,10 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "ProductionPrompt": "in Japanese."
+     "Meaning": "〜"
+    },
+    "rendered_excludes": {
+     "Meaning": "飲む"
     }
    }
   },
@@ -212,23 +217,23 @@
    "language": "ja",
    "explanation_language": "en",
    "categories": [
-    "kanji",
+    "kana",
     "task_leakage"
    ],
-   "rationale": "Production cue containing the answer is rejected.",
+   "rationale": "A kana-only word cannot be a Spelling card: its pronunciation is the answer.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
     "target_language": "ja",
     "body": {
-     "expression": "飲む",
-     "meaning": "to drink",
-     "sense_key": "drink",
-     "production_prompt": "飲む (to drink)"
+     "expression": "すごい",
+     "meaning": "amazing",
+     "sense_key": "amazing",
+     "reading": "すごい"
     },
     "requested_tasks": [
      "comprehension",
-     "production"
+     "spelling"
     ]
    },
    "dictionary": null,
@@ -250,7 +255,7 @@
     "kanji",
     "task_leakage"
    ],
-   "rationale": "Requested production without a cue blocks.",
+   "rationale": "Spelling without a pronunciation or audio blocks.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
@@ -262,7 +267,7 @@
     },
     "requested_tasks": [
      "comprehension",
-     "production"
+     "spelling"
     ]
    },
    "dictionary": null,
@@ -270,7 +275,7 @@
    "expect": {
     "ready": false,
     "issues": [
-     "MISSING_CUE"
+     "SPELLING_CUE_MISSING"
     ]
    }
   },
@@ -408,7 +413,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "Examples": "水を飲みます。"
+     "UsageExamples": "を飲みます。"
     }
    }
   },
@@ -536,7 +541,7 @@
     "kanji",
     "task_leakage"
    ],
-   "rationale": "Spelling cue never shows the written form.",
+   "rationale": "The Spelling front shows the reading, never the written form.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
@@ -545,8 +550,7 @@
      "expression": "猫",
      "meaning": "cat",
      "sense_key": "cat",
-     "reading": "ねこ",
-     "spelling_prompt": "Write the kanji for ねこ (cat)."
+     "reading": "ねこ"
     },
     "requested_tasks": [
      "comprehension",
@@ -559,7 +563,10 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "SpellingPrompt": "ねこ"
+     "Pronunciation": "ねこ"
+    },
+    "rendered_excludes": {
+     "Meaning": "猫"
     }
    }
   },
@@ -619,7 +626,10 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "SenseKey": "finance"
+     "Meaning": "keeps money"
+    },
+    "rendered_excludes": {
+     "Meaning": "finance"
     }
    }
   },
@@ -649,7 +659,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "SenseKey": "river"
+     "Meaning": "beside a river"
     }
    }
   },
@@ -711,8 +721,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "Meaning": "cần thiết",
-     "ExplanationLanguage": "vi"
+     "Meaning": "cần thiết"
     }
    }
   },
@@ -725,7 +734,7 @@
    "categories": [
     "task_leakage"
    ],
-   "rationale": "Spelling cue with blanks does not reveal the word.",
+   "rationale": "The Spelling front shows the pronunciation.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
@@ -734,7 +743,7 @@
      "expression": "necessary",
      "meaning": "needed",
      "sense_key": "needed",
-     "spelling_prompt": "n_c_ss_ry (needed)"
+     "pronunciation": "/ˈnɛsəsɛri/"
     },
     "requested_tasks": [
      "comprehension",
@@ -745,7 +754,10 @@
    "settings": {},
    "expect": {
     "ready": true,
-    "issues": []
+    "issues": [],
+    "rendered_contains": {
+     "Pronunciation": "/ˈnɛsəsɛri/"
+    }
    }
   },
   {
@@ -757,7 +769,7 @@
    "categories": [
     "task_leakage"
    ],
-   "rationale": "Spelling cue containing the word is rejected.",
+   "rationale": "English Spelling without a pronunciation or audio blocks.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
@@ -765,8 +777,7 @@
     "body": {
      "expression": "necessary",
      "meaning": "needed",
-     "sense_key": "needed",
-     "spelling_prompt": "Spell necessary"
+     "sense_key": "needed"
     },
     "requested_tasks": [
      "comprehension",
@@ -778,7 +789,7 @@
    "expect": {
     "ready": false,
     "issues": [
-     "ANSWER_LEAK"
+     "SPELLING_CUE_MISSING"
     ]
    }
   },
@@ -791,16 +802,15 @@
    "categories": [
     "task_leakage"
    ],
-   "rationale": "Multi-word production cue containing the phrase is rejected.",
+   "rationale": "A multi-word answer quoted in the meaning is masked on the front.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
     "target_language": "en",
     "body": {
      "expression": "give up",
-     "meaning": "to stop trying",
-     "sense_key": "quit",
-     "production_prompt": "give up = stop trying"
+     "meaning": "to stop trying (give up)",
+     "sense_key": "quit"
     },
     "requested_tasks": [
      "comprehension",
@@ -810,10 +820,14 @@
    "dictionary": null,
    "settings": {},
    "expect": {
-    "ready": false,
-    "issues": [
-     "ANSWER_LEAK"
-    ]
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Meaning": "〜"
+    },
+    "rendered_excludes": {
+     "Meaning": "give up"
+    }
    }
   },
   {
@@ -825,7 +839,7 @@
    "categories": [
     "task_leakage"
    ],
-   "rationale": "Multi-word production cue that only defines it.",
+   "rationale": "Multi-word production front shows only the definition.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
@@ -833,8 +847,7 @@
     "body": {
      "expression": "give up",
      "meaning": "to stop trying",
-     "sense_key": "quit",
-     "production_prompt": "Phrasal verb: to stop trying"
+     "sense_key": "quit"
     },
     "requested_tasks": [
      "comprehension",
@@ -845,7 +858,10 @@
    "settings": {},
    "expect": {
     "ready": true,
-    "issues": []
+    "issues": [],
+    "rendered_contains": {
+     "Meaning": "to stop trying"
+    }
    }
   },
   {
@@ -894,7 +910,7 @@
     "target_language": "en",
     "body": {
      "expression": "walk",
-     "meaning": "to move on foot",
+     "meaning": "to move on foot {{Expression}}",
      "sense_key": "walk"
     },
     "personal_notes": "{{Expression}} {{#Meaning}}x{{/Meaning}}"
@@ -905,7 +921,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "PersonalNotes": "{{Expression}}"
+     "Meaning": "{{Expression}}"
     }
    }
   },
@@ -1032,7 +1048,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "Examples": "Can I borrow your pen?"
+     "UsageExamples": "your pen?"
     }
    }
   },

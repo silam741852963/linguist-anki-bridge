@@ -491,7 +491,7 @@ fn vocab_add_apply_study_restore() {
     let first = s.ok(&["apply", &plan, "--revision", &rev, "--apply"]);
     let (note_id, snapshot) = applied(&first);
     let note = s.desktop.note(note_id);
-    assert_eq!(note["model_name"], "Linguist Vocabulary v2");
+    assert_eq!(note["model_name"], "Linguist Vocabulary v3");
     assert_eq!(note["fields"]["Expression"], "食べる");
     assert_eq!(
         note["cards"][0]["deck_id"],
@@ -800,7 +800,7 @@ fn vocab_revamp_migrate_study_restore() {
         json!({"expression": "Front", "meaning": "Back"}),
         "comprehension",
         "japanese_vocab",
-        "Linguist Vocabulary v2",
+        "Linguist Vocabulary v3",
         &[("SenseKey", "eat-food")],
         None,
     );
@@ -818,7 +818,7 @@ fn vocab_revamp_home_deck_edit_conflict_restore() {
         json!({"expression": "Front", "meaning": "Back"}),
         "comprehension",
         "english_vocab",
-        "Linguist Vocabulary v2",
+        "Linguist Vocabulary v3",
         &[("SenseKey", "past-habit")],
         Some("Meaning"),
     );

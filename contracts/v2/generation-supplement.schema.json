@@ -38,6 +38,38 @@
     }
   ],
   "$defs": {
+    "GeneratedCollocation": {
+      "type": "object",
+      "properties": {
+        "gloss": {
+          "type": "string"
+        },
+        "phrase": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "phrase",
+        "gloss"
+      ]
+    },
+    "GeneratedContrast": {
+      "type": "object",
+      "properties": {
+        "difference": {
+          "type": "string"
+        },
+        "expression": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "expression",
+        "difference"
+      ]
+    },
     "GeneratedExample": {
       "type": "object",
       "properties": {
@@ -94,19 +126,26 @@
       ]
     },
     "VocabularySupplement": {
+      "description": "v3 vocabulary supplement. Text cues are gone: v3 fronts show fields.",
       "type": "object",
       "properties": {
+        "collocations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GeneratedCollocation"
+          }
+        },
         "examples": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/GeneratedExample"
           }
         },
-        "production_prompt": {
-          "type": "string"
-        },
-        "spelling_prompt": {
-          "type": "string"
+        "nuance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GeneratedContrast"
+          }
         },
         "usage": {
           "type": "string"
@@ -115,9 +154,9 @@
       "additionalProperties": false,
       "required": [
         "usage",
-        "examples",
-        "production_prompt",
-        "spelling_prompt"
+        "nuance",
+        "collocations",
+        "examples"
       ]
     }
   }

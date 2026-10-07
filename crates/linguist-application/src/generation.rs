@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 pub mod repair;
 
-pub const VOCABULARY_PROMPT_V2: &str = include_str!("../../../resources/prompts/vocabulary-v2.txt");
+pub const VOCABULARY_PROMPT_V3: &str = include_str!("../../../resources/prompts/vocabulary-v3.txt");
 pub const GRAMMAR_PROMPT_V2: &str = include_str!("../../../resources/prompts/grammar-v2.txt");
 
 #[derive(Debug, Serialize)]
@@ -159,12 +159,28 @@ pub struct GeneratedExample {
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct GeneratedContrast {
+    pub expression: String,
+    pub difference: String,
+}
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GeneratedCollocation {
+    pub phrase: String,
+    pub gloss: String,
+}
+/// v3 vocabulary supplement. Text cues are gone: v3 fronts show fields.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct VocabularySupplement {
     pub usage: String,
+    pub nuance: Vec<GeneratedContrast>,
+    pub collocations: Vec<GeneratedCollocation>,
     pub examples: Vec<GeneratedExample>,
-    pub production_prompt: String,
-    pub spelling_prompt: String,
 }
+/// Bounds on the v3 list fields; the request schema enforces them.
+pub const NUANCE_MAX: usize = 3;
+pub const COLLOCATIONS_MAX: usize = 4;
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GrammarSupplement {
@@ -256,17 +272,17 @@ pub fn build_request(
                 return Err("GENERATION_ACCEPTED_ANSWER_REQUIRED".into());
             }
             field("usage", &v.usage);
-            if doc.requested_tasks.contains(&Task::Production) {
-                field("production_prompt", &v.production_prompt);
+            if v.nuance.is_empty() {
+                allowed.push("nuance".into());
             }
-            if doc.requested_tasks.contains(&Task::Spelling) {
-                field("spelling_prompt", &v.spelling_prompt);
+            if v.collocations.is_empty() {
+                allowed.push("collocations".into());
             }
             (
                 "vocabulary",
                 "llm.prompts.vocabulary",
-                "builtin:vocabulary-v2",
-                VOCABULARY_PROMPT_V2,
+                "builtin:vocabulary-v3",
+                VOCABULARY_PROMPT_V3,
                 v.examples.len(),
             )
         }
@@ -354,6 +370,15 @@ fn constrained_schema(kind: &str, allowed: &[String], examples: usize) -> Result
     for (name, property) in properties.iter_mut() {
         if name == "examples" {
             property["maxItems"] = json!(examples);
+        } else if name == "nuance" || name == "collocations" {
+            let max = if !allowed.iter().any(|field| field == name) {
+                0
+            } else if name == "nuance" {
+                NUANCE_MAX
+            } else {
+                COLLOCATIONS_MAX
+            };
+            property["maxItems"] = json!(max);
         } else if !allowed.iter().any(|field| field == name) {
             property["enum"] = json!([""]);
         }
@@ -388,14 +413,24 @@ pub fn validate_output(
     }
     let output = parse_output(bytes, max_bytes, max_chars)?;
     let (fields, examples): (Vec<(&str, &str)>, _) = match (&doc.content, &output) {
-        (LearningContent::Vocabulary(_), Supplement::Vocabulary(v)) => (
-            vec![
-                ("usage", &v.usage),
-                ("production_prompt", &v.production_prompt),
-                ("spelling_prompt", &v.spelling_prompt),
-            ],
-            &v.examples,
-        ),
+        (LearningContent::Vocabulary(_), Supplement::Vocabulary(v)) => {
+            let allowed = |name: &str| request.allowed_fields.iter().any(|field| field == name);
+            if (!v.nuance.is_empty() && !allowed("nuance"))
+                || (!v.collocations.is_empty() && !allowed("collocations"))
+                || v.nuance.len() > NUANCE_MAX
+                || v.collocations.len() > COLLOCATIONS_MAX
+            {
+                return Err("GENERATION_FIELD_NOT_ALLOWED".into());
+            }
+            if v.nuance
+                .iter()
+                .any(|c| c.expression.trim().is_empty() || c.difference.trim().is_empty())
+                || v.collocations.iter().any(|c| c.phrase.trim().is_empty())
+            {
+                return Err("GENERATION_INCOMPLETE_ENTRY".into());
+            }
+            (vec![("usage", &v.usage)], &v.examples)
+        }
         (LearningContent::Grammar(_), Supplement::Grammar(g)) => (
             vec![
                 ("meaning", &g.meaning),
@@ -522,12 +557,40 @@ fn merge_checked_output(
     let new_examples = match (&mut child.content, output) {
         (LearningContent::Vocabulary(v), Supplement::Vocabulary(s)) => {
             set("usage", &mut v.usage, s.usage)?;
-            set(
-                "production_prompt",
-                &mut v.production_prompt,
-                s.production_prompt,
-            )?;
-            set("spelling_prompt", &mut v.spelling_prompt, s.spelling_prompt)?;
+            if !s.nuance.is_empty() {
+                if !v.nuance.is_empty() {
+                    return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
+                }
+                v.nuance = s
+                    .nuance
+                    .into_iter()
+                    .map(|c| linguist_core::document::Contrast {
+                        expression: c.expression,
+                        difference: c.difference,
+                    })
+                    .collect();
+                claims.push((
+                    "nuance".into(),
+                    serde_json::to_string(&v.nuance).map_err(|_| "GENERATION_ENCODING")?,
+                ));
+            }
+            if !s.collocations.is_empty() {
+                if !v.collocations.is_empty() {
+                    return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
+                }
+                v.collocations = s
+                    .collocations
+                    .into_iter()
+                    .map(|c| linguist_core::document::Collocation {
+                        phrase: c.phrase,
+                        gloss: c.gloss,
+                    })
+                    .collect();
+                claims.push((
+                    "collocations".into(),
+                    serde_json::to_string(&v.collocations).map_err(|_| "GENERATION_ENCODING")?,
+                ));
+            }
             s.examples
         }
         (LearningContent::Grammar(g), Supplement::Grammar(s)) => {

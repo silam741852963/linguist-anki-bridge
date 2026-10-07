@@ -20,7 +20,17 @@ GRAMMAR_FIELDS = frozenset({
     "ExerciseAnswer", "Audio", "PersonalNotes", "Source", "Language",
     "EnableApplication", "UseKey", "RecognitionPrompt", "ExplanationLanguage",
 })
-FIELDS = {"Linguist Vocabulary v2": VOCAB_FIELDS, "Linguist Grammar v2": GRAMMAR_FIELDS}
+# WP-19 vocabulary model: fields only; languages and provenance travel as tags.
+VOCAB_V3_FIELDS = frozenset({
+    "Expression", "Pronunciation", "Meaning", "UsageExamples", "Picture",
+    "Audio", "Kanji", "EnableProduction", "EnableSpelling",
+})
+FIELDS = {
+    "Linguist Vocabulary v2": VOCAB_FIELDS,
+    "Linguist Vocabulary v3": VOCAB_V3_FIELDS,
+    "Linguist Grammar v2": GRAMMAR_FIELDS,
+}
+VOCAB_MODELS = frozenset({"Linguist Vocabulary v2", "Linguist Vocabulary v3"})
 BODY_KEYS = frozenset({
     "model_name", "model_manifest_digest", "deck_id", "fields", "tags",
     "marker_tag", "source_plan_digest", "checkpoint_digest", "binding",
@@ -195,14 +205,14 @@ def _create_note(body, operation_id, approved_digest):
         raise _invalid()
     for value in fields.values():
         _text(value, MAX_FIELD_BYTES)
-    primary = "Expression" if model == "Linguist Vocabulary v2" else "Pattern"
+    primary = "Expression" if model in VOCAB_MODELS else "Pattern"
     if (not fields[primary].strip() or not fields["Meaning"].strip()
-            or fields["Language"] not in {"ja", "en"}
+            or fields.get("Language", "ja") not in {"ja", "en"}
             or (model == "Linguist Grammar v2" and
                 (not fields["UseKey"].strip() or not fields["Formation"].strip()
                  or not fields["Examples"].strip()))):
         raise _invalid()
-    switches = (("EnableProduction", "EnableSpelling") if model == "Linguist Vocabulary v2"
+    switches = (("EnableProduction", "EnableSpelling") if model in VOCAB_MODELS
                 else ("EnableApplication",))
     if any(fields[key] not in ("", "1") for key in switches):
         raise _invalid()

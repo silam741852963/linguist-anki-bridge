@@ -29,7 +29,7 @@ pub fn inspect(effective: &Effective, environment: &BTreeMap<String, String>) ->
     for (key, builtin, directory) in [
         (
             "llm.prompts.vocabulary",
-            Some("builtin:vocabulary-v2"),
+            Some("builtin:vocabulary-v3"),
             false,
         ),
         ("llm.prompts.grammar", Some("builtin:grammar-v2"), false),

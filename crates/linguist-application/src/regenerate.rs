@@ -37,7 +37,7 @@ impl std::str::FromStr for Stage {
 fn stage_fields(stage: Stage, document: &LearningDocument) -> &'static [&'static str] {
     match (stage, &document.content) {
         (Stage::Generation, LearningContent::Vocabulary(_)) => {
-            &["usage", "production_prompt", "spelling_prompt", "examples"]
+            &["usage", "nuance", "collocations", "examples"]
         }
         (Stage::Generation, LearningContent::Grammar(_)) => &[
             "meaning",
@@ -138,6 +138,12 @@ fn produced_by(stage: Stage, document: &LearningDocument, field: &str) -> bool {
 }
 
 fn is_empty(document: &mut LearningDocument, field: &str) -> bool {
+    if field == "kanji"
+        && let LearningContent::Vocabulary(v) = &document.content
+        && !v.kanji_details.is_empty()
+    {
+        return false;
+    }
     text_field(document, field).is_none_or(|value| value.trim().is_empty())
 }
 
@@ -219,6 +225,40 @@ pub fn prepare_item(
                     },
                     _ => true,
                 });
+            }
+            "nuance" | "collocations" => {
+                let LearningContent::Vocabulary(v) = &mut prepared.content else {
+                    continue;
+                };
+                let empty = if field == "nuance" {
+                    v.nuance.is_empty()
+                } else {
+                    v.collocations.is_empty()
+                };
+                if empty {
+                    continue;
+                }
+                let produced = prepared
+                    .evidence
+                    .iter()
+                    .any(|e| e.field == field && e.provenance == Provenance::Generated);
+                if !produced && !named {
+                    preview.protected.push(field.into());
+                    continue;
+                }
+                if produced {
+                    preview.cleared.push(field.into());
+                } else {
+                    preview.overwritten.push(field.into());
+                }
+                if field == "nuance" {
+                    v.nuance.clear();
+                } else {
+                    v.collocations.clear();
+                }
+                prepared
+                    .evidence
+                    .retain(|e| !(e.field == field && e.provenance == Provenance::Generated));
             }
             "picture" | "audio" => {
                 let role = if field == "picture" {
@@ -309,6 +349,11 @@ pub fn prepare_item(
                 prepared
                     .evidence
                     .retain(|e| !e.source_id.is_some_and(|id| kanji_sources.contains(&id)));
+                // v3 kanji facts and their stroke animations are produced again.
+                if let LearningContent::Vocabulary(v) = &mut prepared.content {
+                    v.kanji_details.clear();
+                }
+                prepared.media.retain(|m| m.role != MediaRole::KanjiStroke);
             }
             prepared.issues.retain(|i| i.stage != "enrichment");
         }

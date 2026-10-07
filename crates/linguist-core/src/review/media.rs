@@ -119,6 +119,9 @@ pub(crate) fn source_media_matches(
     if receipt["asset_digest"] != *asset_digest || receipt["filename"] != *original_filename {
         return false;
     }
+    if *role == MediaRole::KanjiStroke {
+        return false;
+    }
     if *role == MediaRole::Archive {
         return receipt.get("inspection").is_some() || receipt.get("failure").is_some();
     }
@@ -148,6 +151,6 @@ pub(crate) fn source_media_matches(
                     .iter()
                     .all(|key| inspection[key].as_u64().is_some_and(|n| n > 0))
         }
-        MediaRole::Archive => unreachable!(),
+        MediaRole::Archive | MediaRole::KanjiStroke => unreachable!(),
     }
 }

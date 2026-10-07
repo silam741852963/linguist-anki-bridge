@@ -87,6 +87,9 @@ impl KanjiPort for Kanji {
             raw_bytes: raw,
         }))
     }
+    fn stroke_order(&self, character: char) -> Result<Option<Vec<u8>>, String> {
+        Ok(Some(format!("GIF89a{character}{}", self.0).into_bytes()))
+    }
 }
 
 fn japanese() -> Vec<u8> {
@@ -121,7 +124,17 @@ fn enrichment_regeneration_replaces_stage_output_but_protects_edits() {
     let LearningContent::Vocabulary(vocab) = &base.documents[0].content else {
         panic!()
     };
-    assert!(vocab.kanji.contains("old"));
+    assert_eq!(vocab.kanji_details[0].meanings, ["old"]);
+    let old_stroke = vocab.kanji_details[0].stroke_digest.clone().unwrap();
+    assert!(
+        base.documents[0]
+            .media
+            .iter()
+            .any(|m| m.digest == old_stroke
+                && m.role == linguist_core::records::MediaRole::KanjiStroke
+                && m.mime == "image/gif")
+    );
+    assert!(base.rendered[0].fields["Kanji"].contains(&format!("lab_{old_stroke}.gif")));
     let none = BTreeSet::new();
     let preview_only = preview(&base, &[], Stage::Enrichment, &none).unwrap();
     assert_eq!(preview_only.items[0].cleared, ["kanji"]);
@@ -166,7 +179,14 @@ fn enrichment_regeneration_replaces_stage_output_but_protects_edits() {
     let LearningContent::Vocabulary(vocab) = &child.documents[0].content else {
         panic!()
     };
-    assert!(vocab.kanji.contains("new") && !vocab.kanji.contains("old"));
+    assert_eq!(vocab.kanji_details[0].meanings, ["new"]);
+    let strokes: Vec<_> = child.documents[0]
+        .media
+        .iter()
+        .filter(|m| m.role == linguist_core::records::MediaRole::KanjiStroke)
+        .collect();
+    assert_eq!(strokes.len(), 1);
+    assert_ne!(strokes[0].digest, old_stroke);
     assert_eq!(
         child.documents[0]
             .sources
@@ -220,7 +240,10 @@ fn generation_preview_only_clears_generated_content() {
     let mut document = latest(&f, result.plan_id).documents[0].clone();
     if let LearningContent::Vocabulary(v) = &mut document.content {
         v.usage = "Generated usage.".into();
-        v.production_prompt = "Authored cue".into();
+        v.nuance = vec![linguist_core::document::Contrast {
+            expression: "食べ物".into(),
+            difference: "Authored contrast.".into(),
+        }];
         v.examples.push(linguist_core::Example {
             sentence: "食を楽しむ。".into(),
             translation: "Enjoy food.".into(),
@@ -244,23 +267,23 @@ fn generation_preview_only_clears_generated_content() {
     });
     let (prepared, item) = prepare_item(&document, Stage::Generation, &BTreeSet::new()).unwrap();
     assert_eq!(item.cleared, ["usage", "examples"]);
-    assert_eq!(item.protected, ["production_prompt"]);
+    assert_eq!(item.protected, ["nuance"]);
     let LearningContent::Vocabulary(v) = &prepared.content else {
         panic!()
     };
     assert!(v.usage.is_empty() && v.examples.is_empty());
-    assert_eq!(v.production_prompt, "Authored cue");
+    assert_eq!(v.nuance.len(), 1);
     let (prepared, item) = prepare_item(
         &document,
         Stage::Generation,
-        &BTreeSet::from(["production_prompt".to_owned()]),
+        &BTreeSet::from(["nuance".to_owned()]),
     )
     .unwrap();
-    assert_eq!(item.overwritten, ["production_prompt"]);
+    assert_eq!(item.overwritten, ["nuance"]);
     let LearningContent::Vocabulary(v) = &prepared.content else {
         panic!()
     };
-    assert!(v.production_prompt.is_empty());
+    assert!(v.nuance.is_empty());
     assert!(
         prepare_item(
             &document,

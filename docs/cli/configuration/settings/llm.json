@@ -129,7 +129,7 @@
     {
       "key": "llm.prompts.vocabulary",
       "type": "string",
-      "default": "builtin:vocabulary-v2",
+      "default": "builtin:vocabulary-v3",
       "constraints": {
         "format": "resource_ref"
       },

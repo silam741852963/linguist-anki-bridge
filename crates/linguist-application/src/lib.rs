@@ -44,6 +44,9 @@ impl From<VocabularyInput> for Vocabulary {
             kanji: input.kanji,
             production_prompt: input.production_prompt,
             spelling_prompt: input.spelling_prompt,
+            nuance: vec![],
+            collocations: vec![],
+            kanji_details: vec![],
         }
     }
 }
@@ -212,8 +215,8 @@ pub fn freeze_settings(
         for (key, reference, prompt) in [
             (
                 "llm.prompts.vocabulary",
-                "builtin:vocabulary-v2",
-                generation::VOCABULARY_PROMPT_V2,
+                "builtin:vocabulary-v3",
+                generation::VOCABULARY_PROMPT_V3,
             ),
             (
                 "llm.prompts.grammar",

@@ -6,7 +6,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from linguist_bridge import manifest  # noqa: E402
-from linguist_bridge.payloads import PayloadError, VOCAB_FIELDS, validate_body  # noqa: E402
+from linguist_bridge.payloads import (  # noqa: E402
+    PayloadError, VOCAB_FIELDS, VOCAB_V3_FIELDS, validate_body)
 
 PLAN = "lab-jcs-v1:plan:" + "a" * 64
 PRE = "lab-jcs-v1:lab-apply-precondition-v1:" + "b" * 64
@@ -50,6 +51,23 @@ class PayloadTest(unittest.TestCase):
         self.assertInvalid("restore_note", dict(restore, card_decks=[]))
         check("delete_unstudied_created_note", {"note_id": 7, "expected_pre_digest": PRE})
         self.assertInvalid("delete_unstudied_created_note", {"note_id": 7})
+
+    def test_v3_vocabulary_create_body_has_no_language_or_cue_fields(self):
+        marker = "lab_op_" + OPERATION.replace("-", "")
+        fields = {name: "" for name in VOCAB_V3_FIELDS}
+        fields.update(Expression="猫", Meaning="<ol><li>cat</li></ol>", EnableSpelling="1")
+        body = {"model_name": "Linguist Vocabulary v3", "model_manifest_digest": "b" * 64,
+                "deck_id": "123", "fields": fields, "tags": [marker, "lab::lang::ja"],
+                "marker_tag": marker, "source_plan_digest": PLAN, "checkpoint_digest": "c" * 64,
+                "binding": {"profile_fingerprint": "d" * 64, "path_fingerprint": "e" * 64},
+                "expected_absent": True}
+        check("create_note", body)
+        self.assertInvalid("create_note", dict(body, fields=dict(fields, Language="ja")))
+        self.assertInvalid("create_note", dict(body, fields=dict(fields, EnableProduction="y")))
+        self.assertInvalid("create_note", dict(body, fields=dict(fields, Meaning=" ")))
+        missing = dict(fields)
+        missing.pop("Kanji")
+        self.assertInvalid("create_note", dict(body, fields=missing))
 
     def test_media_model_and_export_bodies(self):
         media = {"filename": "eat.ogg", "sha256": "c" * 64, "size_bytes": 10,

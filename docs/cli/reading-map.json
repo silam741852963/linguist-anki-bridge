@@ -15,7 +15,7 @@
       "path": "contracts/rendering.md",
       "heading": "## ALG-RENDER \u2014 render and readiness rules",
       "title": "ALG-RENDER \u2014 render and readiness rules",
-      "words": 457,
+      "words": 561,
       "requires": [
         "contracts/invariants.md",
         "decisions/storage-and-wire.md",
@@ -1038,7 +1038,7 @@
       "path": "pipelines/vocabulary.md",
       "heading": "## ALG-VOCAB \u2014 add or revamp vocabulary",
       "title": "ALG-VOCAB \u2014 add or revamp vocabulary",
-      "words": 258,
+      "words": 318,
       "requires": [
         "contracts/invariants.md",
         "decisions/learning-and-providers.md",

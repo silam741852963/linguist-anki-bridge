@@ -160,20 +160,20 @@ pub const ROWS: &[Row] = &[
     v(
         "audio.provider",
         SPEECH,
-        &["\"dictionary\"", "\"custom\""],
-        "dictionary or custom TTS audio adapters",
+        &["\"custom\""],
+        "custom TTS audio adapter",
     ),
     c("audio.voice", SPEECH),
     g(
         "audio.endpoint",
         VOCAB,
-        "audio.provider=dictionary|custom",
+        "audio.provider=custom",
         "custom TTS service (audio.provider=custom)",
     ),
     g(
         "audio.api_key_env",
         VOCAB,
-        "audio.provider=dictionary|custom",
+        "audio.provider=custom",
         "custom TTS service credentials",
     ),
     c("audio.executable", SPEECH),
@@ -291,6 +291,7 @@ pub const ROWS: &[Row] = &[
     c("kanji.enabled", VOCAB),
     c("kanji.explanation_language", KANJI),
     c("kanji.url_template", KANJI),
+    c("kanji.stroke_order", KANJI),
     d(
         "kanji.schema",
         VOCAB,

@@ -196,10 +196,53 @@ pub struct Vocabulary {
     pub dictionary: Vec<DictionaryEntry>,
     #[serde(default)]
     pub kanji: String,
+    /// Legacy v2 text cues. The v3 model shows fields instead and never renders them.
     #[serde(default)]
     pub production_prompt: String,
     #[serde(default)]
     pub spelling_prompt: String,
+    /// v3: how this word differs from near-synonyms (purple-flag study groups).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nuance: Vec<Contrast>,
+    /// v3: common word combinations with a short gloss.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collocations: Vec<Collocation>,
+    /// v3: structured per-character kanji facts; replaces the plain `kanji` text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kanji_details: Vec<KanjiDetail>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Contrast {
+    pub expression: String,
+    pub difference: String,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Collocation {
+    pub phrase: String,
+    pub gloss: String,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct KanjiDetail {
+    pub character: String,
+    pub meanings: Vec<String>,
+    #[serde(default)]
+    pub on_readings: Vec<String>,
+    #[serde(default)]
+    pub kun_readings: Vec<String>,
+    #[serde(default)]
+    pub strokes: Option<u32>,
+    #[serde(default)]
+    pub radical: Option<String>,
+    #[serde(default)]
+    pub parts: Vec<String>,
+    #[serde(default)]
+    pub jlpt: Option<String>,
+    /// Digest of the `kanji_stroke` media asset animating this character, if any.
+    #[serde(default)]
+    pub stroke_digest: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

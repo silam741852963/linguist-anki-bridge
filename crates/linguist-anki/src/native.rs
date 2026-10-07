@@ -191,7 +191,8 @@ pub fn validate_create_note_intent(
     {
         return Err(invalid());
     }
-    let required: &[&str] = if model.name == "Linguist Vocabulary v2" {
+    let vocabulary = model.name == linguist_core::model::vocabulary().name;
+    let required: &[&str] = if vocabulary {
         &["Expression", "Meaning"]
     } else {
         &["Pattern", "Meaning", "Formation", "Examples", "UseKey"]
@@ -199,11 +200,14 @@ pub fn validate_create_note_intent(
     if required
         .iter()
         .any(|field| body.fields[*field].trim().is_empty())
-        || !matches!(body.fields["Language"].as_str(), "ja" | "en")
+        || body
+            .fields
+            .get("Language")
+            .is_some_and(|language| !matches!(language.as_str(), "ja" | "en"))
     {
         return Err(invalid());
     }
-    let switches: &[&str] = if model.name == "Linguist Vocabulary v2" {
+    let switches: &[&str] = if vocabulary {
         &["EnableProduction", "EnableSpelling"]
     } else {
         &["EnableApplication"]
@@ -401,7 +405,7 @@ impl Client {
 /// exercised in disposable Anki: (companion, Anki version, AnkiConnect
 /// `__init__.py` SHA-256). Anything else keeps collection writes unavailable.
 pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[(
-    "0.1.0",
+    "0.2.0",
     "25.09.2",
     "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
 )];

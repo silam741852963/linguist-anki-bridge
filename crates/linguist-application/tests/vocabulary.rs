@@ -270,23 +270,16 @@ fn japanese_add_enriches_kanji_and_stages_reviewed_cues_picture_and_audio() {
             .iter()
             .any(|c| c.contains("plans resolve") && c.contains("IMAGE_CANDIDATE_REVIEW"))
     );
-    assert!(
-        result
-            .next_commands
-            .iter()
-            .any(|c| c.contains("plans edit"))
-    );
     let store = f.store();
     let plan = store.revision(result.plan_id, 1).unwrap();
     let doc = &plan.documents[0];
     let LearningContent::Vocabulary(vocab) = &doc.content else {
         panic!()
     };
-    assert!(
-        vocab
-            .kanji
-            .starts_with("食 — eat, food\nOn: ショク\nKun: た.べる")
-    );
+    assert!(vocab.kanji.is_empty());
+    assert_eq!(vocab.kanji_details[0].character, "食");
+    assert_eq!(vocab.kanji_details[0].meanings, ["eat", "food"]);
+    assert_eq!(vocab.kanji_details[0].on_readings, ["ショク"]);
     let kanji_source = doc
         .sources
         .iter()
@@ -315,31 +308,8 @@ fn japanese_add_enriches_kanji_and_stages_reviewed_cues_picture_and_audio() {
     assert!(codes.contains(&("IMAGE_CANDIDATE_REVIEW", Severity::Review)));
     assert!(codes.contains(&("AUDIO_CANDIDATE_REVIEW", Severity::Review)));
     assert!(codes.contains(&("IMAGE_CANDIDATE_REJECTED", Severity::Warning)));
-    assert_eq!(issues.iter().filter(|i| i.code == "MISSING_CUE").count(), 2);
-
-    // Cue templates carry leak-checked suggestions; kana reading for spelling.
-    let spelling = issues
-        .iter()
-        .find(|i| i.code == "MISSING_CUE" && i.field.as_deref() == Some("spelling_prompt"))
-        .unwrap();
-    assert_eq!(
-        decision_templates(doc, spelling),
-        vec![ReviewChoice::Cue {
-            task: Task::Spelling,
-            text: "たべる — to eat".into()
-        }]
-    );
-    let production = issues
-        .iter()
-        .find(|i| i.code == "MISSING_CUE" && i.field.as_deref() == Some("production_prompt"))
-        .unwrap();
-    assert_eq!(
-        decision_templates(doc, production),
-        vec![ReviewChoice::Cue {
-            task: Task::Production,
-            text: "to eat".into()
-        }]
-    );
+    // v3 fronts show fields; no text cue is requested.
+    assert!(!issues.iter().any(|i| i.code == "MISSING_CUE"));
     let image_issue = issues
         .iter()
         .find(|i| i.code == "IMAGE_CANDIDATE_REVIEW")
@@ -347,22 +317,6 @@ fn japanese_add_enriches_kanji_and_stages_reviewed_cues_picture_and_audio() {
     assert_eq!(decision_templates(doc, image_issue).len(), 3);
 
     let mut current = plan.clone();
-    current = decide(
-        &current,
-        &issue_id(&current, "MISSING_CUE", "production_prompt"),
-        ReviewChoice::Cue {
-            task: Task::Production,
-            text: "to eat".into(),
-        },
-    );
-    current = decide(
-        &current,
-        &issue_id(&current, "MISSING_CUE", "spelling_prompt"),
-        ReviewChoice::Cue {
-            task: Task::Spelling,
-            text: "たべる — to eat".into(),
-        },
-    );
     let picked = image_issue.source_refs[1].clone();
     current = decide(
         &current,
@@ -628,52 +582,29 @@ fn dictionary_sense_selection_unlocks_kana_spelling_suggestion_without_ollama() 
     )
     .unwrap();
     let plan = f.store().revision(result.plan_id, 1).unwrap();
-    // Before sense review no spelling suggestion can be grounded.
-    let spelling = issue_id(&plan, "MISSING_CUE", "spelling_prompt");
-    let issue = validation::validate(&plan.documents[0])
-        .into_iter()
-        .find(|i| i.id == spelling)
-        .unwrap();
-    assert_eq!(
-        decision_templates(&plan.documents[0], &issue),
-        vec![ReviewChoice::Cue {
-            task: Task::Spelling,
-            text: String::new()
-        }]
+    // Before sense review the Spelling front has nothing to say aloud.
+    assert!(
+        validation::validate(&plan.documents[0])
+            .iter()
+            .any(|i| i.code == "SPELLING_CUE_MISSING")
     );
     let LearningContent::Vocabulary(vocab) = &plan.documents[0].content else {
         panic!()
     };
     let key = vocab.dictionary[0].senses[1].key.clone();
-    let selected = decide(
+    let ready = decide(
         &plan,
         &format!("DICTIONARY_SENSE_REVIEW:{}", plan.documents[0].id),
         ReviewChoice::Sense(key),
     );
-    let issue = validation::validate(&selected.documents[0])
-        .into_iter()
-        .find(|i| i.id == spelling)
-        .unwrap();
-    assert_eq!(
-        decision_templates(&selected.documents[0], &issue),
-        vec![ReviewChoice::Cue {
-            task: Task::Spelling,
-            text: "たべる — to live on".into()
-        }]
-    );
-    let ready = decide(
-        &selected,
-        &spelling,
-        ReviewChoice::Cue {
-            task: Task::Spelling,
-            text: "たべる — to live on".into(),
-        },
-    );
+    // The selected reading becomes the spoken Spelling front.
     assert!(
         validation::ready(&ready.documents[0]),
         "{:?}",
         validation::validate(&ready.documents[0])
     );
+    assert_eq!(ready.rendered[0].fields["Pronunciation"], "たべる");
+    assert!(ready.rendered[0].fields["Meaning"].contains("to live on"));
 }
 
 #[test]
@@ -761,4 +692,73 @@ fn collection_duplicate_candidates_become_a_recorded_decision() {
             |r| matches!(&r.choice, ReviewChoice::Duplicate { action, .. } if action == "skip")
         )
     );
+}
+
+#[test]
+fn dictionary_recordings_become_reviewed_audio_candidates() {
+    use linguist_application::vocab::RecordingPort;
+    use linguist_dictionary::recording::Recording;
+    struct Recordings(Option<Vec<u8>>);
+    impl RecordingPort for Recordings {
+        fn japanese(&self, expression: &str, kana: &str) -> Result<Option<Recording>, String> {
+            assert_eq!((expression, kana), ("食べる", "たべる"));
+            Ok(self.0.clone().map(|bytes| Recording {
+                provider: "japanesepod101",
+                source_url: "https://cdn.innovativelanguage.com/x.mp3".into(),
+                sha256: linguist_provider::sha256_hex(&bytes),
+                fetched_at: 1,
+                from_cache: false,
+                bytes,
+            }))
+        }
+    }
+    let f = Fixture::new();
+    let mut settings = f.settings.clone();
+    settings.values.insert("kanji.enabled".into(), json!(false));
+    settings
+        .values
+        .insert("images.provider".into(), json!("disabled"));
+    settings
+        .values
+        .insert("audio.provider".into(), json!("dictionary"));
+    let tone = include_bytes!("fixtures/audio/tone.mp3").to_vec();
+    let result = prepare_with_providers(
+        &japanese(&["comprehension"], "", ""),
+        Kind::Vocabulary,
+        &settings,
+        &f.environment,
+        Providers {
+            recordings: Some(&Recordings(Some(tone.clone()))),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let plan = f.store().revision(result.plan_id, 1).unwrap();
+    let digest = linguist_core::canonical::asset_digest(&tone);
+    let asset = plan.documents[0]
+        .media
+        .iter()
+        .find(|m| m.digest == digest)
+        .unwrap();
+    assert_eq!(
+        (asset.mime.as_str(), asset.role),
+        ("audio/mpeg", MediaRole::Archive)
+    );
+    let issue = issue_id(&plan, "AUDIO_CANDIDATE_REVIEW", "audio");
+    let chosen = decide(&plan, &issue, ReviewChoice::Media(digest.clone()));
+    assert!(chosen.rendered[0].fields["Audio"].contains(&format!("[sound:lab_{digest}.mp3]")));
+    // No published recording: a warning only, nothing staged.
+    let result = prepare_with_providers(
+        &japanese(&["comprehension"], "", ""),
+        Kind::Vocabulary,
+        &settings,
+        &f.environment,
+        Providers {
+            recordings: Some(&Recordings(None)),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(result.ready, "{:?}", result.issues);
+    assert!(result.issues.iter().any(|i| i.code == "AUDIO_NOT_FOUND"));
 }

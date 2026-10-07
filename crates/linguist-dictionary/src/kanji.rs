@@ -12,12 +12,20 @@ use std::collections::BTreeMap;
 pub const SCHEMA: &str = "builtin:jisho-kanji-v2";
 /// Bound the number of characters looked up for one expression.
 pub const MAX_CHARACTERS: usize = 32;
-const SETTINGS: [&str; 4] = [
+const SETTINGS: [&str; 5] = [
     "kanji.enabled",
     "kanji.explanation_language",
     "kanji.url_template",
     "kanji.schema",
+    "kanji.stroke_order",
 ];
+/// Stroke-order animations (KanjiVG-derived, CC BY-SA 3.0), one GIF per code point.
+pub const STROKE_ORDER_URL: &str =
+    "https://raw.githubusercontent.com/mistval/kanji_images/master/gifs/{codepoint}.gif";
+pub const STROKE_ORDER_HOST: &str = "raw.githubusercontent.com";
+pub const STROKE_ORDER_ATTRIBUTION: &str =
+    "Stroke order animation from mistval/kanji_images, based on KanjiVG by Ulrich Apel";
+pub const STROKE_ORDER_LICENSE: &str = "CC-BY-SA-3.0";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct KanjiEntry {
@@ -39,6 +47,11 @@ pub struct KanjiEntry {
     /// Exact page bytes for archival; excluded from serialized summaries.
     #[serde(skip)]
     pub raw_bytes: Vec<u8>,
+}
+
+/// GIF signature check; any other bytes are refused.
+pub fn is_gif(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")
 }
 
 /// Applicable characters: CJK unified ideographs, extensions and compatibility forms.
@@ -190,6 +203,7 @@ pub struct KanjiFacts {
 pub struct KanjiClient {
     reader: Reader,
     template: String,
+    stroke_order: bool,
 }
 
 impl KanjiClient {
@@ -224,15 +238,45 @@ impl KanjiClient {
         {
             return Err(ReadError::Unavailable);
         }
-        let reader =
-            Reader::from_settings(settings, environment, Service::Kanji, &["jisho.org"], &[])?;
-        Ok(Self { reader, template })
+        let stroke_order = v["kanji.stroke_order"] == true;
+        let hosts: &[&str] = if stroke_order {
+            &["jisho.org", STROKE_ORDER_HOST]
+        } else {
+            &["jisho.org"]
+        };
+        let reader = Reader::from_settings(settings, environment, Service::Kanji, hosts, &[])?;
+        Ok(Self {
+            reader,
+            template,
+            stroke_order,
+        })
     }
 
     pub fn with_reader(reader: Reader, template: &str) -> Self {
         Self {
             reader,
             template: template.into(),
+            stroke_order: false,
+        }
+    }
+
+    /// The stroke-order GIF for one kanji. `Ok(None)`: disabled or not published.
+    pub fn stroke_order(&self, character: char) -> Result<Option<Vec<u8>>, ReadError> {
+        if !self.stroke_order {
+            return Ok(None);
+        }
+        if !is_kanji(character) {
+            return Err(ReadError::Policy);
+        }
+        let url = url::Url::parse(
+            &STROKE_ORDER_URL.replace("{codepoint}", &format!("{:x}", character as u32)),
+        )
+        .map_err(|_| ReadError::Policy)?;
+        match self.reader.get(&url, &["image/gif"]) {
+            Ok(fetched) if is_gif(&fetched.bytes) => Ok(Some(fetched.bytes)),
+            Ok(_) => Err(ReadError::Schema),
+            Err(ReadError::Http(404)) => Ok(None),
+            Err(error) => Err(error),
         }
     }
 

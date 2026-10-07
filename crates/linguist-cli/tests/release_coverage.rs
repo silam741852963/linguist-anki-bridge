@@ -89,7 +89,7 @@ fn models(action: &str, params: &Value) -> Value {
     let vocabulary = linguist_core::model::vocabulary();
     match action {
         "getActiveProfile" => json!("Disposable"),
-        "modelNamesAndIds" => json!({"Basic": 1, "Linguist Vocabulary v2": 2}),
+        "modelNamesAndIds" => json!({"Basic": 1, "Linguist Vocabulary v3": 2}),
         "modelFieldNames" if params["modelName"] == "Basic" => json!(["Front", "Back"]),
         "modelFieldNames" => json!(vocabulary.fields),
         "modelTemplates" if params["modelName"] == "Basic" => {
@@ -136,7 +136,7 @@ fn models_list_and_inspect_compare_managed_manifests_read_only() {
         .iter()
         .map(|m| m["name"].clone())
         .collect();
-    assert_eq!(names, [json!("Basic"), json!("Linguist Vocabulary v2")]);
+    assert_eq!(names, [json!("Basic"), json!("Linguist Vocabulary v3")]);
     assert_eq!(list["managed_classification_verified"], false);
 
     let basic = cli(&home, &endpoint)
@@ -150,7 +150,7 @@ fn models_list_and_inspect_compare_managed_manifests_read_only() {
     assert_eq!(basic["managed_verified"], false);
 
     let managed = cli(&home, &endpoint)
-        .args(["models", "inspect", "Linguist Vocabulary v2"])
+        .args(["models", "inspect", "Linguist Vocabulary v3"])
         .output()
         .unwrap();
     assert!(managed.status.success(), "{managed:?}");

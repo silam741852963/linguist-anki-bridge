@@ -82,7 +82,7 @@ impl Server {
 
 fn manifest(journal: &OperationJournal) -> Value {
     json!({
-        "protocol":"lab-native-v1", "companion_version":"0.1.0",
+        "protocol":"lab-native-v1", "companion_version":"0.2.0",
         "bridge_id":journal.binding.bridge_id,
         "integration":{"anki_version":"fixture","anki_connect_source_digest":"d".repeat(64)},
         "collection_session":{

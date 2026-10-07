@@ -426,11 +426,23 @@ fn policy(fixture: &Fixture, outcome: &Outcome) {
         let normalize = |text: &str| text.to_lowercase().split_whitespace().collect::<String>();
         match &document.content {
             LearningContent::Vocabulary(v) => {
-                let answer = normalize(&v.expression);
-                for prompt in [&v.production_prompt, &v.spelling_prompt] {
+                // v3 fronts: Production shows Meaning; Spelling shows Meaning
+                // and Pronunciation. Neither may contain the written answer.
+                let answer = normalize(&crate_escape(&v.expression));
+                let fronts = outcome.rendered.as_ref().expect("ready content renders");
+                let tasks = &document.requested_tasks;
+                if tasks.contains(&linguist_core::Task::Production)
+                    || tasks.contains(&linguist_core::Task::Spelling)
+                {
                     assert!(
-                        answer.is_empty() || !normalize(prompt).contains(&answer),
-                        "{id}: ready cue leaks the answer"
+                        answer.is_empty() || !normalize(&fronts["Meaning"]).contains(&answer),
+                        "{id}: ready Meaning front leaks the answer"
+                    );
+                }
+                if tasks.contains(&linguist_core::Task::Spelling) {
+                    assert!(
+                        normalize(&fronts["Pronunciation"]) != answer,
+                        "{id}: ready Spelling front leaks the answer"
                     );
                 }
             }
@@ -597,4 +609,8 @@ fn every_fixture_meets_its_annotation_and_the_corpus_policy() {
     }
     println!("semantic corpus: {summary:?}");
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+fn crate_escape(text: &str) -> String {
+    linguist_core::render::escape(text)
 }

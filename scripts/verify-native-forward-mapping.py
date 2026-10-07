@@ -151,7 +151,7 @@ def main():
     grammar_manifest = next(item for item in manifests
                             if item["name"] == "Linguist Grammar v2")
     vocab_manifest = next(item for item in manifests
-                          if item["name"] == "Linguist Vocabulary v2")
+                          if item["name"] == "Linguist Vocabulary v3")
     with tempfile.TemporaryDirectory(prefix="lab-native-basic-migration-") as directory:
         col = Collection(str(Path(directory) / "disposable.anki2"))
         try:

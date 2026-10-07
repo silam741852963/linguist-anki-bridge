@@ -36,6 +36,16 @@
       "sensitive": false
     },
     {
+      "key": "kanji.stroke_order",
+      "type": "boolean",
+      "default": true,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "kanji adapter",
+      "description": "Fetch a stroke-order GIF per kanji from the KanjiVG-based mistval/kanji_images set (raw.githubusercontent.com).",
+      "sensitive": false
+    },
+    {
       "key": "kanji.schema",
       "type": "string",
       "default": "builtin:jisho-kanji-v2",

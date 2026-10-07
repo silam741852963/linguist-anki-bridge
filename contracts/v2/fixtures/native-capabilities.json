@@ -1,6 +1,6 @@
 {
   "protocol": "lab-native-v1",
-  "companion_version": "0.1.0",
+  "companion_version": "0.2.0",
   "bridge_id": "c17625b0-7a88-4aab-a8a5-c1d993c72a00",
   "integration": {
     "anki_version": "fixture",

@@ -14,8 +14,8 @@ fn intent(grammar: bool, operation: Uuid, approved: &str) -> Value {
         fields.insert(field, json!(""));
     }
     fields.insert("Meaning".into(), json!("meaning"));
-    fields.insert("Language".into(), json!("ja"));
     if grammar {
+        fields.insert("Language".into(), json!("ja"));
         for field in ["Pattern", "Formation", "Examples", "UseKey"] {
             fields.insert(field.into(), json!("source-backed value"));
         }
@@ -83,7 +83,10 @@ fn altered_identity_fields_tags_and_grammar_requirements_fail_closed() {
     changed["body"]["fields"]
         .as_object_mut()
         .unwrap()
-        .remove("SenseKey");
+        .remove("Kanji");
+    assert!(!validate(&changed, operation, &approved));
+    let mut changed = valid.clone();
+    changed["body"]["fields"]["Language"] = json!("ja");
     assert!(!validate(&changed, operation, &approved));
     let mut changed = valid.clone();
     changed["body"]["tags"] = json!([valid["body"]["marker_tag"], "reviewed", "reviewed"]);
@@ -107,7 +110,7 @@ fn duplicate_json_keys_oversized_values_and_unknown_variants_fail() {
         .is_err()
     );
     let mut changed = intent(false, operation, &approved);
-    changed["body"]["fields"]["Usage"] = json!("x".repeat(262_145));
+    changed["body"]["fields"]["UsageExamples"] = json!("x".repeat(262_145));
     assert!(!validate(&changed, operation, &approved));
     let mut changed = intent(false, operation, &approved);
     changed["variant"] = json!("update_note");

@@ -57,7 +57,7 @@ fn fields(meaning: &str) -> BTreeMap<String, String> {
 
 fn projection(meaning: &str, tags: &[&str], deck: i64) -> NoteProjection {
     NoteProjection {
-        model_name: "Linguist Vocabulary v2".into(),
+        model_name: "Linguist Vocabulary v3".into(),
         model_manifest_digest: "f".repeat(64),
         fields: fields(meaning),
         tags: tags.iter().map(|t| t.to_string()).collect(),
@@ -141,7 +141,7 @@ fn seed(f: &Fixture, group: Option<Uuid>, commit: bool) -> (Uuid, Uuid) {
         action: ItemAction::Update,
         note_id: Some(10),
         marker_tag: None,
-        target_model_name: "Linguist Vocabulary v2".into(),
+        target_model_name: "Linguist Vocabulary v3".into(),
         target_model_id: 1001,
         target_manifest_digest: "f".repeat(64),
         deck_id: 500,

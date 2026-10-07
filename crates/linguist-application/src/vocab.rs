@@ -21,9 +21,31 @@ use std::collections::BTreeMap;
 
 pub trait KanjiPort {
     fn lookup(&self, character: char) -> Result<Option<KanjiEntry>, String>;
+    /// Stroke-order GIF bytes; `Ok(None)` when disabled or not published.
+    fn stroke_order(&self, _character: char) -> Result<Option<Vec<u8>>, String> {
+        Ok(None)
+    }
 }
 pub trait ImagePort {
     fn search(&self, expression: &str) -> Result<ImageSearch, String>;
+}
+/// Native-speaker recordings (`audio.provider=dictionary`); `Ok(None)` is "none published".
+pub trait RecordingPort {
+    fn japanese(
+        &self,
+        expression: &str,
+        kana: &str,
+    ) -> Result<Option<linguist_dictionary::recording::Recording>, String>;
+}
+impl RecordingPort for linguist_dictionary::recording::RecordingClient {
+    fn japanese(
+        &self,
+        expression: &str,
+        kana: &str,
+    ) -> Result<Option<linguist_dictionary::recording::Recording>, String> {
+        linguist_dictionary::recording::RecordingClient::japanese(self, expression, kana)
+            .map_err(|e| e.to_string())
+    }
 }
 pub trait SpeechPort {
     fn synthesize(&self, text: &str, target: &Language) -> Result<Synthesis, String>;
@@ -32,6 +54,9 @@ pub trait SpeechPort {
 impl KanjiPort for KanjiClient {
     fn lookup(&self, character: char) -> Result<Option<KanjiEntry>, String> {
         KanjiClient::lookup(self, character).map_err(|e| e.to_string())
+    }
+    fn stroke_order(&self, character: char) -> Result<Option<Vec<u8>>, String> {
+        KanjiClient::stroke_order(self, character).map_err(|e| e.to_string())
     }
 }
 
@@ -42,6 +67,7 @@ pub struct Providers<'a> {
     pub kanji: Option<&'a dyn KanjiPort>,
     pub images: Option<&'a dyn ImagePort>,
     pub speech: Option<&'a dyn SpeechPort>,
+    pub recordings: Option<&'a dyn RecordingPort>,
 }
 
 const SETTINGS: [&str; 5] = [
@@ -57,7 +83,7 @@ fn kanji_requested(settings: &Effective, document: &LearningDocument) -> bool {
         if document.target_language.as_str().split('-').next() == Some("ja")
             && settings.values["kanji.enabled"] == true
             && !linguist_dictionary::kanji::characters(&v.expression).is_empty()
-            && v.kanji.trim().is_empty()
+            && v.kanji_details.is_empty()
             && !document.edits.contains_key("Kanji"))
 }
 fn images_requested(settings: &Effective, document: &LearningDocument) -> bool {
@@ -68,7 +94,10 @@ fn images_requested(settings: &Effective, document: &LearningDocument) -> bool {
 }
 fn audio_requested(settings: &Effective, document: &LearningDocument) -> bool {
     matches!(document.content, LearningContent::Vocabulary(_))
-        && settings.values["audio.provider"] == "piper"
+        && matches!(
+            settings.values["audio.provider"].as_str(),
+            Some("piper" | "dictionary")
+        )
         && !document.media.iter().any(|m| m.mime.starts_with("audio/"))
 }
 
@@ -91,9 +120,9 @@ pub fn preflight(settings: &Effective) -> Result<(), String> {
     }
     if !matches!(
         settings.values["audio.provider"].as_str(),
-        Some("preserve" | "disabled" | "piper")
+        Some("preserve" | "disabled" | "piper" | "dictionary")
     ) {
-        return Err("CAPABILITY_UNAVAILABLE: audio.provider=dictionary|custom has no adapter in this build; select piper, preserve or disabled".into());
+        return Err("CAPABILITY_UNAVAILABLE: audio.provider=custom has no adapter in this build; select dictionary, piper, preserve or disabled".into());
     }
     if settings.values["kanji.enabled"] == true
         && settings.values.get("kanji.schema") != Some(&json!(linguist_dictionary::kanji::SCHEMA))
@@ -153,7 +182,15 @@ pub fn enrich_document(
             &mut assets,
         )?;
     }
-    if audio_requested(settings, &document) {
+    if audio_requested(settings, &document) && settings.values["audio.provider"] == "dictionary" {
+        stage_recording(
+            &mut document,
+            settings,
+            environment,
+            providers.recordings,
+            &mut assets,
+        )?;
+    } else if audio_requested(settings, &document) {
         stage_audio(
             &mut document,
             settings,
@@ -288,8 +325,69 @@ fn enrich_kanji(
             ambiguous: false,
         });
     }
+    // v3: structured facts plus an optional stroke-order animation per
+    // character. A missing animation only drops the picture, never the facts.
+    let mut details = Vec::new();
+    for entry in &found {
+        let character = entry
+            .character
+            .chars()
+            .next()
+            .ok_or("KANJI_CHARACTER_EMPTY")?;
+        let stroke_digest = match port.stroke_order(character) {
+            Ok(Some(bytes)) if linguist_dictionary::kanji::is_gif(&bytes) => {
+                let digest = canonical::asset_digest(&bytes);
+                if !document.media.iter().any(|m| m.digest == digest) {
+                    document.media.push(MediaAsset {
+                        digest: digest.clone(),
+                        filename: format!("lab_{digest}.gif"),
+                        original_filename: Some(format!("{:x}.gif", character as u32)),
+                        size_bytes: bytes.len() as u64,
+                        mime: "image/gif".into(),
+                        owner: MediaOwner::App,
+                        role: MediaRole::KanjiStroke,
+                        source_id: None,
+                        attribution: linguist_dictionary::kanji::STROKE_ORDER_ATTRIBUTION.into(),
+                        license: Some(linguist_dictionary::kanji::STROKE_ORDER_LICENSE.into()),
+                    });
+                    assets.push(bytes);
+                }
+                Some(digest)
+            }
+            Ok(Some(_)) => {
+                warning(
+                    document,
+                    "KANJI_STROKE_ORDER_FAILED",
+                    "kanji",
+                    format!("The stroke-order image for {character} is not a GIF."),
+                );
+                None
+            }
+            Ok(None) => None,
+            Err(error) => {
+                warning(
+                    document,
+                    "KANJI_STROKE_ORDER_FAILED",
+                    "kanji",
+                    format!("{error}; {character} is shown without its stroke order."),
+                );
+                None
+            }
+        };
+        details.push(linguist_core::document::KanjiDetail {
+            character: entry.character.clone(),
+            meanings: entry.meanings.clone(),
+            on_readings: entry.on_readings.clone(),
+            kun_readings: entry.kun_readings.clone(),
+            strokes: entry.strokes,
+            radical: entry.radical.clone(),
+            parts: entry.parts.clone(),
+            jlpt: entry.jlpt.clone(),
+            stroke_digest,
+        });
+    }
     if let LearningContent::Vocabulary(vocab) = &mut document.content {
-        vocab.kanji = linguist_dictionary::kanji::render_reference(&found);
+        vocab.kanji_details = details;
     }
     Ok(())
 }
@@ -422,8 +520,12 @@ fn stage_audio(
         return Ok(());
     };
     let japanese = document.target_language.as_str().split('-').next() == Some("ja");
+    // Speak the kana when known: Piper may misread kanji.
+    let spoken: String = vocab.pronunciation.split_whitespace().collect();
     let text = if japanese && !vocab.reading.trim().is_empty() {
         vocab.reading.clone()
+    } else if japanese && !spoken.is_empty() {
+        spoken
     } else {
         vocab.expression.clone()
     };
@@ -508,6 +610,142 @@ fn stage_audio(
         Severity::Review,
         Some("audio"),
         "Listen to the synthesized pronunciation; select it or decline it.",
+    );
+    issue.id = format!("AUDIO_CANDIDATE_REVIEW:{}", document.id);
+    issue.stage = "enrichment".into();
+    issue.source_refs = vec![digest];
+    document.issues.push(issue);
+    Ok(())
+}
+
+fn kana_only(text: &str) -> bool {
+    !text.is_empty()
+        && text.chars().all(|c| {
+            matches!(c as u32, 0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9F) || c == 'ー'
+        })
+}
+
+/// Stage one native-speaker recording as an audio candidate that needs review.
+fn stage_recording(
+    document: &mut LearningDocument,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    port: Option<&dyn RecordingPort>,
+    assets: &mut Vec<Vec<u8>>,
+) -> Result<(), String> {
+    let LearningContent::Vocabulary(vocab) = &document.content else {
+        return Ok(());
+    };
+    if document.target_language.as_str().split('-').next() != Some("ja") {
+        warning(
+            document,
+            "AUDIO_NOT_FOUND",
+            "audio",
+            "Dictionary recordings are only available for Japanese.".into(),
+        );
+        return Ok(());
+    }
+    let expression = vocab.expression.trim().to_owned();
+    let spoken: String = vocab.pronunciation.split_whitespace().collect();
+    let kana = [vocab.reading.trim(), spoken.as_str(), expression.as_str()]
+        .into_iter()
+        .find(|text| kana_only(text))
+        .map(str::to_owned);
+    let Some(kana) = kana else {
+        warning(
+            document,
+            "AUDIO_NOT_FOUND",
+            "audio",
+            "A kana reading is needed to look up a dictionary recording.".into(),
+        );
+        return Ok(());
+    };
+    let live;
+    let port: &dyn RecordingPort = match port {
+        Some(port) => port,
+        None => {
+            live = linguist_dictionary::recording::RecordingClient::from_settings(
+                settings,
+                environment,
+            )
+            .map_err(|e| format!("CAPABILITY_UNAVAILABLE: audio.provider=dictionary: {e}"))?;
+            &live
+        }
+    };
+    let recording = match port.japanese(&expression, &kana) {
+        Ok(Some(recording)) => recording,
+        Ok(None) => {
+            warning(
+                document,
+                "AUDIO_NOT_FOUND",
+                "audio",
+                format!("The dictionary has no recording for {expression} ({kana})."),
+            );
+            return Ok(());
+        }
+        Err(error) => {
+            warning(
+                document,
+                "AUDIO_SYNTHESIS_FAILED",
+                "audio",
+                format!("{error}; no audio candidate was staged. Audio is optional."),
+            );
+            return Ok(());
+        }
+    };
+    // Decoded inspection is what lets a reviewer select the candidate.
+    let inspection = match crate::media::inspect_source_media(&recording.bytes, settings) {
+        Ok(crate::media::SourceMediaInspection::Audio(inspection)) => inspection,
+        Ok(_) | Err(_) => {
+            warning(
+                document,
+                "AUDIO_SYNTHESIS_FAILED",
+                "audio",
+                "The dictionary recording did not decode as audio; nothing was staged.".into(),
+            );
+            return Ok(());
+        }
+    };
+    let digest = canonical::asset_digest(&recording.bytes);
+    document.media.push(MediaAsset {
+        digest: digest.clone(),
+        filename: format!("candidate_{digest}.mp3"),
+        original_filename: None,
+        size_bytes: recording.bytes.len() as u64,
+        mime: "audio/mpeg".into(),
+        owner: MediaOwner::App,
+        role: MediaRole::Archive,
+        source_id: None,
+        attribution: linguist_dictionary::recording::ATTRIBUTION.into(),
+        license: None,
+    });
+    document.evidence.push(Evidence {
+        id: uuid::Uuid::new_v4(),
+        field: "audio".into(),
+        provenance: Provenance::Provider,
+        source_id: None,
+        region_id: None,
+        target: Some(EvidenceTarget::MediaAsset {
+            digest: digest.clone(),
+        }),
+        source_span: None,
+        language: document.target_language.clone(),
+        claim: serde_json::to_string(&json!({
+            "recording": recording,
+            "text": {"expression": expression, "kana": kana},
+            "inspection": inspection,
+            "scope": "native speaker dictionary recording; word match unreviewed",
+        }))
+        .map_err(|e| e.to_string())?,
+        source_url: Some(recording.source_url.clone()),
+        ambiguous: true,
+    });
+    assets.push(recording.bytes);
+    let mut issue = Issue::new(
+        "AUDIO_CANDIDATE_REVIEW",
+        Severity::Review,
+        Some("audio"),
+        "Listen to the dictionary recording; select it or decline it.",
     );
     issue.id = format!("AUDIO_CANDIDATE_REVIEW:{}", document.id);
     issue.stage = "enrichment".into();
