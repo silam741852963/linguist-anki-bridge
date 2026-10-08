@@ -323,9 +323,30 @@ pub fn build_request(
         allowed.push("examples".into());
     }
     // Scheduling/history and approval actors are not learning material sent to the model.
-    let sources: Vec<_> = doc.sources.iter().filter(|source| source.kind != "generated_supplement_v2").map(|source| json!({"id":source.id,"kind":source.kind,"fields":source.fields,"digest":source.digest})).collect();
+    // Raw provider archives (whole dictionary responses and kanji pages) are
+    // already in accepted_content as structured facts; sending them again
+    // would only exceed the context window.
+    const ARCHIVE_ONLY: [&str; 4] = [
+        "generated_supplement_v2",
+        "jisho_api_v1",
+        "wiktionary_definition_v0.8",
+        "jisho_kanji_pages_v2",
+    ];
+    // Media-candidate receipts and kanji page claims are not learning material
+    // (kanji facts are already in accepted_content.kanji_details).
+    let evidence: Vec<_> = doc
+        .evidence
+        .iter()
+        .filter(|e| {
+            !matches!(
+                e.target,
+                Some(linguist_core::records::EvidenceTarget::MediaAsset { .. })
+            ) && e.field != "kanji"
+        })
+        .collect();
+    let sources: Vec<_> = doc.sources.iter().filter(|source| !ARCHIVE_ONLY.contains(&source.kind.as_str())).map(|source| json!({"id":source.id,"kind":source.kind,"fields":source.fields,"digest":source.digest})).collect();
     let user = json!({"schema_version":2,"kind":kind,"target_language":doc.target_language,"explanation_language":doc.explanation_language,
-        "accepted_content":doc.content,"context":doc.context,"sources":sources,"regions":doc.regions,"evidence":doc.evidence,
+        "accepted_content":doc.content,"context":doc.context,"sources":sources,"regions":doc.regions,"evidence":evidence,
         "allowed_fields":allowed,"examples_requested":examples_requested});
     let output_schema = constrained_schema(kind, &allowed, examples_requested)?;
     Ok(GenerationRequest {
@@ -561,18 +582,23 @@ fn merge_checked_output(
                 if !v.nuance.is_empty() {
                     return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
                 }
+                // A word is never its own near-synonym; such contrasts are dropped.
+                let own: String = v.expression.split_whitespace().collect();
                 v.nuance = s
                     .nuance
                     .into_iter()
+                    .filter(|c| c.expression.split_whitespace().collect::<String>() != own)
                     .map(|c| linguist_core::document::Contrast {
                         expression: c.expression,
                         difference: c.difference,
                     })
                     .collect();
-                claims.push((
-                    "nuance".into(),
-                    serde_json::to_string(&v.nuance).map_err(|_| "GENERATION_ENCODING")?,
-                ));
+                if !v.nuance.is_empty() {
+                    claims.push((
+                        "nuance".into(),
+                        serde_json::to_string(&v.nuance).map_err(|_| "GENERATION_ENCODING")?,
+                    ));
+                }
             }
             if !s.collocations.is_empty() {
                 if !v.collocations.is_empty() {

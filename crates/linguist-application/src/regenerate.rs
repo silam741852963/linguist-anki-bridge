@@ -287,6 +287,7 @@ pub fn prepare_item(
                     .iter()
                     .filter(|m| {
                         m.source_id.is_none()
+                            && m.role != MediaRole::KanjiStroke
                             && m.mime.starts_with(prefix)
                             && (m.role == MediaRole::Archive || named)
                     })

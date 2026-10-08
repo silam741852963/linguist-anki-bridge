@@ -17,7 +17,7 @@ use linguist_core::{
 };
 use linguist_dictionary::kanji::{KanjiClient, KanjiEntry};
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub trait KanjiPort {
     fn lookup(&self, character: char) -> Result<Option<KanjiEntry>, String>;
@@ -90,7 +90,11 @@ fn images_requested(settings: &Effective, document: &LearningDocument) -> bool {
     matches!(document.content, LearningContent::Vocabulary(_))
         && settings.values["images.search_when_missing"] == true
         && settings.values["images.provider"] != "disabled"
-        && !document.media.iter().any(|m| m.mime.starts_with("image/"))
+        // Kanji stroke animations are not pictures.
+        && !document
+            .media
+            .iter()
+            .any(|m| m.mime.starts_with("image/") && m.role != MediaRole::KanjiStroke)
 }
 fn audio_requested(settings: &Effective, document: &LearningDocument) -> bool {
     matches!(document.content, LearningContent::Vocabulary(_))
@@ -647,16 +651,27 @@ fn stage_recording(
     }
     let expression = vocab.expression.trim().to_owned();
     let spoken: String = vocab.pronunciation.split_whitespace().collect();
+    // Before the sense decision, exact dictionary entries that all agree on
+    // one reading identify the spoken form; several readings stay ambiguous.
+    let exact: BTreeSet<&str> = vocab
+        .dictionary
+        .iter()
+        .filter(|entry| entry.forms.contains(&expression))
+        .flat_map(|entry| entry.readings.iter().map(String::as_str))
+        .filter(|reading| kana_only(reading))
+        .collect();
+    let agreed = (exact.len() == 1).then(|| exact.iter().next().unwrap().to_string());
     let kana = [vocab.reading.trim(), spoken.as_str(), expression.as_str()]
         .into_iter()
         .find(|text| kana_only(text))
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .or(agreed);
     let Some(kana) = kana else {
         warning(
             document,
             "AUDIO_NOT_FOUND",
             "audio",
-            "A kana reading is needed to look up a dictionary recording.".into(),
+            "A single kana reading is needed to look up a dictionary recording; choose the sense, then run plans regenerate --stage enrichment.".into(),
         );
         return Ok(());
     };

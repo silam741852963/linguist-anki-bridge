@@ -655,11 +655,13 @@ fn v3_nuance_and_collocations_merge_with_evidence_and_respect_bounds() {
     let request = build_request(&doc, &config).unwrap();
     assert!(request.allowed_fields.contains(&"nuance".into()));
     assert!(request.allowed_fields.contains(&"collocations".into()));
-    let raw = r#"{"kind":"vocabulary","body":{"usage":"Neutral, everyday.","examples":[],"nuance":[{"expression":"召し上がる","difference":"Honorific form for others."}],"collocations":[{"phrase":"ご飯を食べる","gloss":"eat a meal"}]}}"#;
+    let raw = r#"{"kind":"vocabulary","body":{"usage":"Neutral, everyday.","examples":[],"nuance":[{"expression":"召し上がる","difference":"Honorific form for others."},{"expression":"食べる","difference":"Itself."}],"collocations":[{"phrase":"ご飯を食べる","gloss":"eat a meal"}]}}"#;
     let draft = merge_output(&doc, &config, &request, raw.as_bytes(), &identity(&config)).unwrap();
     let LearningContent::Vocabulary(child) = &draft.document.content else {
         unreachable!()
     };
+    // The word itself is never kept as its own near-synonym.
+    assert_eq!(child.nuance.len(), 1);
     assert_eq!(child.nuance[0].expression, "召し上がる");
     assert_eq!(child.collocations[0].gloss, "eat a meal");
     for field in ["nuance", "collocations", "usage"] {

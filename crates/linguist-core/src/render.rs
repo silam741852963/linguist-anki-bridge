@@ -16,12 +16,15 @@ pub struct RenderedNote {
     pub media_digests: Vec<String>,
     pub digest: String,
 }
+/// Escape text-node content exactly as the HTML serializer (and so Anki's
+/// editor) writes it back: `&`, NBSP, `<` and `>`. Quotes stay literal, so a
+/// note opened and saved in the editor reads back byte-identical. Rendered
+/// values never sit inside attributes; media names use `url_filename`.
 pub fn escape(s: &str) -> String {
     s.replace('&', "&amp;")
+        .replace('\u{a0}', "&nbsp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
 pub fn sanitize_reference(s: &str) -> String {
     ammonia::Builder::default()

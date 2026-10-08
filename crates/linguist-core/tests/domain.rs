@@ -985,7 +985,7 @@ fn v3_vocabulary_renders_fixed_sections_kanji_strokes_and_tags() {
     let usage = &rendered.fields["UsageExamples"];
     for text in [
         "<h4>Usage</h4><p>Neutral; &lt;any&gt; meal.</p>",
-        "<dt>召し上がる</dt><dd>Honorific; use for a superior&#39;s eating.</dd>",
+        "<dt>召し上がる</dt><dd>Honorific; use for a superior's eating.</dd>",
         "ご飯を<b class=\"lab-hl\">食べる</b>",
         "<div class=\"lab-tr\">I eat breakfast.</div>",
     ] {
@@ -1014,5 +1014,12 @@ fn v3_vocabulary_renders_fixed_sections_kanji_strokes_and_tags() {
         validation::validate(&doc)
             .iter()
             .any(|issue| issue.code == "INVALID_MEDIA_TYPE")
+    );
+}
+#[test]
+fn escaped_text_matches_the_html_text_serializer() {
+    assert_eq!(
+        render::escape("a & b <i> \"q\" 'q' \u{a0}x"),
+        "a &amp; b &lt;i&gt; \"q\" 'q' &nbsp;x"
     );
 }

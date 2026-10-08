@@ -128,6 +128,9 @@ impl KanjiPort for Kanji {
             raw_bytes: raw,
         }))
     }
+    fn stroke_order(&self, _character: char) -> Result<Option<Vec<u8>>, String> {
+        Ok(Some(b"GIF89a stroke".to_vec()))
+    }
 }
 struct Images {
     fail: bool,
@@ -292,8 +295,21 @@ fn japanese_add_enriches_kanji_and_stages_reviewed_cues_picture_and_audio() {
         .unwrap();
     assert!(store.asset(&archive.asset_digests[0], 1 << 20).is_ok());
     // Media candidates are archived but render nowhere until chosen.
-    assert_eq!(doc.media.len(), 3);
-    assert!(doc.media.iter().all(|m| m.role == MediaRole::Archive));
+    // The stroke GIF renders directly; it does not stop the picture search.
+    assert_eq!(doc.media.len(), 4);
+    assert_eq!(
+        doc.media
+            .iter()
+            .filter(|m| m.role == MediaRole::KanjiStroke)
+            .count(),
+        1
+    );
+    assert!(
+        doc.media
+            .iter()
+            .filter(|m| m.role != MediaRole::KanjiStroke)
+            .all(|m| m.role == MediaRole::Archive)
+    );
     for media in &doc.media {
         assert_eq!(
             store.asset(&media.digest, 1 << 20).unwrap().len() as u64,
@@ -358,7 +374,7 @@ fn japanese_add_enriches_kanji_and_stages_reviewed_cues_picture_and_audio() {
         declined.documents[0]
             .media
             .iter()
-            .all(|m| m.role == MediaRole::Archive)
+            .all(|m| matches!(m.role, MediaRole::Archive | MediaRole::KanjiStroke))
     );
     // Unknown candidates are rejected; a later role change reopens the review.
     let document = &plan.documents[0];
