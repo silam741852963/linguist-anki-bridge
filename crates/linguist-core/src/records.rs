@@ -223,6 +223,11 @@ pub enum ReviewChoice {
     ContentVerified {
         evidence_ids: Vec<Uuid>,
     },
+    /// A reviewer rejects one generated fact: its content and evidence are
+    /// removed, so it can be generated again or authored.
+    ContentRejected {
+        evidence_id: Uuid,
+    },
     SourceContentVerified {
         source_id: Uuid,
         evidence_ids: Vec<Uuid>,

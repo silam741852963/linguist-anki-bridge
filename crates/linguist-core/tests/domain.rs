@@ -1064,3 +1064,28 @@ fn v3_related_dictionary_words_render_on_the_back_only() {
     assert!(!rendered.fields["Meaning"].contains("食べ物"));
     assert!(!rendered.fields["Meaning"].contains("召し上がる"));
 }
+
+#[test]
+fn english_vocabulary_renders_exactly_the_english_model_fields() {
+    let mut doc = vocabulary();
+    doc.target_language = "en".to_owned().try_into().unwrap();
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.expression = "eat".into();
+        v.reading.clear();
+        v.pronunciation = "/iːt/".into();
+    }
+    let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
+    assert_eq!(rendered.model.name, "Linguist English Vocabulary v1");
+    assert_eq!(
+        rendered.fields.keys().collect::<Vec<_>>(),
+        rendered
+            .model
+            .fields
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+    );
+    assert!(!rendered.fields.contains_key("Kanji"));
+    assert!(render::tags(&doc).contains(&"lab::lang::en".to_string()));
+}

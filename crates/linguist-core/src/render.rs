@@ -402,7 +402,10 @@ pub fn render(
                 dictionary::meaning(&v.dictionary, &v.expression, &v.sense_key, &v.meaning),
             );
             fields.insert("UsageExamples".into(), usage_examples(v) + &related(v));
-            fields.insert("Kanji".into(), kanji(v, &doc.media));
+            // Only the Japanese model has a Kanji section.
+            if let Some(field) = fields.get_mut("Kanji") {
+                *field = kanji(v, &doc.media);
+            }
             for (key, task) in [
                 ("EnableProduction", Task::Production),
                 ("EnableSpelling", Task::Spelling),

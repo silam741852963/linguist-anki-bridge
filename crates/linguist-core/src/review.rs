@@ -195,7 +195,11 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
                 .iter()
                 .all(|id| document.evidence.iter().any(|evidence| evidence.id == *id))
         {
+            let single = (evidence_ids.len() == 1).then(|| evidence_ids[0]);
             choices.push(ReviewChoice::ContentVerified { evidence_ids });
+            if let Some(evidence_id) = single {
+                choices.push(ReviewChoice::ContentRejected { evidence_id });
+            }
         }
     }
     choices
@@ -356,6 +360,12 @@ pub fn resolve(
             {
                 return Err(ContractError("REVIEW_EVIDENCE_MISSING".into()));
             }
+        }
+        ReviewChoice::ContentRejected { evidence_id } if issue.code == "GENERATED_FACT_REVIEW" => {
+            if issue.source_refs != vec![evidence_id.to_string()] {
+                return Err(ContractError("REVIEW_EVIDENCE_MISMATCH".into()));
+            }
+            reject_generated(document, *evidence_id)?;
         }
         ReviewChoice::Sense(key) | ReviewChoice::SenseWithReading { key, .. }
             if issue.code == "DICTIONARY_SENSE_REVIEW" =>
@@ -860,6 +870,56 @@ pub(crate) fn native_history_matches(
             .all(|e| ordinals.contains(&e.source_ordinal))
         && crate::records::native_history_digest(source, cards)
             .is_ok_and(|digest| digest == *evidence_digest)
+}
+
+/// Remove one generated fact and its evidence. Examples are removed by index
+/// and later example evidence is re-pointed; text fields are cleared.
+fn reject_generated(
+    document: &mut crate::LearningDocument,
+    evidence_id: uuid::Uuid,
+) -> Result<(), ContractError> {
+    let evidence = document
+        .evidence
+        .iter()
+        .find(|e| e.id == evidence_id && e.provenance == crate::Provenance::Generated)
+        .cloned()
+        .ok_or_else(|| ContractError("REVIEW_EVIDENCE_MISSING".into()))?;
+    let field = evidence.field.as_str();
+    match (&mut document.content, field) {
+        (crate::LearningContent::Vocabulary(v), "usage") => v.usage.clear(),
+        (crate::LearningContent::Vocabulary(v), "nuance") => v.nuance.clear(),
+        (crate::LearningContent::Vocabulary(v), "collocations") => v.collocations.clear(),
+        (crate::LearningContent::Grammar(g), "usage") => g.usage.clear(),
+        (crate::LearningContent::Grammar(g), "meaning") => g.meaning.clear(),
+        (crate::LearningContent::Grammar(g), "formation") => g.formation.clear(),
+        (content, "examples") => {
+            let Some(crate::records::EvidenceTarget::Example { index }) = evidence.target else {
+                return Err(ContractError("REVIEW_EVIDENCE_TARGET_INVALID".into()));
+            };
+            let examples = match content {
+                crate::LearningContent::Vocabulary(v) => &mut v.examples,
+                crate::LearningContent::Grammar(g) => &mut g.examples,
+            };
+            if examples
+                .get(index)
+                .is_none_or(|e| !e.evidence_ids.contains(&evidence_id))
+            {
+                return Err(ContractError("REVIEW_EVIDENCE_TARGET_INVALID".into()));
+            }
+            examples.remove(index);
+            for e in &mut document.evidence {
+                if let Some(crate::records::EvidenceTarget::Example { index: later }) =
+                    &mut e.target
+                    && *later > index
+                {
+                    *later -= 1;
+                }
+            }
+        }
+        _ => return Err(ContractError("REVIEW_REJECTION_UNSUPPORTED".into())),
+    }
+    document.evidence.retain(|e| e.id != evidence_id);
+    Ok(())
 }
 
 /// Dropping an unmapped source field is valid only for that exact capture

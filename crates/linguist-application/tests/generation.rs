@@ -693,3 +693,115 @@ fn v3_nuance_and_collocations_merge_with_evidence_and_respect_bounds() {
         "GENERATION_FIELD_NOT_ALLOWED"
     );
 }
+
+#[test]
+fn monolingual_echoed_translations_and_glosses_are_dropped() {
+    let mut doc = document();
+    doc.explanation_language = doc.target_language.clone();
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.usage.clear();
+    }
+    let config = settings();
+    let request = build_request(&doc, &config).unwrap();
+    let raw = r#"{"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":"Sentence one.","translation":"Sentence one."}],"nuance":[],"collocations":[{"phrase":"a phrase","gloss":"A phrase"}]}}"#;
+    let draft = merge_output(&doc, &config, &request, raw.as_bytes(), &identity(&config)).unwrap();
+    let LearningContent::Vocabulary(v) = &draft.document.content else {
+        unreachable!()
+    };
+    assert_eq!(v.examples.last().unwrap().translation, "");
+    assert_eq!(v.collocations[0].gloss, "");
+}
+
+#[test]
+fn rejecting_a_generated_fact_removes_exactly_that_content() {
+    use linguist_core::{
+        records::{EvidenceTarget, PlanRevision, ReviewChoice},
+        review::{ResolutionRequest, decision_templates, resolve},
+    };
+    let mut doc = document();
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.usage.clear();
+    }
+    let config = settings();
+    let request = build_request(&doc, &config).unwrap();
+    let raw = r#"{"kind":"vocabulary","body":{"usage":"Neutral.","examples":[{"sentence":"One.","translation":"1"},{"sentence":"Two.","translation":"2"}],"nuance":[{"expression":"召し上がる","difference":"Wrong."}],"collocations":[]}}"#;
+    let draft = merge_output(&doc, &config, &request, raw.as_bytes(), &identity(&config)).unwrap();
+    let document = draft.document;
+    let plan = PlanRevision {
+        grammar_groups: vec![],
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: linguist_application::freeze_settings(
+            &config,
+            &std::collections::BTreeMap::from([(
+                "HOME".to_string(),
+                "/tmp/lab-reject".to_string(),
+            )]),
+        )
+        .unwrap(),
+        binding: None,
+        source_digest: canonical::digest("source-capture", &document.sources).unwrap(),
+        selection: None,
+        documents: vec![document.clone()],
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    let LearningContent::Vocabulary(before) = &document.content else {
+        unreachable!()
+    };
+    let examples_before = before.examples.len();
+    let reject = |plan: &PlanRevision, field: &str, nth: usize| {
+        let doc = &plan.documents[0];
+        let evidence = doc
+            .evidence
+            .iter()
+            .filter(|e| e.field == field && e.provenance == linguist_core::Provenance::Generated)
+            .nth(nth)
+            .unwrap()
+            .clone();
+        let issue = linguist_core::validate(doc)
+            .into_iter()
+            .find(|i| i.id == format!("GENERATED_FACT_REVIEW:{}", evidence.id))
+            .unwrap();
+        let choice = ReviewChoice::ContentRejected {
+            evidence_id: evidence.id,
+        };
+        assert!(decision_templates(doc, &issue).contains(&choice));
+        resolve(
+            plan,
+            &ResolutionRequest {
+                schema_version: 2,
+                base_revision: plan.revision,
+                base_digest: plan.approval_digest().unwrap(),
+                document_id: doc.id,
+                issue_id: issue.id,
+                input_digest: doc.semantic_digest().unwrap(),
+                actor: "reviewer".into(),
+                choice,
+            },
+            "unix-seconds:1".into(),
+        )
+        .unwrap()
+        .revision
+    };
+    let plan = reject(&plan, "nuance", 0);
+    let plan = reject(&plan, "examples", 0);
+    let after = &plan.documents[0];
+    let LearningContent::Vocabulary(v) = &after.content else {
+        unreachable!()
+    };
+    assert!(v.nuance.is_empty());
+    assert_eq!(v.usage, "Neutral.");
+    assert_eq!(v.examples.len(), examples_before - 1);
+    assert_eq!(v.examples.last().unwrap().sentence, "Two.");
+    // The surviving example's evidence now points at its new index.
+    let last = v.examples.len() - 1;
+    let id = v.examples[last].evidence_ids[0];
+    assert_eq!(
+        after.evidence.iter().find(|e| e.id == id).unwrap().target,
+        Some(EvidenceTarget::Example { index: last })
+    );
+    assert!(!after.evidence.iter().any(|e| e.field == "nuance"));
+}

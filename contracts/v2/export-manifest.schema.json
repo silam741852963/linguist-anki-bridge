@@ -1450,6 +1450,34 @@
           ]
         },
         {
+          "description": "A reviewer rejects one generated fact: its content and evidence are\nremoved, so it can be generated again or authored.",
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "content_rejected"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "evidence_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "evidence_id"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
           "type": "object",
           "properties": {
             "decision": {

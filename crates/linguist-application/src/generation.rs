@@ -661,6 +661,33 @@ fn merge_checked_output(
         }
         Ok(())
     };
+    // A translation or gloss that only repeats the target text carries no
+    // meaning (monolingual cards); keep it empty instead.
+    let mut output = output;
+    let monolingual = doc.target_language.as_str().split('-').next()
+        == doc.explanation_language.as_str().split('-').next();
+    let echo = |a: &str, b: &str| monolingual && a.trim().eq_ignore_ascii_case(b.trim());
+    match &mut output {
+        Supplement::Vocabulary(s) => {
+            for example in &mut s.examples {
+                if echo(&example.translation, &example.sentence) {
+                    example.translation.clear();
+                }
+            }
+            for collocation in &mut s.collocations {
+                if echo(&collocation.gloss, &collocation.phrase) {
+                    collocation.gloss.clear();
+                }
+            }
+        }
+        Supplement::Grammar(s) => {
+            for example in &mut s.examples {
+                if echo(&example.translation, &example.sentence) {
+                    example.translation.clear();
+                }
+            }
+        }
+    }
     let new_examples = match (&mut child.content, output) {
         (LearningContent::Vocabulary(v), Supplement::Vocabulary(s)) => {
             set("usage", &mut v.usage, s.usage)?;
