@@ -227,6 +227,12 @@ pub enum ReviewChoice {
         source_id: Uuid,
         evidence_ids: Vec<Uuid>,
     },
+    /// An unmapped source field is intentionally not carried into the target
+    /// model; its original value stays in the source archive.
+    SourceFieldDropped {
+        source_id: Uuid,
+        field: String,
+    },
     SourceMediaRole {
         source_id: Uuid,
         asset_digest: String,

@@ -399,6 +399,38 @@
           ]
         },
         {
+          "description": "An unmapped source field is intentionally not carried into the target\nmodel; its original value stays in the source archive.",
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "source_field_dropped"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "field"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
           "type": "object",
           "properties": {
             "decision": {

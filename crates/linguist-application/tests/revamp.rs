@@ -1605,3 +1605,69 @@ fn native_history_evidence_resolves_review_and_maps_every_card() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn unmapped_legacy_field_is_dropped_by_a_typed_decision_and_stays_archived() {
+    use linguist_core::{records::ReviewChoice, review::ResolutionRequest};
+    let (capture, mut settings) = setup(
+        "english_vocab",
+        &[("Word", "cat"), ("Cue", "Say the animal")],
+        &[("expression", "Word")],
+    );
+    let root = std::env::temp_dir().join(format!("lab-drop-field-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "english_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-drop-field".into())]),
+    )
+    .unwrap();
+    let store = linguist_store::Store::open(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let doc = &plan.documents[0];
+    let issue = doc
+        .issues
+        .iter()
+        .find(|i| i.code == "SOURCE_UNMAPPED_FIELD_REVIEW")
+        .unwrap();
+    let templates = linguist_core::review::decision_templates(doc, issue);
+    let source_id = doc.sources[0].id;
+    assert!(templates.contains(&ReviewChoice::SourceFieldDropped {
+        source_id,
+        field: "Cue".into()
+    }));
+    let mut request = ResolutionRequest {
+        schema_version: 2,
+        base_revision: 1,
+        base_digest: plan.approval_digest().unwrap(),
+        document_id: doc.id,
+        issue_id: issue.id.clone(),
+        input_digest: doc.semantic_digest().unwrap(),
+        actor: "owner".into(),
+        choice: ReviewChoice::SourceFieldDropped {
+            source_id,
+            field: "Word".into(),
+        },
+    };
+    // Only the issue's own field can be dropped.
+    assert!(linguist_application::review::resolve(&store, &plan, &request, "now".into()).is_err());
+    request.choice = ReviewChoice::SourceFieldDropped {
+        source_id,
+        field: "Cue".into(),
+    };
+    let result =
+        linguist_application::review::resolve(&store, &plan, &request, "now".into()).unwrap();
+    let after = &result.revision.documents[0];
+    assert!(
+        !validation::validate(after)
+            .iter()
+            .any(|i| i.code == "SOURCE_UNMAPPED_FIELD_REVIEW"
+                && i.severity != validation::Severity::Warning)
+    );
+    assert_eq!(after.archives[0].original_fields["Cue"], "Say the animal");
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

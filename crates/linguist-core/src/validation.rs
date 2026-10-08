@@ -52,6 +52,7 @@ pub fn reopenable(issue: &Issue) -> bool {
         "capture" => matches!(
             issue.code.as_str(),
             "SOURCE_HTML_TEXT_REVIEW"
+                | "SOURCE_UNMAPPED_FIELD_REVIEW"
                 | "SOURCE_NATIVE_HISTORY_REVIEW"
                 | "SOURCE_MEDIA_MISSING_REVIEW"
                 | "SOURCE_EXAMPLES_REVIEW"
@@ -748,6 +749,8 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                     ReviewChoice::SourceMediaRole { .. } => crate::review::source_media_matches(doc, issue, &r.choice, true),
                     ReviewChoice::SourceContentVerified { source_id, evidence_ids } =>
                         crate::review::source_content_verified(doc, issue, *source_id, evidence_ids),
+                    ReviewChoice::SourceFieldDropped { source_id, field } =>
+                        crate::review::source_field_dropped(doc, issue, *source_id, field),
                     ReviewChoice::Media(digest) => crate::review::candidate_choice_matches(doc, issue, digest),
                     ReviewChoice::Segmentation(ids) => issue.code == "GRAMMAR_SEGMENTATION_REVIEW"
                         && crate::review::segmentation_valid(issue, ids)

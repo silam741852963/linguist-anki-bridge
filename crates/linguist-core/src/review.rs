@@ -172,6 +172,16 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
             });
         }
     }
+    if issue.code == "SOURCE_UNMAPPED_FIELD_REVIEW"
+        && let (Some(field), [source]) = (&issue.field, issue.source_refs.as_slice())
+        && let Ok(source_id) = uuid::Uuid::parse_str(source)
+        && source_field_dropped(document, issue, source_id, field)
+    {
+        choices.push(ReviewChoice::SourceFieldDropped {
+            source_id,
+            field: field.clone(),
+        });
+    }
     if issue.code == "GENERATED_FACT_REVIEW" && issue.severity == Severity::Review {
         let ids: Option<Vec<_>> = issue
             .source_refs
@@ -293,6 +303,13 @@ pub fn resolve(
         {
             if !source_content_verified(document, issue, *source_id, evidence_ids) {
                 return Err(ContractError("REVIEW_SOURCE_EVIDENCE_MISMATCH".into()));
+            }
+        }
+        ReviewChoice::SourceFieldDropped { source_id, field }
+            if issue.code == "SOURCE_UNMAPPED_FIELD_REVIEW" =>
+        {
+            if !source_field_dropped(document, issue, *source_id, field) {
+                return Err(ContractError("REVIEW_SOURCE_FIELD_MISMATCH".into()));
             }
         }
         ReviewChoice::Segmentation(ids) if issue.code == "GRAMMAR_SEGMENTATION_REVIEW" => {
@@ -843,6 +860,28 @@ pub(crate) fn native_history_matches(
             .all(|e| ordinals.contains(&e.source_ordinal))
         && crate::records::native_history_digest(source, cards)
             .is_ok_and(|digest| digest == *evidence_digest)
+}
+
+/// Dropping an unmapped source field is valid only for that exact capture
+/// issue and only while the field's original value is archived.
+pub(crate) fn source_field_dropped(
+    document: &crate::LearningDocument,
+    issue: &Issue,
+    source_id: uuid::Uuid,
+    field: &str,
+) -> bool {
+    issue.code == "SOURCE_UNMAPPED_FIELD_REVIEW"
+        && issue.stage == "capture"
+        && issue.field.as_deref() == Some(field)
+        && issue.source_refs == vec![source_id.to_string()]
+        && document.sources.iter().any(|source| {
+            source.id == source_id
+                && source.fields.contains_key(field)
+                && document.archives.iter().any(|archive| {
+                    archive.source_id == source_id
+                        && archive.original_fields.get(field) == source.fields.get(field)
+                })
+        })
 }
 
 /// Only derived content review, never source task/history/identity or structural issues.
