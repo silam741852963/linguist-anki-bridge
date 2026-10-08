@@ -78,7 +78,10 @@ pub fn parse_definition(
         return Err(Error::ProviderStatus);
     }
     for (language, value) in &response {
-        Language::try_from(language.clone()).map_err(|_| Error::Schema)?;
+        // Wiktionary groups languages without a code under "other".
+        if language != "other" {
+            Language::try_from(language.clone()).map_err(|_| Error::Schema)?;
+        }
         if !value.is_array() {
             return Err(Error::Schema);
         }

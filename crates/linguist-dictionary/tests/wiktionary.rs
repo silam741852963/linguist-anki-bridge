@@ -8,7 +8,8 @@ fn body() -> Vec<u8> {
             {"definition":"<p>Eat &amp; drink</p><p>&lt;slowly&gt;</p><script>execute()</script>","examples":["<i>I eat.</i>"],"parsedExamples":[{"example":"<b>I eat &amp; drink.</b>","translation":"<i>Translation</i>","note":"original retained"}],"extension":{"unknown":true}},
             {"definition":"Consume a meal","examples":["<span>We eat.</span>"]}]},
             {"language":"English","partOfSpeech":"Noun","definitions":[{"definition":"A meal"}]}],
-        "fr":[{"language":"French","partOfSpeech":"Verb","definitions":[{"definition":"Foreign sense stays archived"}]}]
+        "fr":[{"language":"French","partOfSpeech":"Verb","definitions":[{"definition":"Foreign sense stays archived"}]}],
+        "other":[{"language":"Norwegian Bokmål","partOfSpeech":"Noun","definitions":[{"definition":"Uncoded language group"}]}]
     })).unwrap()
 }
 #[test]

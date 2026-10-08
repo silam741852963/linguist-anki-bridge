@@ -56,7 +56,8 @@ pub(super) fn meaning(
                 masked(label, expression)
             ));
         }
-        body.push_str(&masked(&sense.definitions.join("; "), expression));
+        let definitions: Vec<_> = sense.definitions.iter().map(|d| d.trim()).collect();
+        body.push_str(&masked(&definitions.join("; "), expression));
         body.push_str("</li>");
     }
     body.push_str("</ol>");
