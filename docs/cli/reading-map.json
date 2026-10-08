@@ -508,7 +508,7 @@
       "path": "operations/doctor.md",
       "heading": "## OP-01 \u2014 `doctor`",
       "title": "OP-01 \u2014 `doctor`",
-      "words": 422,
+      "words": 495,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -888,7 +888,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-30 \u2014 `plans regenerate PLAN`",
       "title": "OP-30 \u2014 `plans regenerate PLAN`",
-      "words": 338,
+      "words": 371,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
