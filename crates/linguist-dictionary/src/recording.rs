@@ -48,7 +48,8 @@ impl RecordingClient {
         {
             return Err(ReadError::Unavailable);
         }
-        let reader = Reader::from_settings(settings, environment, Service::Tts, &HOSTS, &[])?;
+        let hosts: Vec<&str> = HOSTS.iter().chain(&english::HOSTS).copied().collect();
+        let reader = Reader::from_settings(settings, environment, Service::Tts, &hosts, &[])?;
         Ok(Self { reader })
     }
 
@@ -90,6 +91,62 @@ impl RecordingClient {
     }
 }
 
+/// What a Wiktionary page yields for one English word.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct EnglishLookup {
+    pub page_url: String,
+    pub page_sha256: String,
+    pub pronunciation: english::Pronunciation,
+    pub recording: Option<Recording>,
+}
+
+impl RecordingClient {
+    /// IPA and pronunciation recording for one English word, or `Ok(None)`
+    /// when Wiktionary has no page.
+    pub fn english(&self, word: &str) -> Result<Option<EnglishLookup>, ReadError> {
+        let word = word.trim();
+        if word.is_empty() || word.chars().any(char::is_control) {
+            return Err(ReadError::Policy);
+        }
+        let title = word.replace(' ', "_");
+        let encoded =
+            percent_encoding::utf8_percent_encode(&title, percent_encoding::NON_ALPHANUMERIC);
+        let url = url::Url::parse(&format!("{}{encoded}", english::PAGE_URL))
+            .map_err(|_| ReadError::Policy)?;
+        let page = match self.reader.get(&url, &["text/html"]) {
+            Ok(page) => page,
+            Err(ReadError::Http(404)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let html = std::str::from_utf8(&page.bytes).map_err(|_| ReadError::Schema)?;
+        let pronunciation = english::parse(html);
+        let recording = match &pronunciation.audio_url {
+            Some(audio) => {
+                let audio = url::Url::parse(audio).map_err(|_| ReadError::Schema)?;
+                let fetched = self.reader.get(&audio, &["audio/mpeg"])?;
+                if !is_mp3(&fetched.bytes) {
+                    return Err(ReadError::Schema);
+                }
+                Some(Recording {
+                    provider: "wikimedia_commons",
+                    source_url: fetched.final_url.to_string(),
+                    sha256: sha256_hex(&fetched.bytes),
+                    fetched_at: fetched.fetched_at,
+                    from_cache: fetched.from_cache,
+                    bytes: fetched.bytes,
+                })
+            }
+            None => None,
+        };
+        Ok(Some(EnglishLookup {
+            page_url: page.final_url.to_string(),
+            page_sha256: sha256_hex(&page.bytes),
+            pronunciation,
+            recording,
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,5 +160,142 @@ mod tests {
         assert!(is_mp3(b"ID3\x04"));
         assert!(is_mp3(&[0xFF, 0xFB, 0x90]));
         assert!(!is_mp3(b"<html>"));
+    }
+}
+
+/// English pronunciation from a Wiktionary page (Parsoid HTML of
+/// `en.wiktionary.org/api/rest_v1/page/html/{word}`): the IPA and the
+/// pronunciation recording of the English section.
+pub mod english {
+    use scraper::{ElementRef, Html, Selector};
+
+    pub const PAGE_URL: &str = "https://en.wiktionary.org/api/rest_v1/page/html/";
+    pub const HOSTS: [&str; 2] = ["en.wiktionary.org", "upload.wikimedia.org"];
+    pub const ATTRIBUTION: &str =
+        "Pronunciation recording from Wikimedia Commons via Wiktionary (CC BY-SA)";
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+    pub struct Pronunciation {
+        /// The US/General American IPA, else the first listed one; `None`
+        /// when several pronunciation sections exist (homographs).
+        pub ipa: Option<String>,
+        /// Every IPA line seen, for evidence.
+        pub ipa_lines: Vec<(String, String)>,
+        pub sections: usize,
+        /// Transcoded MP3 of the preferred recording (US first).
+        pub audio_url: Option<String>,
+    }
+
+    fn select(css: &str) -> Selector {
+        Selector::parse(css).expect("static selector")
+    }
+    fn text(node: ElementRef) -> String {
+        node.text()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+    fn heading_id(section: ElementRef) -> Option<String> {
+        section
+            .children()
+            .filter_map(ElementRef::wrap)
+            .find(|child| matches!(child.value().name(), "h2" | "h3" | "h4" | "h5"))
+            .and_then(|heading| heading.value().attr("id").map(str::to_owned))
+    }
+
+    /// The IPA span texts and the plain text that belong to this list item
+    /// itself, excluding nested lists.
+    fn own_parts(item: ElementRef) -> (Vec<String>, String) {
+        let mine = |node: &ElementRef| {
+            node.ancestors()
+                .filter_map(ElementRef::wrap)
+                .find(|a| a.value().name() == "li")
+                .is_some_and(|li| li.id() == item.id())
+        };
+        let spans = item
+            .select(&select("span.IPA"))
+            .filter(|span| mine(span))
+            .map(text)
+            .collect();
+        let mut label = Vec::new();
+        for node in item.descendants() {
+            if let Some(t) = node.value().as_text()
+                && let Some(parent) = node.parent().and_then(ElementRef::wrap)
+                && (parent.id() == item.id() || mine(&parent))
+            {
+                label.push(t.to_string());
+            }
+        }
+        let label = label
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        (spans, label)
+    }
+
+    pub fn parse(html: &str) -> Pronunciation {
+        let document = Html::parse_document(html);
+        let english = document
+            .select(&select("section"))
+            .find(|section| heading_id(*section).as_deref() == Some("English"));
+        let mut result = Pronunciation {
+            ipa: None,
+            ipa_lines: vec![],
+            sections: 0,
+            audio_url: None,
+        };
+        let Some(english) = english else {
+            return result;
+        };
+        let sections: Vec<_> = english
+            .select(&select("section"))
+            .filter(|section| {
+                heading_id(*section).is_some_and(|id| id.starts_with("Pronunciation"))
+            })
+            .collect();
+        result.sections = sections.len();
+        let Some(first) = sections.first() else {
+            return result;
+        };
+        for item in first.select(&select("li")) {
+            let (spans, label) = own_parts(item);
+            let ipa = spans
+                .into_iter()
+                .find(|ipa| ipa.starts_with('/') || ipa.starts_with('['));
+            // IPA lines only; audio lines repeat a transcription.
+            if let Some(ipa) = ipa.filter(|_| label.contains("IPA"))
+                && !result.ipa_lines.iter().any(|(_, seen)| *seen == ipa)
+            {
+                result.ipa_lines.push((label, ipa));
+            }
+        }
+        if sections.len() == 1 {
+            let american = |label: &str| {
+                ["General American", "US", "GA"]
+                    .iter()
+                    .any(|accent| label.contains(accent))
+            };
+            result.ipa = result
+                .ipa_lines
+                .iter()
+                .find(|(label, _)| american(label))
+                .or(result.ipa_lines.first())
+                .map(|(_, ipa)| ipa.clone());
+            let audio: Vec<String> = first
+                .select(&select("source"))
+                .filter_map(|source| source.value().attr("src"))
+                .filter(|src| src.contains("/transcoded/") && src.ends_with(".mp3"))
+                .map(|src| format!("https:{}", src.trim_start_matches("https:")))
+                .collect();
+            result.audio_url = audio
+                .iter()
+                .find(|src| src.to_ascii_lowercase().contains("en-us"))
+                .or(audio.first())
+                .cloned();
+        }
+        result
     }
 }

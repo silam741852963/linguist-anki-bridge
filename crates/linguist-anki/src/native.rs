@@ -172,11 +172,7 @@ pub fn validate_create_note_intent(
     {
         return Err(invalid());
     }
-    let model = if body.model_name == linguist_core::model::vocabulary().name {
-        linguist_core::model::vocabulary()
-    } else if body.model_name == linguist_core::model::grammar().name {
-        linguist_core::model::grammar()
-    } else {
+    let Some(model) = linguist_core::model::by_name(&body.model_name) else {
         return Err(invalid());
     };
     if body.fields.len() != model.fields.len()
@@ -191,7 +187,7 @@ pub fn validate_create_note_intent(
     {
         return Err(invalid());
     }
-    let vocabulary = model.name == linguist_core::model::vocabulary().name;
+    let vocabulary = model.fields.iter().any(|field| field == "Expression");
     let required: &[&str] = if vocabulary {
         &["Expression", "Meaning"]
     } else {
@@ -405,7 +401,7 @@ impl Client {
 /// exercised in disposable Anki: (companion, Anki version, AnkiConnect
 /// `__init__.py` SHA-256). Anything else keeps collection writes unavailable.
 pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[(
-    "0.2.0",
+    "0.3.0",
     "25.09.2",
     "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
 )];

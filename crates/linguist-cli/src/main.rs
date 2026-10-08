@@ -2940,7 +2940,7 @@ fn run(cli: Cli) -> Result<u8, String> {
         Command::Models {
             command: None | Some(ModelCommand::Builtin),
         } => {
-            emit(&vec![model::vocabulary(), model::grammar()])?;
+            emit(&model::managed())?;
             Ok(0)
         }
         Command::Models {
@@ -2963,7 +2963,8 @@ fn run(cli: Cli) -> Result<u8, String> {
             command: Some(ModelCommand::Install { purpose, apply }),
         } => {
             let target = match purpose.as_str() {
-                "japanese_vocab" | "english_vocab" => model::vocabulary(),
+                "japanese_vocab" => model::vocabulary(),
+                "english_vocab" => model::english_vocabulary(),
                 "japanese_grammar" | "english_grammar" => model::grammar(),
                 _ => return Err("MODEL_PURPOSE_UNSUPPORTED".into()),
             };

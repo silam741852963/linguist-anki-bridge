@@ -517,15 +517,12 @@ impl Client {
             .digest()
             .map_err(|_| "ANKI_MODEL_MANIFEST_INVALID")?;
         self.check_profile()?;
-        let compatibility = [
-            linguist_core::model::vocabulary(),
-            linguist_core::model::grammar(),
-        ]
-        .iter()
-        .map(|target| {
-            linguist_core::model::compare(&model.name, &fields, &template_content, &css, target)
-        })
-        .collect::<Vec<_>>();
+        let compatibility = linguist_core::model::managed()
+            .iter()
+            .map(|target| {
+                linguist_core::model::compare(&model.name, &fields, &template_content, &css, target)
+            })
+            .collect::<Vec<_>>();
         let content_matches_managed = compatibility
             .iter()
             .any(|c| c.name_matches && c.exact_content_match);

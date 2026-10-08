@@ -3101,7 +3101,7 @@ fn duplicate_candidates_command_reads_managed_note_without_changing_plan() {
                 }
                 "notesInfo" => {
                     assert_eq!(request["params"]["notes"], serde_json::json!([123]));
-                    serde_json::json!([{"noteId":123,"modelName":"Linguist Vocabulary v3","fields":fields}])
+                    serde_json::json!([{"noteId":123,"modelName":"Linguist English Vocabulary v1","fields":fields}])
                 }
                 _ => panic!("unexpected action: {action}"),
             };

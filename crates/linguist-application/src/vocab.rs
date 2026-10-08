@@ -36,6 +36,13 @@ pub trait RecordingPort {
         expression: &str,
         kana: &str,
     ) -> Result<Option<linguist_dictionary::recording::Recording>, String>;
+    /// Wiktionary IPA and pronunciation recording for an English word.
+    fn english(
+        &self,
+        _word: &str,
+    ) -> Result<Option<linguist_dictionary::recording::EnglishLookup>, String> {
+        Ok(None)
+    }
 }
 impl RecordingPort for linguist_dictionary::recording::RecordingClient {
     fn japanese(
@@ -44,6 +51,13 @@ impl RecordingPort for linguist_dictionary::recording::RecordingClient {
         kana: &str,
     ) -> Result<Option<linguist_dictionary::recording::Recording>, String> {
         linguist_dictionary::recording::RecordingClient::japanese(self, expression, kana)
+            .map_err(|e| e.to_string())
+    }
+    fn english(
+        &self,
+        word: &str,
+    ) -> Result<Option<linguist_dictionary::recording::EnglishLookup>, String> {
+        linguist_dictionary::recording::RecordingClient::english(self, word)
             .map_err(|e| e.to_string())
     }
 }
@@ -622,6 +636,157 @@ fn stage_audio(
     Ok(())
 }
 
+/// English: Wiktionary IPA fills an empty Pronunciation (dictionary fact) and
+/// its pronunciation recording becomes a reviewed audio candidate.
+fn stage_english_recording(
+    document: &mut LearningDocument,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    port: Option<&dyn RecordingPort>,
+    assets: &mut Vec<Vec<u8>>,
+) -> Result<(), String> {
+    let LearningContent::Vocabulary(vocab) = &document.content else {
+        return Ok(());
+    };
+    let word = vocab.expression.trim().to_owned();
+    let live;
+    let port: &dyn RecordingPort = match port {
+        Some(port) => port,
+        None => {
+            live = linguist_dictionary::recording::RecordingClient::from_settings(
+                settings,
+                environment,
+            )
+            .map_err(|e| format!("CAPABILITY_UNAVAILABLE: audio.provider=dictionary: {e}"))?;
+            &live
+        }
+    };
+    let lookup = match port.english(&word) {
+        Ok(Some(lookup)) => lookup,
+        Ok(None) => {
+            warning(
+                document,
+                "AUDIO_NOT_FOUND",
+                "audio",
+                format!("Wiktionary has no page for {word}."),
+            );
+            return Ok(());
+        }
+        Err(error) => {
+            warning(
+                document,
+                "AUDIO_SYNTHESIS_FAILED",
+                "audio",
+                format!("{error}; no pronunciation was staged. Audio is optional."),
+            );
+            return Ok(());
+        }
+    };
+    let pronunciation = &lookup.pronunciation;
+    if let Some(ipa) = &pronunciation.ipa {
+        let target = document.target_language.clone();
+        if let LearningContent::Vocabulary(vocab) = &mut document.content
+            && vocab.pronunciation.trim().is_empty()
+        {
+            vocab.pronunciation = ipa.clone();
+            document.evidence.push(Evidence {
+                id: uuid::Uuid::new_v4(),
+                field: "pronunciation".into(),
+                provenance: Provenance::Dictionary,
+                source_id: None,
+                region_id: None,
+                target: None,
+                source_span: None,
+                language: target,
+                claim: serde_json::to_string(&json!({
+                    "ipa": ipa, "ipa_lines": pronunciation.ipa_lines,
+                    "page_sha256": lookup.page_sha256,
+                }))
+                .map_err(|e| e.to_string())?,
+                source_url: Some(lookup.page_url.clone()),
+                ambiguous: false,
+            });
+        }
+    } else if pronunciation.sections > 1 {
+        warning(
+            document,
+            "PRONUNCIATION_AMBIGUOUS",
+            "pronunciation",
+            format!(
+                "Wiktionary lists {} pronunciations for {word}; set the one for this sense with plans edit.",
+                pronunciation.sections
+            ),
+        );
+    }
+    let Some(recording) = lookup.recording.clone() else {
+        warning(
+            document,
+            "AUDIO_NOT_FOUND",
+            "audio",
+            format!("Wiktionary has no single pronunciation recording for {word}."),
+        );
+        return Ok(());
+    };
+    let inspection = match crate::media::inspect_source_media(&recording.bytes, settings) {
+        Ok(crate::media::SourceMediaInspection::Audio(inspection)) => inspection,
+        Ok(_) | Err(_) => {
+            warning(
+                document,
+                "AUDIO_SYNTHESIS_FAILED",
+                "audio",
+                "The Wiktionary recording did not decode as audio; nothing was staged.".into(),
+            );
+            return Ok(());
+        }
+    };
+    let digest = canonical::asset_digest(&recording.bytes);
+    document.media.push(MediaAsset {
+        digest: digest.clone(),
+        filename: format!("candidate_{digest}.mp3"),
+        original_filename: None,
+        size_bytes: recording.bytes.len() as u64,
+        mime: "audio/mpeg".into(),
+        owner: MediaOwner::App,
+        role: MediaRole::Archive,
+        source_id: None,
+        attribution: linguist_dictionary::recording::english::ATTRIBUTION.into(),
+        license: Some("CC-BY-SA".into()),
+    });
+    document.evidence.push(Evidence {
+        id: uuid::Uuid::new_v4(),
+        field: "audio".into(),
+        provenance: Provenance::Provider,
+        source_id: None,
+        region_id: None,
+        target: Some(EvidenceTarget::MediaAsset {
+            digest: digest.clone(),
+        }),
+        source_span: None,
+        language: document.target_language.clone(),
+        claim: serde_json::to_string(&json!({
+            "recording": recording,
+            "text": {"expression": word},
+            "inspection": inspection,
+            "scope": "Wiktionary pronunciation recording; accent and word match unreviewed",
+        }))
+        .map_err(|e| e.to_string())?,
+        source_url: Some(recording.source_url.clone()),
+        ambiguous: true,
+    });
+    assets.push(recording.bytes);
+    let mut issue = Issue::new(
+        "AUDIO_CANDIDATE_REVIEW",
+        Severity::Review,
+        Some("audio"),
+        "Listen to the Wiktionary recording; select it or decline it.",
+    );
+    issue.id = format!("AUDIO_CANDIDATE_REVIEW:{}", document.id);
+    issue.stage = "enrichment".into();
+    issue.source_refs = vec![digest];
+    document.issues.push(issue);
+    Ok(())
+}
+
 fn kana_only(text: &str) -> bool {
     !text.is_empty()
         && text.chars().all(|c| {
@@ -640,14 +805,20 @@ fn stage_recording(
     let LearningContent::Vocabulary(vocab) = &document.content else {
         return Ok(());
     };
-    if document.target_language.as_str().split('-').next() != Some("ja") {
-        warning(
-            document,
-            "AUDIO_NOT_FOUND",
-            "audio",
-            "Dictionary recordings are only available for Japanese.".into(),
-        );
-        return Ok(());
+    match document.target_language.as_str().split('-').next() {
+        Some("ja") => {}
+        Some("en") => {
+            return stage_english_recording(document, settings, environment, port, assets);
+        }
+        _ => {
+            warning(
+                document,
+                "AUDIO_NOT_FOUND",
+                "audio",
+                "Dictionary recordings are only available for Japanese and English.".into(),
+            );
+            return Ok(());
+        }
     }
     let expression = vocab.expression.trim().to_owned();
     let spoken: String = vocab.pronunciation.split_whitespace().collect();

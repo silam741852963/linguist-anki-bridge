@@ -92,6 +92,87 @@ fn highlighted(text: &str, expression: &str) -> String {
     }
 }
 /// v3 UsageExamples: usage, nuance, collocations and examples in one fixed layout.
+/// Dictionary neighbours of the selected entry: other spellings, the other
+/// entries the lookup returned and the entry's cross-references. Back side
+/// only (UsageExamples), so no front shows the answer.
+fn related(v: &Vocabulary) -> String {
+    const MAX_ENTRIES: usize = 8;
+    const MAX_GLOSS: usize = 80;
+    let selected = v.dictionary.iter().position(|entry| {
+        entry.senses.iter().any(|s| s.key == v.sense_key)
+            && entry
+                .forms
+                .iter()
+                .chain(&entry.readings)
+                .any(|form| *form == v.expression)
+    });
+    let mut html = String::new();
+    let chips = |values: Vec<&String>| {
+        values
+            .iter()
+            .map(|value| {
+                format!(
+                    "<li><span class=\"lab-target\">{}</span></li>",
+                    escape(value)
+                )
+            })
+            .collect::<String>()
+    };
+    if let Some(index) = selected {
+        let entry = &v.dictionary[index];
+        let spellings: Vec<_> = entry
+            .forms
+            .iter()
+            .filter(|form| **form != v.expression)
+            .collect();
+        if !spellings.is_empty() {
+            html.push_str(&format!(
+                "<h4>Also written</h4><ul class=\"lab-collocations\">{}</ul>",
+                chips(spellings)
+            ));
+        }
+    }
+    let others: Vec<_> = v
+        .dictionary
+        .iter()
+        .enumerate()
+        .filter(|(index, entry)| {
+            Some(*index) != selected && !entry.forms.is_empty() && !entry.senses.is_empty()
+        })
+        .take(MAX_ENTRIES)
+        .collect();
+    if !others.is_empty() {
+        html.push_str("<h4>Related words</h4><ul class=\"lab-examples\">");
+        for (_, entry) in others {
+            let mut gloss = entry.senses[0].definitions.join("; ");
+            if gloss.chars().count() > MAX_GLOSS {
+                gloss = gloss.chars().take(MAX_GLOSS - 1).collect::<String>() + "…";
+            }
+            html.push_str(&format!(
+                "<li><div class=\"lab-target\"><b>{}</b>{}</div><div class=\"lab-tr\">{}</div></li>",
+                highlighted(&entry.forms[0], &v.expression),
+                entry
+                    .readings
+                    .first()
+                    .filter(|reading| **reading != entry.forms[0])
+                    .map(|reading| format!(" <span class=\"lab-tr\">{}</span>", escape(reading)))
+                    .unwrap_or_default(),
+                escape(&gloss)
+            ));
+        }
+        html.push_str("</ul>");
+    }
+    if let Some(index) = selected {
+        let see: Vec<_> = v.dictionary[index].related_entries.iter().collect();
+        if !see.is_empty() {
+            html.push_str(&format!(
+                "<h4>See also</h4><ul class=\"lab-collocations\">{}</ul>",
+                chips(see)
+            ));
+        }
+    }
+    html
+}
 fn usage_examples(v: &Vocabulary) -> String {
     let mut html = String::new();
     if !v.usage.trim().is_empty() {
@@ -320,7 +401,7 @@ pub fn render(
                 "Meaning".into(),
                 dictionary::meaning(&v.dictionary, &v.expression, &v.sense_key, &v.meaning),
             );
-            fields.insert("UsageExamples".into(), usage_examples(v));
+            fields.insert("UsageExamples".into(), usage_examples(v) + &related(v));
             fields.insert("Kanji".into(), kanji(v, &doc.media));
             for (key, task) in [
                 ("EnableProduction", Task::Production),

@@ -25,12 +25,15 @@ VOCAB_V3_FIELDS = frozenset({
     "Expression", "Pronunciation", "Meaning", "UsageExamples", "Picture",
     "Audio", "Kanji", "EnableProduction", "EnableSpelling",
 })
+ENGLISH_VOCAB_FIELDS = VOCAB_V3_FIELDS - {"Kanji"}
 FIELDS = {
     "Linguist Vocabulary v2": VOCAB_FIELDS,
     "Linguist Vocabulary v3": VOCAB_V3_FIELDS,
+    "Linguist English Vocabulary v1": ENGLISH_VOCAB_FIELDS,
     "Linguist Grammar v2": GRAMMAR_FIELDS,
 }
-VOCAB_MODELS = frozenset({"Linguist Vocabulary v2", "Linguist Vocabulary v3"})
+VOCAB_MODELS = frozenset({"Linguist Vocabulary v2", "Linguist Vocabulary v3",
+                          "Linguist English Vocabulary v1"})
 BODY_KEYS = frozenset({
     "model_name", "model_manifest_digest", "deck_id", "fields", "tags",
     "marker_tag", "source_plan_digest", "checkpoint_digest", "binding",

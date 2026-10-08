@@ -1023,3 +1023,44 @@ fn escaped_text_matches_the_html_text_serializer() {
         "a &amp; b &lt;i&gt; \"q\" 'q' &nbsp;x"
     );
 }
+#[test]
+fn v3_related_dictionary_words_render_on_the_back_only() {
+    let mut doc = vocabulary();
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.sense_key = "eat".into();
+        v.meaning = "to eat".into();
+        v.dictionary = serde_json::from_value(serde_json::json!([
+            {"provider":"jisho","source_url":"https://jisho.org/x","language":"ja",
+             "forms":["食べる","喰べる"],"readings":["たべる"],
+             "senses":[{"key":"eat","definitions":["to eat"],"labels":["Ichidan verb"]}],
+             "related_entries":["召し上がる"]},
+            {"provider":"jisho","source_url":"https://jisho.org/y","language":"ja",
+             "forms":["食べ物"],"readings":["たべもの"],
+             "senses":[{"key":"food","definitions":["food","<b>provisions</b>"],"labels":[]}]}
+        ]))
+        .unwrap();
+    }
+    let input_digest = doc.semantic_digest().unwrap();
+    doc.reviews.push(linguist_core::records::ReviewDecision {
+        id: uuid::Uuid::new_v4(),
+        issue_id: format!("DICTIONARY_SENSE_REVIEW:{}", doc.id),
+        input_digest,
+        actor: "reviewer".into(),
+        created_at: "2026-10-08T00:00:00Z".into(),
+        choice: linguist_core::records::ReviewChoice::Sense("eat".into()),
+    });
+    let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
+    let back = &rendered.fields["UsageExamples"];
+    for text in [
+        "<h4>Also written</h4><ul class=\"lab-collocations\"><li><span class=\"lab-target\">喰べる</span></li></ul>",
+        "<h4>Related words</h4>",
+        "<div class=\"lab-target\"><b>食べ物</b> <span class=\"lab-tr\">たべもの</span></div>",
+        "food; &lt;b&gt;provisions&lt;/b&gt;",
+        "<h4>See also</h4><ul class=\"lab-collocations\"><li><span class=\"lab-target\">召し上がる</span></li></ul>",
+    ] {
+        assert!(back.contains(text), "missing {text}: {back}");
+    }
+    // Fronts show Meaning, which never lists neighbours.
+    assert!(!rendered.fields["Meaning"].contains("食べ物"));
+    assert!(!rendered.fields["Meaning"].contains("召し上がる"));
+}

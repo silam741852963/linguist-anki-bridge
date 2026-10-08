@@ -48,7 +48,7 @@ fn fake_companion(anki_version: &'static str) -> (String, Arc<Mutex<Vec<String>>
                 _ if request["key"] != KEY => Value::Null,
                 "getActiveProfile" => json!("Disposable"),
                 "labCapabilities" => json!({
-                    "protocol": "lab-native-v1", "companion_version": "0.2.0",
+                    "protocol": "lab-native-v1", "companion_version": "0.3.0",
                     "bridge_id": "c17625b0-7a88-4aab-a8a5-c1d993c72a00",
                     "integration": {"anki_version": anki_version,
                                     "anki_connect_source_digest": AC_DIGEST},

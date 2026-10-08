@@ -53,13 +53,14 @@ def main():
     manifests = json.load(sys.stdin)
     assert [model["name"] for model in manifests] == [
         "Linguist Vocabulary v3",
+        "Linguist English Vocabulary v1",
         "Linguist Grammar v2",
     ]
     with tempfile.TemporaryDirectory(prefix="lab-template-cards-") as directory:
         col = Collection(str(Path(directory) / "disposable.anki2"))
         try:
             deck_id = col.decks.id("Disposable template test")
-            vocab, grammar = [install(col, manifest) for manifest in manifests]
+            vocab, english, grammar = [install(col, manifest) for manifest in manifests]
             # v3: fronts show fields; the answer never appears on a task front.
             vbase = {"Expression": "食べる", "Meaning": "to eat"}
             check(col, vocab, deck_id, vbase, [0])
@@ -73,6 +74,12 @@ def main():
             assert "たべる" in question and "to eat" in question and "食べる" not in question
             assert "食べる" in spelling_cards[1].answer()
             check(col, vocab, deck_id, {**production, **spelling}, [0, 1, 2])
+            # English: same fronts, no Kanji section.
+            ebase = {"Expression": "supernova", "Meaning": "a stellar explosion",
+                     "EnableProduction": "1", "EnableSpelling": "1", "Pronunciation": "/ˌsupɚˈnoʊvə/"}
+            english_cards = check(col, english, deck_id, ebase, [0, 1, 2])
+            assert "supernova" not in english_cards[1].question()
+            assert "supernova" not in english_cards[2].question() and "/ˌsupɚˈnoʊvə/" in english_cards[2].question()
 
             gbase = {
                 "Pattern": "〜ても",

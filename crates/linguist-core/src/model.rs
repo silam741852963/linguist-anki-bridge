@@ -228,6 +228,57 @@ pub fn vocabulary() -> ManagedModel {
         css: VOCABULARY_STYLE.into(),
     }
 }
+/// WP-19 English vocabulary model: the v3 card without the Kanji section.
+/// English cards get IPA in Pronunciation and Wiktionary audio.
+pub fn english_vocabulary() -> ManagedModel {
+    let back = include_str!("../../../resources/templates/english-vocabulary-v1-back.html");
+    ManagedModel {
+        name: "Linguist English Vocabulary v1".into(),
+        version: 1,
+        fields: [
+            "Expression",
+            "Pronunciation",
+            "Meaning",
+            "UsageExamples",
+            "Picture",
+            "Audio",
+            "EnableProduction",
+            "EnableSpelling",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+        templates: vec![
+            template(
+                "Comprehension",
+                0,
+                include_str!("../../../resources/templates/vocabulary-v3-comprehension-front.html"),
+                back,
+            ),
+            template(
+                "Production",
+                1,
+                include_str!("../../../resources/templates/vocabulary-v3-production-front.html"),
+                back,
+            ),
+            template(
+                "Spelling",
+                2,
+                include_str!("../../../resources/templates/vocabulary-v3-spelling-front.html"),
+                include_str!(
+                    "../../../resources/templates/english-vocabulary-v1-spelling-back.html"
+                ),
+            ),
+        ],
+        css: VOCABULARY_STYLE.into(),
+    }
+}
+/// Every managed model, in a fixed order.
+pub fn managed() -> Vec<ManagedModel> {
+    vec![vocabulary(), english_vocabulary(), grammar()]
+}
+pub fn by_name(name: &str) -> Option<ManagedModel> {
+    managed().into_iter().find(|model| model.name == name)
+}
 pub fn grammar() -> ManagedModel {
     ManagedModel {
         name: "Linguist Grammar v2".into(),
@@ -270,6 +321,11 @@ pub fn grammar() -> ManagedModel {
 }
 pub fn for_document(doc: &LearningDocument) -> ManagedModel {
     match doc.content {
+        LearningContent::Vocabulary(_)
+            if doc.target_language.as_str().split('-').next() == Some("en") =>
+        {
+            english_vocabulary()
+        }
         LearningContent::Vocabulary(_) => vocabulary(),
         LearningContent::Grammar(_) => grammar(),
     }
