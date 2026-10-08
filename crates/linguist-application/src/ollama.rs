@@ -285,4 +285,5 @@ pub fn verify_local_model(
         ]),
     })
 }
+pub mod certify;
 pub mod transport;

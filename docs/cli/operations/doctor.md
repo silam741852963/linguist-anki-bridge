@@ -4,7 +4,7 @@ Read [shared command rules](README.md) before implementing any handler.
 
 ## OP-01 — `doctor`
 
-Inputs: Optional purpose/profile and --offline; no --apply. `--local` performs no service requests. `--ollama` probes only configured local Ollama model metadata. `--bridge` inspects the configured native companion declaration. These three selectors conflict. With no service selector, the current implementation probes Anki; combined comprehensive health reporting remains pending.
+Inputs: Optional purpose/profile and --offline; no --apply. `--local` performs no service requests. `--ollama` probes only configured local Ollama model metadata. `--ollama --certify` runs the RI-06 engine certification: real inferences that check input preservation near the input budget, refusal of over-`num_ctx` input with `truncate=false`, determinism under the configured seed and temperature, the `num_predict` cap, `think=false` and schema-constrained output, and that model, `/api/show` manifest and engine version stay the same during the run. The result (passed or failed) is recorded immutably in local state with its request/response bytes; exit 0 on pass, 3 on fail. `--bridge` inspects the configured native companion declaration. These three selectors conflict. With no service selector, the current implementation probes Anki; combined comprehensive health reporting remains pending.
 
 Effects: Read-only local/service probes.
 

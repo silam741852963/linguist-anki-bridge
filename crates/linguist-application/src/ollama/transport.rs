@@ -51,6 +51,7 @@ pub struct Client {
 enum ReadAction {
     Tags,
     Show,
+    Version,
 }
 /// Candidate only: engine compatibility/input preservation have not been certified.
 /// Callers must archive these bytes and perform supplement validation/review.
@@ -91,6 +92,13 @@ impl Client {
                 canonical::bytes(&candidate.evidence).map_err(|_| "GENERATION_ENCODING")?,
             )
             .map_err(|_| "GENERATION_ENCODING")?,
+        );
+        source.fields.insert(
+            "engine_identity_digest".into(),
+            super::certify::identity_digest(&super::certify::identity(
+                &candidate.evidence,
+                &self.settings,
+            ))?,
         );
         source.fields.insert(
             "model_evidence_after".into(),
@@ -374,6 +382,73 @@ impl Client {
             completion,
         })
     }
+    /// The running engine's self-reported version (`/api/version`).
+    pub fn engine_version(&self) -> Result<String, String> {
+        let deadline = self.deadline()?;
+        let mut gate = self.lock(deadline)?;
+        let mut retries = self.settings.values["retry.read_attempts"]
+            .as_u64()
+            .unwrap()
+            - 1;
+        let bytes = self.read(ReadAction::Version, deadline, &mut retries, &mut gate)?;
+        let limit = self.settings.values["network.max_response_mb"]
+            .as_u64()
+            .unwrap()
+            * 1024
+            * 1024;
+        response(&bytes, limit)?["version"]
+            .as_str()
+            .filter(|v| !v.is_empty() && v.len() <= 64 && !v.chars().any(char::is_control))
+            .map(str::to_owned)
+            .ok_or_else(|| "OLLAMA_VERSION_INVALID".into())
+    }
+    pub(super) fn settings(&self) -> &Effective {
+        &self.settings
+    }
+    /// One nonstreaming chat call for certification probes: the HTTP status
+    /// and the bounded body, success or not. Never retried.
+    pub(super) fn post_chat(&self, body: &serde_json::Value) -> Result<(u16, Vec<u8>), String> {
+        let deadline = self.deadline()?;
+        let mut gate = self.lock(deadline)?;
+        self.throttle(deadline, &gate)?;
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or("OLLAMA_DEADLINE")?;
+        *gate = Some(Dispatch {
+            started: Instant::now(),
+            interval: self.interval(),
+            server_delay: None,
+        });
+        let bytes = canonical::bytes(body).map_err(|_| "OLLAMA_REQUEST_INVALID")?;
+        let mut reply = self
+            .http
+            .post(
+                self.endpoint
+                    .join("api/chat")
+                    .map_err(|_| "OLLAMA_ENDPOINT_INVALID")?,
+            )
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(bytes)
+            .timeout(remaining)
+            .send()
+            .map_err(|_| "OLLAMA_INFERENCE_OUTCOME_UNKNOWN")?;
+        let status = reply.status().as_u16();
+        let limit = self.settings.values["network.max_response_mb"]
+            .as_u64()
+            .unwrap()
+            * 1024
+            * 1024;
+        let mut raw = Vec::new();
+        reply
+            .by_ref()
+            .take(limit + 1)
+            .read_to_end(&mut raw)
+            .map_err(|_| "OLLAMA_INFERENCE_OUTCOME_UNKNOWN")?;
+        if raw.len() as u64 > limit {
+            return Err("OLLAMA_RESPONSE_LIMIT".into());
+        }
+        Ok((status, raw))
+    }
     pub fn model_evidence(&self) -> Result<ModelEvidence, String> {
         let deadline = self.deadline()?;
         let mut gate = self.lock(deadline)?;
@@ -501,13 +576,14 @@ impl Client {
             let path = match action {
                 ReadAction::Tags => "api/tags",
                 ReadAction::Show => "api/show",
+                ReadAction::Version => "api/version",
             };
             let url = self
                 .endpoint
                 .join(path)
                 .map_err(|_| "OLLAMA_ENDPOINT_INVALID")?;
             let request = match action {
-                ReadAction::Tags => self.http.get(url),
+                ReadAction::Tags | ReadAction::Version => self.http.get(url),
                 ReadAction::Show => self
                     .http
                     .post(url)

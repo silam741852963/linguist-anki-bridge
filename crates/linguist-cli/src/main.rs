@@ -151,6 +151,11 @@ enum Command {
         /// Probe only the configured local Ollama model metadata; never load or pull.
         #[arg(long, conflicts_with = "bridge")]
         ollama: bool,
+        /// With --ollama: run the engine certification probes (several real
+        /// inferences) and record the result in local state. A passed run lets
+        /// drafts from this exact engine identity leave GENERATION_ENGINE_UNVERIFIED.
+        #[arg(long, requires = "ollama")]
+        certify: bool,
         /// Inspect the native companion's declaration without authorizing writes.
         #[arg(long)]
         bridge: bool,
@@ -2846,6 +2851,7 @@ fn run(cli: Cli) -> Result<u8, String> {
         Command::Doctor {
             local,
             ollama,
+            certify,
             bridge,
         } => {
             if local {
@@ -2860,6 +2866,40 @@ fn run(cli: Cli) -> Result<u8, String> {
                     &serde_json::json!({"version":2,"collection_writes_enabled":false,"native_bridge":"probe with `doctor --bridge`","release_gates":release_gates(),"services_probed":false,"offline_requested":cli.offline,"local_resources":resources,"local_engines":engines}),
                 )?;
                 return Ok(if required_missing { 3 } else { 0 });
+            }
+            if ollama && certify {
+                let environment: BTreeMap<String, String> = std::env::vars().collect();
+                let client = linguist_application::ollama::transport::Client::from_settings(
+                    &settings,
+                    &environment,
+                )?;
+                let certification = client.certify()?;
+                let root = linguist_config::expand_path(
+                    settings.values["storage.state_dir"]
+                        .as_str()
+                        .ok_or("STORAGE_STATE_DIR_INVALID")?,
+                    &environment,
+                )?;
+                let mut store = linguist_store::Store::open(&root)?;
+                for bytes in certification.assets.values() {
+                    store.publish_asset(bytes, 100 * 1024 * 1024)?;
+                }
+                let mut body = serde_json::to_value(&certification).map_err(|e| e.to_string())?;
+                body["asset_digests"] =
+                    serde_json::json!(certification.assets.keys().collect::<Vec<_>>());
+                let record = store.record_engine_certification(
+                    &certification.identity_digest,
+                    &certification.engine_version,
+                    certification.passed,
+                    now_ms()?,
+                    &body,
+                )?;
+                emit(
+                    &serde_json::json!({"version":2,"probe":"ollama_certification",
+                    "certification_id":record.id,"passed":record.passed,"certification":body,
+                    "collection_writes_enabled":false}),
+                )?;
+                return Ok(if record.passed { 0 } else { 3 });
             }
             if ollama {
                 let client = linguist_application::ollama::transport::Client::from_settings(

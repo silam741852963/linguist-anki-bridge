@@ -280,7 +280,7 @@ fn schema_twelve_upgrades_to_thirteen_with_gc_and_import_tables() {
         .unwrap()
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 13);
+    assert_eq!(version, 14);
     assert!(std::fs::read_dir(&f.0).unwrap().any(|e| {
         e.unwrap()
             .file_name()

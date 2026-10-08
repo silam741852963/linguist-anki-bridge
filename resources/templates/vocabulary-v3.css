@@ -58,3 +58,4 @@ hr#answer { border: none; border-top: 1px solid var(--lab-line); margin: 1.2em 0
 .lab-kanji-meta { font-size: .78em; color: var(--lab-muted); }
 .lab-type { margin: .6em 0; }
 .lab-type input { font-size: 1.1em; text-align: center; padding: .3em .6em; border-radius: 8px; border: 1px solid var(--lab-line); background: var(--lab-panel); color: var(--lab-ink); }
+.lab-panel.lab-meaning { background: none; border: none; padding: 0; }

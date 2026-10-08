@@ -1137,3 +1137,90 @@ fn generation_regeneration_replaces_generated_usage_and_keeps_authored_fields() 
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn passed_engine_certification_replaces_the_blocker_for_that_identity_only() {
+    use linguist_application::{
+        freeze_settings, generation::publish_candidate, ollama::certify, ollama::verify_local_model,
+    };
+    use linguist_core::records::PlanRevision;
+    let run = |certified_version: Option<&str>, live_version: &str| {
+        let mut output = completion_response();
+        output["message"]["content"] = json!(
+            r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
+        );
+        let mut replies = vec![
+            reply(inventory()),
+            reply(show()),
+            reply(inventory()),
+            reply(output),
+            reply(inventory()),
+            reply(show()),
+            reply(inventory()),
+        ];
+        if certified_version.is_some() {
+            replies.push(reply(json!({"version": live_version})));
+        }
+        let server = FixtureServer::new(replies);
+        let root = std::env::temp_dir().join(format!("lab-certified-{}", uuid::Uuid::new_v4()));
+        let environment =
+            std::collections::BTreeMap::from([("HOME".into(), root.to_str().unwrap().into())]);
+        let mut current = settings();
+        current.values.insert("storage.state_dir".into(), json!(root));
+        current.values.insert("llm.endpoint".into(), json!(server.endpoint));
+        current
+            .values
+            .insert("services.ollama.min_interval_seconds".into(), json!(0));
+        let mut original = current.clone();
+        original.values.insert("llm.enabled".into(), json!(false));
+        let document = generation_document();
+        let plan = PlanRevision {
+            grammar_groups: vec![],
+            schema_version: 2,
+            id: uuid::Uuid::new_v4(),
+            revision: 1,
+            parent_digest: None,
+            settings: freeze_settings(&original, &environment).unwrap(),
+            binding: None,
+            source_digest: canonical::digest("source-capture", &document.sources).unwrap(),
+            selection: None,
+            documents: vec![document.clone()],
+            rendered: vec![linguist_core::render::render(&document, &Default::default()).unwrap()],
+            review_decisions: vec![],
+        };
+        let mut store = linguist_store::Store::open(&root).unwrap();
+        let digest = store.publish_revision(&plan).unwrap();
+        if let Some(version) = certified_version {
+            let tags = serde_json::to_vec(&inventory()).unwrap();
+            let details = serde_json::to_vec(&show()).unwrap();
+            let evidence = verify_local_model(&tags, &details, &tags, &current).unwrap();
+            let identity = certify::identity_digest(&certify::identity(&evidence, &current)).unwrap();
+            store
+                .record_engine_certification(&identity, version, true, 1, &json!({}))
+                .unwrap();
+        }
+        let client = transport::Client::from_settings(&current, &environment).unwrap();
+        let result = publish_candidate(
+            &mut store, &plan, document.id, &digest, &current, &environment, &client,
+        )
+        .unwrap();
+        server.worker.join().unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        result
+    };
+    let certified = run(Some("0.40.0"), "0.40.0");
+    assert_eq!(certified["generation_engine_verified"], true);
+    let codes: Vec<_> = certified["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| (i["code"].as_str().unwrap().to_owned(), i["severity"].as_str().unwrap().to_owned()))
+        .collect();
+    assert!(codes.contains(&("GENERATION_ENGINE_CERTIFIED".into(), "warning".into())), "{codes:?}");
+    assert!(!codes.iter().any(|(c, _)| c == "GENERATION_ENGINE_UNVERIFIED"));
+    // A changed engine version or no certification keeps the blocker.
+    for result in [run(Some("0.40.0"), "0.41.0"), run(None, "")] {
+        assert_eq!(result["generation_engine_verified"], false);
+        assert!(result["issues"].as_array().unwrap().iter().any(|i| i["code"] == "GENERATION_ENGINE_UNVERIFIED"));
+    }
+}
