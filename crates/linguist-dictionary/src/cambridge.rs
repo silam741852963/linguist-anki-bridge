@@ -150,17 +150,24 @@ pub fn parse_page(
             }
         }
     }
-    let primary = blocks.first();
+    // The primary (American) block's entries, then any part of speech only
+    // another block defines (American run-ons carry no definition).
     let request = request_url(query)?;
     let mut source = request.clone();
     source.set_fragment(None);
     let mut entries = Vec::new();
-    if let Some(block) = primary {
+    let mut covered: Vec<String> = Vec::new();
+    for (rank, block) in blocks.iter().enumerate() {
+        let mut found_here: Vec<String> = Vec::new();
         for entry in block.select(&select(".entry-body__el")) {
             let Some(headword) = first(entry, ".di-title .hw, .headword .hw") else {
                 continue;
             };
             let pos = first(entry, ".posgram .pos").unwrap_or_default();
+            if rank > 0 && (covered.contains(&pos) || pos.is_empty()) {
+                continue;
+            }
+            found_here.push(pos.clone());
             let mut senses = Vec::new();
             for sense in entry.select(&select(".dsense")) {
                 let guideword = first(sense, ".dsense_h .guideword").map(|g| {
@@ -239,6 +246,7 @@ pub fn parse_page(
                 related_entries: slot.map(|s| s.related.clone()).unwrap_or_default(),
             });
         }
+        covered.extend(found_here);
     }
     if entries.len() > max_entries {
         return Err(Error::EntryLimit);

@@ -812,6 +812,10 @@ fn stage_cambridge_pronunciation(
         return Ok(true);
     };
     let digest = canonical::asset_digest(&bytes);
+    // The note may already carry this exact recording.
+    if document.media.iter().any(|m| m.digest == digest) {
+        return Ok(true);
+    }
     document.media.push(MediaAsset {
         digest: digest.clone(),
         filename: format!("candidate_{digest}.mp3"),

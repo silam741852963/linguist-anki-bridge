@@ -140,3 +140,24 @@ fn meaning_shows_the_first_definition_of_each_part_of_speech() {
         assert!(back.contains(section), "missing {section}: {back}");
     }
 }
+
+#[test]
+fn a_part_of_speech_missing_from_the_american_block_comes_from_another() {
+    let page = page(
+        "adolescent",
+        include_str!("fixtures/cambridge-adolescent.html"),
+    );
+    let parts: Vec<_> = page
+        .entries
+        .iter()
+        .map(|e| {
+            (
+                e.metadata["part_of_speech"][0].as_str(),
+                e.metadata["dictionary"][0].as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(parts[0], ("adjective", "cacd"));
+    assert!(parts.contains(&("noun", "cald4")), "{parts:?}");
+    assert_eq!(parts.len(), 2, "{parts:?}");
+}
