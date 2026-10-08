@@ -912,3 +912,36 @@ fn crash_after_receipt_before_commit_finalizes_with_the_stored_receipt() {
     assert_eq!(s.store.snapshot(snapshot).unwrap().after.unwrap(), stored);
     assert_eq!(anki.main_mutations, 1);
 }
+
+#[test]
+fn an_archive_copy_of_the_same_bytes_never_shadows_the_rendered_media() {
+    // A revamp can capture an older copy of bytes the plan renders under a
+    // new name; apply must store the rendered name, not reuse the copy.
+    let mut s = setup_with(Kind::CreateWithMedia, |doc| {
+        let mut copy = doc.media[0].clone();
+        copy.filename = "older_copy.mp3".into();
+        copy.role = linguist_core::records::MediaRole::Archive;
+        doc.media.insert(0, copy);
+    });
+    let rendered = s.plan.documents[0]
+        .media
+        .iter()
+        .find(|m| m.role != linguist_core::records::MediaRole::Archive)
+        .unwrap()
+        .filename
+        .clone();
+    let mut anki = Anki::new(&s, Kind::CreateWithMedia);
+    anki.media.insert(
+        "older_copy.mp3".into(),
+        ObservedMedia {
+            filename: "older_copy.mp3".into(),
+            sha256: sha256(AUDIO),
+            size_bytes: AUDIO.len() as u64,
+        },
+    );
+    let request = s.request();
+    let outcome = apply_item(&mut s.store, &s.token, &mut anki, &request).unwrap();
+    assert_eq!(outcome.state, OperationState::Committed);
+    assert_eq!(anki.media_mutations, 1);
+    assert!(anki.media.contains_key(&rendered));
+}

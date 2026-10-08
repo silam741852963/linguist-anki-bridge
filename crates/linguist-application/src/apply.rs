@@ -957,7 +957,11 @@ fn preflight(
             .document
             .media
             .iter()
-            .find(|asset| &asset.digest == digest)
+            // The rendered asset, never an archive copy of the same bytes
+            // (those keep their original name and are not referenced).
+            .find(|asset| {
+                &asset.digest == digest && asset.role != linguist_core::records::MediaRole::Archive
+            })
             .ok_or("APPLY_MEDIA_MANIFEST_MISSING")?;
         if !media_filename_safe(&asset.filename) {
             return Err("APPLY_MEDIA_FILENAME_UNSAFE".into());
