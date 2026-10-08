@@ -386,9 +386,53 @@ pub fn build_request(
             ) && e.field != "kanji"
         })
         .collect();
-    let sources: Vec<_> = doc.sources.iter().filter(|source| !ARCHIVE_ONLY.contains(&source.kind.as_str())).map(|source| json!({"id":source.id,"kind":source.kind,"fields":source.fields,"digest":source.digest})).collect();
+    // Fields a reviewer decided not to carry over are not learning material.
+    let dropped: Vec<(uuid::Uuid, &str)> = doc
+        .reviews
+        .iter()
+        .filter_map(|review| match &review.choice {
+            linguist_core::records::ReviewChoice::SourceFieldDropped { source_id, field } => {
+                Some((*source_id, field.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+    let sources: Vec<_> = doc
+        .sources
+        .iter()
+        .filter(|source| !ARCHIVE_ONLY.contains(&source.kind.as_str()))
+        .map(|source| {
+            let fields: BTreeMap<_, _> = source
+                .fields
+                .iter()
+                .filter(|(name, _)| !dropped.contains(&(source.id, name.as_str())))
+                .collect();
+            json!({"id":source.id,"kind":source.kind,"fields":fields,"digest":source.digest})
+        })
+        .collect();
+    // Only exact dictionary entries, without raw provider JSON metadata.
+    let mut content = serde_json::to_value(&doc.content).map_err(|e| e.to_string())?;
+    if let LearningContent::Vocabulary(v) = &doc.content {
+        let exact: Vec<Value> = v
+            .dictionary
+            .iter()
+            .filter(|entry| {
+                entry
+                    .forms
+                    .iter()
+                    .chain(&entry.readings)
+                    .any(|form| *form == v.expression)
+            })
+            .map(|entry| {
+                let mut entry = entry.clone();
+                entry.metadata.retain(|key, _| !key.ends_with("_json"));
+                serde_json::to_value(entry).map_err(|e| e.to_string())
+            })
+            .collect::<Result<_, _>>()?;
+        content["body"]["dictionary"] = Value::Array(exact);
+    }
     let user = json!({"schema_version":2,"kind":kind,"target_language":doc.target_language,"explanation_language":doc.explanation_language,
-        "accepted_content":doc.content,"context":doc.context,"sources":sources,"regions":doc.regions,"evidence":evidence,
+        "accepted_content":content,"context":doc.context,"sources":sources,"regions":doc.regions,"evidence":evidence,
         "allowed_fields":allowed,"examples_requested":examples_requested});
     let output_schema = constrained_schema(kind, &allowed, examples_requested)?;
     Ok(GenerationRequest {
