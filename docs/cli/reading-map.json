@@ -279,6 +279,16 @@
         "decisions/release-gates.md"
       ]
     },
+    "WP-19": {
+      "path": "implementation/wp-19.md",
+      "heading": "## WP-19 \u2014 vocabulary card redesign (Linguist Vocabulary v3) and certified generation",
+      "title": "WP-19 \u2014 vocabulary card redesign (Linguist Vocabulary v3) and certified generation",
+      "words": 996,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md"
+      ]
+    },
     "OP-34": {
       "path": "operations/apply.md",
       "heading": "## OP-34 \u2014 `apply PLAN`",
