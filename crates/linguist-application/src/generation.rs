@@ -667,7 +667,14 @@ fn merge_checked_output(
     let mut output = output;
     let monolingual = doc.target_language.as_str().split('-').next()
         == doc.explanation_language.as_str().split('-').next();
-    let echo = |a: &str, b: &str| monolingual && a.trim().eq_ignore_ascii_case(b.trim());
+    let bare = |text: &str| {
+        let text = text.trim().to_lowercase();
+        ["a ", "an ", "the ", "to "]
+            .iter()
+            .find_map(|article| text.strip_prefix(article).map(str::to_owned))
+            .unwrap_or(text)
+    };
+    let echo = |a: &str, b: &str| monolingual && bare(a) == bare(b);
     match &mut output {
         Supplement::Vocabulary(s) => {
             for example in &mut s.examples {

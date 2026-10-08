@@ -703,7 +703,7 @@ fn monolingual_echoed_translations_and_glosses_are_dropped() {
     }
     let config = settings();
     let request = build_request(&doc, &config).unwrap();
-    let raw = r#"{"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":"Sentence one.","translation":"Sentence one."}],"nuance":[],"collocations":[{"phrase":"a phrase","gloss":"A phrase"}]}}"#;
+    let raw = r#"{"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":"Sentence one.","translation":"Sentence one."}],"nuance":[],"collocations":[{"phrase":"some phrase","gloss":"A some phrase"}]}}"#;
     let draft = merge_output(&doc, &config, &request, raw.as_bytes(), &identity(&config)).unwrap();
     let LearningContent::Vocabulary(v) = &draft.document.content else {
         unreachable!()
