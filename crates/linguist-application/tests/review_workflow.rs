@@ -134,7 +134,7 @@ fn enrichment_regeneration_replaces_stage_output_but_protects_edits() {
                 && m.role == linguist_core::records::MediaRole::KanjiStroke
                 && m.mime == "image/gif")
     );
-    assert!(base.rendered[0].fields["Kanji"].contains(&format!("lab_{old_stroke}.gif")));
+    assert!(base.rendered[0].fields["Kanji"].contains(&format!("lab_stroke_{old_stroke}.gif")));
     let none = BTreeSet::new();
     let preview_only = preview(&base, &[], Stage::Enrichment, &none).unwrap();
     assert_eq!(preview_only.items[0].cleared, ["kanji"]);

@@ -355,10 +355,16 @@ fn enrich_kanji(
         let stroke_digest = match port.stroke_order(character) {
             Ok(Some(bytes)) if linguist_dictionary::kanji::is_gif(&bytes) => {
                 let digest = canonical::asset_digest(&bytes);
-                if !document.media.iter().any(|m| m.digest == digest) {
+                // Dedupe only against stroke assets: a captured copy of the
+                // same bytes (an older Kanji field) stays an archive.
+                if !document
+                    .media
+                    .iter()
+                    .any(|m| m.digest == digest && m.role == MediaRole::KanjiStroke)
+                {
                     document.media.push(MediaAsset {
                         digest: digest.clone(),
-                        filename: format!("lab_{digest}.gif"),
+                        filename: format!("lab_stroke_{digest}.gif"),
                         original_filename: Some(format!("{:x}.gif", character as u32)),
                         size_bytes: bytes.len() as u64,
                         mime: "image/gif".into(),
