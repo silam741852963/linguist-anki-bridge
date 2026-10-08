@@ -279,6 +279,16 @@
         "decisions/release-gates.md"
       ]
     },
+    "WP-18": {
+      "path": "implementation/wp-18.md",
+      "heading": "## WP-18 \u2014 review paths for rich Picture Words sources",
+      "title": "WP-18 \u2014 review paths for rich Picture Words sources",
+      "words": 210,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md"
+      ]
+    },
     "WP-19": {
       "path": "implementation/wp-19.md",
       "heading": "## WP-19 \u2014 vocabulary card redesign (Linguist Vocabulary v3) and certified generation",
