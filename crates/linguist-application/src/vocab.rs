@@ -148,7 +148,10 @@ fn audio_requested(settings: &Effective, document: &LearningDocument) -> bool {
             settings.values["audio.provider"].as_str(),
             Some("piper" | "dictionary")
         )
-        && !document.media.iter().any(|m| m.mime.starts_with("audio/"))
+        // Only a chosen audio counts: a captured source recording waits for
+        // review and may be replaced by the dictionary's.
+        && !document.media.iter().any(|m| m.role == MediaRole::Audio)
+        && !document.issues.iter().any(|i| i.code == "AUDIO_CANDIDATE_REVIEW")
 }
 
 /// Reject selected adapters this build cannot run, before any state exists.
