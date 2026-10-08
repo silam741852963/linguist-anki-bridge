@@ -22,6 +22,10 @@ Mapping from older schemas: Reading and Pronunciation become Pronunciation (Pron
 
 Tags (`linguist_core::render::tags`): `lab::lang::<target>`, `lab::explain::<explanation>`, `lab::kind::vocabulary|grammar`, `lab::task::<task>` per requested task, `lab::jlpt::<level>`, `lab::common` and `lab::pos::<label>` from the selected dictionary entry, and `lab::has::kanji|picture|audio`.
 
+`Linguist English Vocabulary v1` fields in order (English targets): Expression, Pronunciation (IPA), Meaning, UsageExamples, Picture, Audio, EnableProduction, EnableSpelling. Same templates and CSS as v3 without the Kanji section; kanji does not apply to English. `audio.provider=dictionary` takes the General American IPA and an en-US recording from the word's Wiktionary page.
+
+UsageExamples also lists the selected dictionary entry's neighbours: other spellings ("Also written"), the other entries of the lookup ("Related words", form, reading and first gloss) and its cross-references ("See also"). They appear on the back only.
+
 `Linguist Vocabulary v2` (18 fields: Expression, Reading, Pronunciation, Meaning, Usage, Examples, Picture, Audio, Kanji, PersonalNotes, Source, Language, SenseKey, EnableProduction, EnableSpelling, ProductionPrompt, SpellingPrompt, ExplanationLanguage) is no longer installed. The companion still accepts it so existing v2 notes can be restored or revamped to v3.
 
 `Linguist Grammar v2` fields in order:
