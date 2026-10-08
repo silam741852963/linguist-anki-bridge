@@ -64,7 +64,7 @@ fn each_purpose_resolves_to_its_final_values() {
             json!(["jpn", "eng", "vie"]),
             "auto",
         ),
-        ("english_vocab", "en", "en", json!(["eng"]), "wiktionary"),
+        ("english_vocab", "en", "en", json!(["eng"]), "cambridge"),
         ("english_grammar", "en", "en", json!(["eng"]), "auto"),
     ];
     for (purpose, target, explanation, ocr, dictionary) in expected {

@@ -368,10 +368,11 @@ pub fn build_request(
     // Raw provider archives (whole dictionary responses and kanji pages) are
     // already in accepted_content as structured facts; sending them again
     // would only exceed the context window.
-    const ARCHIVE_ONLY: [&str; 4] = [
+    const ARCHIVE_ONLY: [&str; 5] = [
         "generated_supplement_v2",
         "jisho_api_v1",
         "wiktionary_definition_v0.8",
+        "cambridge_html_v1",
         "jisho_kanji_pages_v2",
     ];
     // Media-candidate receipts and kanji page claims are not learning material

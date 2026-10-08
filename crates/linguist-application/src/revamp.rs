@@ -833,7 +833,7 @@ pub(crate) fn validate_source_revamp(
             ),
             "english_vocab" => matches!(
                 settings.values["dictionary.provider"].as_str(),
-                Some("auto" | "wiktionary")
+                Some("auto" | "wiktionary" | "cambridge")
             ),
             _ => false,
         };

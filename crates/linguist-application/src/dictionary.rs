@@ -54,7 +54,7 @@ pub fn enrich_revision(
         document.sources.iter().any(|source| {
             matches!(
                 source.kind.as_str(),
-                "jisho_api_v1" | "wiktionary_definition_v0.8"
+                "jisho_api_v1" | "wiktionary_definition_v0.8" | "cambridge_html_v1"
             )
         })
     }) {
@@ -201,7 +201,7 @@ pub fn enrich_document(
                 || english
                     && matches!(
                         settings.values["dictionary.provider"].as_str(),
-                        Some("wiktionary" | "auto")
+                        Some("wiktionary" | "auto" | "cambridge")
                     ))
             {
                 return Err(
@@ -238,7 +238,16 @@ pub fn enrich_document(
             // Reparse port output: callers cannot fabricate rich facts unrelated to saved bytes.
             let maximum =
                 settings.values["network.max_response_mb"].as_u64().unwrap() * 1024 * 1024;
-            let verified = if japanese {
+            let cambridge = english && settings.values["dictionary.provider"] == "cambridge";
+            let verified = if cambridge {
+                linguist_dictionary::cambridge::parse_page(
+                    &page.query,
+                    &document.target_language,
+                    &page.raw_bytes,
+                    maximum,
+                    1000,
+                )
+            } else if japanese {
                 linguist_dictionary::parse_jisho(
                     &page.query,
                     &document.target_language,
@@ -272,6 +281,8 @@ pub fn enrich_document(
                 id: source_id,
                 kind: if japanese {
                     "jisho_api_v1"
+                } else if cambridge {
+                    "cambridge_html_v1"
                 } else {
                     "wiktionary_definition_v0.8"
                 }
@@ -282,6 +293,8 @@ pub fn enrich_document(
                 fields: fields.clone(),
                 model_manifest: if japanese {
                     "jisho-api-v1"
+                } else if cambridge {
+                    linguist_dictionary::cambridge::PROVIDER
                 } else {
                     "wiktionary-definition-v0.8"
                 }

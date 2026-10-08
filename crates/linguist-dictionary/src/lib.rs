@@ -215,6 +215,7 @@ pub fn parse_jisho(
     })
 }
 
+pub mod cambridge;
 pub mod kanji;
 pub mod recording;
 pub mod transport;

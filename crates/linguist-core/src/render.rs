@@ -132,12 +132,17 @@ fn related(v: &Vocabulary) -> String {
             ));
         }
     }
+    let cambridge = selected.is_some_and(|i| v.dictionary[i].provider == "cambridge-html-v1");
     let others: Vec<_> = v
         .dictionary
         .iter()
         .enumerate()
         .filter(|(index, entry)| {
-            Some(*index) != selected && !entry.forms.is_empty() && !entry.senses.is_empty()
+            Some(*index) != selected
+                && !entry.forms.is_empty()
+                && !entry.senses.is_empty()
+                // Cambridge's other parts of speech are already in Meaning.
+                && !(cambridge && entry.forms.contains(&v.expression))
         })
         .take(MAX_ENTRIES)
         .collect();
@@ -163,11 +168,42 @@ fn related(v: &Vocabulary) -> String {
         html.push_str("</ul>");
     }
     if let Some(index) = selected {
-        let see: Vec<_> = v.dictionary[index].related_entries.iter().collect();
+        let entry = &v.dictionary[index];
+        let metadata = |key: &str| {
+            entry
+                .metadata
+                .get(key)
+                .map(|v| v.iter().collect::<Vec<_>>())
+        };
+        if let Some(synonyms) = metadata("synonyms") {
+            html.push_str(&format!(
+                "<h4>Synonyms</h4><ul class=\"lab-collocations\">{}</ul>",
+                chips(synonyms)
+            ));
+        }
+        let see: Vec<_> = entry.related_entries.iter().collect();
         if !see.is_empty() {
             html.push_str(&format!(
-                "<h4>See also</h4><ul class=\"lab-collocations\">{}</ul>",
+                "<h4>{}</h4><ul class=\"lab-collocations\">{}</ul>",
+                if cambridge { "Word family" } else { "See also" },
                 chips(see)
+            ));
+        }
+        if let Some(words) = metadata("smart_vocabulary") {
+            const MAX_TOPIC_WORDS: usize = 12;
+            let topic = metadata("smart_vocabulary_topic")
+                .and_then(|t| t.first().map(|t| t.to_string()))
+                .unwrap_or_else(|| "Related".into());
+            html.push_str(&format!(
+                "<h4>Topic: {}</h4><ul class=\"lab-collocations\">{}</ul>",
+                escape(&topic),
+                chips(
+                    words
+                        .into_iter()
+                        .filter(|w| **w != v.expression)
+                        .take(MAX_TOPIC_WORDS)
+                        .collect()
+                )
             ));
         }
     }

@@ -30,7 +30,7 @@
         "ocr.languages": [
           "eng"
         ],
-        "dictionary.provider": "wiktionary"
+        "dictionary.provider": "cambridge"
       }
     },
     "english_grammar": {

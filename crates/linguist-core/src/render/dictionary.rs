@@ -42,8 +42,30 @@ pub(super) fn meaning(
             )
         };
     };
+    // Cambridge: the first definition of each part of speech of the word,
+    // plus the selected one; other providers list the selected entry.
+    let senses: Vec<&crate::Sense> = if entry.provider == "cambridge-html-v1" {
+        entries
+            .iter()
+            .filter(|e| e.provider == entry.provider && e.forms.iter().any(|f| f == expression))
+            .flat_map(|e| {
+                let mut picked = vec![&e.senses[0]];
+                if let Some(selected) = e
+                    .senses
+                    .iter()
+                    .skip(1)
+                    .find(|s| s.key == selected_sense_key)
+                {
+                    picked.push(selected);
+                }
+                picked
+            })
+            .collect()
+    } else {
+        entry.senses.iter().collect()
+    };
     let mut body = String::from("<ol class=\"lab-senses\">");
-    for sense in &entry.senses {
+    for sense in senses {
         let selected = sense.key == selected_sense_key;
         body.push_str(if selected {
             "<li class=\"lab-sense lab-selected\">"

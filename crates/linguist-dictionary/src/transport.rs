@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 enum Provider {
     Jisho,
     Wiktionary,
+    Cambridge,
 }
 
 #[derive(Clone)]
@@ -45,6 +46,7 @@ impl JishoClient {
         ) {
             (Some("auto" | "jisho"), Some("ja")) => Provider::Jisho,
             (Some("auto" | "wiktionary"), Some("en")) => Provider::Wiktionary,
+            (Some("cambridge"), Some("en")) => Provider::Cambridge,
             _ => return Err(ReadError::Unavailable),
         };
         for key in ["dictionary.provider", "dictionary.browser_fallback"] {
@@ -62,6 +64,7 @@ impl JishoClient {
                 "en.wiktionary.org",
                 "https://en.wiktionary.org/api/rest_v1/page/definition/",
             ),
+            Provider::Cambridge => ("dictionary.cambridge.org", crate::cambridge::PAGE),
         };
         let reader =
             Reader::from_settings(settings, environment, Service::Dictionary, &[host], &[])?;
@@ -84,6 +87,9 @@ impl JishoClient {
             Provider::Wiktionary => {
                 crate::wiktionary::parse_definition(query, target, bytes, self.limit, limit)
             }
+            Provider::Cambridge => {
+                crate::cambridge::parse_page(query, target, bytes, self.limit, limit)
+            }
         }
         .map_err(|_| ReadError::Schema)
     }
@@ -101,6 +107,7 @@ impl JishoClient {
             match self.provider {
                 Provider::Jisho => b"{\"meta\":{\"status\":200},\"data\":[]}".as_slice(),
                 Provider::Wiktionary => b"{}".as_slice(),
+                Provider::Cambridge => b"<html></html>".as_slice(),
             },
             max_entries,
         )?;
@@ -115,8 +122,23 @@ impl JishoClient {
                     .pop_if_empty()
                     .push(query);
             }
+            Provider::Cambridge => {
+                url = crate::cambridge::request_url(query).map_err(|_| ReadError::Policy)?;
+            }
         }
-        let fetched = self.reader.get(&url, &["application/json"])?;
+        let accept: &[&str] = if self.provider == Provider::Cambridge {
+            &["text/html"]
+        } else {
+            &["application/json"]
+        };
+        let fetched = self.reader.get(&url, accept)?;
+        // Cambridge redirects unknown words to its home page: not found.
+        let path = fetched.final_url.path();
+        if self.provider == Provider::Cambridge
+            && (!path.starts_with("/dictionary/english/") || path == "/dictionary/english/")
+        {
+            return self.parse(query, target, b"<html></html>", max_entries);
+        }
         self.parse(query, target, &fetched.bytes, max_entries)
     }
 }

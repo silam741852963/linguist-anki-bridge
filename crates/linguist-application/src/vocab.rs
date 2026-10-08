@@ -61,6 +61,37 @@ impl RecordingPort for linguist_dictionary::recording::RecordingClient {
             .map_err(|e| e.to_string())
     }
 }
+/// Media a dictionary page names (Cambridge illustrations and US audio).
+pub trait DictionaryMediaPort {
+    fn fetch(&self, url: &str, accept: &[&str]) -> Result<Vec<u8>, String>;
+}
+impl DictionaryMediaPort for linguist_dictionary::cambridge::MediaClient {
+    fn fetch(&self, url: &str, accept: &[&str]) -> Result<Vec<u8>, String> {
+        linguist_dictionary::cambridge::MediaClient::fetch(self, url, accept)
+            .map_err(|e| e.to_string())
+    }
+}
+fn dictionary_media<'a>(
+    port: Option<&'a dyn DictionaryMediaPort>,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    live: &'a mut Option<linguist_dictionary::cambridge::MediaClient>,
+) -> Result<&'a dyn DictionaryMediaPort, String> {
+    if let Some(port) = port {
+        return Ok(port);
+    }
+    let client = linguist_dictionary::cambridge::MediaClient::from_settings(settings, environment)
+        .map_err(|e| e.to_string())?;
+    Ok(live.insert(client))
+}
+/// Exact dictionary entries of this vocabulary item.
+fn exact_entries(vocab: &linguist_core::Vocabulary) -> Vec<&linguist_core::DictionaryEntry> {
+    vocab
+        .dictionary
+        .iter()
+        .filter(|entry| entry.forms.contains(&vocab.expression))
+        .collect()
+}
 pub trait SpeechPort {
     fn synthesize(&self, text: &str, target: &Language) -> Result<Synthesis, String>;
 }
@@ -82,6 +113,7 @@ pub struct Providers<'a> {
     pub images: Option<&'a dyn ImagePort>,
     pub speech: Option<&'a dyn SpeechPort>,
     pub recordings: Option<&'a dyn RecordingPort>,
+    pub dictionary_media: Option<&'a dyn DictionaryMediaPort>,
 }
 
 const SETTINGS: [&str; 5] = [
@@ -104,11 +136,11 @@ fn images_requested(settings: &Effective, document: &LearningDocument) -> bool {
     matches!(document.content, LearningContent::Vocabulary(_))
         && settings.values["images.search_when_missing"] == true
         && settings.values["images.provider"] != "disabled"
-        // Kanji stroke animations are not pictures.
-        && !document
-            .media
-            .iter()
-            .any(|m| m.mime.starts_with("image/") && m.role != MediaRole::KanjiStroke)
+        // Only a chosen picture counts: a captured source image waits for
+        // review (it may be a dictionary screenshot to replace), and kanji
+        // stroke animations are not pictures.
+        && !document.media.iter().any(|m| m.role == MediaRole::Picture)
+        && !document.issues.iter().any(|i| i.code == "IMAGE_CANDIDATE_REVIEW")
 }
 fn audio_requested(settings: &Effective, document: &LearningDocument) -> bool {
     matches!(document.content, LearningContent::Vocabulary(_))
@@ -197,6 +229,7 @@ pub fn enrich_document(
             settings,
             environment,
             providers.images,
+            providers.dictionary_media,
             &mut assets,
         )?;
     }
@@ -206,6 +239,7 @@ pub fn enrich_document(
             settings,
             environment,
             providers.recordings,
+            providers.dictionary_media,
             &mut assets,
         )?;
     } else if audio_requested(settings, &document) {
@@ -421,12 +455,56 @@ fn stage_images(
     settings: &Effective,
     environment: &BTreeMap<String, String>,
     port: Option<&dyn ImagePort>,
+    media_port: Option<&dyn DictionaryMediaPort>,
     assets: &mut Vec<Vec<u8>>,
 ) -> Result<(), String> {
     let LearningContent::Vocabulary(vocab) = &document.content else {
         return Ok(());
     };
-    let expression = vocab.expression.clone();
+    // Japanese titles rarely match Commons files; the dictionary's English
+    // gloss of the first exact entry finds illustrations.
+    let japanese = document.target_language.as_str().split('-').next() == Some("ja");
+    let expression = exact_entries(vocab)
+        .first()
+        .and_then(|entry| entry.senses.first())
+        .and_then(|sense| sense.definitions.first())
+        .filter(|_| japanese)
+        .map(|gloss| gloss.split(';').next().unwrap_or(gloss).trim().to_owned())
+        .filter(|gloss| !gloss.is_empty())
+        .unwrap_or_else(|| vocab.expression.clone());
+    // Dictionary illustrations (Cambridge) come first.
+    let illustrations: Vec<String> = exact_entries(vocab)
+        .iter()
+        .flat_map(|entry| entry.metadata.get("images").into_iter().flatten())
+        .take(2)
+        .cloned()
+        .collect();
+    let mut digests = Vec::new();
+    if !illustrations.is_empty() {
+        let mut live = None;
+        match dictionary_media(media_port, settings, environment, &mut live) {
+            Ok(media) => {
+                for url in illustrations {
+                    match stage_illustration(document, settings, media, &url, assets) {
+                        Ok(Some(digest)) => digests.push(digest),
+                        Ok(None) => {}
+                        Err(error) => warning(
+                            document,
+                            "IMAGE_SEARCH_FAILED",
+                            "picture",
+                            format!("{error}; the dictionary illustration was not staged."),
+                        ),
+                    }
+                }
+            }
+            Err(error) => warning(
+                document,
+                "IMAGE_SEARCH_FAILED",
+                "picture",
+                format!("{error}; dictionary illustrations were not staged."),
+            ),
+        }
+    }
     let result = match port {
         Some(port) => port.search(&expression),
         None => match ImageSearchClient::from_settings(settings, environment) {
@@ -446,14 +524,13 @@ fn stage_images(
                 document,
                 "IMAGE_SEARCH_FAILED",
                 "picture",
-                format!("{error}; no picture candidate was staged. The picture is optional."),
+                format!("{error}; no search candidate was staged. The picture is optional."),
             );
-            return Ok(());
+            return candidate_review(document, digests);
         }
     };
     assets.push(search.response.clone());
     let response_digest = canonical::asset_digest(&search.response);
-    let mut digests = Vec::new();
     for candidate in search.candidates {
         let digest = canonical::asset_digest(&candidate.bytes);
         if digests.contains(&digest) {
@@ -511,6 +588,11 @@ fn stage_images(
             format!("{} was not staged: {}", rejected.title, rejected.code),
         );
     }
+    candidate_review(document, digests)
+}
+
+/// One review issue over every staged picture candidate.
+fn candidate_review(document: &mut LearningDocument, digests: Vec<String>) -> Result<(), String> {
     if digests.is_empty() {
         warning(
             document,
@@ -640,6 +722,137 @@ fn stage_audio(
     issue.source_refs = vec![digest];
     document.issues.push(issue);
     Ok(())
+}
+
+/// English with a Cambridge entry: its American IPA fills an empty
+/// Pronunciation and its US recording becomes the audio candidate. Returns
+/// false when the page has no US pronunciation, so Wiktionary is tried.
+fn stage_cambridge_pronunciation(
+    document: &mut LearningDocument,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    media_port: Option<&dyn DictionaryMediaPort>,
+    assets: &mut Vec<Vec<u8>>,
+) -> Result<bool, String> {
+    let LearningContent::Vocabulary(vocab) = &document.content else {
+        return Ok(false);
+    };
+    let entries: Vec<_> = exact_entries(vocab)
+        .into_iter()
+        .filter(|e| e.provider == linguist_dictionary::cambridge::PROVIDER)
+        .collect();
+    // The selected sense's entry, else the American pronunciation all exact
+    // entries agree on (parts of speech can differ, as for "record").
+    let selected = entries
+        .iter()
+        .find(|e| e.senses.iter().any(|s| s.key == vocab.sense_key));
+    let pick = |key: &str| -> Option<String> {
+        if let Some(entry) = selected {
+            return entry.metadata.get(key).and_then(|v| v.first().cloned());
+        }
+        let values: BTreeSet<_> = entries
+            .iter()
+            .filter_map(|e| e.metadata.get(key).and_then(|v| v.first()))
+            .collect();
+        (values.len() == 1).then(|| values.into_iter().next().unwrap().clone())
+    };
+    let (Some(ipa), Some(audio)) = (pick("ipa_us"), pick("audio_us")) else {
+        return Ok(false);
+    };
+    let source_url = entries
+        .first()
+        .map(|e| e.source_url.clone())
+        .unwrap_or_default();
+    let target = document.target_language.clone();
+    if let LearningContent::Vocabulary(vocab) = &mut document.content
+        && vocab.pronunciation.trim().is_empty()
+    {
+        vocab.pronunciation = format!("/{ipa}/");
+        document.evidence.push(Evidence {
+            id: uuid::Uuid::new_v4(),
+            field: "pronunciation".into(),
+            provenance: Provenance::Dictionary,
+            source_id: None,
+            region_id: None,
+            target: None,
+            source_span: None,
+            language: target.clone(),
+            claim: serde_json::to_string(&json!({ "ipa_us": ipa })).map_err(|e| e.to_string())?,
+            source_url: Some(source_url),
+            ambiguous: false,
+        });
+    }
+    let mut live = None;
+    let bytes = match dictionary_media(media_port, settings, environment, &mut live)
+        .and_then(|media| media.fetch(&audio, &["audio/mpeg"]))
+    {
+        Ok(bytes) if linguist_dictionary::recording::is_mp3(&bytes) => bytes,
+        Ok(_) | Err(_) => {
+            warning(
+                document,
+                "AUDIO_SYNTHESIS_FAILED",
+                "audio",
+                "The Cambridge US recording could not be read; no audio was staged.".into(),
+            );
+            return Ok(true);
+        }
+    };
+    let Ok(crate::media::SourceMediaInspection::Audio(inspection)) =
+        crate::media::inspect_source_media(&bytes, settings)
+    else {
+        warning(
+            document,
+            "AUDIO_SYNTHESIS_FAILED",
+            "audio",
+            "The Cambridge US recording did not decode as audio.".into(),
+        );
+        return Ok(true);
+    };
+    let digest = canonical::asset_digest(&bytes);
+    document.media.push(MediaAsset {
+        digest: digest.clone(),
+        filename: format!("candidate_{digest}.mp3"),
+        original_filename: audio.rsplit('/').next().map(str::to_owned),
+        size_bytes: bytes.len() as u64,
+        mime: "audio/mpeg".into(),
+        owner: MediaOwner::App,
+        role: MediaRole::Archive,
+        source_id: None,
+        attribution: "American English pronunciation from the Cambridge Dictionary".into(),
+        license: None,
+    });
+    document.evidence.push(Evidence {
+        id: uuid::Uuid::new_v4(),
+        field: "audio".into(),
+        provenance: Provenance::Provider,
+        source_id: None,
+        region_id: None,
+        target: Some(EvidenceTarget::MediaAsset {
+            digest: digest.clone(),
+        }),
+        source_span: None,
+        language: target,
+        claim: serde_json::to_string(&json!({
+            "recording": audio,
+            "inspection": inspection,
+            "scope": "Cambridge US pronunciation; word match unreviewed",
+        }))
+        .map_err(|e| e.to_string())?,
+        source_url: Some(audio.clone()),
+        ambiguous: true,
+    });
+    assets.push(bytes);
+    let mut issue = Issue::new(
+        "AUDIO_CANDIDATE_REVIEW",
+        Severity::Review,
+        Some("audio"),
+        "Listen to the Cambridge US recording; select it or decline it.",
+    );
+    issue.id = format!("AUDIO_CANDIDATE_REVIEW:{}", document.id);
+    issue.stage = "enrichment".into();
+    issue.source_refs = vec![digest];
+    document.issues.push(issue);
+    Ok(true)
 }
 
 /// English: Wiktionary IPA fills an empty Pronunciation (dictionary fact) and
@@ -800,12 +1013,67 @@ fn kana_only(text: &str) -> bool {
         })
 }
 
+/// Stage one dictionary illustration as a picture candidate. Decoded
+/// inspection is required, as for search candidates.
+fn stage_illustration(
+    document: &mut LearningDocument,
+    settings: &Effective,
+    media: &dyn DictionaryMediaPort,
+    url: &str,
+    assets: &mut Vec<Vec<u8>>,
+) -> Result<Option<String>, String> {
+    let bytes = media.fetch(url, &["image/jpeg", "image/png", "image/gif", "image/webp"])?;
+    let inspection = match crate::media::inspect_source_media(&bytes, settings) {
+        Ok(crate::media::SourceMediaInspection::Image(inspection)) => inspection,
+        _ => return Ok(None),
+    };
+    let digest = canonical::asset_digest(&bytes);
+    if document.media.iter().any(|m| m.digest == digest) {
+        return Ok(None);
+    }
+    document.media.push(MediaAsset {
+        digest: digest.clone(),
+        filename: format!("candidate_{digest}.{}", extension(&inspection.mime)),
+        original_filename: url.rsplit('/').next().map(str::to_owned),
+        size_bytes: bytes.len() as u64,
+        mime: inspection.mime.clone(),
+        owner: MediaOwner::External,
+        role: MediaRole::Archive,
+        source_id: None,
+        attribution: format!("Illustration from the Cambridge Dictionary entry ({url})"),
+        license: None,
+    });
+    document.evidence.push(Evidence {
+        id: uuid::Uuid::new_v4(),
+        field: "picture".into(),
+        provenance: Provenance::Dictionary,
+        source_id: None,
+        region_id: None,
+        target: Some(EvidenceTarget::MediaAsset {
+            digest: digest.clone(),
+        }),
+        source_span: None,
+        language: document.explanation_language.clone(),
+        claim: serde_json::to_string(&json!({
+            "illustration": url,
+            "inspection": inspection,
+            "scope": "dictionary entry illustration; rights and relevance unreviewed",
+        }))
+        .map_err(|e| e.to_string())?,
+        source_url: Some(url.to_owned()),
+        ambiguous: true,
+    });
+    assets.push(bytes);
+    Ok(Some(digest))
+}
+
 /// Stage one native-speaker recording as an audio candidate that needs review.
 fn stage_recording(
     document: &mut LearningDocument,
     settings: &Effective,
     environment: &BTreeMap<String, String>,
     port: Option<&dyn RecordingPort>,
+    media_port: Option<&dyn DictionaryMediaPort>,
     assets: &mut Vec<Vec<u8>>,
 ) -> Result<(), String> {
     let LearningContent::Vocabulary(vocab) = &document.content else {
@@ -814,6 +1082,9 @@ fn stage_recording(
     match document.target_language.as_str().split('-').next() {
         Some("ja") => {}
         Some("en") => {
+            if stage_cambridge_pronunciation(document, settings, environment, media_port, assets)? {
+                return Ok(());
+            }
             return stage_english_recording(document, settings, environment, port, assets);
         }
         _ => {

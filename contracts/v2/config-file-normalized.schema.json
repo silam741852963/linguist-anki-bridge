@@ -234,6 +234,7 @@
             "auto",
             "jisho",
             "wiktionary",
+            "cambridge",
             "custom",
             "authored"
           ],
@@ -1372,6 +1373,7 @@
             "auto",
             "jisho",
             "wiktionary",
+            "cambridge",
             "custom",
             "authored"
           ],
@@ -2553,6 +2555,7 @@
         "auto",
         "jisho",
         "wiktionary",
+        "cambridge",
         "custom",
         "authored"
       ],

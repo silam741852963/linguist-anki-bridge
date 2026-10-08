@@ -365,7 +365,7 @@ pub fn prepare_item(
                 .filter(|s| {
                     matches!(
                         s.kind.as_str(),
-                        "jisho_api_v1" | "wiktionary_definition_v0.8"
+                        "jisho_api_v1" | "wiktionary_definition_v0.8" | "cambridge_html_v1"
                     )
                 })
                 .map(|s| s.id)
