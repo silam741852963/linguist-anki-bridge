@@ -5075,6 +5075,17 @@ fn local_engines(
         };
         checks.push(serde_json::json!({"engine":"speech","provider":"piper","status":status,"required":true,"synthesis_probed":false}));
     }
+    let voicevox_required = settings.values["audio.provider"] == "voicevox";
+    if voicevox_required
+        || settings.values["audio.provider"] == "dictionary"
+            && settings.values["audio.synthesis_fallback"] == "voicevox"
+    {
+        let (status, version) = match linguist_application::voicevox::probe(settings) {
+            Ok(version) => ("available".to_owned(), Some(version)),
+            Err(error) => (error, None),
+        };
+        checks.push(serde_json::json!({"engine":"speech","provider":"voicevox","status":status,"version":version,"required":voicevox_required,"endpoint":settings.values["audio.voicevox.endpoint"]}));
+    }
     // The controlled browser helper is not part of this build; selecting it is a gap.
     if settings.values["browser.enabled"] == true
         || settings.values["dictionary.browser_fallback"] == true

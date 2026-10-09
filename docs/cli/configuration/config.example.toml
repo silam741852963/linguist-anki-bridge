@@ -27,6 +27,15 @@ anki.native_adapter = "lab-native-v1"
 # New audio source; preserve available source recording.
 audio.provider = "preserve"
 
+# With audio.provider=dictionary, the engine that synthesizes a candidate when the dictionary has no recording (VOICEVOX speaks Japanese only). A missing engine only leaves AUDIO_SYNTHESIS_FAILED.
+audio.synthesis_fallback = "voicevox"
+
+# Local VOICEVOX engine (voicevox-engine, or its Docker image) HTTP endpoint.
+audio.voicevox.endpoint = "http://127.0.0.1:50021"
+
+# VOICEVOX style id (GET /speakers lists them; 8 is 春日部つむぎ ノーマル). Cards credit the character as VOICEVOX:<name>.
+audio.voicevox.speaker = 8
+
 # Explicit voice for synthesis.
 # audio.voice = "<explicit value when needed>"
 

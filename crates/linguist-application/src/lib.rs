@@ -846,3 +846,4 @@ pub mod speech;
 pub mod split;
 pub mod vocab;
 pub mod vocab_split;
+pub mod voicevox;

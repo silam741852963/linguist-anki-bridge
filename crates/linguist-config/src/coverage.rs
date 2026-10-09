@@ -132,6 +132,7 @@ const DTRANSPORT: &str = "crates/linguist-dictionary/src/transport.rs";
 const KANJI: &str = "crates/linguist-dictionary/src/kanji.rs";
 const IMAGES: &str = "crates/linguist-application/src/images.rs";
 const AGENTS: &str = "crates/linguist-application/src/agents.rs";
+const VOICEVOX: &str = "crates/linguist-application/src/voicevox.rs";
 const DICTIONARY_STAGE: &str = "crates/linguist-application/src/dictionary.rs";
 const ILLUSTRATIONS: &str = "crates/linguist-application/src/illustrations.rs";
 const GEN: &str = "crates/linguist-application/src/generation.rs";
@@ -166,6 +167,9 @@ pub const ROWS: &[Row] = &[
         &["\"custom\""],
         "custom TTS audio adapter",
     ),
+    c("audio.synthesis_fallback", VOCAB),
+    c("audio.voicevox.endpoint", VOICEVOX),
+    c("audio.voicevox.speaker", VOICEVOX),
     c("audio.voice", SPEECH),
     g(
         "audio.endpoint",

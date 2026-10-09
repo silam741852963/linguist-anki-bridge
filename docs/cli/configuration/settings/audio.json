@@ -9,6 +9,7 @@
         "values": [
           "preserve",
           "dictionary",
+          "voicevox",
           "piper",
           "custom",
           "disabled"
@@ -17,6 +18,47 @@
       "scope": "purpose",
       "consumer": "audio adapter",
       "description": "New audio source; preserve available source recording.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.synthesis_fallback",
+      "type": "enum",
+      "default": "voicevox",
+      "constraints": {
+        "values": [
+          "none",
+          "voicevox",
+          "piper"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "speech adapter",
+      "description": "With audio.provider=dictionary, the engine that synthesizes a candidate when the dictionary has no recording (VOICEVOX speaks Japanese only). A missing engine only leaves AUDIO_SYNTHESIS_FAILED.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.voicevox.endpoint",
+      "type": "string",
+      "default": "http://127.0.0.1:50021",
+      "constraints": {
+        "format": "url"
+      },
+      "scope": "purpose",
+      "consumer": "speech adapter",
+      "description": "Local VOICEVOX engine (voicevox-engine, or its Docker image) HTTP endpoint.",
+      "sensitive": false
+    },
+    {
+      "key": "audio.voicevox.speaker",
+      "type": "integer",
+      "default": 8,
+      "constraints": {
+        "min": 0,
+        "max": 100000
+      },
+      "scope": "purpose",
+      "consumer": "speech adapter",
+      "description": "VOICEVOX style id (GET /speakers lists them; 8 is 春日部つむぎ ノーマル). Cards credit the character as VOICEVOX:<name>.",
       "sensitive": false
     },
     {

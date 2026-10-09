@@ -16,7 +16,7 @@ use linguist_core::{
     validation::{self, Issue, Severity},
 };
 use linguist_dictionary::kanji::{KanjiClient, KanjiEntry};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub trait KanjiPort {
@@ -158,7 +158,7 @@ fn audio_requested(settings: &Effective, document: &LearningDocument) -> bool {
     matches!(document.content, LearningContent::Vocabulary(_))
         && matches!(
             settings.values["audio.provider"].as_str(),
-            Some("piper" | "dictionary")
+            Some("piper" | "dictionary" | "voicevox")
         )
         // Only a chosen audio counts: a captured source recording waits for
         // review and may be replaced by the dictionary's.
@@ -185,9 +185,9 @@ pub fn preflight(settings: &Effective) -> Result<(), String> {
     }
     if !matches!(
         settings.values["audio.provider"].as_str(),
-        Some("preserve" | "disabled" | "piper" | "dictionary")
+        Some("preserve" | "disabled" | "piper" | "dictionary" | "voicevox")
     ) {
-        return Err("CAPABILITY_UNAVAILABLE: audio.provider=custom has no adapter in this build; select dictionary, piper, preserve or disabled".into());
+        return Err("CAPABILITY_UNAVAILABLE: audio.provider=custom has no adapter in this build; select dictionary, voicevox, piper, preserve or disabled".into());
     }
     if settings.values["kanji.enabled"] == true
         && settings.values.get("kanji.schema") != Some(&json!(linguist_dictionary::kanji::SCHEMA))
@@ -250,12 +250,33 @@ pub fn enrich_document(
             providers.dictionary_media,
             &mut assets,
         )?;
+        // No recording found: synthesize one (`audio.synthesis_fallback`).
+        let fallback = settings
+            .values
+            .get("audio.synthesis_fallback")
+            .and_then(Value::as_str)
+            .unwrap_or("none");
+        if fallback != "none" && audio_requested(settings, &document) {
+            stage_audio(
+                &mut document,
+                settings,
+                environment,
+                providers.speech,
+                fallback,
+                &mut assets,
+            )?;
+        }
     } else if audio_requested(settings, &document) {
+        let engine = settings.values["audio.provider"]
+            .as_str()
+            .unwrap_or("piper")
+            .to_owned();
         stage_audio(
             &mut document,
             settings,
             environment,
             providers.speech,
+            &engine,
             &mut assets,
         )?;
     }
@@ -752,6 +773,7 @@ fn stage_audio(
     settings: &Effective,
     environment: &BTreeMap<String, String>,
     port: Option<&dyn SpeechPort>,
+    engine: &str,
     assets: &mut Vec<Vec<u8>>,
 ) -> Result<(), String> {
     let LearningContent::Vocabulary(vocab) = &document.content else {
@@ -770,6 +792,13 @@ fn stage_audio(
     let target = document.target_language.clone();
     let result = match port {
         Some(port) => port.synthesize(&text, &target),
+        None if engine == "voicevox" => {
+            if japanese {
+                crate::voicevox::synthesize(&text, settings)
+            } else {
+                Err("VOICEVOX_LANGUAGE_UNSUPPORTED: VOICEVOX speaks Japanese only".into())
+            }
+        }
         None => match crate::speech::synthesize(&text, &target, settings, environment) {
             Ok(synthesis) => Ok(synthesis),
             // Configuration and resource gaps are not optional-media outages.
@@ -811,14 +840,23 @@ fn stage_audio(
         owner: MediaOwner::App,
         role: MediaRole::Archive,
         source_id: None,
-        attribution: format!(
-            "Synthesized locally with Piper ({}, voice {})",
-            synthesis.engine_version,
-            synthesis
-                .voice_dataset
-                .clone()
-                .unwrap_or_else(|| synthesis.voice_language.clone())
-        ),
+        attribution: if synthesis.provider == "voicevox" {
+            // VOICEVOX's terms require the character credit "VOICEVOX:<name>".
+            format!(
+                "{} (synthesized locally with VOICEVOX {})",
+                synthesis.voice_dataset.clone().unwrap_or_default(),
+                synthesis.engine_version
+            )
+        } else {
+            format!(
+                "Synthesized locally with Piper ({}, voice {})",
+                synthesis.engine_version,
+                synthesis
+                    .voice_dataset
+                    .clone()
+                    .unwrap_or_else(|| synthesis.voice_language.clone())
+            )
+        },
         license: None,
     });
     document.evidence.push(Evidence {

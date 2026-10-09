@@ -737,6 +737,9 @@ fn dictionary_recordings_become_reviewed_audio_candidates() {
     settings
         .values
         .insert("audio.provider".into(), json!("dictionary"));
+    settings
+        .values
+        .insert("audio.synthesis_fallback".into(), json!("none"));
     let tone = include_bytes!("fixtures/audio/tone.mp3").to_vec();
     let result = prepare_with_providers(
         &japanese(&["comprehension"], "", ""),
@@ -777,6 +780,60 @@ fn dictionary_recordings_become_reviewed_audio_candidates() {
     .unwrap();
     assert!(result.ready, "{:?}", result.issues);
     assert!(result.issues.iter().any(|i| i.code == "AUDIO_NOT_FOUND"));
+    // With a synthesis fallback, the missing recording is synthesized (VOICEVOX
+    // credit in the attribution) and reviewed like any audio candidate.
+    struct Voicevox;
+    impl SpeechPort for Voicevox {
+        fn synthesize(&self, text: &str, target: &Language) -> Result<Synthesis, String> {
+            assert_eq!((text, target.as_str()), ("たべる", "ja"));
+            let bytes = wav();
+            Ok(Synthesis {
+                provider: "voicevox",
+                engine_version: "0.24.1".into(),
+                executable_sha256: String::new(),
+                voice_sha256: String::new(),
+                voice_config_sha256: String::new(),
+                voice_language: "ja".into(),
+                voice_dataset: Some("VOICEVOX:春日部つむぎ".into()),
+                speaker: Some("8".into()),
+                length_scale: 1.0,
+                text_sha256: String::new(),
+                mime: "audio/wav".into(),
+                sample_rate: 24000,
+                sha256: linguist_provider::sha256_hex(&bytes),
+                size_bytes: bytes.len() as u64,
+                review_required: true,
+                bytes,
+            })
+        }
+    }
+    settings
+        .values
+        .insert("audio.synthesis_fallback".into(), json!("voicevox"));
+    let result = prepare_with_providers(
+        &japanese(&["comprehension"], "", ""),
+        Kind::Vocabulary,
+        &settings,
+        &f.environment,
+        Providers {
+            recordings: Some(&Recordings(None)),
+            speech: Some(&Voicevox),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let plan = f.store().revision(result.plan_id, 1).unwrap();
+    let synthesized = plan.documents[0]
+        .media
+        .iter()
+        .find(|m| m.mime == "audio/wav")
+        .unwrap();
+    assert!(
+        synthesized.attribution.starts_with("VOICEVOX:春日部つむぎ"),
+        "{}",
+        synthesized.attribution
+    );
+    issue_id(&plan, "AUDIO_CANDIDATE_REVIEW", "audio");
 }
 
 #[test]
