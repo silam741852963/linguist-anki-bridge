@@ -1941,6 +1941,16 @@ fn a_note_holding_several_words_is_detected_and_split_one_note_per_word() {
         ("僕", "ぼく")
     );
     assert!(sibling.sources.iter().all(|s| s.cards.is_empty()));
+    assert!(!sibling.issues.iter().any(|i| matches!(
+        i.code.as_str(),
+        "SOURCE_NATIVE_HISTORY_REVIEW" | "SOURCE_TASK_MAPPING_REVIEW"
+    )));
+    assert!(
+        anchor
+            .issues
+            .iter()
+            .any(|i| i.code == "SOURCE_NATIVE_HISTORY_REVIEW")
+    );
     assert_eq!(child.grammar_groups[0].anchor_document, original.id);
     // Each unit reviews only its own files.
     let reviewed = |d: &linguist_core::LearningDocument| -> Vec<String> {

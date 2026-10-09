@@ -203,6 +203,14 @@ pub(crate) fn publish_split(
             for source in &mut document.sources {
                 source.cards.clear();
             }
+            // A new note has no native cards to map: the source's history and
+            // task-mapping reviews belong to the anchor only.
+            document.issues.retain(|issue| {
+                !matches!(
+                    issue.code.as_str(),
+                    "SOURCE_NATIVE_HISTORY_REVIEW" | "SOURCE_TASK_MAPPING_REVIEW"
+                )
+            });
         }
         // A unit keeps review of only its own source files; the rest stay archived.
         if let Some(keep) = &unit.keep_media {
