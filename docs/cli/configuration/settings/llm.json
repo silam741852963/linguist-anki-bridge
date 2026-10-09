@@ -78,14 +78,14 @@
     {
       "key": "llm.context_tokens",
       "type": "integer",
-      "default": 8192,
+      "default": 16384,
       "constraints": {
         "min": 512,
         "max": 131072
       },
       "scope": "purpose",
       "consumer": "generation",
-      "description": "Validate model limits; no silent truncation.",
+      "description": "Context window sent as num_ctx. 16384 fits the longest dictionary inputs (14-sense words); gemma4:12b uses about 8.0 GB of VRAM at 16k (7.99 GB at 8k, 8.03 GB at 32k, measured on a 16 GB RTX 3080 Ti). Changing it changes the engine identity: run doctor --ollama --certify again.",
       "sensitive": false
     },
     {

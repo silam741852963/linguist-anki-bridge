@@ -228,8 +228,8 @@ llm.timeout_seconds = 180
 # Provider must advertise support; preserve resolved parameter.
 llm.temperature = 0.0
 
-# Validate model limits; no silent truncation.
-llm.context_tokens = 8192
+# Context window sent as num_ctx. 16384 fits the longest dictionary inputs (14-sense words); gemma4:12b uses about 8.0 GB of VRAM at 16k (7.99 GB at 8k, 8.03 GB at 32k, measured on a 16 GB RTX 3080 Ti). Changing it changes the engine identity: run doctor --ollama --certify again.
+llm.context_tokens = 16384
 
 # Must fit context with input.
 llm.max_output_tokens = 2048

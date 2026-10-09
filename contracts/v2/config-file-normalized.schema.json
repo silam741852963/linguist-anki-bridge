@@ -524,8 +524,8 @@
           "x-sensitive": false
         },
         "llm.context_tokens": {
-          "default": 8192,
-          "description": "Validate model limits; no silent truncation.",
+          "default": 16384,
+          "description": "Context window sent as num_ctx. 16384 fits the longest dictionary inputs (14-sense words); gemma4:12b uses about 8.0 GB of VRAM at 16k (7.99 GB at 8k, 8.03 GB at 32k, measured on a 16 GB RTX 3080 Ti). Changing it changes the engine identity: run doctor --ollama --certify again.",
           "maximum": 131072,
           "minimum": 512,
           "type": "integer",
@@ -1692,8 +1692,8 @@
           "x-sensitive": false
         },
         "llm.context_tokens": {
-          "default": 8192,
-          "description": "Validate model limits; no silent truncation.",
+          "default": 16384,
+          "description": "Context window sent as num_ctx. 16384 fits the longest dictionary inputs (14-sense words); gemma4:12b uses about 8.0 GB of VRAM at 16k (7.99 GB at 8k, 8.03 GB at 32k, measured on a 16 GB RTX 3080 Ti). Changing it changes the engine identity: run doctor --ollama --certify again.",
           "maximum": 131072,
           "minimum": 512,
           "type": "integer",
@@ -3020,8 +3020,8 @@
       "x-sensitive": false
     },
     "llm.context_tokens": {
-      "default": 8192,
-      "description": "Validate model limits; no silent truncation.",
+      "default": 16384,
+      "description": "Context window sent as num_ctx. 16384 fits the longest dictionary inputs (14-sense words); gemma4:12b uses about 8.0 GB of VRAM at 16k (7.99 GB at 8k, 8.03 GB at 32k, measured on a 16 GB RTX 3080 Ti). Changing it changes the engine identity: run doctor --ollama --certify again.",
       "maximum": 131072,
       "minimum": 512,
       "type": "integer",

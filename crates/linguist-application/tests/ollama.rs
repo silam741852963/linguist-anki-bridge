@@ -576,7 +576,7 @@ fn candidate_inference_failures_never_retry_or_continue_metadata_reads() {
     let mut truncated = completion_response();
     truncated["done_reason"] = json!("length");
     let mut over_budget = completion_response();
-    over_budget["prompt_eval_count"] = json!(7000);
+    over_budget["prompt_eval_count"] = json!(15000);
     for (output, expected) in [
         (
             (503, "Retry-After: 0\r\n".into(), "private failure".into()),
