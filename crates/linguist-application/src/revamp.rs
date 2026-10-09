@@ -307,7 +307,8 @@ pub fn stage_document(
         // derived candidate that needs the same review as HTML-derived text.
         let without_sound = strip_sound_markers(&field.raw_value);
         let derived = visible_text(&without_sound);
-        if derived != field.raw_value.trim() {
+        // A field holding only sound markers derives no text to review.
+        if !derived.is_empty() && derived != field.raw_value.trim() {
             issues.push(issue("SOURCE_HTML_TEXT_REVIEW", Some(role), source_id));
         }
         if !derived.is_empty() {

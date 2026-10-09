@@ -843,7 +843,13 @@ fn html_candidates_preserve_text_boundaries_and_entities_without_scripts_or_sour
     assert!(
         doc.issues
             .iter()
-            .any(|i| i.code == "SOURCE_HTML_TEXT_REVIEW")
+            .any(|i| i.code == "SOURCE_HTML_TEXT_REVIEW" && i.field.as_deref() == Some("meaning"))
+    );
+    // A sound marker alone derives no text, so it needs no text review.
+    assert!(
+        !doc.issues
+            .iter()
+            .any(|i| i.code == "SOURCE_HTML_TEXT_REVIEW" && i.field.as_deref() == Some("reading"))
     );
     assert!(
         doc.issues
