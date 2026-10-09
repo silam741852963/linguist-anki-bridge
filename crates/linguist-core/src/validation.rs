@@ -659,8 +659,13 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             issues.push(issue);
         }
     }
+    // Only an entry whose written form or reading is the word itself offers a
+    // sense to select; partial matches (副 for 副委員長) leave the meaning to
+    // the author.
     if let LearningContent::Vocabulary(vocab) = &doc.content
-        && !vocab.dictionary.is_empty()
+        && vocab.dictionary.iter().any(|entry| {
+            entry.forms.contains(&vocab.expression) || entry.readings.contains(&vocab.expression)
+        })
     {
         let mut issue = Issue::new(
             "DICTIONARY_SENSE_REVIEW",

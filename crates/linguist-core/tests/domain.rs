@@ -1112,3 +1112,45 @@ fn english_vocabulary_renders_exactly_the_english_model_fields() {
     assert!(!rendered.fields.contains_key("Kanji"));
     assert!(render::tags(&doc).contains(&"lab::lang::en".to_string()));
 }
+
+#[test]
+fn only_an_exact_dictionary_entry_asks_for_a_sense() {
+    let mut doc = vocabulary();
+    let entry = |forms: &[&str], readings: &[&str]| DictionaryEntry {
+        provider: "jisho-api-v1".into(),
+        source_url: "https://jisho.org/word/x".into(),
+        language: doc.target_language.clone(),
+        forms: forms.iter().map(|s| s.to_string()).collect(),
+        readings: readings.iter().map(|s| s.to_string()).collect(),
+        senses: vec![Sense {
+            key: "lab-jcs-v1:jisho-sense:1".into(),
+            definitions: vec!["vice".into()],
+            labels: vec![],
+            examples: vec![],
+        }],
+        metadata: Default::default(),
+        related_entries: vec![],
+    };
+    let asks = |doc: &LearningDocument| {
+        validation::validate(doc)
+            .iter()
+            .any(|i| i.code == "DICTIONARY_SENSE_REVIEW")
+    };
+    // A partial match (副 for 副委員長) leaves the meaning to the author.
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.expression = "副委員長".into();
+        v.dictionary = vec![entry(&["副"], &["ふく"])];
+    }
+    assert!(!asks(&doc));
+    // A written form, or a reading for a kana word, is exact.
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.dictionary
+            .push(entry(&["副委員長"], &["ふくいいんちょう"]));
+    }
+    assert!(asks(&doc));
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.expression = "ビタミン".into();
+        v.dictionary = vec![entry(&[], &["ビタミン"])];
+    }
+    assert!(asks(&doc));
+}
