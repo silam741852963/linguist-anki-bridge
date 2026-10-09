@@ -173,7 +173,9 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
         }
     }
     let dropped_field = match (issue.code.as_str(), issue.source_refs.as_slice()) {
-        ("SOURCE_UNMAPPED_FIELD_REVIEW", [source]) => issue.field.as_ref().map(|f| (source, f)),
+        ("SOURCE_UNMAPPED_FIELD_REVIEW" | "SOURCE_MEDIA_DISCOVERY_REVIEW", [source]) => {
+            issue.field.as_ref().map(|f| (source, f))
+        }
         ("SOURCE_STRUCTURED_ROLE_REVIEW", [source, field]) => Some((source, field)),
         _ => None,
     };
@@ -316,7 +318,9 @@ pub fn resolve(
         ReviewChoice::SourceFieldDropped { source_id, field }
             if matches!(
                 issue.code.as_str(),
-                "SOURCE_UNMAPPED_FIELD_REVIEW" | "SOURCE_STRUCTURED_ROLE_REVIEW"
+                "SOURCE_UNMAPPED_FIELD_REVIEW"
+                    | "SOURCE_STRUCTURED_ROLE_REVIEW"
+                    | "SOURCE_MEDIA_DISCOVERY_REVIEW"
             ) =>
         {
             if !source_field_dropped(document, issue, *source_id, field) {
@@ -930,8 +934,9 @@ fn reject_generated(
 }
 
 /// Dropping a source field is valid only for that exact capture issue and only
-/// while the field's original value is archived: an unmapped field, or the
-/// text of a field mapped to picture/audio (its files keep their own reviews).
+/// while the field's original value is archived: an unmapped field, the text
+/// of a field mapped to picture/audio, or a field's remote or unsafe media
+/// reference (local files keep their own reviews in each case).
 pub(crate) fn source_field_dropped(
     document: &crate::LearningDocument,
     issue: &Issue,
@@ -939,7 +944,7 @@ pub(crate) fn source_field_dropped(
     field: &str,
 ) -> bool {
     let named = match issue.code.as_str() {
-        "SOURCE_UNMAPPED_FIELD_REVIEW" => {
+        "SOURCE_UNMAPPED_FIELD_REVIEW" | "SOURCE_MEDIA_DISCOVERY_REVIEW" => {
             issue.field.as_deref() == Some(field)
                 && issue.source_refs == vec![source_id.to_string()]
         }

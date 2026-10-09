@@ -1817,3 +1817,29 @@ fn text_beside_pictures_is_dropped_by_decision_and_the_files_keep_their_review()
         "{left:?}"
     );
 }
+
+#[test]
+fn a_remote_picture_reference_is_dropped_by_decision() {
+    use linguist_core::records::ReviewChoice;
+    let (capture, settings) = setup(
+        "japanese_vocab",
+        &[
+            ("Word", "人口"),
+            ("Picture", "<img src=\"https://example.invalid/chart.png\">"),
+        ],
+        &[("expression", "Word"), ("picture", "Picture")],
+    );
+    let doc = stage_document(&capture, &settings, "japanese_vocab").unwrap();
+    let issue = doc
+        .issues
+        .iter()
+        .find(|i| i.code == "SOURCE_MEDIA_DISCOVERY_REVIEW")
+        .unwrap();
+    assert_eq!(
+        linguist_core::review::decision_templates(&doc, issue),
+        [ReviewChoice::SourceFieldDropped {
+            source_id: doc.sources[0].id,
+            field: "Picture".into(),
+        }]
+    );
+}
