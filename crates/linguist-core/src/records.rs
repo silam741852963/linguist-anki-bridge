@@ -403,6 +403,14 @@ pub struct SelectionReceipt {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_limit: Option<u64>,
 }
+/// Source kind of the recorded request of a grammar split group.
+pub const GRAMMAR_SPLIT_SOURCE: &str = "grammar_split_request_v1";
+/// Source kind of the recorded request of a vocabulary split group (one note
+/// holding several words or readings).
+pub const VOCABULARY_SPLIT_SOURCE: &str = "vocabulary_split_request_v1";
+
+/// A reviewed split of one source note: grammar patterns or vocabulary words.
+/// The anchor keeps the source note and its history; other units are new notes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GrammarGroup {
@@ -437,16 +445,20 @@ impl GrammarGroup {
                 .iter()
                 .find(|document| document.id == *id)
                 .ok_or_else(fail)?;
-            if !matches!(document.content, crate::LearningContent::Grammar(_))
-                || !document.sources.iter().any(|source| {
-                    source.id == self.source_id && source.kind == "anki_read_capture_v2"
-                })
+            let request_kind = match document.content {
+                crate::LearningContent::Grammar(_) => GRAMMAR_SPLIT_SOURCE,
+                crate::LearningContent::Vocabulary(_) => VOCABULARY_SPLIT_SOURCE,
+            };
+            if !document
+                .sources
+                .iter()
+                .any(|source| source.id == self.source_id && source.kind == "anki_read_capture_v2")
                 || !document
                     .archives
                     .iter()
                     .any(|archive| archive.source_id == self.source_id)
                 || !document.sources.iter().any(|source| {
-                    source.kind == "grammar_split_request_v1"
+                    source.kind == request_kind
                         && source.digest == self.request_asset_digest
                         && document.archives.iter().any(|archive| {
                             archive.source_id == source.id
@@ -460,8 +472,7 @@ impl GrammarGroup {
                 .sources
                 .iter()
                 .find(|source| {
-                    source.kind == "grammar_split_request_v1"
-                        && source.digest == self.request_asset_digest
+                    source.kind == request_kind && source.digest == self.request_asset_digest
                 })
                 .ok_or_else(fail)?;
             let raw = source.fields.get("split_request").ok_or_else(fail)?;

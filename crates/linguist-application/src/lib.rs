@@ -843,3 +843,4 @@ pub mod source_archive;
 pub mod speech;
 pub mod split;
 pub mod vocab;
+pub mod vocab_split;

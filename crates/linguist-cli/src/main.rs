@@ -984,6 +984,22 @@ enum PlanCommand {
         #[arg(long)]
         template: Option<uuid::Uuid>,
     },
+    /// Split a vocabulary item holding several words or readings into one item
+    /// per unit; the anchor keeps the source note and its history.
+    SplitVocab {
+        /// Plan ID.
+        plan: uuid::Uuid,
+        /// JSON split request (see --template).
+        #[arg(
+            long,
+            required_unless_present = "template",
+            conflicts_with = "template"
+        )]
+        request: Option<PathBuf>,
+        /// Print a split request detected from this item's words, readings and recordings.
+        #[arg(long)]
+        template: Option<uuid::Uuid>,
+    },
     /// Enrich a retained vocabulary draft using its frozen dictionary policy.
     Enrich {
         /// Plan ID.
@@ -1416,6 +1432,7 @@ fn state_write_estimate(command: &Command) -> Option<u64> {
             | PlanCommand::Export { .. }
             | PlanCommand::DuplicateCandidates { record: false, .. }
             | PlanCommand::SplitGrammar { request: None, .. }
+            | PlanCommand::SplitVocab { request: None, .. }
             | PlanCommand::Regenerate {
                 use_current_settings: false,
                 ..
@@ -2452,6 +2469,34 @@ fn run(cli: Cli) -> Result<u8, String> {
                     )?;
                     emit(
                         &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":child.revision,"digest":child.approval_digest().map_err(|e| e.to_string())?,"grammar_groups":child.grammar_groups,"ready":false,"apply_eligible":false,"writes_enabled":false}),
+                    )?;
+                    return Ok(4);
+                }
+                PlanCommand::SplitVocab {
+                    plan,
+                    request,
+                    template,
+                } => {
+                    if let Some(item) = template {
+                        let latest = store.latest_revision(plan)?;
+                        let base = store.revision(plan, latest)?;
+                        emit(&linguist_application::vocab_split::template(&base, item)?)?;
+                        return Ok(0);
+                    }
+                    let request = request.ok_or("VOCAB_SPLIT_REQUEST_REQUIRED")?;
+                    let raw = read_input(&request, max_bytes, max_chars)?;
+                    let request: linguist_application::vocab_split::SplitRequest =
+                        canonical::parse(&raw).map_err(|e| e.to_string())?;
+                    let base = store.revision(plan, request.base_revision)?;
+                    drop(store);
+                    let child = linguist_application::vocab_split::split(
+                        &mut linguist_store::Store::open_existing(&root)?,
+                        &base,
+                        &request,
+                        &raw,
+                    )?;
+                    emit(
+                        &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":child.revision,"digest":child.approval_digest().map_err(|e| e.to_string())?,"split_groups":child.grammar_groups,"ready":false,"apply_eligible":false,"writes_enabled":false}),
                     )?;
                     return Ok(4);
                 }

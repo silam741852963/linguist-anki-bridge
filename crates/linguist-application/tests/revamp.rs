@@ -1843,3 +1843,137 @@ fn a_remote_picture_reference_is_dropped_by_decision() {
         }]
     );
 }
+
+#[test]
+fn a_note_holding_several_words_is_detected_and_split_one_note_per_word() {
+    use linguist_application::vocab_split;
+    let (mut capture, mut settings) = setup(
+        "japanese_vocab",
+        &[
+            ("Word", "私<div>僕<br></div>"),
+            (
+                "Pronunciation",
+                "[sound:a.mp3]わたし<div>[sound:b.mp3]ぼく</div>",
+            ),
+            ("Picture", "<img src=\"me.png\">"),
+        ],
+        &[
+            ("expression", "Word"),
+            ("pronunciation", "Pronunciation"),
+            ("picture", "Picture"),
+        ],
+    );
+    let mut png = Vec::new();
+    image::RgbImage::from_pixel(2, 2, image::Rgb([5, 5, 5]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    linguist_application::source_archive::media::attach_original_media(
+        &mut capture.captured,
+        BTreeMap::from([
+            ("a.mp3".into(), Some(b"ID3a".to_vec())),
+            ("b.mp3".into(), Some(b"ID3b".to_vec())),
+            ("me.png".into(), Some(png)),
+        ]),
+        10 * 1024 * 1024,
+        10 * 1024 * 1024,
+    )
+    .unwrap();
+    let root = std::env::temp_dir().join(format!("lab-vocab-split-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "japanese_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-vocab-split".into())]),
+    )
+    .unwrap();
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let original = plan.documents[0].clone();
+    assert!(
+        validation::validate(&original)
+            .iter()
+            .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
+    );
+    let mut request = vocab_split::template(&plan, original.id).unwrap();
+    let units: Vec<_> = request
+        .units
+        .iter()
+        .map(|u| {
+            (
+                u.expression.as_str(),
+                u.pronunciation.as_str(),
+                u.media.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        units,
+        [
+            (
+                "私",
+                "わたし",
+                vec!["me.png".to_owned(), "a.mp3".to_owned()]
+            ),
+            ("僕", "ぼく", vec!["b.mp3".to_owned()]),
+        ]
+    );
+    // An unnamed reviewer is refused.
+    let raw = linguist_core::canonical::bytes(&request).unwrap();
+    assert!(vocab_split::split(&mut store, &plan, &request, &raw).is_err());
+    request.actor = "reviewer".into();
+    let raw = linguist_core::canonical::bytes(&request).unwrap();
+    let child = vocab_split::split(&mut store, &plan, &request, &raw).unwrap();
+    assert_eq!(child.documents.len(), 2);
+    let anchor = &child.documents[0];
+    let sibling = &child.documents[1];
+    assert_eq!(
+        anchor.id, original.id,
+        "the anchor keeps the source identity"
+    );
+    let LearningContent::Vocabulary(v) = &sibling.content else {
+        panic!()
+    };
+    assert_eq!(
+        (v.expression.as_str(), v.pronunciation.as_str()),
+        ("僕", "ぼく")
+    );
+    assert!(sibling.sources.iter().all(|s| s.cards.is_empty()));
+    assert_eq!(child.grammar_groups[0].anchor_document, original.id);
+    // Each unit reviews only its own files.
+    let reviewed = |d: &linguist_core::LearningDocument| -> Vec<String> {
+        d.issues
+            .iter()
+            .filter(|i| i.code == "SOURCE_MEDIA_CONTENT_REVIEW")
+            .filter_map(|i| i.field.clone())
+            .collect()
+    };
+    assert_eq!(reviewed(anchor), ["me.png", "a.mp3"]);
+    assert_eq!(reviewed(sibling), ["b.mp3"]);
+    for d in &child.documents {
+        assert!(
+            !validation::validate(d)
+                .iter()
+                .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
+        );
+    }
+}
+
+#[test]
+fn one_word_with_two_readings_splits_by_reading() {
+    let (capture, settings) = setup(
+        "japanese_vocab",
+        &[("Word", "節"), ("Pronunciation", "ふし／せつ")],
+        &[("expression", "Word"), ("pronunciation", "Pronunciation")],
+    );
+    let doc = stage_document(&capture, &settings, "japanese_vocab").unwrap();
+    assert!(
+        validation::validate(&doc)
+            .iter()
+            .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
+    );
+    let plan_units = linguist_core::validation::vocabulary_units("ふし／せつ");
+    assert_eq!(plan_units, ["ふし", "せつ"]);
+}

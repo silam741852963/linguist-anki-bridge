@@ -766,7 +766,12 @@ pub(crate) fn split_anchor_matches(document: &crate::LearningDocument, anchor: u
     document
         .sources
         .iter()
-        .filter(|source| source.kind == "grammar_split_request_v1")
+        .filter(|source| {
+            matches!(
+                source.kind.as_str(),
+                crate::records::GRAMMAR_SPLIT_SOURCE | crate::records::VOCABULARY_SPLIT_SOURCE
+            )
+        })
         .filter_map(|source| source.fields.get("split_request"))
         .filter_map(|raw| crate::canonical::parse::<serde_json::Value>(raw.as_bytes()).ok())
         .any(|request| request["document_id"].as_str() == Some(anchor.to_string().as_str()))

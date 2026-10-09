@@ -90,6 +90,22 @@ Ogg completeness: before probing content beginning with `OggS`, validate every p
 
 MP3 completeness: after container probing identifies MP3, require every captured audio byte to belong to a complete indexed-bitrate MPEG Layer III frame or a supported tag extent. Check MPEG-1/2/2.5 headers, frame sizes including padding, stable sample rate/channel/version, leading ID3v2 synchsafe size and optional matching v2.4 footer, and optional trailing 128-byte ID3v1 tag. Do not scan past unexplained junk, infer free-format boundaries or accept partial final frames. Framing plus successful decoding sets `container_extent_verified=true`; original bytes remain archive-only. Whole-frame removal is undetectable without a trusted external length, so this flag proves captured-byte structure rather than authenticity.
 
+Vocabulary split (WP-20): a Japanese vocabulary item whose expression lists
+several words (one per line: 私 / 僕 / 俺) or whose pronunciation lists several
+kana readings (one per line, or separated by `／`: ふし／せつ) is not ready
+(`VOCAB_SPLIT_REQUIRED`). `plans split-vocab PLAN --template ITEM` prints a
+detected request: one unit per word, paired with the listed readings when the
+counts agree, or one unit per reading of a single word. Recordings go to units
+in order when their count matches; pictures stay with the anchor (the first
+unit). The reviewer edits the units (`expression`, `pronunciation`, `media`:
+the source files that unit keeps for review), names the `actor` and submits it
+with `--request FILE`. Every unit becomes a fresh vocabulary item with only its
+word and reading; the anchor keeps the source note and its history and every
+other unit is a new note. Run the dictionary stage (`plans enrich`) and
+`plans regenerate --stage enrichment` for the units, review them, and apply the
+group with `apply PLAN --split-group GROUP --apply` (children first, then the
+anchor).
+
 Current authored grammar split staging: `plans split-grammar PLAN --request FILE`
 loads the retained source draft and verifies the request's base revision/digest,
 document/input digest and actor. The request contains `schema_version=2`,

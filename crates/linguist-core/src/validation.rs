@@ -150,6 +150,21 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
     }
     let (required, answer, allowed): (Vec<(&str, &str)>, &str, &[Task]) = match &doc.content {
         LearningContent::Vocabulary(v) => {
+            // One note holding several words (私 / 僕 / 俺) or readings
+            // (おどかす / おびやかす) is split, one note per unit.
+            let japanese = doc.target_language.as_str().split('-').next() == Some("ja");
+            let readings = vocabulary_units(&v.pronunciation);
+            if japanese
+                && (vocabulary_units(&v.expression).len() > 1
+                    || readings.len() > 1 && readings.iter().all(|r| is_kana(r)))
+            {
+                add(
+                    "VOCAB_SPLIT_REQUIRED",
+                    Severity::Error,
+                    Some("expression"),
+                    "This note holds several words or readings; split it with plans split-vocab.",
+                )
+            }
             // v3 fronts show fields, not text cues: Production shows Picture and
             // Meaning (masked), Spelling shows Audio, Pronunciation and Meaning.
             if tasks.contains(&Task::Spelling) {
@@ -801,4 +816,19 @@ pub fn ready(doc: &LearningDocument) -> bool {
     validate(doc)
         .iter()
         .all(|i| i.severity == Severity::Warning)
+}
+
+/// The units of a field that lists several words or readings: one per line,
+/// or separated by a full-width slash (ふし／せつ). Whitespace inside a unit
+/// is dropped (older notes space kana at kanji boundaries).
+pub fn vocabulary_units(text: &str) -> Vec<String> {
+    text.split(['\n', '／'])
+        .map(|unit| unit.split_whitespace().collect::<String>())
+        .filter(|unit| !unit.is_empty())
+        .collect()
+}
+
+fn is_kana(text: &str) -> bool {
+    text.chars()
+        .all(|c| matches!(c, '\u{3041}'..='\u{309F}' | '\u{30A0}'..='\u{30FF}'))
 }
