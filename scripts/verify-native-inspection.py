@@ -12,7 +12,7 @@ from anki.collection import Collection
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "addons"))
 from linguist_bridge.inspection import (
-    MAX_RESULT_BYTES, InspectionError, inspect_note, inspect_note_twice)
+    MAX_MEDIA_BYTES, MAX_RESULT_BYTES, InspectionError, inspect_note, inspect_note_twice)
 
 
 def main():
@@ -58,7 +58,22 @@ def main():
                 "size_bytes": len(media_bytes),
                 "sha256": hashlib.sha256(media_bytes).hexdigest(),
                 "bytes_base64": base64.b64encode(media_bytes).decode("ascii"),
+                "bytes_omitted": False,
             }]
+            # A file over the inline limit is reported by size and hash only.
+            big = bytes(range(256)) * (MAX_MEDIA_BYTES // 256 + 7)
+            big_name = col.media.write_data("big.png", big)
+            note["Back"] = f'to eat <img src="{big_name}">'
+            col.update_note(note)
+            large = inspect_note_twice(col, str(note.id))
+            assert large["media"] == [{
+                "name": big_name, "fields": ["Back"], "missing": False,
+                "size_bytes": len(big), "sha256": hashlib.sha256(big).hexdigest(),
+                "bytes_base64": None, "bytes_omitted": True,
+            }], large["media"]
+            assert large["discovered_media_bytes_verified"]
+            note["Back"] = "to eat [sound:voice.ogg]"
+            col.update_note(note)
             assert not observed["write_authorized"]
             for bad in ("0", "01", "+1", "9007199254740992"):
                 try:

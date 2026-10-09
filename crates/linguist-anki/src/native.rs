@@ -400,11 +400,18 @@ impl Client {
 /// Companion builds whose registration, serialized worker and effects were
 /// exercised in disposable Anki: (companion, Anki version, AnkiConnect
 /// `__init__.py` SHA-256). Anything else keeps collection writes unavailable.
-pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[(
-    "0.3.0",
-    "25.09.2",
-    "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
-)];
+pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[
+    (
+        "0.3.0",
+        "25.09.2",
+        "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
+    ),
+    (
+        "0.3.1",
+        "25.09.2",
+        "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
+    ),
+];
 const ALL_VARIANTS: [MutationVariant; 7] = [
     MutationVariant::InstallModel,
     MutationVariant::ExportCheckpoint,

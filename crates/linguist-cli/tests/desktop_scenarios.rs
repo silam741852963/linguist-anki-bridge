@@ -818,7 +818,7 @@ fn vocab_revamp_home_deck_edit_conflict_restore() {
         json!({"expression": "Front", "meaning": "Back"}),
         "comprehension",
         "english_vocab",
-        "Linguist Vocabulary v3",
+        "Linguist English Vocabulary v1",
         &[("SenseKey", "past-habit")],
         Some("Meaning"),
     );

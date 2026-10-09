@@ -20,6 +20,8 @@ MAX_CARDS = 16
 MAX_REVIEWS_PER_CARD = 10_000
 MAX_RESULT_BYTES = 2 * 1024 * 1024
 MAX_MEDIA_BYTES = 1024 * 1024
+# A larger file is reported by size and SHA-256 only (no bytes).
+MAX_HASHED_MEDIA_BYTES = 256 * 1024 * 1024
 MAX_MEDIA_REFERENCES = 256
 
 
@@ -39,6 +41,30 @@ def _media_name(name):
             or any(ord(char) < 32 or ord(char) == 127 for char in name)):
         raise InspectionError("BRIDGE_INSPECT_MEDIA_NAME_INVALID")
     return name
+
+
+def _hashed_only(name, fields, file, directory, before):
+    """A file over MAX_MEDIA_BYTES: its size and SHA-256 from a chunked read
+    that must see the same unchanged file throughout."""
+    digest = hashlib.sha256()
+    total = 0
+    while True:
+        chunk = os.read(file, 1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_HASHED_MEDIA_BYTES:
+            raise InspectionError("BRIDGE_INSPECT_MEDIA_FILE_INVALID")
+        digest.update(chunk)
+    after = os.fstat(file)
+    path_after = os.stat(name, dir_fd=directory, follow_symlinks=False)
+    if (total != before.st_size
+            or (before.st_dev, before.st_ino, before.st_mtime_ns, before.st_ctime_ns)
+            != (after.st_dev, after.st_ino, after.st_mtime_ns, after.st_ctime_ns)
+            or (before.st_dev, before.st_ino) != (path_after.st_dev, path_after.st_ino)):
+        raise InspectionError("BRIDGE_INSPECT_MEDIA_CHANGED")
+    return {"name": name, "fields": fields, "missing": False, "size_bytes": total,
+            "sha256": digest.hexdigest(), "bytes_base64": None, "bytes_omitted": True}
 
 
 def _media_observations(collection, note, field_names):
@@ -70,15 +96,18 @@ def _media_observations(collection, note, field_names):
             except FileNotFoundError:
                 observed.append({"name": name, "fields": fields, "missing": True,
                                  "size_bytes": None, "sha256": None,
-                                 "bytes_base64": None})
+                                 "bytes_base64": None, "bytes_omitted": False})
                 continue
             except OSError:
                 raise InspectionError("BRIDGE_INSPECT_MEDIA_FILE_INVALID") from None
             try:
                 before = os.fstat(file)
                 if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
-                        or before.st_nlink != 1 or before.st_size > MAX_MEDIA_BYTES):
+                        or before.st_nlink != 1 or before.st_size > MAX_HASHED_MEDIA_BYTES):
                     raise InspectionError("BRIDGE_INSPECT_MEDIA_FILE_INVALID")
+                if before.st_size > MAX_MEDIA_BYTES:
+                    observed.append(_hashed_only(name, fields, file, directory, before))
+                    continue
                 data = os.read(file, MAX_MEDIA_BYTES + 1)
                 after = os.fstat(file)
                 path_after = os.stat(name, dir_fd=directory, follow_symlinks=False)
@@ -93,7 +122,8 @@ def _media_observations(collection, note, field_names):
                 observed.append({"name": name, "fields": fields, "missing": False,
                                  "size_bytes": len(data),
                                  "sha256": hashlib.sha256(data).hexdigest(),
-                                 "bytes_base64": base64.b64encode(data).decode("ascii")})
+                                 "bytes_base64": base64.b64encode(data).decode("ascii"),
+                                 "bytes_omitted": False})
             finally:
                 os.close(file)
         return observed
