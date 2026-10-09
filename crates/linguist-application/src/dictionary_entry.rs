@@ -138,6 +138,36 @@ pub fn entry_from(
     {
         return Err(invalid());
     }
+    // A Godan label names the verb's final kana; it must be this word's.
+    let last = expression.chars().last().unwrap_or_default();
+    fn ending(label: &str, last: char) -> Option<(&str, char)> {
+        label
+            .strip_prefix("Godan verb with '")
+            .and_then(|rest| rest.strip_suffix("' ending"))
+            .map(|romaji| (romaji, last))
+    }
+    let godan_matches = |(romaji, kana): (&str, char)| {
+        matches!(
+            (romaji, kana),
+            ("u", 'う')
+                | ("ku", 'く')
+                | ("gu", 'ぐ')
+                | ("su", 'す')
+                | ("tsu", 'つ')
+                | ("nu", 'ぬ')
+                | ("bu", 'ぶ')
+                | ("mu", 'む')
+                | ("ru", 'る')
+        )
+    };
+    if written.senses.iter().any(|s| {
+        s.parts_of_speech
+            .iter()
+            .filter_map(|p| ending(p.trim(), last))
+            .any(|e| !godan_matches(e))
+    }) {
+        return Err("DICTIONARY_ENTRY_INVALID: the Godan ending does not match the word".into());
+    }
     let senses = written
         .senses
         .into_iter()
@@ -284,11 +314,16 @@ mod tests {
         for bad in [
             r#"{"readings":["fuku"],"senses":[{"definitions":["x"],"parts_of_speech":["Noun"]}]}"#,
             r#"{"readings":["ふく"],"senses":[{"definitions":["x"],"parts_of_speech":["Verb"]}]}"#,
+            r#"{"readings":["めいわくがかかる"],"senses":[{"definitions":["x"],"parts_of_speech":["Godan verb with 'u' ending"]}]}"#,
             r#"{"readings":["ふく"],"senses":[]}"#,
             r#"{"readings":["ふく"],"senses":[{"definitions":["two\nlines"],"parts_of_speech":["Noun"]}]}"#,
             r#"{"readings":["ふく"],"senses":[{"definitions":["x"],"parts_of_speech":["Noun"]}],"extra":1}"#,
         ] {
             assert!(entry_from("副", &ja, bad, "x").is_err(), "{bad}");
         }
+        let phrase = r#"{"readings":["めいわくがかかる"],"senses":[{"definitions":["to be troubled"],"parts_of_speech":["Expressions (phrases, clauses, etc.)","Godan verb with 'ru' ending"]}]}"#;
+        assert!(entry_from("迷惑がかかる", &ja, phrase, "x").is_ok());
+        let wrong = phrase.replace("'ru'", "'u'");
+        assert!(entry_from("迷惑がかかる", &ja, &wrong, "x").is_err());
     }
 }
