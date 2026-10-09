@@ -1253,3 +1253,122 @@ fn passed_engine_certification_replaces_the_blocker_for_that_identity_only() {
         );
     }
 }
+
+/// WP-20: when local generation fails, the next provider in `llm.fallback`
+/// (here a fake `claude` on the pipeline's PATH) writes the supplement. The
+/// draft carries the external-engine warning and the provider's identity.
+#[test]
+fn a_failed_local_generation_falls_back_to_an_agent() {
+    use linguist_application::{freeze_settings, generation::publish_candidate};
+    use linguist_core::{LearningContent, records::PlanRevision};
+    use std::os::unix::fs::PermissionsExt;
+    let mut truncated = completion_response();
+    truncated["done_reason"] = json!("length");
+    let server = FixtureServer::new(vec![
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+        reply(truncated),
+    ]);
+    let root = std::env::temp_dir().join(format!("lab-agent-fallback-{}", uuid::Uuid::new_v4()));
+    let bin = std::env::temp_dir().join(format!("lab-agent-bin-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&bin).unwrap();
+    let seen = bin.join("prompt.txt");
+    let reply_json = json!({"type":"result","subtype":"success","is_error":false,
+        "structured_output":{"kind":"vocabulary","body":{"usage":"Agent usage.","examples":[],"nuance":[],"collocations":[]}},
+        "modelUsage":{"fake-model":{}}});
+    std::fs::write(
+        bin.join("claude"),
+        format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '9.9.9 (Fake Code)'; exit 0; }}\ncat > '{}'\nprintf '%s' '{}'\n",
+            seen.display(),
+            reply_json
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let environment = std::collections::BTreeMap::from([
+        ("HOME".into(), root.to_str().unwrap().into()),
+        ("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())),
+    ]);
+    let mut current = settings();
+    current
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    current
+        .values
+        .insert("llm.endpoint".into(), json!(server.endpoint));
+    current
+        .values
+        .insert("services.ollama.min_interval_seconds".into(), json!(0));
+    current
+        .values
+        .insert("llm.fallback".into(), json!(["claude_code"]));
+    let document = generation_document();
+    let plan = PlanRevision {
+        grammar_groups: vec![],
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: freeze_settings(&current, &environment).unwrap(),
+        binding: None,
+        source_digest: canonical::digest("source-capture", &document.sources).unwrap(),
+        selection: None,
+        documents: vec![document.clone()],
+        rendered: vec![linguist_core::render::render(&document, &Default::default()).unwrap()],
+        review_decisions: vec![],
+    };
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let digest = store.publish_revision(&plan).unwrap();
+    let client = transport::Client::from_settings(&current, &environment).unwrap();
+    let result = publish_candidate(
+        &mut store,
+        &plan,
+        document.id,
+        &digest,
+        &current,
+        &environment,
+        &client,
+    )
+    .unwrap();
+    assert_eq!(result["provider"], "claude_code", "{result}");
+    assert_eq!(result["attempts"][0]["provider"], "ollama");
+    assert_eq!(
+        result["attempts"][0]["error"],
+        "OLLAMA_COMPLETION_INCOMPLETE"
+    );
+    assert_eq!(result["generation_engine_verified"], false);
+    // The agent got the same instructions and input as the local model.
+    let prompt = std::fs::read_to_string(&seen).unwrap();
+    assert!(prompt.contains("Input JSON:"), "{prompt}");
+    drop(store);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let retained = store.revision(plan.id, 2).unwrap();
+    let doc = &retained.documents[0];
+    let external = doc
+        .issues
+        .iter()
+        .find(|i| i.code == "GENERATION_ENGINE_EXTERNAL")
+        .unwrap();
+    assert!(
+        external
+            .message
+            .contains("Claude Code (9.9.9 (Fake Code), fake-model)"),
+        "{}",
+        external.message
+    );
+    assert!(
+        !doc.issues
+            .iter()
+            .any(|i| i.code == "GENERATION_ENGINE_UNVERIFIED")
+    );
+    assert!(matches!(&doc.content, LearningContent::Vocabulary(v) if v.usage == "Agent usage."));
+    let source = doc.sources.last().unwrap();
+    assert!(source.fields["engine_identity"].contains("claude_code"));
+    for digest in &doc.archives.last().unwrap().asset_digests {
+        assert!(!store.asset(digest, 20 * 1024 * 1024).unwrap().is_empty());
+    }
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&bin);
+}

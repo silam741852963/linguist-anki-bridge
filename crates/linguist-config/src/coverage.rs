@@ -131,6 +131,7 @@ const DICT: &str = "crates/linguist-application/src/dictionary.rs";
 const DTRANSPORT: &str = "crates/linguist-dictionary/src/transport.rs";
 const KANJI: &str = "crates/linguist-dictionary/src/kanji.rs";
 const IMAGES: &str = "crates/linguist-application/src/images.rs";
+const AGENTS: &str = "crates/linguist-application/src/agents.rs";
 const ILLUSTRATIONS: &str = "crates/linguist-application/src/illustrations.rs";
 const GEN: &str = "crates/linguist-application/src/generation.rs";
 const OLLAMA: &str = "crates/linguist-application/src/ollama/transport.rs";
@@ -334,6 +335,16 @@ pub const ROWS: &[Row] = &[
         "LLM kanji summaries",
     ),
     c("llm.repair_attempts", REPAIR),
+    c("llm.provider", AGENTS),
+    c("llm.fallback", AGENTS),
+    c("llm.agents.timeout_seconds", AGENTS),
+    c("llm.agents.claude_code.executable", AGENTS),
+    c("llm.agents.claude_code.model", AGENTS),
+    c("llm.agents.codex.executable", AGENTS),
+    c("llm.agents.codex.model", AGENTS),
+    c("llm.api.endpoint", AGENTS),
+    c("llm.api.model", AGENTS),
+    c("llm.api.api_key_env", AGENTS),
     c("llm.enabled", GEN),
     c("logging.level", DIAG),
     c("logging.file_enabled", DIAG),

@@ -255,6 +255,36 @@ llm.repair_attempts = 2
 # Enable requested generated annotations; false uses source/dictionary/authored material only.
 llm.enabled = true
 
+# Generation provider tried first: local Ollama, a command-line agent (Claude Code `claude -p`, Codex `codex exec`) or an OpenAI-compatible chat API (llm.api.*). Drafts from anything but a certified Ollama engine carry GENERATION_ENGINE_EXTERNAL.
+llm.provider = "ollama"
+
+# Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.
+llm.fallback = ["claude_code", "codex"]
+
+# Deadline for one agent or API generation.
+llm.agents.timeout_seconds = 600
+
+# Claude Code executable (name looked up on PATH, or an absolute path); run as `claude -p` with no tools and a JSON schema.
+llm.agents.claude_code.executable = "claude"
+
+# Model for Claude Code (--model); null uses its default.
+# llm.agents.claude_code.model = "<explicit value when needed>"
+
+# Codex CLI executable; run as `codex exec` in a read-only sandbox with an output schema.
+llm.agents.codex.executable = "codex"
+
+# Model for Codex (-m); null uses its default.
+# llm.agents.codex.model = "<explicit value when needed>"
+
+# OpenAI-compatible base URL (for example https://api.openai.com/v1 or https://openrouter.ai/api/v1); /chat/completions is appended.
+# llm.api.endpoint = "<explicit value when needed>"
+
+# Model name for the OpenAI-compatible API.
+# llm.api.model = "<explicit value when needed>"
+
+# Environment variable holding the API key (sent as a Bearer token).
+# llm.api.api_key_env = "<explicit value when needed>"
+
 # Default private payload redaction at every level.
 logging.level = "info"
 

@@ -807,6 +807,7 @@ fn publish_authored_records(
     })
 }
 
+pub mod agents;
 pub mod apply;
 pub mod audio;
 pub mod backup;

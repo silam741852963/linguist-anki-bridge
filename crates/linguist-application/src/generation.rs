@@ -87,7 +87,7 @@ pub fn publish_candidate_from(
         return Err("GENERATION_DISABLED: enable llm.enabled in current settings".into());
     }
     // Check request and revised configuration before any provider call.
-    build_request(parent, settings)?;
+    let request = build_request(parent, settings)?;
     let mut child = base.clone();
     child.revision = base
         .revision
@@ -97,19 +97,72 @@ pub fn publish_candidate_from(
     child.settings = frozen;
     child.binding = None;
     child.approval_digest().map_err(|e| e.to_string())?;
-    let mut draft = client.generate_draft(parent)?;
+    // `llm.provider`, then `llm.fallback` in order; a provider that is not
+    // available here is skipped. Every failure is reported, the first first.
+    let mut attempts = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    let mut produced = None;
+    for provider in crate::agents::chain(settings)? {
+        let result = match provider {
+            crate::agents::Provider::Ollama => client.generate_draft(parent).map(Some),
+            other => crate::agents::generate(other, &request, settings, environment).and_then(
+                |external| {
+                    external
+                        .map(|e| merge_external_response(parent, settings, &request, &e))
+                        .transpose()
+                },
+            ),
+        };
+        match result {
+            Ok(Some(draft)) => {
+                attempts.push(json!({"provider": provider.name(), "result": "generated"}));
+                produced = Some((draft, provider));
+                break;
+            }
+            Ok(None) => {
+                attempts.push(json!({"provider": provider.name(), "result": "not available"}))
+            }
+            Err(error) => {
+                attempts
+                    .push(json!({"provider": provider.name(), "result": "failed", "error": error}));
+                errors.push(if errors.is_empty() {
+                    error
+                } else {
+                    format!("fallback {}: {error}", provider.name())
+                });
+            }
+        }
+    }
+    let Some((mut draft, provider)) = produced else {
+        return Err(if errors.is_empty() {
+            "GENERATION_PROVIDERS_UNAVAILABLE: no configured provider is available".into()
+        } else {
+            errors.join("; ")
+        });
+    };
+    let local = provider == crate::agents::Provider::Ollama;
+    let marker = if local {
+        ("GENERATION_ENGINE_UNVERIFIED", validation::Severity::Error)
+    } else {
+        ("GENERATION_ENGINE_EXTERNAL", validation::Severity::Warning)
+    };
     if draft.document.id != document_id
         || draft.document.target_language != parent.target_language
         || draft.document.explanation_language != parent.explanation_language
-        || !draft.document.issues.iter().any(|issue| {
-            issue.code == "GENERATION_ENGINE_UNVERIFIED"
-                && issue.severity == validation::Severity::Error
-        })
+        || !draft
+            .document
+            .issues
+            .iter()
+            .any(|issue| issue.code == marker.0 && issue.severity == marker.1)
     {
         return Err("GENERATION_DRAFT_CONFLICT".into());
     }
     draft.document.reviews.clear();
-    let verified = certified_engine(store, client, &draft.document)?;
+    let verified = if local {
+        certified_engine(store, client, &draft.document)?
+    } else {
+        None
+    };
     if let Some(certification) = &verified {
         // RI-06: a passed certification of this exact engine identity
         // replaces the blocker with an informational record of it.
@@ -165,7 +218,7 @@ pub fn publish_candidate_from(
     }
     let digest = store.publish_revision(&child)?;
     Ok(
-        json!({"schema_version":2,"plan_id":child.id,"revision":child.revision,"digest":digest,"document_id":document_id,"ready":false,"generation_engine_verified":verified.is_some(),"engine_certification":verified.map(|c| c.id),"apply_eligible":false,"issues":child.documents[index].issues,"assets_archived":true}),
+        json!({"schema_version":2,"plan_id":child.id,"revision":child.revision,"digest":digest,"document_id":document_id,"ready":false,"generation_engine_verified":verified.is_some(),"engine_certification":verified.map(|c| c.id),"provider":provider.name(),"attempts":attempts,"apply_eligible":false,"issues":child.documents[index].issues,"assets_archived":true}),
     )
 }
 
@@ -586,7 +639,7 @@ pub fn merge_output(
     bytes: &[u8],
     model: &ModelIdentity,
 ) -> Result<GeneratedDraft, String> {
-    merge_checked_output(doc, settings, request, bytes, model, None)
+    merge_checked_output(doc, settings, request, bytes, model, None, true)
 }
 
 /// Parse the provider envelope again at the trust boundary, then validate its supplement.
@@ -606,9 +659,88 @@ pub fn merge_ollama_response(
         completion.content.as_bytes(),
         model,
         Some(&completion),
+        true,
     )
 }
 
+/// A draft from an external provider (agent or API): the same validation as a
+/// local draft, with the provider's identity and exact response archived and
+/// `GENERATION_ENGINE_EXTERNAL` (warning) instead of the engine certification.
+pub fn merge_external_response(
+    doc: &LearningDocument,
+    settings: &Effective,
+    request: &GenerationRequest,
+    external: &crate::agents::External,
+) -> Result<GeneratedDraft, String> {
+    let identity = canonical::bytes(&external.identity).map_err(|e| e.to_string())?;
+    let model = ModelIdentity {
+        name: format!(
+            "{}:{}",
+            external.provider.name(),
+            external.identity["model"].as_str().unwrap_or("default")
+        ),
+        digest: format!("sha256:{}", canonical::asset_digest(&identity)),
+    };
+    let mut draft = merge_checked_output(
+        doc,
+        settings,
+        request,
+        external.content.as_bytes(),
+        &model,
+        None,
+        false,
+    )?;
+    let source = draft
+        .document
+        .sources
+        .last_mut()
+        .ok_or("GENERATION_ARCHIVE_MISSING")?;
+    source.fields.insert(
+        "engine_identity".into(),
+        String::from_utf8(identity).map_err(|_| "GENERATION_ENCODING")?,
+    );
+    source.fields.insert(
+        "provider_response".into(),
+        String::from_utf8_lossy(&external.raw).into_owned(),
+    );
+    let manifest = canonical::bytes(&source.fields).map_err(|_| "GENERATION_ENCODING")?;
+    if manifest.len() > 100 * 1024 * 1024 {
+        return Err("GENERATION_ARCHIVE_LIMIT".into());
+    }
+    let digest = canonical::asset_digest(&manifest);
+    draft.assets.remove(&source.digest);
+    draft.assets.insert(digest.clone(), manifest);
+    draft
+        .assets
+        .insert(canonical::asset_digest(&external.raw), external.raw.clone());
+    source.digest = digest.clone();
+    let source_id = source.id;
+    let fields = source.fields.clone();
+    let archive = draft
+        .document
+        .archives
+        .last_mut()
+        .filter(|archive| archive.source_id == source_id)
+        .ok_or("GENERATION_ARCHIVE_MISSING")?;
+    archive.digest = digest;
+    archive.original_fields = fields;
+    archive.asset_digests = draft.assets.keys().cloned().collect();
+    let mut issue = validation::Issue::new(
+        "GENERATION_ENGINE_EXTERNAL",
+        validation::Severity::Warning,
+        None,
+        format!(
+            "Generated by {}, an external provider; it is not a certified local engine. Review every generated fact.",
+            external.describe()
+        ),
+    );
+    issue.stage = "generation".into();
+    issue.source_refs = vec![source_id.to_string()];
+    draft.document.issues.push(issue);
+    Ok(draft)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn merge_checked_output(
     doc: &LearningDocument,
     settings: &Effective,
@@ -616,6 +748,7 @@ fn merge_checked_output(
     bytes: &[u8],
     model: &ModelIdentity,
     completion: Option<&crate::ollama::Completion>,
+    local: bool,
 ) -> Result<GeneratedDraft, String> {
     let expected = build_request(doc, settings)?;
     if canonical::bytes(&expected).map_err(|e| e.to_string())?
@@ -623,7 +756,8 @@ fn merge_checked_output(
     {
         return Err("GENERATION_REQUEST_CONFLICT".into());
     }
-    if settings.values.get("llm.model").and_then(Value::as_str) != Some(model.name.as_str())
+    if local
+        && settings.values.get("llm.model").and_then(Value::as_str) != Some(model.name.as_str())
         || model.digest.len() != 71
         || !model.digest.starts_with("sha256:")
         || !model.digest[7..]

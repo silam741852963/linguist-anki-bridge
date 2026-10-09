@@ -509,6 +509,108 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "llm.agents.claude_code.executable": {
+          "default": "claude",
+          "description": "Claude Code executable (name looked up on PATH, or an absolute path); run as `claude -p` with no tools and a JSON schema.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.claude_code.model": {
+          "default": null,
+          "description": "Model for Claude Code (--model); null uses its default.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.codex.executable": {
+          "default": "codex",
+          "description": "Codex CLI executable; run as `codex exec` in a read-only sandbox with an output schema.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.codex.model": {
+          "default": null,
+          "description": "Model for Codex (-m); null uses its default.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.timeout_seconds": {
+          "default": 600,
+          "description": "Deadline for one agent or API generation.",
+          "maximum": 3600,
+          "minimum": 30,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.api.api_key_env": {
+          "default": null,
+          "description": "Environment variable holding the API key (sent as a Bearer token).",
+          "maxLength": 1048576,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "env_name",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.api.endpoint": {
+          "default": null,
+          "description": "OpenAI-compatible base URL (for example https://api.openai.com/v1 or https://openrouter.ai/api/v1); /chat/completions is appended.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.api.model": {
+          "default": null,
+          "description": "Model name for the OpenAI-compatible API.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "llm.api_key_env": {
           "default": null,
           "description": "Credential environment reference.",
@@ -549,6 +651,29 @@
           "type": "string",
           "x-consumer": "Ollama adapter",
           "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.fallback": {
+          "default": [
+            "claude_code",
+            "codex"
+          ],
+          "description": "Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
+          "items": {
+            "enum": [
+              "ollama",
+              "claude_code",
+              "codex",
+              "openai_compatible"
+            ],
+            "maxLength": 1048576,
+            "type": "string"
+          },
+          "maxItems": 4096,
+          "type": "array",
+          "uniqueItems": true,
+          "x-consumer": "generation",
           "x-scope": "purpose",
           "x-sensitive": false
         },
@@ -616,6 +741,21 @@
           "type": "string",
           "x-consumer": "generation",
           "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.provider": {
+          "default": "ollama",
+          "description": "Generation provider tried first: local Ollama, a command-line agent (Claude Code `claude -p`, Codex `codex exec`) or an OpenAI-compatible chat API (llm.api.*). Drafts from anything but a certified Ollama engine carry GENERATION_ENGINE_EXTERNAL.",
+          "enum": [
+            "ollama",
+            "claude_code",
+            "codex",
+            "openai_compatible"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "generation",
           "x-scope": "purpose",
           "x-sensitive": false
         },
@@ -1677,6 +1817,108 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "llm.agents.claude_code.executable": {
+          "default": "claude",
+          "description": "Claude Code executable (name looked up on PATH, or an absolute path); run as `claude -p` with no tools and a JSON schema.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.claude_code.model": {
+          "default": null,
+          "description": "Model for Claude Code (--model); null uses its default.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.codex.executable": {
+          "default": "codex",
+          "description": "Codex CLI executable; run as `codex exec` in a read-only sandbox with an output schema.",
+          "maxLength": 1048576,
+          "pattern": "^[^\\s$`;&|]+$",
+          "type": "string",
+          "x-consumer": "generation",
+          "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.codex.model": {
+          "default": null,
+          "description": "Model for Codex (-m); null uses its default.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.timeout_seconds": {
+          "default": 600,
+          "description": "Deadline for one agent or API generation.",
+          "maximum": 3600,
+          "minimum": 30,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.api.api_key_env": {
+          "default": null,
+          "description": "Environment variable holding the API key (sent as a Bearer token).",
+          "maxLength": 1048576,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "env_name",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.api.endpoint": {
+          "default": null,
+          "description": "OpenAI-compatible base URL (for example https://api.openai.com/v1 or https://openrouter.ai/api/v1); /chat/completions is appended.",
+          "maxLength": 1048576,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.api.model": {
+          "default": null,
+          "description": "Model name for the OpenAI-compatible API.",
+          "maxLength": 1048576,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-consumer": "generation",
+          "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "llm.api_key_env": {
           "default": null,
           "description": "Credential environment reference.",
@@ -1717,6 +1959,29 @@
           "type": "string",
           "x-consumer": "Ollama adapter",
           "x-runtime-format": "url",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.fallback": {
+          "default": [
+            "claude_code",
+            "codex"
+          ],
+          "description": "Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
+          "items": {
+            "enum": [
+              "ollama",
+              "claude_code",
+              "codex",
+              "openai_compatible"
+            ],
+            "maxLength": 1048576,
+            "type": "string"
+          },
+          "maxItems": 4096,
+          "type": "array",
+          "uniqueItems": true,
+          "x-consumer": "generation",
           "x-scope": "purpose",
           "x-sensitive": false
         },
@@ -1784,6 +2049,21 @@
           "type": "string",
           "x-consumer": "generation",
           "x-runtime-format": "resource_ref",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.provider": {
+          "default": "ollama",
+          "description": "Generation provider tried first: local Ollama, a command-line agent (Claude Code `claude -p`, Codex `codex exec`) or an OpenAI-compatible chat API (llm.api.*). Drafts from anything but a certified Ollama engine carry GENERATION_ENGINE_EXTERNAL.",
+          "enum": [
+            "ollama",
+            "claude_code",
+            "codex",
+            "openai_compatible"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "generation",
           "x-scope": "purpose",
           "x-sensitive": false
         },
@@ -3005,6 +3285,108 @@
       "x-scope": "purpose",
       "x-sensitive": false
     },
+    "llm.agents.claude_code.executable": {
+      "default": "claude",
+      "description": "Claude Code executable (name looked up on PATH, or an absolute path); run as `claude -p` with no tools and a JSON schema.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\s$`;&|]+$",
+      "type": "string",
+      "x-consumer": "generation",
+      "x-runtime-format": "executable",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.agents.claude_code.model": {
+      "default": null,
+      "description": "Model for Claude Code (--model); null uses its default.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "generation",
+      "x-runtime-format": "nonempty",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.agents.codex.executable": {
+      "default": "codex",
+      "description": "Codex CLI executable; run as `codex exec` in a read-only sandbox with an output schema.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\s$`;&|]+$",
+      "type": "string",
+      "x-consumer": "generation",
+      "x-runtime-format": "executable",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.agents.codex.model": {
+      "default": null,
+      "description": "Model for Codex (-m); null uses its default.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "generation",
+      "x-runtime-format": "nonempty",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.agents.timeout_seconds": {
+      "default": 600,
+      "description": "Deadline for one agent or API generation.",
+      "maximum": 3600,
+      "minimum": 30,
+      "type": "integer",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.api.api_key_env": {
+      "default": null,
+      "description": "Environment variable holding the API key (sent as a Bearer token).",
+      "maxLength": 1048576,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "generation",
+      "x-runtime-format": "env_name",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.api.endpoint": {
+      "default": null,
+      "description": "OpenAI-compatible base URL (for example https://api.openai.com/v1 or https://openrouter.ai/api/v1); /chat/completions is appended.",
+      "maxLength": 1048576,
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "generation",
+      "x-runtime-format": "url",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.api.model": {
+      "default": null,
+      "description": "Model name for the OpenAI-compatible API.",
+      "maxLength": 1048576,
+      "pattern": "\\S",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "generation",
+      "x-runtime-format": "nonempty",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
     "llm.api_key_env": {
       "default": null,
       "description": "Credential environment reference.",
@@ -3045,6 +3427,29 @@
       "type": "string",
       "x-consumer": "Ollama adapter",
       "x-runtime-format": "url",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.fallback": {
+      "default": [
+        "claude_code",
+        "codex"
+      ],
+      "description": "Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
+      "items": {
+        "enum": [
+          "ollama",
+          "claude_code",
+          "codex",
+          "openai_compatible"
+        ],
+        "maxLength": 1048576,
+        "type": "string"
+      },
+      "maxItems": 4096,
+      "type": "array",
+      "uniqueItems": true,
+      "x-consumer": "generation",
       "x-scope": "purpose",
       "x-sensitive": false
     },
@@ -3112,6 +3517,21 @@
       "type": "string",
       "x-consumer": "generation",
       "x-runtime-format": "resource_ref",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.provider": {
+      "default": "ollama",
+      "description": "Generation provider tried first: local Ollama, a command-line agent (Claude Code `claude -p`, Codex `codex exec`) or an OpenAI-compatible chat API (llm.api.*). Drafts from anything but a certified Ollama engine carry GENERATION_ENGINE_EXTERNAL.",
+      "enum": [
+        "ollama",
+        "claude_code",
+        "codex",
+        "openai_compatible"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "generation",
       "x-scope": "purpose",
       "x-sensitive": false
     },

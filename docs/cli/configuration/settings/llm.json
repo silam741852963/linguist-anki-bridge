@@ -184,6 +184,141 @@
       "consumer": "generation",
       "description": "Enable requested generated annotations; false uses source/dictionary/authored material only.",
       "sensitive": false
+    },
+    {
+      "key": "llm.provider",
+      "type": "enum",
+      "default": "ollama",
+      "constraints": {
+        "values": [
+          "ollama",
+          "claude_code",
+          "codex",
+          "openai_compatible"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Generation provider tried first: local Ollama, a command-line agent (Claude Code `claude -p`, Codex `codex exec`) or an OpenAI-compatible chat API (llm.api.*). Drafts from anything but a certified Ollama engine carry GENERATION_ENGINE_EXTERNAL.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.fallback",
+      "type": "string[]",
+      "default": [
+        "claude_code",
+        "codex"
+      ],
+      "constraints": {
+        "unique": true,
+        "items_values": [
+          "ollama",
+          "claude_code",
+          "codex",
+          "openai_compatible"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.agents.timeout_seconds",
+      "type": "integer",
+      "default": 600,
+      "constraints": {
+        "min": 30,
+        "max": 3600
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Deadline for one agent or API generation.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.agents.claude_code.executable",
+      "type": "string",
+      "default": "claude",
+      "constraints": {
+        "format": "executable"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Claude Code executable (name looked up on PATH, or an absolute path); run as `claude -p` with no tools and a JSON schema.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.agents.claude_code.model",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Model for Claude Code (--model); null uses its default.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.agents.codex.executable",
+      "type": "string",
+      "default": "codex",
+      "constraints": {
+        "format": "executable"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Codex CLI executable; run as `codex exec` in a read-only sandbox with an output schema.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.agents.codex.model",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Model for Codex (-m); null uses its default.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.api.endpoint",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "url"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "OpenAI-compatible base URL (for example https://api.openai.com/v1 or https://openrouter.ai/api/v1); /chat/completions is appended.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.api.model",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "nonempty"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Model name for the OpenAI-compatible API.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.api.api_key_env",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "env_name"
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Environment variable holding the API key (sent as a Bearer token).",
+      "sensitive": false
     }
   ]
 }

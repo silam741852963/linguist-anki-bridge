@@ -189,6 +189,11 @@ impl Registry {
             {
                 return Err(fail());
             }
+            if let Some(allowed) = e.constraints.get("items_values").and_then(Value::as_array)
+                && items.iter().any(|item| !allowed.contains(item))
+            {
+                return Err(fail());
+            }
             for item in items {
                 check_format(
                     e.constraints

@@ -78,6 +78,9 @@ fn value_schema(entry: &Entry, registry: &Registry) -> Value {
             {
                 format_schema(format, &mut item);
             }
+            if let Some(values) = entry.constraints.get("items_values") {
+                item.insert("enum".into(), values.clone());
+            }
             schema.insert("type".into(), json!("array"));
             schema.insert("items".into(), Value::Object(item));
             schema.insert("maxItems".into(), json!(4096));
