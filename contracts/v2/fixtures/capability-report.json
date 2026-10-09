@@ -3,7 +3,7 @@
   "protocol": "lab-native-v1",
   "anki_version": "fixture",
   "anki_connect_source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "companion_version": "0.3.1",
+  "companion_version": "0.3.2",
   "resource_versions": {},
   "actions": [
     {

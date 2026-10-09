@@ -191,7 +191,7 @@ pub fn validate_create_note_intent(
     let required: &[&str] = if vocabulary {
         &["Expression", "Meaning"]
     } else {
-        &["Pattern", "Meaning", "Formation", "Examples", "UseKey"]
+        &["Pattern", "Meaning", "Formation", "Example"]
     };
     if required
         .iter()
@@ -408,6 +408,11 @@ pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[
     ),
     (
         "0.3.1",
+        "25.09.2",
+        "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
+    ),
+    (
+        "0.3.2",
         "25.09.2",
         "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
     ),

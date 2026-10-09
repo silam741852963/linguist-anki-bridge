@@ -155,7 +155,15 @@ fn images_requested(settings: &Effective, document: &LearningDocument) -> bool {
         && !document.issues.iter().any(|i| i.code == "IMAGE_CANDIDATE_REVIEW")
 }
 fn audio_requested(settings: &Effective, document: &LearningDocument) -> bool {
-    matches!(document.content, LearningContent::Vocabulary(_))
+    // Grammar speaks its first example, the Recognition cue (WP-22).
+    let speakable = match &document.content {
+        LearningContent::Vocabulary(_) => true,
+        LearningContent::Grammar(g) => g
+            .examples
+            .first()
+            .is_some_and(|e| !e.sentence.trim().is_empty()),
+    };
+    speakable
         && matches!(
             settings.values["audio.provider"].as_str(),
             Some("piper" | "dictionary" | "voicevox")
@@ -241,15 +249,19 @@ pub fn enrich_document(
     if images_requested(settings, &document) {
         stage_images(&mut document, settings, environment, providers, &mut assets)?;
     }
+    let grammar = matches!(document.content, LearningContent::Grammar(_));
     if audio_requested(settings, &document) && settings.values["audio.provider"] == "dictionary" {
-        stage_recording(
-            &mut document,
-            settings,
-            environment,
-            providers.recordings,
-            providers.dictionary_media,
-            &mut assets,
-        )?;
+        // Dictionaries have no recordings of grammar examples.
+        if !grammar {
+            stage_recording(
+                &mut document,
+                settings,
+                environment,
+                providers.recordings,
+                providers.dictionary_media,
+                &mut assets,
+            )?;
+        }
         // No recording found: synthesize one (`audio.synthesis_fallback`).
         let fallback = settings
             .values
@@ -776,18 +788,23 @@ fn stage_audio(
     engine: &str,
     assets: &mut Vec<Vec<u8>>,
 ) -> Result<(), String> {
-    let LearningContent::Vocabulary(vocab) = &document.content else {
-        return Ok(());
-    };
     let japanese = document.target_language.as_str().split('-').next() == Some("ja");
-    // Speak the kana when known: Piper may misread kanji.
-    let spoken: String = vocab.pronunciation.split_whitespace().collect();
-    let text = if japanese && !vocab.reading.trim().is_empty() {
-        vocab.reading.clone()
-    } else if japanese && !spoken.is_empty() {
-        spoken
-    } else {
-        vocab.expression.clone()
+    let text = match &document.content {
+        LearningContent::Vocabulary(vocab) => {
+            // Speak the kana when known: Piper may misread kanji.
+            let spoken: String = vocab.pronunciation.split_whitespace().collect();
+            if japanese && !vocab.reading.trim().is_empty() {
+                vocab.reading.clone()
+            } else if japanese && !spoken.is_empty() {
+                spoken
+            } else {
+                vocab.expression.clone()
+            }
+        }
+        LearningContent::Grammar(g) => match g.examples.first() {
+            Some(example) => example.sentence.trim().to_owned(),
+            None => return Ok(()),
+        },
     };
     let target = document.target_language.clone();
     let result = match port {

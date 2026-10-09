@@ -263,14 +263,8 @@ fn fixtures_render_fixed_models_and_roundtrip() {
         let doc = LearningDocument::from_json(bytes).unwrap();
         assert!(validation::ready(&doc), "{:?}", validation::validate(&doc));
         let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
-        assert_eq!(
-            rendered.fields.len(),
-            if matches!(doc.content, LearningContent::Vocabulary(_)) {
-                9
-            } else {
-                15
-            }
-        );
+        // Vocabulary v3 and grammar v3 both have nine fields.
+        assert_eq!(rendered.fields.len(), 9);
         assert_eq!(
             doc,
             LearningDocument::from_json(&canonical::bytes(&doc).unwrap()).unwrap()
@@ -1160,4 +1154,82 @@ fn only_an_exact_dictionary_entry_asks_for_a_sense() {
         v.dictionary = vec![entry(&[], &["ビタミン"])];
     }
     assert!(asks(&doc));
+}
+
+fn grammar(pattern: &str) -> Grammar {
+    Grammar {
+        pattern: pattern.into(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn grammar_forms_drop_slots_and_expand_optional_parts() {
+    assert_eq!(
+        render::grammar_forms(&grammar("〜に加え（て）")),
+        ["に加えて", "に加え"]
+    );
+    assert_eq!(render::grammar_forms(&grammar("N + だらけ")), ["だらけ"]);
+    // A leading な that is part of the pattern is kept; Aな/Aい markers are not.
+    assert_eq!(
+        render::grammar_forms(&grammar("〜ないでください")),
+        ["ないでください"]
+    );
+    assert_eq!(
+        render::grammar_forms(&grammar("Aい／Aな／Vる＋ほど")),
+        ["ほど"]
+    );
+    assert_eq!(
+        render::grammar_forms(&grammar("V-て + もいい")),
+        ["てもいい"]
+    );
+    // Reviewed forms win over derived ones.
+    let mut reviewed = grammar("〜ために");
+    reviewed.forms = vec!["ために".into(), "ための".into()];
+    assert_eq!(render::grammar_forms(&reviewed), ["ために", "ための"]);
+}
+
+#[test]
+fn grammar_v3_renders_fields_cue_example_and_tags() {
+    let mut doc = LearningDocument::from_json(include_bytes!(
+        "../../../contracts/v2/fixtures/grammar.json"
+    ))
+    .unwrap();
+    let LearningContent::Grammar(g) = &mut doc.content else {
+        panic!()
+    };
+    g.pattern = "〜ても".into();
+    g.source_meaning = "Dù ~ cũng".into();
+    g.jlpt = "n4".into();
+    g.lesson = "Minna 25".into();
+    g.nuance = vec![Contrast {
+        expression: "〜のに".into(),
+        difference: "Adds surprise or regret.".into(),
+    }];
+    let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
+    assert_eq!(rendered.model.name, "Linguist Grammar v3");
+    assert_eq!(
+        rendered.fields["Example"],
+        "雨が降っ<b class=\"lab-hl\">ても</b>行きます。"
+    );
+    assert!(rendered.fields["Meaning"].contains("lab-source-meaning\">Dù ~ cũng"));
+    assert!(rendered.fields["UsageExamples"].contains("<dt>〜のに</dt>"));
+    for gone in [
+        "UseKey",
+        "RecognitionPrompt",
+        "Language",
+        "Source",
+        "PersonalNotes",
+    ] {
+        assert!(!rendered.fields.contains_key(gone), "{gone}");
+    }
+    let tags = render::tags(&doc);
+    for tag in [
+        "lab::jlpt::n4",
+        "lab::lesson::minna-25",
+        "lab::kind::grammar",
+        "lab::explain::vi",
+    ] {
+        assert!(tags.contains(&tag.to_string()), "{tags:?}");
+    }
 }

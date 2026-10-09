@@ -578,7 +578,7 @@ fn grammar_add_apply_study_restore_keeps_history() {
     ]);
     let (note_id, snapshot) = applied(&outcome);
     let note = s.desktop.note(note_id);
-    assert_eq!(note["model_name"], "Linguist Grammar v2");
+    assert_eq!(note["model_name"], "Linguist Grammar v3");
     assert!(
         note["fields"]["Meaning"]
             .as_str()
@@ -902,6 +902,7 @@ fn grammar_revamp_multi_unit_split_apply_study_rollback() {
         &rev,
         "--split-group",
         &group,
+        "--accept-schema-change",
         "--apply",
     ]);
     let split = &outcome["split"];
@@ -946,6 +947,7 @@ fn grammar_revamp_multi_unit_split_apply_study_rollback() {
         "jobs",
         "rollback",
         &execution,
+        "--accept-schema-change",
         "--delete-unstudied-created",
         "--apply",
     ]);
@@ -1380,8 +1382,15 @@ struct SplitReady {
 fn split_ready(name: &str) -> SplitReady {
     let mut s = Scenario::new(name, "japanese_grammar", Some("Japanese::Grammar"), true);
     s.install_model("japanese_grammar");
+    // A grammar note on the user's own (legacy) note type.
+    s.desktop.call(
+        "createModel",
+        json!({"modelName": "Grammar Source", "inOrderFields": ["Pattern", "Meaning", "Formation", "Language"],
+               "css": ".card {}", "cardTemplates": [{"Name": "Card 1", "Front": "{{Pattern}}",
+               "Back": "{{Meaning}}<br>{{Formation}}"}]}),
+    );
     let note_id = s.desktop.add_note(
-        "Linguist Grammar v2",
+        "Grammar Source",
         "Japanese::Grammar",
         json!({"Pattern": "〜ても / 〜てもいい", "Meaning": "dù / được phép",
                "Formation": "V-て + も", "Language": "ja"}),
@@ -1395,7 +1404,7 @@ fn split_ready(name: &str) -> SplitReady {
         json!({"pattern": "Pattern", "meaning": "Meaning", "formation": "Formation", "language": "Language"})
     ));
     s.settings
-        .push("purposes.japanese_grammar.source_model=Linguist Grammar v2".into());
+        .push("purposes.japanese_grammar.source_model=Grammar Source".into());
     let (code, drafted, stderr) = s.cli(&["grammar", "revamp", "--note-id", &note_id.to_string()]);
     assert_eq!(code, 4, "{stderr} {drafted}");
     let root = if drafted["plan_id"].is_string() {
@@ -1468,6 +1477,7 @@ fn grammar_split_crash_resume() {
         &rev,
         "--split-group",
         &group,
+        "--accept-schema-change",
         "--apply",
     ]);
     assert_ne!(code, 0, "{stderr} {partial}");
@@ -1488,6 +1498,7 @@ fn grammar_split_crash_resume() {
         &rev,
         "--split-group",
         &group,
+        "--accept-schema-change",
         "--apply",
     ]);
     s.log.push(format!(
@@ -1515,6 +1526,7 @@ fn grammar_split_crash_resume() {
         &rev,
         "--split-group",
         &group,
+        "--accept-schema-change",
         "--apply",
     ]);
     assert_eq!(finished["split"]["state"], "complete", "{finished}");

@@ -54,7 +54,7 @@ def main():
     assert [model["name"] for model in manifests] == [
         "Linguist Vocabulary v3",
         "Linguist English Vocabulary v1",
-        "Linguist Grammar v2",
+        "Linguist Grammar v3",
     ]
     with tempfile.TemporaryDirectory(prefix="lab-template-cards-") as directory:
         col = Collection(str(Path(directory) / "disposable.anki2"))
@@ -81,21 +81,28 @@ def main():
             assert "supernova" not in english_cards[1].question()
             assert "supernova" not in english_cards[2].question() and "/ˌsupɚˈnoʊvə/" in english_cards[2].question()
 
+            # Grammar v3: Recognition shows the pattern and one example; the
+            # meaning is never on a front; Application needs prompt and answer.
             gbase = {
                 "Pattern": "〜ても",
                 "Meaning": "even if",
-                "RecognitionPrompt": "What use does this pattern express?",
-                "Language": "ja",
+                "Formation": "V-て + も",
+                "Example": '雨が降っ<b class="lab-hl">ても</b>行きます。',
             }
-            check(col, grammar, deck_id, gbase, [0])
+            recognition = check(col, grammar, deck_id, gbase, [0])
+            question = recognition[0].question()
+            assert "〜ても" in question and "雨が降っ" in question and "even if" not in question
+            assert "even if" in recognition[0].answer()
             application = {
                 **gbase,
                 "EnableApplication": "1",
-                "ExercisePrompt": "Complete this concession",
-                "ExerciseAnswer": "〜ても",
+                "ExercisePrompt": "雨が降っ＿＿行きます。",
+                "ExerciseAnswer": "ても",
             }
             application_cards = check(col, grammar, deck_id, application, [0, 1])
-            assert "Complete this concession" in application_cards[1].question()
+            question = application_cards[1].question()
+            assert "雨が降っ＿＿行きます。" in question and "even if" not in question
+            assert "ても" in application_cards[1].answer()
             check(col, grammar, deck_id, {**gbase, "EnableApplication": "1"}, [0])
             check(col, grammar, deck_id, {**gbase, "EnableApplication": "1", "ExercisePrompt": "Cue"}, [0])
             check(col, grammar, deck_id, {**gbase, "ExercisePrompt": "Cue", "ExerciseAnswer": "Answer"}, [0])

@@ -248,7 +248,7 @@ pub struct KanjiDetail {
     #[serde(default)]
     pub stroke_digest: Option<String>,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Grammar {
     pub pattern: String,
@@ -263,6 +263,23 @@ pub struct Grammar {
     pub exercise_prompt: String,
     #[serde(default)]
     pub exercise_answer: String,
+    /// v3: the source's own meaning line, verbatim in the source's language
+    /// (e.g. the Vietnamese gloss of a Minna no Nihongo page), shown under
+    /// the meaning written in the explanation language.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source_meaning: String,
+    /// v3: contrasts with similar patterns (a source's "[Chú ý]" notes).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nuance: Vec<Contrast>,
+    /// v3: the forms the pattern takes in sentences (e.g. "に加えて", "に加え"),
+    /// used to highlight it; empty uses forms derived from the pattern.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forms: Vec<String>,
+    /// v3: JLPT level ("n2") and lesson ("minna-42"), rendered as tags.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub jlpt: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lesson: String,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(

@@ -355,14 +355,7 @@ pub fn split_template(
                 .find(|region| region.id == *id)
                 .map(|region| Grammar {
                     pattern: region.text.trim().to_owned(),
-                    use_key: String::new(),
-                    meaning: String::new(),
-                    formation: String::new(),
-                    recognition_prompt: String::new(),
-                    examples: vec![],
-                    usage: String::new(),
-                    exercise_prompt: String::new(),
-                    exercise_answer: String::new(),
+                    ..Default::default()
                 })
                 .ok_or("GRAMMAR_SEGMENTATION_REGION_MISSING")
         })

@@ -185,6 +185,11 @@ fn template(name: &str, ordinal: u16, front: &str, back: &str) -> Template {
     }
 }
 const VOCABULARY_STYLE: &str = include_str!("../../../resources/templates/vocabulary-v3.css");
+/// Grammar v3 shares the vocabulary v3 visual system plus a few pattern rules.
+const GRAMMAR_STYLE: &str = concat!(
+    include_str!("../../../resources/templates/vocabulary-v3.css"),
+    include_str!("../../../resources/templates/grammar-v3.css")
+);
 /// WP-19 vocabulary model: fields only, no text cues and no provenance fields.
 /// Language and explanation language are note tags (`lab::lang::*`).
 pub fn vocabulary() -> ManagedModel {
@@ -279,7 +284,45 @@ pub fn managed() -> Vec<ManagedModel> {
 pub fn by_name(name: &str) -> Option<ManagedModel> {
     managed().into_iter().find(|model| model.name == name)
 }
+/// WP-22 grammar model: fields only, by analogy with vocabulary v3.
+/// Languages, JLPT level and lesson travel as tags; the Recognition front
+/// shows the pattern and one example with the pattern highlighted.
 pub fn grammar() -> ManagedModel {
+    ManagedModel {
+        name: "Linguist Grammar v3".into(),
+        version: 3,
+        fields: [
+            "Pattern",
+            "Meaning",
+            "Formation",
+            "Example",
+            "UsageExamples",
+            "ExercisePrompt",
+            "ExerciseAnswer",
+            "Audio",
+            "EnableApplication",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+        templates: vec![
+            template(
+                "Recognition",
+                0,
+                include_str!("../../../resources/templates/grammar-v3-recognition-front.html"),
+                include_str!("../../../resources/templates/grammar-v3-back.html"),
+            ),
+            template(
+                "Application",
+                1,
+                include_str!("../../../resources/templates/grammar-v3-application-front.html"),
+                include_str!("../../../resources/templates/grammar-v3-application-back.html"),
+            ),
+        ],
+        css: GRAMMAR_STYLE.into(),
+    }
+}
+/// The WP-17 grammar model, kept so its notes can be read as revamp sources.
+pub fn grammar_v2() -> ManagedModel {
     ManagedModel {
         name: "Linguist Grammar v2".into(),
         version: 2,

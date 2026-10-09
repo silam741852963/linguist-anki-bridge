@@ -256,7 +256,7 @@ llm.keep_alive = "5m"
 llm.prompts.vocabulary = "builtin:vocabulary-v3"
 
 # Versioned builtin or pinned file path; trusted user instruction resource.
-llm.prompts.grammar = "builtin:grammar-v2"
+llm.prompts.grammar = "builtin:grammar-v3"
 
 # Versioned builtin or pinned file path; trusted user instruction resource.
 llm.prompts.kanji = "builtin:kanji-v2"

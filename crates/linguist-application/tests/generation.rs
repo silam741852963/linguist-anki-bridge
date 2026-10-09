@@ -26,7 +26,7 @@ fn frozen_generation_settings_bind_the_exact_builtin_prompt_bytes() {
     let frozen = linguist_application::freeze_settings(&config, &environment).unwrap();
     for (reference, prompt) in [
         ("builtin:vocabulary-v3", VOCABULARY_PROMPT_V3),
-        ("builtin:grammar-v2", GRAMMAR_PROMPT_V2),
+        ("builtin:grammar-v3", GRAMMAR_PROMPT_V3),
     ] {
         assert_eq!(
             frozen.resource_hashes[reference],
@@ -43,7 +43,7 @@ fn frozen_generation_settings_bind_the_exact_builtin_prompt_bytes() {
     .unwrap();
     assert_eq!(
         build_request(&grammar, &config).unwrap().prompt_digest,
-        frozen.resource_hashes["builtin:grammar-v2"]
+        frozen.resource_hashes["builtin:grammar-v3"]
     );
 }
 #[test]
@@ -462,7 +462,7 @@ fn grammar_merge_marks_new_formation_as_generated_and_keeps_authored_meaning() {
     let original = doc.clone();
     let config = settings();
     let request = build_request(&doc, &config).unwrap();
-    let raw = br#"{"kind":"grammar","body":{"meaning":"","formation":"A proposed formation requiring review.","usage":"","examples":[],"recognition_prompt":"","exercise_prompt":"","exercise_answer":""}}"#;
+    let raw = br#"{"kind":"grammar","body":{"meaning":"","formation":"A proposed formation requiring review.","usage":"","nuance":[],"forms":[],"examples":[],"exercise_prompt":"","exercise_answer":"","jlpt":""}}"#;
     let draft = merge_output(&doc, &config, &request, raw, &identity(&config)).unwrap();
     assert_eq!(doc, original);
     if let (LearningContent::Grammar(before), LearningContent::Grammar(after)) =

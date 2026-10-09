@@ -201,6 +201,7 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                 )
             }
             if tasks.contains(&Task::Recognition)
+                && !g.recognition_prompt.trim().is_empty()
                 && answer_leaks(&g.recognition_prompt, &g.meaning, &doc.explanation_language)
             {
                 add(
@@ -234,7 +235,6 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                     ("meaning", &g.meaning),
                     ("formation", &g.formation),
                     ("use_key", &g.use_key),
-                    ("recognition_prompt", &g.recognition_prompt),
                 ],
                 g.pattern.as_str(),
                 &[Task::Recognition, Task::Application],

@@ -1,0 +1,6 @@
+.lab-pattern { font-size: 2.1em; }
+.lab-cue { font-size: 1.3em; margin: .5em 0; line-height: 1.6; }
+.lab-exercise { font-size: 1.25em; line-height: 1.6; }
+.lab-exercise-answer { font-size: 1.15em; font-weight: 600; margin: .4em 0 .8em; }
+.lab-source-meaning { color: var(--lab-muted); font-size: .92em; margin-top: .2em; }
+.lab-formation p { font-size: 1.05em; }

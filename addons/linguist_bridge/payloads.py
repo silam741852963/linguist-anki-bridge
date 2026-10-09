@@ -26,11 +26,17 @@ VOCAB_V3_FIELDS = frozenset({
     "Audio", "Kanji", "EnableProduction", "EnableSpelling",
 })
 ENGLISH_VOCAB_FIELDS = VOCAB_V3_FIELDS - {"Kanji"}
+# WP-22 grammar model: by analogy with vocabulary v3.
+GRAMMAR_V3_FIELDS = frozenset({
+    "Pattern", "Meaning", "Formation", "Example", "UsageExamples",
+    "ExercisePrompt", "ExerciseAnswer", "Audio", "EnableApplication",
+})
 FIELDS = {
     "Linguist Vocabulary v2": VOCAB_FIELDS,
     "Linguist Vocabulary v3": VOCAB_V3_FIELDS,
     "Linguist English Vocabulary v1": ENGLISH_VOCAB_FIELDS,
     "Linguist Grammar v2": GRAMMAR_FIELDS,
+    "Linguist Grammar v3": GRAMMAR_V3_FIELDS,
 }
 VOCAB_MODELS = frozenset({"Linguist Vocabulary v2", "Linguist Vocabulary v3",
                           "Linguist English Vocabulary v1"})
@@ -213,7 +219,9 @@ def _create_note(body, operation_id, approved_digest):
             or fields.get("Language", "ja") not in {"ja", "en"}
             or (model == "Linguist Grammar v2" and
                 (not fields["UseKey"].strip() or not fields["Formation"].strip()
-                 or not fields["Examples"].strip()))):
+                 or not fields["Examples"].strip()))
+            or (model == "Linguist Grammar v3" and
+                (not fields["Formation"].strip() or not fields["Example"].strip()))):
         raise _invalid()
     switches = (("EnableProduction", "EnableSpelling") if model in VOCAB_MODELS
                 else ("EnableApplication",))

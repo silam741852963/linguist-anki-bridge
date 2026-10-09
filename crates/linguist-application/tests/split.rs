@@ -41,6 +41,7 @@ fn unit(pattern: &str, key: &str) -> Grammar {
         usage: String::new(),
         exercise_prompt: String::new(),
         exercise_answer: String::new(),
+        ..Default::default()
     }
 }
 

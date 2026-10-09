@@ -1163,8 +1163,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "Meaning": "vừa ... vừa ...",
-     "ExplanationLanguage": "vi"
+     "Meaning": "vừa ... vừa ..."
     }
    }
   },
@@ -1282,7 +1281,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "UseKey": "purpose"
+     "Meaning": "so that"
     }
    }
   },
@@ -1324,7 +1323,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "UseKey": "resemblance"
+     "Meaning": "like; as"
     }
    }
   },
@@ -1550,7 +1549,7 @@
    "categories": [
     "kana"
    ],
-   "rationale": "An empty recognition prompt is missing core content.",
+   "rationale": "An empty formation is missing core content.",
    "input": {
     "schema_version": 2,
     "kind": "grammar",
@@ -1559,8 +1558,8 @@
      "pattern": "〜けど",
      "use_key": "contrast",
      "meaning": "but; although",
-     "formation": "普通形 + けど",
-     "recognition_prompt": "",
+     "formation": "",
+     "recognition_prompt": "Which pattern fits this sentence?",
      "examples": [
       {
        "sentence": "高いけど、買います。",
@@ -1665,7 +1664,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "Examples": "行きたいけど"
+     "UsageExamples": "行きたい<b class=\"lab-hl\">けど</b>"
     }
    }
   },
@@ -1707,7 +1706,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "Usage": "Dựa trên căn cứ khách quan."
+     "UsageExamples": "Dựa trên căn cứ khách quan."
     }
    }
   },
@@ -1942,7 +1941,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "UseKey": "past-habit"
+     "Meaning": "repeated past action"
     }
    }
   },
@@ -1982,7 +1981,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "UseKey": "conditional"
+     "Meaning": "result of an unreal condition"
     }
    }
   },

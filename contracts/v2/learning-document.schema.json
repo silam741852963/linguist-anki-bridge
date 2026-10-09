@@ -498,13 +498,38 @@
         "formation": {
           "type": "string"
         },
+        "forms": {
+          "description": "v3: the forms the pattern takes in sentences (e.g. \"に加えて\", \"に加え\"),\nused to highlight it; empty uses forms derived from the pattern.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "jlpt": {
+          "description": "v3: JLPT level (\"n2\") and lesson (\"minna-42\"), rendered as tags.",
+          "type": "string"
+        },
+        "lesson": {
+          "type": "string"
+        },
         "meaning": {
           "type": "string"
+        },
+        "nuance": {
+          "description": "v3: contrasts with similar patterns (a source's \"[Chú ý]\" notes).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Contrast"
+          }
         },
         "pattern": {
           "type": "string"
         },
         "recognition_prompt": {
+          "type": "string"
+        },
+        "source_meaning": {
+          "description": "v3: the source's own meaning line, verbatim in the source's language\n(e.g. the Vietnamese gloss of a Minna no Nihongo page), shown under\nthe meaning written in the explanation language.",
           "type": "string"
         },
         "usage": {

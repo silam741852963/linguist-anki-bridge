@@ -49,9 +49,9 @@ pub fn rank(decision: &BatchDecision) -> u8 {
         ) => 1,
         Some(ReviewChoice::Cue { .. } | ReviewChoice::Exercise { .. }) => 2,
         Some(ReviewChoice::NativeHistory { .. }) => 3,
-        Some(ReviewChoice::SourceContentVerified { .. } | ReviewChoice::SourceFieldDropped { .. }) => {
-            4
-        }
+        Some(
+            ReviewChoice::SourceContentVerified { .. } | ReviewChoice::SourceFieldDropped { .. },
+        ) => 4,
         Some(ReviewChoice::Media(_)) => 5,
         Some(ReviewChoice::ContentVerified { .. } | ReviewChoice::ContentRejected { .. }) => 6,
         None => 7,
@@ -124,9 +124,8 @@ pub struct BatchOutcome {
 }
 
 /// Builds a native-history request for one document of the current revision.
-pub type HistoryRequest<'a> =
-    dyn FnMut(&PlanRevision, uuid::Uuid, &[(u16, Task)], &str) -> Result<ResolutionRequest, String>
-        + 'a;
+pub type HistoryRequest<'a> = dyn FnMut(&PlanRevision, uuid::Uuid, &[(u16, Task)], &str) -> Result<ResolutionRequest, String>
+    + 'a;
 
 /// True when `issue_id` is an open issue of the document in `plan`.
 fn open(plan: &PlanRevision, document_id: uuid::Uuid, issue_id: &str) -> Result<bool, String> {

@@ -141,7 +141,7 @@
     {
       "key": "llm.prompts.grammar",
       "type": "string",
-      "default": "builtin:grammar-v2",
+      "default": "builtin:grammar-v3",
       "constraints": {
         "format": "resource_ref"
       },

@@ -83,19 +83,6 @@ fn block(s: &str) -> String {
         format!("<p>{}</p>", escape(s))
     }
 }
-pub(crate) fn examples(values: &[Example]) -> String {
-    values
-        .iter()
-        .map(|e| {
-            format!(
-                "<p>{}<br>{}<br><span class=\"lab-label\">{:?}</span></p>",
-                escape(&e.sentence),
-                escape(&e.translation),
-                e.provenance
-            )
-        })
-        .collect()
-}
 fn url_filename(s: &str) -> String {
     s.bytes()
         .map(|b| {
@@ -346,6 +333,126 @@ fn kanji(v: &Vocabulary, media: &[crate::records::MediaAsset]) -> String {
     html.push_str("</div>");
     html
 }
+/// Grammar v3 Meaning: the meaning in the explanation language, then the
+/// source's own meaning line when one was captured.
+fn grammar_meaning(g: &crate::document::Grammar) -> String {
+    let mut html = format!(
+        "<div class=\"lab-gloss\">{}</div>",
+        escape(g.meaning.trim())
+    );
+    if !g.source_meaning.trim().is_empty() {
+        html.push_str(&format!(
+            "<div class=\"lab-source-meaning\">{}</div>",
+            escape(g.source_meaning.trim())
+        ));
+    }
+    html
+}
+/// The forms a grammar pattern takes in a sentence, longest first: reviewed
+/// `forms` when present, else derived from the pattern by dropping the 〜
+/// placeholder, word-class slots (N, V, Aい, ...) and `+`, splitting
+/// alternatives (／, /, ・) and expanding optional parts in parentheses.
+pub fn grammar_forms(g: &crate::document::Grammar) -> Vec<String> {
+    let mut forms: Vec<String> = g
+        .forms
+        .iter()
+        .map(|form| form.trim().to_owned())
+        .filter(|form| !form.is_empty())
+        .collect();
+    if forms.is_empty() {
+        let pattern = g
+            .pattern
+            .replace(['（', '〔'], "(")
+            .replace(['）', '〕'], ")");
+        for alternative in pattern.split(['／', '/', '・']) {
+            // Keep only the Japanese pattern text: drop slots (N, V, Aい, Aな,
+            // Vる: the class letter, a hyphen and its marker), placeholders
+            // and spacing. Other kana after a slot (V-て, V-た) belong to the
+            // pattern as it appears in sentences.
+            let mut core = String::new();
+            let mut after_slot = false;
+            for c in alternative.chars() {
+                if c.is_ascii_alphabetic() {
+                    after_slot = true;
+                    continue;
+                }
+                if after_slot && c == '-' {
+                    continue;
+                }
+                let slot_marker = after_slot && matches!(c, 'い' | 'な' | 'る');
+                after_slot = false;
+                if slot_marker
+                    || c.is_ascii_alphanumeric()
+                    || c.is_whitespace()
+                    || matches!(c, '〜' | '～' | '~' | '+' | '＋' | '…' | '.')
+                {
+                    continue;
+                }
+                core.push(c);
+            }
+            let expanded = match (core.find('('), core.find(')')) {
+                (Some(open), Some(close)) if open < close => vec![
+                    format!(
+                        "{}{}{}",
+                        &core[..open],
+                        &core[open + 1..close],
+                        &core[close + 1..]
+                    ),
+                    format!("{}{}", &core[..open], &core[close + 1..]),
+                ],
+                _ => vec![core.replace(['(', ')'], "")],
+            };
+            forms.extend(expanded.into_iter().filter(|form| form.chars().count() > 0));
+        }
+    }
+    forms.sort_by_key(|form| std::cmp::Reverse(form.chars().count()));
+    forms.dedup();
+    forms
+}
+/// Example text with every occurrence of the longest matching form highlighted.
+fn highlighted_forms(text: &str, forms: &[String]) -> String {
+    match forms.iter().find(|form| text.contains(form.as_str())) {
+        Some(form) => highlighted(text, form),
+        None => escape(text),
+    }
+}
+/// v3 grammar UsageExamples: usage, nuance against similar patterns and examples.
+fn grammar_usage_examples(g: &crate::document::Grammar, forms: &[String]) -> String {
+    let mut html = String::new();
+    if !g.usage.trim().is_empty() {
+        html.push_str(&format!("<h4>Usage</h4><p>{}</p>", escape(g.usage.trim())));
+    }
+    if !g.nuance.is_empty() {
+        html.push_str("<h4>Nuance</h4><dl class=\"lab-nuance\">");
+        for contrast in &g.nuance {
+            html.push_str(&format!(
+                "<div><dt>{}</dt><dd>{}</dd></div>",
+                escape(&contrast.expression),
+                escape(&contrast.difference)
+            ));
+        }
+        html.push_str("</dl>");
+    }
+    if !g.examples.is_empty() {
+        html.push_str("<h4>Examples</h4><ul class=\"lab-examples\">");
+        for example in &g.examples {
+            html.push_str(&format!(
+                "<li><div class=\"lab-target\">{}</div>{}</li>",
+                highlighted_forms(&example.sentence, forms),
+                if example.translation.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "<div class=\"lab-tr\">{}</div>",
+                        escape(&example.translation)
+                    )
+                }
+            ));
+        }
+        html.push_str("</ul>");
+    }
+    html
+}
 fn slug(value: &str) -> String {
     let mut out = String::new();
     for c in value.trim().to_lowercase().chars() {
@@ -402,7 +509,15 @@ pub fn tags(doc: &LearningDocument) -> Vec<String> {
                 tags.push("lab::has::kanji".into());
             }
         }
-        LearningContent::Grammar(_) => tags.push("lab::kind::grammar".into()),
+        LearningContent::Grammar(g) => {
+            tags.push("lab::kind::grammar".into());
+            for (prefix, value) in [("jlpt", &g.jlpt), ("lesson", &g.lesson)] {
+                let value = slug(value.trim_start_matches("jlpt-"));
+                if !value.is_empty() {
+                    tags.push(format!("lab::{prefix}::{value}"));
+                }
+            }
+        }
     }
     for task in &doc.requested_tasks {
         tags.push(format!("lab::task::{}", slug(&format!("{task:?}"))));
@@ -441,8 +556,8 @@ pub fn render(
         .iter()
         .map(|s| (s.clone(), String::new()))
         .collect();
-    // Grammar v2 still carries language and provenance fields; vocabulary v3
-    // carries them as tags (see `tags`).
+    // Only the v2 models carry language and provenance fields; v3 models
+    // carry them as tags (see `tags`).
     for (key, value) in [
         ("Language", doc.target_language.to_string()),
         ("ExplanationLanguage", doc.explanation_language.to_string()),
@@ -475,23 +590,20 @@ pub fn render(
             }
         }
         LearningContent::Grammar(g) => {
-            for (key, value) in [
-                ("Pattern", &g.pattern),
-                ("UseKey", &g.use_key),
-                ("RecognitionPrompt", &g.recognition_prompt),
-                ("ExercisePrompt", &g.exercise_prompt),
-                ("ExerciseAnswer", &g.exercise_answer),
-            ] {
-                fields.insert(key.into(), escape(value));
-            }
-            for (key, value) in [
-                ("Meaning", &g.meaning),
-                ("Formation", &g.formation),
-                ("Usage", &g.usage),
-            ] {
-                fields.insert(key.into(), block(value));
-            }
-            fields.insert("Examples".into(), examples(&g.examples));
+            let forms = grammar_forms(g);
+            fields.insert("Pattern".into(), escape(&g.pattern));
+            fields.insert("Meaning".into(), grammar_meaning(g));
+            fields.insert("Formation".into(), block(&g.formation));
+            fields.insert(
+                "Example".into(),
+                g.examples
+                    .first()
+                    .map(|e| highlighted_forms(&e.sentence, &forms))
+                    .unwrap_or_default(),
+            );
+            fields.insert("UsageExamples".into(), grammar_usage_examples(g, &forms));
+            fields.insert("ExercisePrompt".into(), escape(&g.exercise_prompt));
+            fields.insert("ExerciseAnswer".into(), escape(&g.exercise_answer));
             fields.insert(
                 "EnableApplication".into(),
                 if doc.requested_tasks.contains(&Task::Application) {

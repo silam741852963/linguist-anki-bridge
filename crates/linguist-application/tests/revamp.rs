@@ -2228,7 +2228,8 @@ fn prepare_job_items_match_the_plan_level_revamp_stages() {
         .insert("audio.provider".into(), json!("disabled"));
     let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-job-stages".into())]);
     // Plan-level path, as `vocab revamp` runs it.
-    let prepared = publish_capture_draft(&capture, &settings, "english_vocab", &environment).unwrap();
+    let prepared =
+        publish_capture_draft(&capture, &settings, "english_vocab", &environment).unwrap();
     let mut store = linguist_store::Store::open_existing(&root).unwrap();
     let base = store.revision(prepared.plan_id, 1).unwrap();
     let child =

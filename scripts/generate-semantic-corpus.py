@@ -201,7 +201,7 @@ add("GA-JA-02", W, L, ["vietnamese_explanation", "kana"], "Japanese grammar expl
     {"pattern": "〜ながら", "use_key": "simultaneous", "meaning": "vừa ... vừa ...",
      "formation": "V-ます語幹 + ながら", "recognition_prompt": RP,
      "examples": [ex("音楽を聞きながら勉強します。", "Tôi vừa nghe nhạc vừa học.")]},
-    ready(rendered_contains={"Meaning": "vừa ... vừa ...", "ExplanationLanguage": "vi"}))
+    ready(rendered_contains={"Meaning": "vừa ... vừa ..."}))
 add("GA-JA-03", W, L, ["kanji"], "Obligation pattern.",
     {"pattern": "〜なければならない", "use_key": "obligation", "meaning": "must; have to",
      "formation": "V-ない形(ない→なければ) + ならない", "recognition_prompt": RP,
@@ -216,12 +216,12 @@ add("GA-JA-05", W, L, ["homograph", "kana"], "ように (purpose) is one use of 
     {"pattern": "〜ように", "use_key": "purpose", "meaning": "so that",
      "formation": "V-辞書形/ない形 + ように", "recognition_prompt": RP,
      "examples": [ex("忘れないようにメモします。", "I take notes so that I won't forget.")]},
-    ready(rendered_contains={"UseKey": "purpose"}), explanation="en")
+    ready(rendered_contains={"Meaning": "so that"}), explanation="en")
 add("GA-JA-06", W, L, ["homograph", "kana"], "ように (resemblance) is a separate use key.",
     {"pattern": "〜ように", "use_key": "resemblance", "meaning": "like; as",
      "formation": "N + の + ように", "recognition_prompt": RP,
      "examples": [ex("雪のように白い。", "White like snow.")]},
-    ready(rendered_contains={"UseKey": "resemblance"}), explanation="en")
+    ready(rendered_contains={"Meaning": "like; as"}), explanation="en")
 add("GA-JA-07", W, L, ["task_leakage", "kanji"], "Application exercise whose answer is not in the prompt.",
     {"pattern": "〜ながら", "use_key": "simultaneous", "meaning": "while doing",
      "formation": "V-ます語幹 + ながら", "recognition_prompt": RP,
@@ -250,9 +250,9 @@ add("GA-JA-11", W, L, ["adversarial"], "Markup in the formation is escaped.",
      "formation": "<script>alert('x')</script>V-た + ら", "recognition_prompt": RP,
      "examples": [ex("雨が降ったら行きません。", "If it rains, I won't go.")]},
     ready(rendered_excludes={"Formation": "<script"}), explanation="en")
-add("GA-JA-12", W, L, ["kana"], "An empty recognition prompt is missing core content.",
-    {"pattern": "〜けど", "use_key": "contrast", "meaning": "but; although", "formation": "普通形 + けど",
-     "recognition_prompt": "", "examples": [ex("高いけど、買います。", "It's expensive, but I'll buy it.")]},
+add("GA-JA-12", W, L, ["kana"], "An empty formation is missing core content.",
+    {"pattern": "〜けど", "use_key": "contrast", "meaning": "but; although", "formation": "",
+     "recognition_prompt": RP, "examples": [ex("高いけど、買います。", "It's expensive, but I'll buy it.")]},
     blocked("REQUIRED_CONTENT"), explanation="en")
 add("GA-JA-13", W, L, ["kanji"], "Generated grammar example without evidence is unsupported.",
     {"pattern": "〜ば", "use_key": "conditional", "meaning": "if", "formation": "V-ば形",
@@ -262,12 +262,12 @@ add("GA-JA-14", W, L, ["kana", "baseline"], "Kana-only pattern with two examples
     {"pattern": "〜けど", "use_key": "contrast", "meaning": "but; although", "formation": "普通形 + けど",
      "recognition_prompt": RP, "examples": [ex("高いけど、買います。", "It's expensive, but I'll buy it."),
                                             ex("行きたいけど、時間がない。", "I want to go, but I have no time.")]},
-    ready(rendered_contains={"Examples": "行きたいけど"}), explanation="en")
+    ready(rendered_contains={"UsageExamples": "行きたい<b class=\"lab-hl\">けど</b>"}), explanation="en")
 add("GA-JA-15", W, L, ["vietnamese_explanation", "kanji"], "Vietnamese preset with usage note.",
     {"pattern": "〜はずだ", "use_key": "expectation", "meaning": "chắc là; lẽ ra",
      "formation": "普通形 + はずだ", "usage": "Dựa trên căn cứ khách quan.", "recognition_prompt": RP,
      "examples": [ex("彼はもう着いたはずだ。", "Chắc là anh ấy đã đến rồi.")]},
-    ready(rendered_contains={"Usage": "Dựa trên căn cứ khách quan."}))
+    ready(rendered_contains={"UsageExamples": "Dựa trên căn cứ khách quan."}))
 
 # ---------------------------------------------------------------- grammar_add / en
 L = "en"
@@ -301,12 +301,12 @@ add("GA-EN-06", W, L, ["homograph"], "would (past habit) is a separate use from 
     {"pattern": "would + V", "use_key": "past-habit", "meaning": "repeated past action",
      "formation": "would + base verb", "recognition_prompt": RP,
      "examples": [ex("Every summer we would swim in the lake.", "We swam there each summer.")]},
-    ready(rendered_contains={"UseKey": "past-habit"}))
+    ready(rendered_contains={"Meaning": "repeated past action"}))
 add("GA-EN-07", W, L, ["homograph"], "would (conditional) has its own use key.",
     {"pattern": "would + V", "use_key": "conditional", "meaning": "result of an unreal condition",
      "formation": "if + past, would + base verb", "recognition_prompt": RP,
      "examples": [ex("If I had time, I would help.", "I lack time, so I can't help.")]},
-    ready(rendered_contains={"UseKey": "conditional"}))
+    ready(rendered_contains={"Meaning": "result of an unreal condition"}))
 add("GA-EN-08", W, L, ["task_leakage"], "Application exercise with a hidden answer.",
     {"pattern": "used to + V", "use_key": "past-habit", "meaning": "a past habit",
      "formation": "used to + base verb", "recognition_prompt": RP,

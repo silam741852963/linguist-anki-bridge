@@ -4028,7 +4028,7 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     let root = std::env::temp_dir().join(format!("lab-cue-cli-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
     let input = root.join("input.json");
-    std::fs::write(&input, r#"{"schema_version":2,"kind":"grammar","target_language":"ja","explanation_language":"en","requested_tasks":["recognition"],"body":{"pattern":"〜ても","meaning":"even if","formation":"Verb te-form + も","use_key":"concession","recognition_prompt":"","examples":[{"sentence":"雨が降っても行きます。","translation":"I will go even if it rains.","provenance":"user"}]}}"#).unwrap();
+    std::fs::write(&input, r#"{"schema_version":2,"kind":"grammar","target_language":"ja","explanation_language":"en","requested_tasks":["recognition","application"],"body":{"pattern":"〜ても","meaning":"even if","formation":"Verb te-form + も","use_key":"concession","recognition_prompt":"","exercise_prompt":"","exercise_answer":"","examples":[{"sentence":"雨が降っても行きます。","translation":"I will go even if it rains.","provenance":"user"}]}}"#).unwrap();
     let state = format!("storage.state_dir={}/state", root.display());
     let out = cli()
         .args([
@@ -4056,9 +4056,7 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     let issue = doc
         .issues
         .iter()
-        .find(|issue| {
-            issue.code == "REQUIRED_CONTENT" && issue.field.as_deref() == Some("recognition_prompt")
-        })
+        .find(|issue| issue.code == "MISSING_EXERCISE")
         .unwrap();
     let request = linguist_core::review::ResolutionRequest {
         schema_version: 2,
@@ -4068,9 +4066,9 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
         issue_id: issue.id.clone(),
         input_digest: doc.semantic_digest().unwrap(),
         actor: "author".into(),
-        choice: linguist_core::records::ReviewChoice::Cue {
-            task: linguist_core::Task::Recognition,
-            text: "What relation does this pattern express?".into(),
+        choice: linguist_core::records::ReviewChoice::Exercise {
+            prompt: "雨が降っ＿＿行きます。".into(),
+            answer: "ても — I will go even if it rains.".into(),
         },
     };
     let compact = cli()
@@ -4101,11 +4099,7 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     );
     assert_eq!(
         page["issues"][0]["templates"][0]["choice"]["decision"],
-        "cue"
-    );
-    assert_eq!(
-        page["issues"][0]["templates"][0]["choice"]["value"]["task"],
-        "recognition"
+        "exercise"
     );
     assert_eq!(page["issues"][0]["actor_required"], true);
     assert_eq!(page["archives_included"], false);
@@ -4196,8 +4190,8 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
         base.documents[0].requested_tasks
     );
     assert_eq!(
-        child.rendered[0].fields["RecognitionPrompt"],
-        "What relation does this pattern express?"
+        child.rendered[0].fields["ExercisePrompt"],
+        "雨が降っ＿＿行きます。"
     );
     drop(store);
     std::fs::remove_dir_all(root).unwrap();

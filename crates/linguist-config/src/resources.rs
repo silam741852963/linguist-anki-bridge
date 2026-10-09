@@ -32,7 +32,7 @@ pub fn inspect(effective: &Effective, environment: &BTreeMap<String, String>) ->
             Some("builtin:vocabulary-v3"),
             false,
         ),
-        ("llm.prompts.grammar", Some("builtin:grammar-v2"), false),
+        ("llm.prompts.grammar", Some("builtin:grammar-v3"), false),
         ("llm.prompts.kanji", Some("builtin:kanji-v2"), false),
         ("kanji.schema", Some("builtin:jisho-kanji-v2"), false),
         ("dictionary.schema_path", None, false),

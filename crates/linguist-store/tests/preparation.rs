@@ -1146,16 +1146,18 @@ fn enriched_checkpoints_keep_the_capture_first_and_only_add_provider_sources() {
         "PREPARATION_CAPTURE_CONFLICT"
     );
     let mut reordered = capture(&hash);
-    reordered
-        .sources
-        .insert(0, provider("wiktionary_definition_v0.8", "https://example.org"));
+    reordered.sources.insert(
+        0,
+        provider("wiktionary_definition_v0.8", "https://example.org"),
+    );
     assert_eq!(
         append(&mut store, reordered).unwrap_err(),
         "PREPARATION_CAPTURE_CONFLICT"
     );
     let mut enriched = capture(&hash);
-    enriched
-        .sources
-        .push(provider("wiktionary_definition_v0.8", "https://example.org"));
+    enriched.sources.push(provider(
+        "wiktionary_definition_v0.8",
+        "https://example.org",
+    ));
     append(&mut store, enriched).unwrap();
 }

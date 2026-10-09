@@ -752,6 +752,7 @@ impl InlineAdd {
                         usage: self.usage.unwrap_or_default(),
                         exercise_prompt: self.exercise_prompt.unwrap_or_default(),
                         exercise_answer: self.exercise_answer.unwrap_or_default(),
+                        ..Default::default()
                     },
                     requested_tasks: None,
                     context,

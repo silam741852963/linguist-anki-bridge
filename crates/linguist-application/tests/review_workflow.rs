@@ -611,7 +611,10 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
     let clock = || Ok("unix-seconds:1".to_string());
     let mut store = linguist_store::Store::open(&f.state()).unwrap();
     let error = resolve_batch(&mut store, &base, &unfilled, &clock, &mut no_history).unwrap_err();
-    assert!(error.starts_with("REVIEW_BATCH_DECISION_INVALID"), "{error}");
+    assert!(
+        error.starts_with("REVIEW_BATCH_DECISION_INVALID"),
+        "{error}"
+    );
     assert_eq!(latest(&f, base.id).revision, base.revision);
 
     let decision = |index: usize, choice: ReviewChoice| BatchDecision {
@@ -707,8 +710,7 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
             options: None,
         },
     );
-    let outcome =
-        resolve_batch(&mut store, &base, &conflicting, &clock, &mut no_history).unwrap();
+    let outcome = resolve_batch(&mut store, &base, &conflicting, &clock, &mut no_history).unwrap();
     assert_eq!(outcome.applied.len(), 1);
     assert_eq!(outcome.applied[0].index, 1);
     let conflict = outcome.conflict.unwrap();

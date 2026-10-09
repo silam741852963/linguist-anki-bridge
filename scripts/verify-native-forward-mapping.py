@@ -116,7 +116,7 @@ def verify_studied_child_reverse_risk(col, grammar, basic, deck_id):
     note = col.new_note(grammar)
     for name, value in {
         "Pattern": "〜ても", "Meaning": "even if",
-        "RecognitionPrompt": "Which pattern?", "EnableApplication": "1",
+        "Example": "雨が降っても行きます。", "EnableApplication": "1",
         "ExercisePrompt": "Complete this", "ExerciseAnswer": "〜ても",
     }.items():
         note[name] = value
@@ -149,7 +149,7 @@ def main():
     assert (version, buildhash) == ("25.09.2", "3d813c83"), (version, buildhash)
     manifests = json.load(sys.stdin)
     grammar_manifest = next(item for item in manifests
-                            if item["name"] == "Linguist Grammar v2")
+                            if item["name"] == "Linguist Grammar v3")
     vocab_manifest = next(item for item in manifests
                           if item["name"] == "Linguist Vocabulary v3")
     with tempfile.TemporaryDirectory(prefix="lab-native-basic-migration-") as directory:
@@ -181,7 +181,7 @@ def main():
             field_map = {
                 "Pattern": source_fields["Front"],
                 "Meaning": source_fields["Back"],
-                "RecognitionPrompt": source_fields["Front"],
+                "Example": source_fields["Front"],
             }
             del request.new_fields[:]
             request.new_fields.extend(field_map.get(field["name"], -1)
@@ -196,7 +196,7 @@ def main():
             assert mapped.mid == grammar["id"]
             assert mapped["Pattern"] == "〜ても"
             assert mapped["Meaning"] == "even if"
-            assert mapped["RecognitionPrompt"] == "〜ても"
+            assert mapped["Example"] == "〜ても"
             assert col.card_ids_of_note(note.id) == [card_id]
             mapped["EnableApplication"] = "1"
             mapped["ExercisePrompt"] = "Finish the pattern"

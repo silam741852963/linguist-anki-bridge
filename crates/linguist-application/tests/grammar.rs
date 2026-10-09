@@ -408,6 +408,7 @@ fn unit(pattern: &str, meaning: &str, sentence: &str, translation: &str) -> Gram
         usage: String::new(),
         exercise_prompt: String::new(),
         exercise_answer: String::new(),
+        ..Default::default()
     }
 }
 
@@ -513,32 +514,25 @@ fn exercise_and_recognition_templates_resolve_through_typed_decisions() {
     assert!(!result.ready);
     let store = linguist_store::Store::read_only(&f.state()).unwrap();
     let mut plan = store.revision(result.plan_id, 1).unwrap();
-    for (field, expected) in [
-        (
-            "recognition_prompt",
-            ReviewChoice::Cue {
-                task: Task::Recognition,
-                text: "What does “used to” express here?".into(),
-            },
-        ),
-        (
-            "exercise_prompt",
-            ReviewChoice::Exercise {
-                prompt: "I ___ swim every day.".into(),
-                answer: "used to — past habit".into(),
-            },
-        ),
-    ] {
-        let issue = validation::validate(&plan.documents[0])
-            .into_iter()
-            .find(|i| i.field.as_deref() == Some(field))
-            .unwrap();
-        assert_eq!(
-            decision_templates(&plan.documents[0], &issue),
-            vec![expected.clone()]
-        );
-        plan = decide(&plan, &issue.id, expected);
-    }
+    // v3 has no recognition text cue; only the exercise needs a decision.
+    assert!(
+        !validation::validate(&plan.documents[0])
+            .iter()
+            .any(|i| i.field.as_deref() == Some("recognition_prompt"))
+    );
+    let expected = ReviewChoice::Exercise {
+        prompt: "I ___ swim every day.".into(),
+        answer: "used to — past habit".into(),
+    };
+    let issue = validation::validate(&plan.documents[0])
+        .into_iter()
+        .find(|i| i.field.as_deref() == Some("exercise_prompt"))
+        .unwrap();
+    assert_eq!(
+        decision_templates(&plan.documents[0], &issue),
+        vec![expected.clone()]
+    );
+    plan = decide(&plan, &issue.id, expected);
     // Acknowledged alternatives are accepted by the typed exercise decision too.
     assert!(
         validation::ready(&plan.documents[0]),

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 pub mod repair;
 
 pub const VOCABULARY_PROMPT_V3: &str = include_str!("../../../resources/prompts/vocabulary-v3.txt");
-pub const GRAMMAR_PROMPT_V2: &str = include_str!("../../../resources/prompts/grammar-v2.txt");
+pub const GRAMMAR_PROMPT_V3: &str = include_str!("../../../resources/prompts/grammar-v3.txt");
 
 #[derive(Debug, Serialize)]
 pub struct ModelIdentity {
@@ -278,15 +278,21 @@ pub const NUANCE_MAX: usize = 3;
 pub const COLLOCATIONS_MAX: usize = 4;
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+/// v3 grammar supplement: no recognition text cue (the v3 front shows the
+/// pattern and an example); nuance, highlight forms and a JLPT level added.
 pub struct GrammarSupplement {
     pub meaning: String,
     pub formation: String,
     pub usage: String,
+    pub nuance: Vec<GeneratedContrast>,
+    pub forms: Vec<String>,
     pub examples: Vec<GeneratedExample>,
-    pub recognition_prompt: String,
     pub exercise_prompt: String,
     pub exercise_answer: String,
+    pub jlpt: String,
 }
+/// Bound on generated highlight forms.
+pub const FORMS_MAX: usize = 6;
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "kind",
@@ -388,16 +394,22 @@ pub fn build_request(
             field("meaning", &g.meaning);
             field("formation", &g.formation);
             field("usage", &g.usage);
-            field("recognition_prompt", &g.recognition_prompt);
+            field("jlpt", &g.jlpt);
             if doc.requested_tasks.contains(&Task::Application) {
                 field("exercise_prompt", &g.exercise_prompt);
                 field("exercise_answer", &g.exercise_answer);
             }
+            if g.nuance.is_empty() {
+                allowed.push("nuance".into());
+            }
+            if g.forms.is_empty() {
+                allowed.push("forms".into());
+            }
             (
                 "grammar",
                 "llm.prompts.grammar",
-                "builtin:grammar-v2",
-                GRAMMAR_PROMPT_V2,
+                "builtin:grammar-v3",
+                GRAMMAR_PROMPT_V3,
                 g.examples.len(),
             )
         }
@@ -531,11 +543,13 @@ fn constrained_schema(kind: &str, allowed: &[String], examples: usize) -> Result
     for (name, property) in properties.iter_mut() {
         if name == "examples" {
             property["maxItems"] = json!(examples);
-        } else if name == "nuance" || name == "collocations" {
+        } else if name == "nuance" || name == "collocations" || name == "forms" {
             let max = if !allowed.iter().any(|field| field == name) {
                 0
             } else if name == "nuance" {
                 NUANCE_MAX
+            } else if name == "forms" {
+                FORMS_MAX
             } else {
                 COLLOCATIONS_MAX
             };
@@ -604,17 +618,37 @@ pub fn validate_output(
             }
             (vec![("usage", &v.usage)], &v.examples)
         }
-        (LearningContent::Grammar(_), Supplement::Grammar(g)) => (
-            vec![
-                ("meaning", &g.meaning),
-                ("formation", &g.formation),
-                ("usage", &g.usage),
-                ("recognition_prompt", &g.recognition_prompt),
-                ("exercise_prompt", &g.exercise_prompt),
-                ("exercise_answer", &g.exercise_answer),
-            ],
-            &g.examples,
-        ),
+        (LearningContent::Grammar(_), Supplement::Grammar(g)) => {
+            let allowed = |name: &str| request.allowed_fields.iter().any(|field| field == name);
+            if (!g.nuance.is_empty() && !allowed("nuance"))
+                || (!g.forms.is_empty() && !allowed("forms"))
+                || g.nuance.len() > NUANCE_MAX
+                || g.forms.len() > FORMS_MAX
+            {
+                return Err("GENERATION_FIELD_NOT_ALLOWED".into());
+            }
+            if g.nuance
+                .iter()
+                .any(|c| c.expression.trim().is_empty() || c.difference.trim().is_empty())
+                || g.forms.iter().any(|form| form.trim().is_empty())
+            {
+                return Err("GENERATION_INCOMPLETE_ENTRY".into());
+            }
+            if !matches!(g.jlpt.as_str(), "" | "n5" | "n4" | "n3" | "n2" | "n1") {
+                return Err("GENERATION_JLPT_INVALID".into());
+            }
+            (
+                vec![
+                    ("meaning", &g.meaning),
+                    ("formation", &g.formation),
+                    ("usage", &g.usage),
+                    ("exercise_prompt", &g.exercise_prompt),
+                    ("exercise_answer", &g.exercise_answer),
+                    ("jlpt", &g.jlpt),
+                ],
+                &g.examples,
+            )
+        }
         _ => return Err("GENERATION_KIND_CONFLICT".into()),
     };
     for (name, value) in fields {
@@ -890,13 +924,41 @@ fn merge_checked_output(
             set("meaning", &mut g.meaning, s.meaning)?;
             set("formation", &mut g.formation, s.formation)?;
             set("usage", &mut g.usage, s.usage)?;
-            set(
-                "recognition_prompt",
-                &mut g.recognition_prompt,
-                s.recognition_prompt,
-            )?;
             set("exercise_prompt", &mut g.exercise_prompt, s.exercise_prompt)?;
             set("exercise_answer", &mut g.exercise_answer, s.exercise_answer)?;
+            set("jlpt", &mut g.jlpt, s.jlpt)?;
+            if !s.nuance.is_empty() {
+                if !g.nuance.is_empty() {
+                    return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
+                }
+                // A pattern is never its own near-synonym.
+                let own: String = g.pattern.split_whitespace().collect();
+                g.nuance = s
+                    .nuance
+                    .into_iter()
+                    .filter(|c| c.expression.split_whitespace().collect::<String>() != own)
+                    .map(|c| linguist_core::document::Contrast {
+                        expression: c.expression,
+                        difference: c.difference,
+                    })
+                    .collect();
+                if !g.nuance.is_empty() {
+                    claims.push((
+                        "nuance".into(),
+                        serde_json::to_string(&g.nuance).map_err(|_| "GENERATION_ENCODING")?,
+                    ));
+                }
+            }
+            if !s.forms.is_empty() {
+                if !g.forms.is_empty() {
+                    return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
+                }
+                g.forms = s.forms.into_iter().map(|f| f.trim().to_owned()).collect();
+                claims.push((
+                    "forms".into(),
+                    serde_json::to_string(&g.forms).map_err(|_| "GENERATION_ENCODING")?,
+                ));
+            }
             s.examples
         }
         _ => return Err("GENERATION_KIND_CONFLICT".into()),

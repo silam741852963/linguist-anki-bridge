@@ -278,9 +278,7 @@ pub fn run(
                                 environment,
                                 crate::vocab::Providers::default(),
                             )
-                            .map_err(|error| {
-                                format!("{}: {error}", enrichment_code(&error))
-                            })?;
+                            .map_err(|error| format!("{}: {error}", enrichment_code(&error)))?;
                             Ok::<_, String>((document, capture.captured.assets, extra))
                         }))
                         .unwrap_or_else(|_| Err("SOURCE_CAPTURE_WORKER_PANIC".into()));
@@ -468,13 +466,12 @@ pub fn prepare_document(
     let mut document = documents.remove(0);
     if settings.values["dictionary.provider"] != "authored" && !purpose.ends_with("_grammar") {
         let cap = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
-        let (enriched, responses) =
-            crate::dictionary::enrich_document(
-                &document,
-                settings,
-                &Default::default(),
-                providers.dictionary,
-            )?;
+        let (enriched, responses) = crate::dictionary::enrich_document(
+            &document,
+            settings,
+            &Default::default(),
+            providers.dictionary,
+        )?;
         document = enriched;
         extra.extend(responses.into_iter().map(|bytes| (bytes, cap)));
     }
@@ -667,7 +664,10 @@ mod tests {
             "PROVIDER_READ_Http(429)",
             "PROVIDER_READ_Http(503)",
         ] {
-            assert_eq!(super::enrichment_code(error), "ENRICHMENT_PROVIDER_TRANSIENT");
+            assert_eq!(
+                super::enrichment_code(error),
+                "ENRICHMENT_PROVIDER_TRANSIENT"
+            );
         }
         for error in [
             "PROVIDER_READ_Policy",

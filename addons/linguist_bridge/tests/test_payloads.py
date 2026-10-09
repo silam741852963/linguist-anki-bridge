@@ -7,6 +7,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from linguist_bridge import manifest  # noqa: E402
 from linguist_bridge.payloads import (  # noqa: E402
+    GRAMMAR_V3_FIELDS,
     PayloadError, VOCAB_FIELDS, VOCAB_V3_FIELDS, validate_body)
 
 PLAN = "lab-jcs-v1:plan:" + "a" * 64
@@ -68,6 +69,21 @@ class PayloadTest(unittest.TestCase):
         missing = dict(fields)
         missing.pop("Kanji")
         self.assertInvalid("create_note", dict(body, fields=missing))
+
+    def test_v3_grammar_create_body_needs_formation_and_example(self):
+        marker = "lab_op_" + OPERATION.replace("-", "")
+        fields = {name: "" for name in GRAMMAR_V3_FIELDS}
+        fields.update(Pattern="〜だらけ", Meaning="full of", Formation="<p>N + だらけ</p>",
+                      Example="部屋はほこり<b>だらけ</b>だ。", EnableApplication="1")
+        body = {"model_name": "Linguist Grammar v3", "model_manifest_digest": "b" * 64,
+                "deck_id": "123", "fields": fields, "tags": [marker, "lab::kind::grammar"],
+                "marker_tag": marker, "source_plan_digest": PLAN, "checkpoint_digest": "c" * 64,
+                "binding": {"profile_fingerprint": "d" * 64, "path_fingerprint": "e" * 64},
+                "expected_absent": True}
+        check("create_note", body)
+        for edit in ({"Formation": " "}, {"Example": ""}, {"Pattern": ""},
+                     {"EnableApplication": "y"}, {"UseKey": "k"}):
+            self.assertInvalid("create_note", dict(body, fields=dict(fields, **edit)))
 
     def test_media_model_and_export_bodies(self):
         media = {"filename": "eat.ogg", "sha256": "c" * 64, "size_bytes": 10,

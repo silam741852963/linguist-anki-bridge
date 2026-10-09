@@ -448,7 +448,7 @@ fn managed_duplicate_candidates_remain_review_evidence_even_when_fields_match() 
             .collect::<serde_json::Map<_, _>>();
         let (name, term) = match kind {
             Kind::Vocabulary => ("Linguist Vocabulary v3", "食べる"),
-            Kind::Grammar => ("Linguist Grammar v2", "〜ても"),
+            Kind::Grammar => ("Linguist Grammar v3", "〜ても"),
         };
         let reader = Reader {
             query: format!("\"{term}\""),
@@ -1074,7 +1074,7 @@ fn v3_vocabulary_tasks_need_no_text_cues_but_spelling_needs_a_spoken_front() {
 
 #[test]
 fn grammar_prompt_and_exercise_repairs_require_complete_nonleaking_answers() {
-    use linguist_core::{Task, records::ReviewChoice, review::ResolutionRequest};
+    use linguist_core::{records::ReviewChoice, review::ResolutionRequest};
     let f = Fixture::new();
     let mut authored = input(Kind::Grammar);
     authored["requested_tasks"] = serde_json::json!(["recognition", "application"]);
@@ -1088,31 +1088,11 @@ fn grammar_prompt_and_exercise_repairs_require_complete_nonleaking_answers() {
     .unwrap();
     let mut store = linguist_store::Store::open(&f.state()).unwrap();
     let base = store.revision(prepared.plan_id, 1).unwrap();
-    let doc = &base.documents[0];
-    let issue = doc
-        .issues
-        .iter()
-        .find(|issue| {
-            issue.code == "REQUIRED_CONTENT" && issue.field.as_deref() == Some("recognition_prompt")
-        })
-        .unwrap();
-    let request = ResolutionRequest {
-        schema_version: 2,
-        base_revision: 1,
-        base_digest: prepared.digest,
-        document_id: doc.id,
-        issue_id: issue.id.clone(),
-        input_digest: doc.semantic_digest().unwrap(),
-        actor: "author".into(),
-        choice: ReviewChoice::Cue {
-            task: Task::Recognition,
-            text: "Mẫu này thể hiện quan hệ gì?".into(),
-        },
-    };
-    let result =
-        linguist_application::review::resolve(&store, &base, &request, "now".into()).unwrap();
-    store.publish_revision(&result.revision).unwrap();
-    let child = result.revision;
+    // Grammar v3 has no recognition text cue: an empty prompt is not an issue.
+    assert!(!base.documents[0].issues.iter().any(|issue| {
+        issue.code == "REQUIRED_CONTENT" && issue.field.as_deref() == Some("recognition_prompt")
+    }));
+    let child = base.clone();
     let doc = &child.documents[0];
     let issue = doc
         .issues
@@ -1121,7 +1101,7 @@ fn grammar_prompt_and_exercise_repairs_require_complete_nonleaking_answers() {
         .unwrap();
     let mut request = ResolutionRequest {
         schema_version: 2,
-        base_revision: 2,
+        base_revision: 1,
         base_digest: child.approval_digest().unwrap(),
         document_id: doc.id,
         issue_id: issue.id.clone(),
@@ -1156,7 +1136,7 @@ fn grammar_prompt_and_exercise_repairs_require_complete_nonleaking_answers() {
     store.publish_revision(&result.revision).unwrap();
     assert!(
         !store
-            .validate_revision(base.id, 3)
+            .validate_revision(base.id, 2)
             .unwrap()
             .evidence
             .apply_eligible

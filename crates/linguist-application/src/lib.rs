@@ -220,8 +220,8 @@ pub fn freeze_settings(
             ),
             (
                 "llm.prompts.grammar",
-                "builtin:grammar-v2",
-                generation::GRAMMAR_PROMPT_V2,
+                "builtin:grammar-v3",
+                generation::GRAMMAR_PROMPT_V3,
             ),
         ] {
             if values[key] == reference {

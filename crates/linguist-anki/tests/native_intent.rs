@@ -15,8 +15,7 @@ fn intent(grammar: bool, operation: Uuid, approved: &str) -> Value {
     }
     fields.insert("Meaning".into(), json!("meaning"));
     if grammar {
-        fields.insert("Language".into(), json!("ja"));
-        for field in ["Pattern", "Formation", "Examples", "UseKey"] {
+        for field in ["Pattern", "Formation", "Example"] {
             fields.insert(field.into(), json!("source-backed value"));
         }
     } else {
@@ -92,7 +91,7 @@ fn altered_identity_fields_tags_and_grammar_requirements_fail_closed() {
     changed["body"]["tags"] = json!([valid["body"]["marker_tag"], "reviewed", "reviewed"]);
     assert!(!validate(&changed, operation, &approved));
     let mut changed = intent(true, operation, &approved);
-    changed["body"]["fields"]["Examples"] = json!("");
+    changed["body"]["fields"]["Example"] = json!("");
     assert!(!validate(&changed, operation, &approved));
     assert!(!validate(&valid, Uuid::new_v4(), &approved));
 }
