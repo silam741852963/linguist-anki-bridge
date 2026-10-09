@@ -881,17 +881,25 @@ fn japanese_pictures_search_irasutoya_first_and_commons_by_the_selected_sense() 
         ]))
         .unwrap();
     }
-    // Reviewer-chosen terms come after the word, before the collocation nouns.
+    // Reviewer-chosen terms are always searched after the word; a title naming
+    // one of them (食事のイラスト) skips the collocation nouns.
     settings
         .values
-        .insert("images.search_terms".into(), json!(["朝食"]));
+        .insert("images.search_terms".into(), json!(["朝食", "食事"]));
     linguist_application::vocab::enrich_document(&again, &settings, &f.environment, providers)
         .unwrap();
     assert_eq!(*commons.0.lock().unwrap(), ["to eat", "to live on"]);
     assert_eq!(
         *irasutoya.0.lock().unwrap(),
-        ["食べる", "食べる", "朝食", "ご飯", "時間"]
+        ["食べる", "食べる", "朝食", "食事"]
     );
+    // Without terms, no title names the word, so the collocation nouns follow.
+    settings
+        .values
+        .insert("images.search_terms".into(), json!([]));
+    linguist_application::vocab::enrich_document(&again, &settings, &f.environment, providers)
+        .unwrap();
+    assert_eq!(irasutoya.0.lock().unwrap()[4..], ["食べる", "ご飯", "時間"]);
 }
 
 #[test]

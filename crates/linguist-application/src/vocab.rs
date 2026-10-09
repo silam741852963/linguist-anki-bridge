@@ -521,9 +521,9 @@ fn stage_images(
             ),
         }
     }
-    // いらすとや illustrations are searched by the Japanese word itself and
-    // come before Commons photographs. When no post title names the word, the
-    // nouns of its generated collocations are tried (費用を賄う: 費用).
+    // いらすとや illustrations are searched by the Japanese word itself (then
+    // reviewer terms and collocation nouns, 費用を賄う: 費用) and come before
+    // Commons photographs.
     if japanese {
         let live;
         let client: Option<&dyn ImagePort> = match (providers.illustrations, port) {
@@ -549,7 +549,8 @@ fn stage_images(
                 }
             }
         };
-        // `images.search_terms`: reviewer-chosen terms after the word itself.
+        // The word and `images.search_terms` (reviewer-chosen) are always
+        // searched; collocation nouns only while no post title names a query.
         let terms: Vec<String> = settings
             .values
             .get("images.search_terms")
@@ -560,18 +561,20 @@ fn stage_images(
                     .collect()
             })
             .unwrap_or_default();
-        let queries = std::iter::once(japanese_expression)
-            .chain(terms)
-            .chain(collocation_nouns);
         if let Some(client) = client {
-            for query in queries {
+            let mut named = false;
+            let chosen = std::iter::once(japanese_expression).chain(terms);
+            for (query, fallback) in chosen
+                .map(|q| (q, false))
+                .chain(collocation_nouns.into_iter().map(|q| (q, true)))
+            {
+                if fallback && named {
+                    break;
+                }
                 match client.search(&query) {
                     Ok(search) => {
-                        let named = search.candidates.iter().any(|c| c.title.contains(&query));
+                        named |= search.candidates.iter().any(|c| c.title.contains(&query));
                         stage_search(document, search, &mut digests, assets)?;
-                        if named {
-                            break;
-                        }
                     }
                     Err(error) => {
                         warning(
