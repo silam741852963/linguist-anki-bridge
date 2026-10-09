@@ -11,6 +11,12 @@ item passes apply authorization at creation; nothing reads Anki or runs. Apply
 jobs also need `--checkpoint ID --protected-manifest DIGEST`; a checkpoint created
 for a group makes that group the job ID. Grammar split units are refused.
 
+WP-21: `--create-checkpoint` (apply mode, instead of `--checkpoint`) first exports
+one verified full-collection checkpoint through the companion under the
+collection-writer lease, scoped to every selected item's source notes and created
+for a new group that the job then adopts as its ID. This is the only Anki effect
+of `jobs create`; it writes no note.
+
 Current implementation: prepare mode for existing notes. A supported `--purpose`
 and exactly one of repeated `--note-id`, `--query` or `--deck` are required.
 `--limit N` is supported for query/deck only, from 1 through 100000. Validate
@@ -81,11 +87,20 @@ Result/failure: Unknown effects distinguished from ordinary failed items. The sh
 
 ## OP-39 — `jobs run JOB`
 
-Simulate/apply jobs (WP-13): the executor exists in the application library
-(`job_executor::run`) and is verified with a fake native port. `jobs run` of a
-simulate job refuses `--apply`; an apply job requires it. Both then return
-`CAPABILITY_UNAVAILABLE` because no native read/mutation adapter exists. Prepare
-jobs refuse `--apply`.
+Simulate/apply jobs (WP-13, wired in WP-21): `jobs run` of a simulate job refuses
+`--apply` and runs the full preflight read-only; an apply job requires `--apply`
+and runs the executor over the verified companion (`NativePort`) while holding the
+collection-writer lease, renewed with the job lease before each item. Every item
+reuses the job's checkpoint. Items are dispatched in frozen order;
+`jobs.on_item_error` decides whether an item failure stops the job, and identity,
+session, checkpoint and lease faults always halt it. Unknown outcomes stop with
+`recovery_required` and are resolved with `recover reconcile OPERATION --apply`
+before a resume. A checkpoint authorizes writes only in the Anki session it was
+taken in: after a restart or a full sync the job stops before dispatch with
+`JOB_CHECKPOINT_SESSION_ENDED`, and `next_commands` names a follow-up
+`jobs create --mode apply ... --item-id ... --create-checkpoint` for the
+remaining items. Without a verified companion every run stops with
+`CAPABILITY_UNAVAILABLE` before any lease. Prepare jobs refuse `--apply`.
 
 Current implementation: prepare-mode source capture and complete draft publication,
 with concurrency controlled by frozen `jobs.prepare_workers`. No apply flag or collection writes.
@@ -181,9 +196,9 @@ Result/failure: Idempotent control receipt. The shared wrapper supplies typed er
 
 ## OP-41 — `jobs resume JOB`
 
-WP-13: an apply job needs `--apply` on every resume; the resume request is
-recorded before execution reports `CAPABILITY_UNAVAILABLE`. Prepare jobs refuse
-`--apply`.
+WP-13/WP-21: an apply job needs `--apply` on every resume. The resume request is
+recorded locally first (a cancelled job is refused without contacting Anki), then
+the job runs as for `jobs run`. Prepare jobs refuse `--apply`.
 
 Current prepare-mode behavior: append/reuse a resume request, then invoke the same
 worker as `jobs run` with immutable inputs/settings. The current request is saved
@@ -207,9 +222,9 @@ Current implementation (WP-13): for simulate/apply jobs, record a retry envelope
 for eligible items only (transient or shared-fault halt classes within
 `jobs.max_item_attempts`); unknown outcomes return `JOB_RETRY_RECONCILE_FIRST`
 and permanent validation failures `JOB_RETRY_REQUIRES_NEW_REVISION`. Apply jobs
-need `--apply`. Running the items is a separate `jobs run`. Prepare jobs get a
-classification only; `jobs run` retries every eligible failure. Exit 4 when
-nothing is eligible.
+need `--apply`. When at least one item is accepted the job then runs (WP-21);
+nothing contacts Anki when no item is eligible (exit 4). Prepare jobs get a
+classification only; `jobs run` retries every eligible failure.
 
 Inputs: Explicit eligible item IDs or --failed; --apply for apply mode.
 
