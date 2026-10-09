@@ -89,12 +89,16 @@ fn dictionary_media<'a>(
         .map_err(|e| e.to_string())?;
     Ok(live.insert(client))
 }
-/// Exact dictionary entries of this vocabulary item.
+/// Exact dictionary entries of this vocabulary item: a written form or, for a
+/// word written in kana (ビタミン, いじめ), a reading equals the expression,
+/// as in the generation input.
 fn exact_entries(vocab: &linguist_core::Vocabulary) -> Vec<&linguist_core::DictionaryEntry> {
     vocab
         .dictionary
         .iter()
-        .filter(|entry| entry.forms.contains(&vocab.expression))
+        .filter(|entry| {
+            entry.forms.contains(&vocab.expression) || entry.readings.contains(&vocab.expression)
+        })
         .collect()
 }
 pub trait SpeechPort {

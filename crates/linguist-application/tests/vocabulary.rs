@@ -889,3 +889,52 @@ fn japanese_pictures_search_irasutoya_first_and_commons_by_the_selected_sense() 
         ["食べる", "食べる", "ご飯", "時間"]
     );
 }
+
+#[test]
+fn a_kana_word_matches_its_reading_only_dictionary_entry() {
+    use std::sync::Mutex;
+    struct Dictionary;
+    impl DictionaryPort for Dictionary {
+        fn lookup(
+            &self,
+            query: &str,
+            target: &Language,
+        ) -> Result<linguist_dictionary::JishoPage, String> {
+            linguist_dictionary::parse_jisho(query, target, r#"{"meta":{"status":200},"data":[{"slug":"x","japanese":[{"reading":"ビタミン"}],"senses":[{"english_definitions":["vitamin"]}]}]}"#.as_bytes(), 1024, 10)
+                .map_err(|e| e.to_string())
+        }
+    }
+    struct Recorder(Mutex<Vec<String>>);
+    impl ImagePort for Recorder {
+        fn search(&self, expression: &str) -> Result<ImageSearch, String> {
+            self.0.lock().unwrap().push(expression.into());
+            Err("PROVIDER_READ_Deadline".into())
+        }
+    }
+    let f = Fixture::new();
+    let mut settings = f.settings.clone();
+    settings
+        .values
+        .insert("dictionary.provider".into(), json!("jisho"));
+    settings.values.insert("kanji.enabled".into(), json!(false));
+    settings
+        .values
+        .insert("audio.provider".into(), json!("preserve"));
+    let commons = Recorder(Mutex::default());
+    let illustrations = Recorder(Mutex::default());
+    let bytes = r#"{"schema_version":2,"kind":"vocabulary","target_language":"ja","explanation_language":"en","requested_tasks":["comprehension"],"body":{"expression":"ビタミン"}}"#.as_bytes();
+    prepare_with_providers(
+        bytes,
+        Kind::Vocabulary,
+        &settings,
+        &f.environment,
+        Providers {
+            dictionary: Some(&Dictionary),
+            images: Some(&commons),
+            illustrations: Some(&illustrations),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(*commons.0.lock().unwrap(), ["vitamin"]);
+}
