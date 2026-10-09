@@ -2044,7 +2044,7 @@ fn a_split_unit_that_already_has_a_note_merges_into_it() {
         fn find_notes(&self, query: &str) -> std::result::Result<Vec<String>, String> {
             assert!(query.starts_with("deck:"), "{query}");
             Ok(if query.contains("迷惑がかかる") {
-                vec!["777".into(), "778".into()]
+                vec!["779".into(), "777".into(), "778".into()]
             } else {
                 vec![]
             })
@@ -2053,23 +2053,33 @@ fn a_split_unit_that_already_has_a_note_merges_into_it() {
             &self,
             ids: &[String],
         ) -> std::result::Result<Vec<serde_json::Value>, String> {
-            assert_eq!(ids, ["777", "778"]);
+            assert_eq!(ids, ["779", "777", "778"]);
             Ok(vec![
                 // A different word that only contains the text.
                 json!({"noteId": 778, "modelName": "Legacy",
                        "fields": {"Word": {"value": "迷惑がかかる人"}}}),
                 json!({"noteId": 777, "modelName": "Legacy",
                        "fields": {"Word": {"value": "<b>迷惑が かかる</b>"}}}),
+                // The same word with another reading is another note.
+                json!({"noteId": 779, "modelName": "Linguist Vocabulary v3",
+                       "fields": {"Expression": {"value": "迷惑がかかる"},
+                                  "Pronunciation": {"value": "[sound:x.mp3]めいわくがかかった"}}}),
             ])
         }
     }
     let (capture, mut settings) = setup(
         "japanese_vocab",
-        &[(
-            "Word",
-            "迷惑がかかる<div>太陽に雲がかかる</div><div>エンジンがかかる</div>",
-        )],
-        &[("expression", "Word")],
+        &[
+            (
+                "Word",
+                "迷惑がかかる<div>太陽に雲がかかる</div><div>エンジンがかかる</div>",
+            ),
+            (
+                "Reading",
+                "めいわくがかかる<div>たいようにくもがかかる</div><div>エンジンがかかる</div>",
+            ),
+        ],
+        &[("expression", "Word"), ("pronunciation", "Reading")],
     );
     let root = std::env::temp_dir().join(format!("lab-split-merge-{}", uuid::Uuid::new_v4()));
     settings
@@ -2132,8 +2142,11 @@ fn a_split_unit_that_already_has_a_note_merges_into_it() {
     // Two words, the second already a note: the item is narrowed in place.
     let (capture, mut settings) = setup(
         "japanese_vocab",
-        &[("Word", "折り目をつける<div>迷惑がかかる</div>")],
-        &[("expression", "Word")],
+        &[
+            ("Word", "折り目をつける<div>迷惑がかかる</div>"),
+            ("Reading", "おりめをつける<div>めいわくがかかる</div>"),
+        ],
+        &[("expression", "Word"), ("pronunciation", "Reading")],
     );
     let root = std::env::temp_dir().join(format!("lab-split-merge-{}", uuid::Uuid::new_v4()));
     settings

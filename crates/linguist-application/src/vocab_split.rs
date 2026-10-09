@@ -198,6 +198,22 @@ fn field_word(value: &str) -> String {
     text
 }
 
+/// The kana of a reading field: markup, `[sound:]` tags and everything that
+/// is not kana removed.
+fn kana_of(value: &str) -> String {
+    let mut text = value.to_owned();
+    while let Some(start) = text.find("[sound:") {
+        let end = text[start..]
+            .find(']')
+            .map_or(text.len(), |e| start + e + 1);
+        text.replace_range(start..end, "");
+    }
+    field_word(&text)
+        .chars()
+        .filter(|c| matches!(c, '\u{3041}'..='\u{3096}' | '\u{30A1}'..='\u{30FA}' | 'ー'))
+        .collect()
+}
+
 /// Mark every unit whose word already has a note in the purpose's target
 /// deck (the source model's word field, or a revamped note's Expression),
 /// and move the anchor to the first unit that has none. Read-only.
@@ -221,10 +237,12 @@ pub fn find_existing(
     let deck = setting("target_deck");
     let deck = deck.as_str().ok_or("VOCAB_SPLIT_PURPOSE_UNRESOLVED")?;
     let source_model = setting("source_model");
-    let source_field = setting("fields")["expression"]
+    let fields = setting("fields");
+    let source_field = fields["expression"]
         .as_str()
         .unwrap_or("Expression")
         .to_owned();
+    let source_reading = fields["pronunciation"].as_str().map(str::to_owned);
     let managed = linguist_core::model::vocabulary().name;
     let original = plan
         .documents
@@ -253,16 +271,23 @@ pub fn find_existing(
             continue;
         }
         let notes = reader.notes_info(&ids)?;
+        let reading = kana_of(&unit.pronunciation);
         unit.existing_note = notes.iter().find_map(|note| {
             let model = note["modelName"].as_str()?;
-            let field = if model == managed {
-                "Expression"
+            let (field, reading_field) = if model == managed {
+                ("Expression", Some("Pronunciation"))
             } else if source_model.as_str() == Some(model) {
-                source_field.as_str()
+                (source_field.as_str(), source_reading.as_deref())
             } else {
                 return None;
             };
-            (field_word(note["fields"][field]["value"].as_str()?) == word)
+            // Same word, another reading (節 ふし / せつ): a different note.
+            let theirs = reading_field
+                .and_then(|f| note["fields"][f]["value"].as_str())
+                .map(kana_of)
+                .unwrap_or_default();
+            (field_word(note["fields"][field]["value"].as_str()?) == word
+                && (reading.is_empty() || theirs.is_empty() || reading == theirs))
                 .then(|| note["noteId"].to_string().trim_matches('"').to_owned())
         });
     }

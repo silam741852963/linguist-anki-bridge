@@ -113,7 +113,8 @@ anchor).
 Merge into an existing note (WP-20): the template also searches the purpose's
 target deck (read-only) for a note that already holds each unit's word: the
 source model's word field or a revamped note's `Expression`, compared without
-markup or spaces. A unit with such a note gets `existing_note` (its note ID)
+markup or spaces. When both the unit and the note have a kana reading and the
+readings differ (節 ふし / せつ), it is another word and no merge happens. A unit with such a note gets `existing_note` (its note ID)
 and makes no new note; the anchor moves to the first unit without one and
 takes the source note's pictures. The split output lists those units under
 `merged_into_existing`. A hand-written `--request` is checked the same way:

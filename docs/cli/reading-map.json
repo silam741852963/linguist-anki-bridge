@@ -303,7 +303,7 @@
       "path": "implementation/wp-20.md",
       "heading": "## WP-20 \u2014 revamp the blue- and purple-flagged cards for the user's review",
       "title": "WP-20 \u2014 revamp the blue- and purple-flagged cards for the user's review",
-      "words": 2687,
+      "words": 3490,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -1023,7 +1023,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-24 \u2014 `grammar revamp`",
       "title": "OP-24 \u2014 `grammar revamp`",
-      "words": 1708,
+      "words": 1735,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
