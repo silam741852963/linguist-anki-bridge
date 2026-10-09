@@ -129,8 +129,16 @@ pub fn parse_page(
                     merge(&mut slot.related, vec![format!("{word}{pos}")]);
                 }
             }
-            merge(&mut slot.smart_topic, all(entry, ".smartt .daccord_lt a"));
-            merge(&mut slot.smart_words, all(entry, ".smartt .daccord_lb .hw"));
+            // One SMART Vocabulary topic per part of speech, with its own words.
+            if slot.smart_topic.is_empty()
+                && let Some(smart) = entry.select(&select(".smartt")).next()
+            {
+                merge(
+                    &mut slot.smart_topic,
+                    all(smart, ".daccord_lt a").into_iter().take(1).collect(),
+                );
+                merge(&mut slot.smart_words, all(smart, ".daccord_lb .hw"));
+            }
             let images: Vec<String> = entry
                 .select(&select(".dimg amp-img"))
                 .filter_map(|img| img.value().attr("src"))

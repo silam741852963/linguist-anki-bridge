@@ -59,6 +59,11 @@ fn several_parts_of_speech_and_dictionary_illustrations() {
         "supernova",
         include_str!("fixtures/cambridge-supernova.html"),
     );
+    assert!(record.entries.iter().all(|e| {
+        e.metadata
+            .get("smart_vocabulary_topic")
+            .is_none_or(|t| t.len() == 1)
+    }));
     assert_eq!(
         supernova.entries[0].metadata["images"],
         ["https://dictionary.cambridge.org/images/full/supern_noun_002_36712.jpg"]
