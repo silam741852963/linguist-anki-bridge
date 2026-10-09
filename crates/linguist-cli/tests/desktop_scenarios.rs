@@ -1538,6 +1538,83 @@ const BATCH_PICTURE: &str = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEEl
 
 /// Resolve every open review of a multi-item vocabulary revamp: native
 /// history, then source pictures kept as pictures, then any templated choice.
+/// Every open review issue of `plan` decided in one `plans resolve-batch`
+/// call, with the choices `review_batch` makes one at a time.
+fn resolve_with_batch(s: &mut Scenario, plan: &str) -> String {
+    let mut template = s.ok(&[
+        "plans",
+        "resolve-batch",
+        plan,
+        "--template",
+        "--actor",
+        "desktop-scenario",
+    ]);
+    let shown = s.ok(&["plans", "show", plan]);
+    for entry in template["decisions"].as_array_mut().unwrap() {
+        let options = entry["options"].take();
+        if entry.get("history_map").is_some() {
+            entry["history_map"] = json!(["0=comprehension"]);
+            continue;
+        }
+        if entry["expect_resolved"] == true {
+            continue;
+        }
+        let issue = &options["issue"];
+        entry["choice"] = match issue["code"].as_str().unwrap() {
+            "SOURCE_MEDIA_CONTENT_REVIEW" => {
+                let doc = shown["documents"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|d| d["id"] == entry["document_id"])
+                    .unwrap();
+                let name = issue["field"].as_str().unwrap();
+                let asset = doc["media"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|m| m["filename"] == name || m["original_filename"] == name)
+                    .unwrap();
+                let evidence = doc["evidence"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|e| {
+                        e["field"] == "media_format" && e["target"]["digest"] == asset["digest"]
+                    })
+                    .unwrap()["id"]
+                    .clone();
+                json!({"decision": "source_media_role", "value": {
+                    "source_id": issue["source_refs"][0], "asset_digest": asset["digest"],
+                    "original_filename": name, "evidence_id": evidence, "role": "picture",
+                    "attribution": "Disposable scenario picture.", "license": null}})
+            }
+            code => {
+                let choice = options["templates"][0]["choice"].clone();
+                assert!(!choice.is_null(), "no decision for {code}: {issue}");
+                choice
+            }
+        };
+    }
+    let path = s.root.join(format!("batch-{}.json", Uuid::new_v4()));
+    std::fs::write(&path, template.to_string()).unwrap();
+    let (status, value, stderr) = s.cli(&[
+        "plans",
+        "resolve-batch",
+        plan,
+        "--decisions",
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(status, 0, "{stderr} {value}");
+    assert!(value["conflict"].is_null(), "{value}");
+    s.log.push(format!(
+        "resolve-batch: {} decisions in {} passes",
+        value["applied"].as_array().unwrap().len(),
+        value["passes"]
+    ));
+    value["digest"].as_str().unwrap().to_owned()
+}
+
 fn review_batch(s: &mut Scenario, plan: &str, anchor: Option<&str>) -> String {
     for _ in 0..60 {
         let page = s.ok(&["plans", "show", plan, "--issues-only"]);
@@ -1676,16 +1753,17 @@ fn batch_vocab_revamp_apply_resume_rollback() {
     s.settings
         .push("purposes.japanese_vocab.source_model=Batch Source".into());
     let ids: Vec<String> = notes.iter().map(|(n, _)| n.to_string()).collect();
-    let mut args = vec!["vocab", "revamp"];
+    // A durable prepare job captures and enriches every note.
+    let mut args = vec!["jobs", "create", "--mode", "prepare"];
     for id in &ids {
         args.extend(["--note-id", id.as_str()]);
     }
-    let (code, drafted, stderr) = s.cli(&args);
+    let queued = s.ok(&args);
+    let prepare = queued["job_id"].as_str().unwrap().to_owned();
+    let (code, drafted, stderr) = s.cli(&["jobs", "run", &prepare]);
     assert_eq!(code, 4, "{stderr} {drafted}");
-    let plan = drafted["result"]["items"][0]["plan_id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    assert_eq!(drafted["item_counts"]["captured"], 4, "{drafted}");
+    let plan = drafted["plan"]["id"].as_str().unwrap().to_owned();
     // One typed patch authors every item's sense key.
     let shown = s.ok(&["plans", "show", &plan]);
     let items: Vec<Value> = shown["documents"]
@@ -1715,7 +1793,7 @@ fn batch_vocab_revamp_apply_resume_rollback() {
         "--save-draft",
     ]);
     assert!(code == 0 || code == 4, "{stderr} {edited}");
-    let digest = review_batch(&mut s, &plan, None);
+    let digest = resolve_with_batch(&mut s, &plan);
     let (revision, digest) = s.bind_and_approve(&plan, &digest);
     let rev = revision.to_string();
     let created = s.ok(&[

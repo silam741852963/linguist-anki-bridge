@@ -313,7 +313,7 @@
       "path": "implementation/wp-21.md",
       "heading": "## WP-21 \u2014 batch processing (prepare \u2192 review \u2192 apply jobs)",
       "title": "WP-21 \u2014 batch processing (prepare \u2192 review \u2192 apply jobs)",
-      "words": 1728,
+      "words": 2582,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -652,7 +652,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-35 \u2014 `jobs create`",
       "title": "OP-35 \u2014 `jobs create`",
-      "words": 412,
+      "words": 418,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -692,7 +692,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-39 \u2014 `jobs run JOB`",
       "title": "OP-39 \u2014 `jobs run JOB`",
-      "words": 827,
+      "words": 1011,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

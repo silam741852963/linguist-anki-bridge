@@ -620,6 +620,7 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
         input_digest: base.documents[index].semantic_digest().unwrap(),
         choice: Some(choice),
         history_map: None,
+        expect_resolved: false,
         options: None,
     };
     let batch = ResolutionBatch {
@@ -639,9 +640,18 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
         resolve_batch(&mut store, &base, &stale, &clock, &mut no_history).unwrap_err(),
         "REVIEW_BASE_CONFLICT"
     );
+    // An assertion listed first is still checked last, after the decision
+    // that closes its issue.
+    let mut batch = batch;
+    let mut assertion = decision(0, ReviewChoice::Sense(String::new()));
+    assertion.choice = None;
+    assertion.expect_resolved = true;
+    batch.decisions.insert(0, assertion);
     let outcome = resolve_batch(&mut store, &base, &batch, &clock, &mut no_history).unwrap();
     assert!(outcome.conflict.is_none());
     assert_eq!(outcome.applied.len(), 2);
+    assert_eq!(outcome.verified_closed.len(), 1);
+    assert_eq!(outcome.verified_closed[0].index, 0);
     assert_eq!(outcome.revision, base.revision + 2);
     let after = latest(&f, base.id);
     assert_eq!(after.revision, outcome.revision);
@@ -668,6 +678,7 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
                 input_digest: base.documents[0].semantic_digest().unwrap(),
                 choice: Some(ReviewChoice::Sense(sense_key(&base, 0, 0))),
                 history_map: None,
+                expect_resolved: false,
                 options: None,
             },
             BatchDecision {
@@ -676,6 +687,7 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
                 input_digest: "0".repeat(64),
                 choice: Some(ReviewChoice::Sense(sense_key(&base, 1, 0))),
                 history_map: None,
+                expect_resolved: false,
                 options: None,
             },
         ],
@@ -691,6 +703,7 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
                 evidence_ids: vec![uuid::Uuid::new_v4()],
             }),
             history_map: None,
+            expect_resolved: false,
             options: None,
         },
     );
@@ -703,4 +716,25 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
     assert_eq!(conflict.error, "REVIEW_INPUT_CONFLICT");
     assert_eq!(outcome.not_attempted, 1);
     assert_eq!(latest(&f, base.id).revision, base.revision + 1);
+
+    // An issue the batch does not close fails its assertion.
+    let base = latest(&f, base.id);
+    let open = ResolutionBatch {
+        schema_version: 2,
+        base_revision: base.revision,
+        base_digest: base.approval_digest().unwrap(),
+        actor: "reviewer".into(),
+        decisions: vec![BatchDecision {
+            document_id: base.documents[1].id,
+            issue_id: format!("DICTIONARY_SENSE_REVIEW:{}", base.documents[1].id),
+            input_digest: base.documents[1].semantic_digest().unwrap(),
+            choice: None,
+            history_map: None,
+            expect_resolved: true,
+            options: None,
+        }],
+    };
+    let outcome = resolve_batch(&mut store, &base, &open, &clock, &mut no_history).unwrap();
+    assert_eq!(outcome.conflict.unwrap().error, "REVIEW_ISSUE_STILL_OPEN");
+    assert_eq!(latest(&f, base.id).revision, base.revision);
 }

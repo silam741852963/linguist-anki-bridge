@@ -238,35 +238,54 @@ Resolves many review issues in one call. `plans resolve-batch PLAN --template
 --actor NAME` prints a decisions file for every open review issue of the latest
 revision: each entry carries `document_id`, `issue_id`, `input_digest`, a null
 `choice` and, under `options`, the issue and its decision templates
-(informational, ignored on submit). `SOURCE_NATIVE_HISTORY_REVIEW` entries get
-an empty `history_map` instead (`["0=comprehension", ...]`, the
-`plans resolve-history --map` syntax; it reads the live companion evidence).
-Nothing is decided for the reviewer: an entry without exactly one of `choice`
-and `history_map` fails with `REVIEW_BATCH_DECISION_INVALID` before any write.
+(informational, ignored on submit). Nothing is decided for the reviewer: an entry
+without exactly one of `choice`, `history_map` and `expect_resolved` fails with
+`REVIEW_BATCH_DECISION_INVALID` before any write. Two entries are filled in by
+the template:
+
+- `SOURCE_NATIVE_HISTORY_REVIEW` gets an empty `history_map`
+  (`["0=comprehension", ...]`, the `plans resolve-history --map` syntax; it reads
+  the live companion evidence);
+- `SOURCE_TASK_MAPPING_REVIEW` gets `expect_resolved: true`: no decision, but an
+  assertion that the batch's other decisions (the native history task map) close
+  the issue. It is checked after every decision applied and fails with
+  `REVIEW_ISSUE_STILL_OPEN` otherwise.
+
 Schema: `contracts/v2/resolution-batch.schema.json`.
 
 The file is bound to the latest revision (`base_revision`, `base_digest`,
 otherwise `REVIEW_BASE_CONFLICT`), and each entry to its document's semantic
 digest at that revision (`REVIEW_INPUT_CONFLICT`). Entries are applied in a
-fixed order, stable within a group, so content-changing decisions go first:
+fixed order, stable within a group:
 
-1. sense, expression, segmentation, anchor and duplicate decisions;
-2. cue and exercise repairs (they drop every non-rebindable decision);
-3. media roles, candidate media and missing media;
+1. source media roles and missing media (a role that changes the document clears
+   every earlier decision on it, so these go first);
+2. sense, expression, segmentation, anchor and duplicate decisions;
+3. cue and exercise repairs (they drop every non-rebindable decision);
 4. native history;
 5. source content verification and dropped source fields;
-6. generated facts (`content_verified`, `content_rejected`).
+6. candidate media (pictures, audio);
+7. generated facts (`content_verified`, `content_rejected`);
+8. `expect_resolved` assertions.
 
-Between two entries on the same document only this batch has changed it, so
-each entry is re-bound to the current revision and digest and then runs
-through the same checks as `plans resolve`. Each decision is published as its
-own child revision (the audit trail is the same as N `plans resolve` calls).
-The batch stops at the first entry that fails: the result lists the applied
-entries (file `index`, revision, digest, decision ID), the `conflict` (file
-index, issue, error) and how many entries were `not_attempted`. Applied
-decisions stay published; fix the file against the new latest revision
-(`--template` again) and resubmit the rest. Exit codes: 0 ready, 4 review
-still needed, 5 conflict.
+Between two entries on the same document only this batch has changed it, so each
+entry is re-bound to the current revision and digest and then runs through the
+same checks as `plans resolve`. After the ordered pass, every decision whose issue
+is open again (a later content change invalidated it) is re-applied unchanged and
+revalidated against the new content, until nothing reopens, at most four passes
+(`REVIEW_BATCH_NOT_STABLE` otherwise). Each decision is published as its own child
+revision; the audit trail is the same as the equivalent `plans resolve` calls.
+
+The batch stops at the first entry that fails. The result lists `passes`, the
+applied entries (file `index`, `pass`, revision, digest, decision ID), the
+`verified_closed` assertions, the `conflict` (file index, pass, issue, error) and
+how many entries were `not_attempted`. Applied decisions stay published; print a
+new template against the new latest revision and resubmit the rest. Exit codes:
+0 ready, 4 review still needed, 5 conflict.
+
+On the user's collection, 3 notes' 32 decisions and 3 assertions resolved in two
+passes in 2.4 s (WP-21), where the per-issue loop took one `plans resolve` call
+per decision plus every re-resolution.
 
 ## `plans resolve-history PLAN --item ITEM --map ORDINAL=TASK --actor NAME` (RI-04)
 

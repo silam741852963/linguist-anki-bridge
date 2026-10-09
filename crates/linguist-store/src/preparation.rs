@@ -625,8 +625,13 @@ impl Store {
                 definition.job.plan_refs[position].replacen("anki-note:", "anki_note:", 1);
             if document.schema_version != 2
                 || document.id.is_nil()
-                || document.sources.len() != 1
+                // The captured note comes first; enrichment adds only
+                // provider sources (dictionary, kanji, media).
+                || document.sources.is_empty()
                 || document.sources[0].kind != "anki_read_capture_v2"
+                || document.sources[1..]
+                    .iter()
+                    .any(|source| source.kind == "anki_read_capture_v2")
                 || document.sources[0].location != expected
                 || document.target_language.as_str().split('-').next()
                     != Some(if definition.selection.purpose.starts_with("japanese_") {

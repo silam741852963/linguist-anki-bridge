@@ -34,8 +34,9 @@ original selector, order, configured maximum and explicit limit in the receipt.
 Allocate IDs and save the validated immutable definition only after selection
 succeeds. Empty searches return `job_id=null`, zero counts and no new state.
 Results separate `matched_count` from selected `input_count`; workers never start
-and no note-content, generation or media reads occur. Queuing can freeze requested
-enrichment that execution will later reject until its adapter is implemented.
+and no note-content, generation or media reads occur. Queuing can freeze a
+dictionary/language pair that execution will later reject when its adapter is not
+implemented (`CAPABILITY_UNAVAILABLE` before any lease).
 Runs use the retained note IDs; they never rerun the selection query. Add-input,
 simulate/apply modes and approval-backed job creation remain pending.
 
@@ -102,8 +103,9 @@ taken in: after a restart or a full sync the job stops before dispatch with
 remaining items. Without a verified companion every run stops with
 `CAPABILITY_UNAVAILABLE` before any lease. Prepare jobs refuse `--apply`.
 
-Current implementation: prepare-mode source capture and complete draft publication,
-with concurrency controlled by frozen `jobs.prepare_workers`. No apply flag or collection writes.
+Current implementation: prepare-mode source capture, per-item enrichment and complete
+draft publication, with concurrency controlled by frozen `jobs.prepare_workers`. No
+apply flag or collection writes.
 Read the immutable definition from existing state; reject a different frozen storage
 root, unsupported requested enrichment or invalid lease settings before acquiring a
 lease. Use frozen settings for the Anki client, capture limits and failure policy.
@@ -116,10 +118,24 @@ Skip captured items and nonretryable/exhausted failures. Each eligible item gets
 CAS `started` event before dispatch. Both started and result checkpoints recheck the matching job
 lease inside the same immediate SQLite transaction as their head comparison;
 wrong-resource, expired or released tokens cannot append progress. Renew during reads
-at the frozen heartbeat interval. Capture and decode/stage in read workers, then
-the coordinator revalidates ownership, publishes
-original assets and append a CAS `captured` event. Recognized transport failures
-receive stable retry codes; other failures require review and halt the run.
+at the frozen heartbeat interval. Each read worker captures and stages its note, then
+runs the stages `vocab revamp` runs over a whole plan, for this one document: OCR
+of source images, the dictionary lookup (vocabulary purposes with a dictionary
+provider) and kanji, picture and audio enrichment when requested. The coordinator
+revalidates ownership, publishes the original assets and every provider asset, and
+appends a CAS `captured` event holding the enriched document, so a paused or
+crashed job never fetches a captured item again. The checkpoint keeps the Anki
+capture as the document's first source; enrichment may add only provider sources
+(`PREPARATION_CAPTURE_CONFLICT` otherwise). Provider calls share the
+process-wide `services.*` gates, so `concurrency` and `min_interval_seconds` hold
+across workers. Recognized Anki transport failures receive stable retry codes;
+transient provider reads (DNS, deadline, transport, `Retry-After`, HTTP
+408/425/429/5xx) fail with retryable `ENRICHMENT_PROVIDER_TRANSIENT`; any other
+enrichment failure is `ENRICHMENT_FAILED`, and other capture failures
+`SOURCE_CAPTURE_REVIEW_REQUIRED`. Non-retryable failures need review and halt the
+run; `jobs retry` refuses them with `JOB_RETRY_REQUIRES_REVIEW`. A job's plan
+equals a `vocab revamp` plan of the same notes apart from fresh IDs, fetch times
+and provider page bytes, but it is one revision instead of one per stage.
 Dispatch eligible inputs in frozen order in groups of at most `jobs.prepare_workers`.
 Each started checkpoint precedes its worker's first read. Checkpoint results as
 workers finish; final plan order still follows the frozen selection. Drain the
@@ -134,8 +150,10 @@ runs automatically within one invocation. Release the lease on ordinary completi
 or error; crashes retain their durable checkpoints and strong process identity.
 After capture, publish a draft only if every frozen item is captured. Construct it
 from retained documents in selection order with the exact frozen settings and
-selection receipt. Verify all original bytes, enforce aggregate unique-asset and
-plan-body limits, and require the current job head and worker lease. The initial
+selection receipt. Verify all original bytes, enforce the aggregate limit on unique
+source and dictionary archive assets (`input.max_file_mb`, as `vocab revamp`
+counts it; provider pictures and audio are bounded per response) and the plan-body
+limit, and require the current job head and worker lease. The initial
 plan ID equals the job UUID and its revision is one. Publication rechecks the lease
 inside the SQLite transaction. A rerun compares full canonical revision-one bytes
 before reusing its receipt; a different existing plan fails with
@@ -155,8 +173,9 @@ and record every already-dispatched outcome before returning. Dispatch checks th
 latest request inside its checkpoint transaction, including a request arriving
 between the coordinator check and dispatch. Pause/cancel also blocks new plan
 publication inside its transaction; captured results remain retained. Confirmed
-worker-stop acknowledgements, interrupted-item reconciliation, provider pacing, enrichment and
-partial batch plan publication remain pending.
+worker-stop acknowledgements and interrupted-item reconciliation are implemented;
+LLM generation (`plans generate --all-items`) and partial batch plan publication
+remain separate.
 
 Inputs: Optional --apply for apply mode; execution limits.
 

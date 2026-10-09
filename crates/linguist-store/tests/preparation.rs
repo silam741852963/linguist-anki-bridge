@@ -1098,3 +1098,64 @@ fn interrupted_read_reconciliation_requires_fencing_and_keeps_attempt_limits() {
         matches!(&events[3].event.stage, PreparationStage::Interrupted { actor } if actor == "operator")
     );
 }
+
+#[test]
+fn enriched_checkpoints_keep_the_capture_first_and_only_add_provider_sources() {
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    let id = definition.job.id;
+    let item = definition.job.item_ids[0];
+    store.create_preparation_job(&definition).unwrap();
+    let hash = store.publish_asset(b"retained originals", 1000).unwrap();
+    let started = store
+        .append_preparation_event(id, item, 1, PreparationStage::Started, None)
+        .unwrap();
+    let provider = |kind: &str, location: &str| SourceRecord {
+        id: uuid::Uuid::new_v4(),
+        kind: kind.into(),
+        location: location.into(),
+        digest: hash.clone(),
+        text: None,
+        fields: BTreeMap::new(),
+        model_manifest: String::new(),
+        template_manifest: None,
+        captured_at_unix_seconds: None,
+        tags: vec![],
+        cards: vec![],
+        media_refs: vec![],
+    };
+    let append = |store: &mut Store, document: LearningDocument| {
+        store.append_preparation_event(
+            id,
+            item,
+            1,
+            PreparationStage::Captured {
+                document: Box::new(document),
+            },
+            Some(&started.digest),
+        )
+    };
+    // A second Anki capture or a provider source ahead of the capture is refused.
+    let mut twice = capture(&hash);
+    twice
+        .sources
+        .push(provider("anki_read_capture_v2", "anki_note:124"));
+    assert_eq!(
+        append(&mut store, twice).unwrap_err(),
+        "PREPARATION_CAPTURE_CONFLICT"
+    );
+    let mut reordered = capture(&hash);
+    reordered
+        .sources
+        .insert(0, provider("wiktionary_definition_v0.8", "https://example.org"));
+    assert_eq!(
+        append(&mut store, reordered).unwrap_err(),
+        "PREPARATION_CAPTURE_CONFLICT"
+    );
+    let mut enriched = capture(&hash);
+    enriched
+        .sources
+        .push(provider("wiktionary_definition_v0.8", "https://example.org"));
+    append(&mut store, enriched).unwrap();
+}

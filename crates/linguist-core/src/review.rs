@@ -36,10 +36,13 @@ pub struct ResolutionBatch {
     pub decisions: Vec<BatchDecision>,
 }
 
-/// One decision. Exactly one of `choice` and `history_map` is set;
-/// `history_map` resolves SOURCE_NATIVE_HISTORY_REVIEW from live companion
-/// evidence like `plans resolve-history`. `options` is informational (the
-/// templates `plans resolve-batch --template` printed) and is ignored.
+/// One entry. Exactly one of `choice`, `history_map` and `expect_resolved`
+/// is set. `history_map` resolves SOURCE_NATIVE_HISTORY_REVIEW from live
+/// companion evidence like `plans resolve-history`. `expect_resolved` makes
+/// no decision: it asserts that the batch's other decisions close the issue
+/// (e.g. SOURCE_TASK_MAPPING_REVIEW closes with the native history), checked
+/// after every decision applied. `options` is informational (the templates
+/// `plans resolve-batch --template` printed) and is ignored.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BatchDecision {
@@ -50,6 +53,8 @@ pub struct BatchDecision {
     pub choice: Option<ReviewChoice>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_map: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub expect_resolved: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<serde_json::Value>,
 }
