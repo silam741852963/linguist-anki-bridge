@@ -72,6 +72,16 @@ def main():
                 "bytes_base64": None, "bytes_omitted": True,
             }], large["media"]
             assert large["discovered_media_bytes_verified"]
+            # Several files each under the limit but over it together (a
+            # note with four screenshots): the first stays inline, later
+            # ones are reported by size and hash.
+            parts = [bytes([index]) * (MAX_MEDIA_BYTES * 2 // 3) for index in range(3)]
+            names = [col.media.write_data(f"page{index}.png", part) for index, part in enumerate(parts)]
+            note["Back"] = "".join(f'<img src="{name}">' for name in names)
+            col.update_note(note)
+            pages = inspect_note_twice(col, str(note.id))["media"]
+            assert [page["bytes_omitted"] for page in pages] == [False, True, True], pages
+            assert [page["sha256"] for page in pages] == [hashlib.sha256(p).hexdigest() for p in parts]
             note["Back"] = "to eat [sound:voice.ogg]"
             col.update_note(note)
             assert not observed["write_authorized"]

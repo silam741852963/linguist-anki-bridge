@@ -105,7 +105,10 @@ def _media_observations(collection, note, field_names):
                 if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
                         or before.st_nlink != 1 or before.st_size > MAX_HASHED_MEDIA_BYTES):
                     raise InspectionError("BRIDGE_INSPECT_MEDIA_FILE_INVALID")
-                if before.st_size > MAX_MEDIA_BYTES:
+                # A file over the inline limit, or one that would take the
+                # note's inline total over it, is reported by size and hash.
+                if (before.st_size > MAX_MEDIA_BYTES
+                        or total_bytes + before.st_size > MAX_MEDIA_BYTES):
                     observed.append(_hashed_only(name, fields, file, directory, before))
                     continue
                 data = os.read(file, MAX_MEDIA_BYTES + 1)

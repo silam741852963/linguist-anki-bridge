@@ -416,6 +416,11 @@ pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[
         "25.09.2",
         "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
     ),
+    (
+        "0.3.3",
+        "25.09.2",
+        "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
+    ),
 ];
 const ALL_VARIANTS: [MutationVariant; 7] = [
     MutationVariant::InstallModel,
