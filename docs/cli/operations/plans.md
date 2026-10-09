@@ -102,8 +102,8 @@ Inputs: Typed decision and current input digest.
 
 Typed content repairs use the same fingerprint-bound request. For a missing or
 leaking vocabulary cue, use `{"decision":"cue","value":{"task":"production","text":"Say the verb for consuming food."}}`
-(or `task=spelling`). A missing grammar RecognitionPrompt accepts
-`task=recognition`. A missing/leaking Application exercise accepts
+(or `task=spelling`). Grammar v3 has no RecognitionPrompt; an authored one is
+still checked for leaks. A missing/leaking Application exercise accepts
 `{"decision":"exercise","value":{"prompt":"Complete the supplied context: ___","answer":"Expected completion"}}`.
 The task must already be requested, the issue must target the corresponding field,
 and frozen character limits apply. Repair changes that content and removes its
@@ -265,7 +265,8 @@ fixed order, stable within a group:
 4. native history;
 5. source content verification and dropped source fields;
 6. candidate media (pictures, audio);
-7. generated facts (`content_verified`, `content_rejected`);
+7. rejected generated facts (`content_rejected`), then verified ones
+   (`content_verified`);
 8. `expect_resolved` assertions.
 
 Between two entries on the same document only this batch has changed it, so each
@@ -276,9 +277,15 @@ revalidated against the new content, until nothing reopens, at most four passes
 (`REVIEW_BATCH_NOT_STABLE` otherwise). Each decision is published as its own child
 revision; the audit trail is the same as the equivalent `plans resolve` calls.
 
+An entry whose issue was open at the base revision but has since been closed
+by an earlier decision of the same batch (rejecting one half of an exercise
+removes both halves) is not applied and is listed in `closed_by_batch`; an
+entry whose issue was not open at the base fails with
+`REVIEW_ISSUE_NOT_UNRESOLVED`.
+
 The batch stops at the first entry that fails. The result lists `passes`, the
 applied entries (file `index`, `pass`, revision, digest, decision ID), the
-`verified_closed` assertions, the `conflict` (file index, pass, issue, error) and
+`verified_closed` assertions, `closed_by_batch`, the `conflict` (file index, pass, issue, error) and
 how many entries were `not_attempted`. Applied decisions stay published; print a
 new template against the new latest revision and resubmit the rest. Exit codes:
 0 ready, 4 review still needed, 5 conflict.

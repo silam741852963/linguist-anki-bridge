@@ -28,22 +28,20 @@ UsageExamples also lists the selected dictionary entry's neighbours: other spell
 
 `Linguist Vocabulary v2` (18 fields: Expression, Reading, Pronunciation, Meaning, Usage, Examples, Picture, Audio, Kanji, PersonalNotes, Source, Language, SenseKey, EnableProduction, EnableSpelling, ProductionPrompt, SpellingPrompt, ExplanationLanguage) is no longer installed. The companion still accepts it so existing v2 notes can be restored or revamped to v3.
 
-`Linguist Grammar v2` fields in order:
+`Linguist Grammar v3` fields in order (WP-22; replaces v2 for new writes):
 
 1. Pattern
 2. Meaning
 3. Formation
-4. Usage
-5. Examples
+4. Example
+5. UsageExamples
 6. ExercisePrompt
 7. ExerciseAnswer
 8. Audio
-9. PersonalNotes
-10. Source
-11. Language
-12. EnableApplication
-13. UseKey
-14. RecognitionPrompt
-15. ExplanationLanguage
+9. EnableApplication
 
-Templates: Recognition ordinal 0; Application ordinal 1. Add defaults: Recognition only. Verified Basic grammar ordinal 0→Recognition 0. Application prerequisites: approved ExercisePrompt/ExerciseAnswer. A multi-pattern source explicitly selects the anchor carrying its old recognition history.
+Templates: Recognition ordinal 0; Application ordinal 1, with the vocabulary v3 CSS plus `grammar-v3.css`. Fronts show fields, not text cues: Recognition shows Pattern and Example (the document's first example with the pattern highlighted); Application shows ExercisePrompt and needs ExerciseAnswer. Meaning is never on a front. Meaning holds the meaning in the explanation language and, under it, the source's own meaning line (`source_meaning`, verbatim, for example the Vietnamese gloss of a textbook page). UsageExamples holds usage, nuance against similar patterns (a source's `[Chú ý]` contrasts) and every example with the pattern highlighted. Highlighting uses the document's reviewed `forms` together with forms derived from the pattern (〜, word-class slots and `+` removed, alternatives split, optional parts in parentheses expanded); the longest match wins. Audio is a synthesized reading of the Example sentence (VOICEVOX for Japanese). Add defaults: Recognition only. Verified Basic grammar ordinal 0→Recognition 0. Application prerequisites: approved ExercisePrompt/ExerciseAnswer. A multi-pattern source explicitly selects the anchor carrying its old recognition history.
+
+Mapping from v2: Usage and Examples become UsageExamples (and the first example becomes Example). UseKey stays in the document as identity. RecognitionPrompt is no longer required or rendered. Language and ExplanationLanguage become tags; the JLPT level and lesson become `lab::jlpt::<level>` and `lab::lesson::<lesson>`. PersonalNotes and Source stay archived.
+
+`Linguist Grammar v2` (15 fields: Pattern, Meaning, Formation, Usage, Examples, ExercisePrompt, ExerciseAnswer, Audio, PersonalNotes, Source, Language, EnableApplication, UseKey, RecognitionPrompt, ExplanationLanguage) is no longer installed. The companion still accepts it so existing v2 notes can be restored or revamped to v3.

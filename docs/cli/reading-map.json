@@ -927,7 +927,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-29 \u2014 `plans resolve PLAN ISSUE`",
       "title": "OP-29 \u2014 `plans resolve PLAN ISSUE`",
-      "words": 549,
+      "words": 556,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -1047,7 +1047,7 @@
       "path": "pipelines/grammar.md",
       "heading": "## ALG-GRAMMAR \u2014 add or revamp grammar",
       "title": "ALG-GRAMMAR \u2014 add or revamp grammar",
-      "words": 236,
+      "words": 300,
       "requires": [
         "contracts/invariants.md",
         "decisions/learning-and-providers.md",
