@@ -232,7 +232,19 @@ fn run(
         return Err("AGENT_OUTPUT_LIMIT".into());
     }
     if !status.success() {
-        return Err(format!("AGENT_FAILED: exit {:?}", status.code()));
+        // The agent's own last words (bounded) say why: login, quota, flags.
+        let said = [&stderr, &stdout]
+            .iter()
+            .filter_map(|bytes| {
+                String::from_utf8_lossy(bytes)
+                    .lines()
+                    .rev()
+                    .find(|line| !line.trim().is_empty())
+                    .map(|line| line.trim().chars().take(300).collect::<String>())
+            })
+            .next()
+            .unwrap_or_default();
+        return Err(format!("AGENT_FAILED: exit {:?}: {said}", status.code()));
     }
     Ok(Output { stdout, stderr })
 }
@@ -300,7 +312,13 @@ fn claude_code(
         return Ok(None);
     };
     let model = setting(settings, "llm.agents.claude_code.model");
-    let schema = serde_json::to_string(&request.output_schema).map_err(|e| e.to_string())?;
+    // Claude Code's validator knows no draft-2020-12 meta-schema; the schema
+    // itself uses only keywords both drafts share.
+    let mut schema = request.output_schema.clone();
+    if let Some(object) = schema.as_object_mut() {
+        object.remove("$schema");
+    }
+    let schema = serde_json::to_string(&schema).map_err(|e| e.to_string())?;
     let workdir = private_workdir()?;
     let mut command = Command::new(&executable);
     command.args([

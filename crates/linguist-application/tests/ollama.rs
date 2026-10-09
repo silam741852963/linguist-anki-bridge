@@ -1280,7 +1280,7 @@ fn a_failed_local_generation_falls_back_to_an_agent() {
     std::fs::write(
         bin.join("claude"),
         format!(
-            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '9.9.9 (Fake Code)'; exit 0; }}\ncat > '{}'\nprintf '%s' '{}'\n",
+            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '9.9.9 (Fake Code)'; exit 0; }}\n# Like Claude Code, refuse a draft-2020-12 meta-schema.\ncase \"$*\" in *json-schema.org/draft*) echo 'Error: --json-schema is not a valid JSON Schema' >&2; exit 1;; esac\ncat > '{}'\nprintf '%s' '{}'\n",
             seen.display(),
             reply_json
         ),
