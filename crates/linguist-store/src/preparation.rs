@@ -50,6 +50,7 @@ fn retry_code(code: &str) -> bool {
             | "SOURCE_READ_CONNECTION_FAILED"
             | "SOURCE_READ_RATE_LIMITED"
             | "SOURCE_READ_UNAVAILABLE"
+            | "ENRICHMENT_PROVIDER_TRANSIENT"
     )
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -257,9 +258,28 @@ impl Store {
                 _ => return Ok(None),
             }
         }
-        let assets = self.verify_document_assets(&documents)?;
+        self.verify_document_assets(&documents)?;
+        // The batch archive limit covers what the sources and the dictionary
+        // archived, as `vocab revamp` counts it; provider pictures and audio
+        // are bounded per response instead.
+        let archived: std::collections::BTreeSet<_> = documents
+            .iter()
+            .flat_map(|document| {
+                document
+                    .archives
+                    .iter()
+                    .flat_map(|archive| archive.asset_digests.iter().cloned())
+                    .chain(
+                        document
+                            .media
+                            .iter()
+                            .filter(|media| media.source_id.is_some())
+                            .map(|media| media.digest.clone()),
+                    )
+            })
+            .collect();
         let mut total = 0u64;
-        for asset in assets {
+        for asset in archived {
             total = total
                 .checked_add(self.asset(&asset, limit)?.len() as u64)
                 .ok_or("REVAMP_BATCH_ARCHIVE_LIMIT")?;

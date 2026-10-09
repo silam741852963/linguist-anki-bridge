@@ -1256,6 +1256,12 @@ fn preparation_jobs_queue_and_paginate_without_anki_or_worker_effects() {
             &state,
             "--set",
             "anki.endpoint=http://127.0.0.1:1",
+            // No English dictionary adapter explains in Vietnamese, so the
+            // run is refused before any lease, checkpoint or Anki read.
+            "--set",
+            "dictionary.provider=wiktionary",
+            "--set",
+            "learning.explanation_language=vi",
             "jobs",
             "create",
             "--note-id",
@@ -1276,6 +1282,10 @@ fn preparation_jobs_queue_and_paginate_without_anki_or_worker_effects() {
         .unwrap();
     assert!(!blocked.status.success());
     assert!(blocked.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&blocked.stderr).contains("CAPABILITY_UNAVAILABLE"),
+        "{blocked:?}"
+    );
     let shown = cli()
         .args(["--set", &state, "jobs", "show", id])
         .output()

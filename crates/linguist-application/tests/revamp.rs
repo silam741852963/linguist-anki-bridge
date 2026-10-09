@@ -2182,3 +2182,130 @@ fn a_split_unit_that_already_has_a_note_merges_into_it() {
     };
     assert_eq!(v.expression, "折り目をつける");
 }
+
+#[test]
+fn prepare_job_items_match_the_plan_level_revamp_stages() {
+    struct Dictionary;
+    impl linguist_application::DictionaryPort for Dictionary {
+        fn lookup(
+            &self,
+            query: &str,
+            target: &linguist_core::Language,
+        ) -> std::result::Result<linguist_dictionary::DictionaryPage, String> {
+            linguist_dictionary::wiktionary::parse_definition(query, target,
+                br#"{"en":[{"language":"English","partOfSpeech":"Verb","definitions":[{"definition":"Consume food"},{"definition":"Wear away"}]}]}"#,
+                1024, 10).map_err(|error| error.to_string())
+        }
+    }
+    struct Failure;
+    impl linguist_application::DictionaryPort for Failure {
+        fn lookup(
+            &self,
+            _: &str,
+            _: &linguist_core::Language,
+        ) -> std::result::Result<linguist_dictionary::DictionaryPage, String> {
+            Err("PROVIDER_READ_Transport".into())
+        }
+    }
+    let (capture, mut settings) = setup(
+        "english_vocab",
+        &[("Word", "eat"), ("Meaning", "My original meaning")],
+        &[("expression", "Word"), ("meaning", "Meaning")],
+    );
+    let root = std::env::temp_dir().join(format!("lab-job-stages-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    settings
+        .values
+        .insert("dictionary.provider".into(), json!("wiktionary"));
+    // No live picture or audio search in this test.
+    settings
+        .values
+        .insert("images.search_when_missing".into(), json!(false));
+    settings
+        .values
+        .insert("audio.provider".into(), json!("disabled"));
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-job-stages".into())]);
+    // Plan-level path, as `vocab revamp` runs it.
+    let prepared = publish_capture_draft(&capture, &settings, "english_vocab", &environment).unwrap();
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let base = store.revision(prepared.plan_id, 1).unwrap();
+    let child =
+        linguist_application::dictionary::enrich_revision(&mut store, &base, Some(&Dictionary))
+            .unwrap();
+    // Job path: one staged document, every stage in the worker.
+    let staged = stage_document(&capture, &settings, "english_vocab").unwrap();
+    let providers = linguist_application::vocab::Providers {
+        dictionary: Some(&Dictionary),
+        ..Default::default()
+    };
+    let (document, extra) = linguist_application::jobs::prepare_document(
+        staged.clone(),
+        &capture.captured.assets,
+        &settings,
+        "english_vocab",
+        &environment,
+        providers,
+    )
+    .unwrap();
+    // Identical apart from freshly minted IDs.
+    assert_eq!(
+        without_uuids(&serde_json::to_string(&document).unwrap()),
+        without_uuids(&serde_json::to_string(&child.documents[0]).unwrap())
+    );
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|issue| issue.code == "DICTIONARY_SENSE_REVIEW")
+    );
+    // The dictionary response is returned for publication before the checkpoint.
+    assert!(
+        extra
+            .iter()
+            .any(|(bytes, _)| String::from_utf8_lossy(bytes).contains("Wear away"))
+    );
+    // A provider failure is an error, never a silently skipped stage.
+    let failed = linguist_application::jobs::prepare_document(
+        staged,
+        &capture.captured.assets,
+        &settings,
+        "english_vocab",
+        &environment,
+        linguist_application::vocab::Providers {
+            dictionary: Some(&Failure),
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(failed.contains("PROVIDER_READ_Transport"), "{failed}");
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// Replace every UUID with its order of first appearance.
+fn without_uuids(text: &str) -> String {
+    let mut seen = Vec::<String>::new();
+    let mut out = String::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        if rest.len() >= 36
+            && rest.is_char_boundary(36)
+            && uuid::Uuid::try_parse(&rest[..36]).is_ok()
+        {
+            let id = rest[..36].to_owned();
+            let index = seen.iter().position(|s| *s == id).unwrap_or_else(|| {
+                seen.push(id);
+                seen.len() - 1
+            });
+            out.push_str(&format!("<uuid-{index}>"));
+            rest = &rest[36..];
+        } else {
+            let c = rest.chars().next().unwrap();
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out
+}

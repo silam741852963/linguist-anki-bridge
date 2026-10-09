@@ -185,9 +185,6 @@ pub fn run(
         semantic_fingerprint: frozen.semantic_fingerprint.clone(),
         execution_fingerprint: frozen.execution_fingerprint.clone(),
     };
-    if settings.values["dictionary.provider"] != "authored" {
-        return Err("CAPABILITY_UNAVAILABLE: durable jobs currently capture source drafts only; dictionary enrichment checkpoints are pending".into());
-    }
     crate::revamp::validate_source_revamp(&settings, &definition.selection.purpose, environment)?;
     let registry = linguist_config::Registry::builtin();
     for key in [
@@ -267,10 +264,24 @@ pub fn run(
                             let capture = crate::source_archive::capture_for_revamp(
                                 client, settings, purpose, id,
                             )?;
-                            // Decode/stage in the worker so the coordinator can heartbeat.
+                            // Decode, stage and enrich in the worker so the
+                            // coordinator can heartbeat; the checkpoint holds
+                            // every stage's result, so a resumed job never
+                            // fetches a captured item again.
                             let document =
                                 crate::revamp::stage_document(&capture, settings, purpose)?;
-                            Ok::<_, String>((document, capture.captured.assets))
+                            let (document, extra) = prepare_document(
+                                document,
+                                &capture.captured.assets,
+                                settings,
+                                purpose,
+                                environment,
+                                crate::vocab::Providers::default(),
+                            )
+                            .map_err(|error| {
+                                format!("{}: {error}", enrichment_code(&error))
+                            })?;
+                            Ok::<_, String>((document, capture.captured.assets, extra))
                         }))
                         .unwrap_or_else(|_| Err("SOURCE_CAPTURE_WORKER_PANIC".into()));
                         let _ = sender.send((item.item_id, attempt, result));
@@ -295,7 +306,7 @@ pub fn run(
                     };
                     store.renew_lease(&lease, seconds)?;
                     renewed = std::time::Instant::now();
-                    let prepared = prepared.and_then(|(document, assets)| {
+                    let prepared = prepared.and_then(|(document, assets, extra)| {
                         for (digest, bytes) in assets {
                             if store.publish_asset(
                                 &bytes,
@@ -306,6 +317,9 @@ pub fn run(
                             {
                                 return Err("SOURCE_CAPTURE_ASSET_DIGEST_CONFLICT".into());
                             }
+                        }
+                        for (bytes, cap) in extra {
+                            store.publish_asset(&bytes, cap)?;
                         }
                         Ok(document)
                     });
@@ -322,9 +336,22 @@ pub fn run(
                                 "ANKI_DEPENDENCY_UNAVAILABLE" => "SOURCE_READ_CONNECTION_FAILED",
                                 "ANKI_HTTP_FAILURE: 429" => "SOURCE_READ_RATE_LIMITED",
                                 "ANKI_HTTP_FAILURE: 503" => "SOURCE_READ_UNAVAILABLE",
+                                error if error.starts_with("ENRICHMENT_PROVIDER_TRANSIENT:") => {
+                                    "ENRICHMENT_PROVIDER_TRANSIENT"
+                                }
+                                error if error.starts_with("ENRICHMENT_FAILED:") => {
+                                    "ENRICHMENT_FAILED"
+                                }
                                 _ => "SOURCE_CAPTURE_REVIEW_REQUIRED",
                             };
-                            let retry_eligible = code != "SOURCE_CAPTURE_REVIEW_REQUIRED";
+                            let retry_eligible = matches!(
+                                code,
+                                "SOURCE_READ_TIMEOUT"
+                                    | "SOURCE_READ_CONNECTION_FAILED"
+                                    | "SOURCE_READ_RATE_LIMITED"
+                                    | "SOURCE_READ_UNAVAILABLE"
+                                    | "ENRICHMENT_PROVIDER_TRANSIENT"
+                            );
                             stop |=
                                 !retry_eligible || settings.values["jobs.on_item_error"] == "stop";
                             (
@@ -414,6 +441,74 @@ pub fn run(
             Ok(value)
         }
         Err(error) => Err(error),
+    }
+}
+
+/// A prepared document and every new asset with its publication cap.
+type PreparedDocument = (linguist_core::LearningDocument, Vec<(Vec<u8>, u64)>);
+
+/// OCR, dictionary lookup and kanji/picture/audio enrichment for one staged
+/// document, in the order `vocab revamp` runs them over a whole plan. Returns
+/// the enriched document and every new asset with its publication cap.
+/// `providers` are injected ports; `None` uses the configured live adapter.
+pub fn prepare_document(
+    document: linguist_core::LearningDocument,
+    captured: &BTreeMap<String, Vec<u8>>,
+    settings: &linguist_config::Effective,
+    purpose: &str,
+    environment: &BTreeMap<String, String>,
+    providers: crate::vocab::Providers<'_>,
+) -> Result<PreparedDocument, String> {
+    let mut documents = vec![document];
+    let mut extra: Vec<(Vec<u8>, u64)> =
+        crate::ocr_inspection::inspect_documents(&mut documents, captured, settings, environment)?
+            .into_values()
+            .map(|bytes| (bytes, 100 * 1024 * 1024))
+            .collect();
+    let mut document = documents.remove(0);
+    if settings.values["dictionary.provider"] != "authored" && !purpose.ends_with("_grammar") {
+        let cap = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
+        let (enriched, responses) =
+            crate::dictionary::enrich_document(
+                &document,
+                settings,
+                &Default::default(),
+                providers.dictionary,
+            )?;
+        document = enriched;
+        extra.extend(responses.into_iter().map(|bytes| (bytes, cap)));
+    }
+    if crate::vocab::document_requested(settings, &document) {
+        let cap = settings.values["network.max_response_mb"]
+            .as_u64()
+            .unwrap_or(20)
+            * 1024
+            * 1024;
+        let (enriched, bytes) =
+            crate::vocab::enrich_document(&document, settings, environment, providers)?;
+        document = enriched;
+        extra.extend(bytes.into_iter().map(|bytes| (bytes, cap)));
+    }
+    Ok((document, extra))
+}
+
+/// Transient provider reads (DNS, deadline, transport, rate limits and 5xx)
+/// may be retried; any other enrichment failure needs review.
+fn enrichment_code(error: &str) -> &'static str {
+    let transient = [
+        "PROVIDER_READ_Dns",
+        "PROVIDER_READ_Deadline",
+        "PROVIDER_READ_Transport",
+        "PROVIDER_READ_RetryAfter",
+        "PROVIDER_READ_Http(408)",
+        "PROVIDER_READ_Http(425)",
+        "PROVIDER_READ_Http(429)",
+        "PROVIDER_READ_Http(5",
+    ];
+    if transient.iter().any(|code| error.contains(code)) {
+        "ENRICHMENT_PROVIDER_TRANSIENT"
+    } else {
+        "ENRICHMENT_FAILED"
     }
 }
 
@@ -560,4 +655,28 @@ pub fn create_selected(
     Ok(
         serde_json::json!({"schema_version":2,"job_id":definition.job.id,"mode":"prepare","digest":digest,"input_count":selected.len(),"matched_count":matched_count,"state":"queued","worker_started":false,"execution_available":false,"writes_enabled":false}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn only_transient_provider_reads_are_retried() {
+        for error in [
+            "DICTIONARY_LOOKUP_FAILED: PROVIDER_READ_Dns",
+            "PROVIDER_READ_Deadline",
+            "PROVIDER_READ_Http(429)",
+            "PROVIDER_READ_Http(503)",
+        ] {
+            assert_eq!(super::enrichment_code(error), "ENRICHMENT_PROVIDER_TRANSIENT");
+        }
+        for error in [
+            "PROVIDER_READ_Policy",
+            "PROVIDER_READ_Offline",
+            "PROVIDER_READ_Http(404)",
+            "PROVIDER_READ_Schema",
+            "AUDIO_SETTING_MISSING",
+        ] {
+            assert_eq!(super::enrichment_code(error), "ENRICHMENT_FAILED");
+        }
+    }
 }

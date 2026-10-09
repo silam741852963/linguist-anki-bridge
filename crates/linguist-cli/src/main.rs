@@ -4435,7 +4435,11 @@ fn prepare_retry(
                     "started" => "JOB_RETRY_RECOVER_FIRST",
                     "captured" => "JOB_RETRY_ALREADY_SUCCEEDED",
                     "pending" => "JOB_RETRY_NOT_FAILED",
-                    _ if item.error_code.as_deref() == Some("SOURCE_CAPTURE_REVIEW_REQUIRED") => {
+                    _ if matches!(
+                        item.error_code.as_deref(),
+                        Some("SOURCE_CAPTURE_REVIEW_REQUIRED" | "ENRICHMENT_FAILED")
+                    ) =>
+                    {
                         "JOB_RETRY_REQUIRES_REVIEW"
                     }
                     _ => "JOB_RETRY_ATTEMPTS_EXHAUSTED",

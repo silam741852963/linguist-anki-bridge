@@ -1392,6 +1392,14 @@ fn stage_recording(
 }
 
 /// True when any document still needs optional vocabulary enrichment.
+/// One document's share of `requested`.
+pub fn document_requested(settings: &Effective, document: &LearningDocument) -> bool {
+    (kanji_requested(settings, document)
+        || images_requested(settings, document)
+        || audio_requested(settings, document))
+        && !document.issues.iter().any(|i| i.stage == "enrichment")
+}
+
 pub fn requested(settings: &Effective, plan: &PlanRevision) -> bool {
     plan.documents.iter().any(|d| {
         kanji_requested(settings, d)
