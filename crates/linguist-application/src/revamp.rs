@@ -360,6 +360,16 @@ pub fn stage_document(
         {
             return Err("REVAMP_MEDIA_MANIFEST_CONFLICT".into());
         }
+        // `media_refs` is a sorted set; the document keeps the order the
+        // source fields reference the files in, so pictures render as authored.
+        let mut receipts = receipts;
+        let first_seen = |filename: &str| {
+            manifest["media_discovery"]["references"]
+                .as_array()
+                .and_then(|refs| refs.iter().position(|r| r["filename"] == filename))
+                .unwrap_or(usize::MAX)
+        };
+        receipts.sort_by_key(|entry| first_seen(&entry.filename));
         for entry in receipts {
             match (entry.digest, entry.size_bytes) {
                 (None, None) => issues.push(issue(

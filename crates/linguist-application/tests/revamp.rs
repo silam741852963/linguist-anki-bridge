@@ -1671,3 +1671,51 @@ fn unmapped_legacy_field_is_dropped_by_a_typed_decision_and_stays_archived() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
+#[test]
+fn source_media_keep_the_order_the_fields_reference_them_in() {
+    let (mut capture, mut settings) = setup(
+        "english_vocab",
+        &[
+            ("Word", "secretary"),
+            ("Media", "<img src=\"秘书.jpg\"><img src=\"book-box.jpg\">"),
+        ],
+        &[("expression", "Word")],
+    );
+    let png = |n: u8| {
+        let mut bytes = Vec::new();
+        image::RgbImage::from_pixel(2, 2, image::Rgb([n, 0, 0]))
+            .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+            .unwrap();
+        bytes
+    };
+    assert_eq!(capture.captured.source.media_refs, ["book-box.jpg", "秘书.jpg"]);
+    linguist_application::source_archive::media::attach_original_media(
+        &mut capture.captured,
+        BTreeMap::from([
+            ("book-box.jpg".into(), Some(png(1))),
+            ("秘书.jpg".into(), Some(png(2))),
+        ]),
+        10 * 1024 * 1024,
+        10 * 1024 * 1024,
+    )
+    .unwrap();
+    let root = std::env::temp_dir().join(format!("lab-media-order-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "english_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-media-order".into())]),
+    )
+    .unwrap();
+    let store = linguist_store::Store::open(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let names: Vec<_> = plan.documents[0]
+        .media
+        .iter()
+        .map(|m| m.original_filename.as_deref().unwrap_or(&m.filename))
+        .collect();
+    assert_eq!(names, ["秘书.jpg", "book-box.jpg"]);
+}
