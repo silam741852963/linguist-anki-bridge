@@ -388,7 +388,20 @@ pub fn prepare_item(
         }
         Stage::Generation => {}
     }
-    prepared.reviews.clear();
+    if stage == Stage::Generation {
+        // Clearing generated fields leaves the facts that sense, media and
+        // source decisions were checked against, so they carry over and the
+        // rerun can start; generation reopens every review afterwards.
+        let current = prepared.semantic_digest().map_err(|e| e.to_string())?;
+        prepared
+            .reviews
+            .retain(|review| linguist_core::review::rebindable(&review.choice));
+        for review in &mut prepared.reviews {
+            review.input_digest = current.clone();
+        }
+    } else {
+        prepared.reviews.clear();
+    }
     prepared.issues = validation::validate(&prepared);
     Ok((prepared, preview))
 }

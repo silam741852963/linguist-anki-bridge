@@ -746,7 +746,9 @@ fn expression_applicable(
 }
 
 /// Decisions whose validity is fully re-checked against document state.
-fn rebindable(choice: &ReviewChoice) -> bool {
+/// Decisions checked against facts other than generated content (sense,
+/// media, source history, duplicates, segmentation, split anchor).
+pub fn rebindable(choice: &ReviewChoice) -> bool {
     matches!(
         choice,
         ReviewChoice::NativeHistory { .. }
