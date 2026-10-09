@@ -1,19 +1,19 @@
 grammar_split
 scenario grammar-split
 models install japanese_grammar --apply -> 0
-grammar revamp --note-id 1791537758985 -> 4
-plans show 8fa48da2-7b20-4099-8163-e458cd98c04e --issues-only -> 0
-plans split-grammar 8fa48da2-7b20-4099-8163-e458cd98c04e --request /tmp/lab-desk-301e2449/split.json -> 4
-plans show 8fa48da2-7b20-4099-8163-e458cd98c04e --issues-only -> 0
-plans resolve-history 8fa48da2-7b20-4099-8163-e458cd98c04e --item 2bbaa0c8-2060-46c3-af73-e1d7c3d486c0 --map 0=recognition --actor desktop-scenario -> 4
-plans show 8fa48da2-7b20-4099-8163-e458cd98c04e --issues-only -> 0
-plans resolve 8fa48da2-7b20-4099-8163-e458cd98c04e GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-301e2449/decision-879c8465-546c-4e7b-baf2-16434346c3c9.json -> 4
-plans show 8fa48da2-7b20-4099-8163-e458cd98c04e --issues-only -> 0
-plans resolve 8fa48da2-7b20-4099-8163-e458cd98c04e GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-301e2449/decision-a9513e87-519e-4ab7-8d33-1b5418eeebba.json -> 0
-plans show 8fa48da2-7b20-4099-8163-e458cd98c04e --issues-only -> 0
-plans show 8fa48da2-7b20-4099-8163-e458cd98c04e -> 0
-plans bind 8fa48da2-7b20-4099-8163-e458cd98c04e --digest lab-jcs-v1:plan:a07ebfd3cd3233b61be7f0c6764b2326ae05655705f57f8aa13cf33d8e7f496d -> 0
-plans validate 8fa48da2-7b20-4099-8163-e458cd98c04e --revision 6 -> 0
-plans approve 8fa48da2-7b20-4099-8163-e458cd98c04e --revision 6 --digest lab-jcs-v1:plan:c21c29f1335da7275cfd77485c1f810d0d1353c455853d8c64fc4513b7242134 --actor desktop-scenario -> 0
-apply 8fa48da2-7b20-4099-8163-e458cd98c04e --revision 6 --split-group e1f5994a-1ce8-4b0f-8ba1-eccf4a2cda95 --apply -> 0
-jobs rollback 85c6af6c-3837-4d94-9a7f-bef695c15b17 --delete-unstudied-created --apply -> 0
+grammar revamp --note-id 1791547836560 -> 4
+plans show 237a7989-6ec3-45fd-9e9d-e022001e1e6f --issues-only -> 0
+plans split-grammar 237a7989-6ec3-45fd-9e9d-e022001e1e6f --request /tmp/lab-desk-6903bbda/split.json -> 4
+plans show 237a7989-6ec3-45fd-9e9d-e022001e1e6f --issues-only -> 0
+plans resolve-history 237a7989-6ec3-45fd-9e9d-e022001e1e6f --item 77461492-c241-468f-b516-52b0a9f9a8e5 --map 0=recognition --actor desktop-scenario -> 4
+plans show 237a7989-6ec3-45fd-9e9d-e022001e1e6f --issues-only -> 0
+plans resolve 237a7989-6ec3-45fd-9e9d-e022001e1e6f GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-6903bbda/decision-cbee9daf-c409-4113-b686-2ed93045a124.json -> 4
+plans show 237a7989-6ec3-45fd-9e9d-e022001e1e6f --issues-only -> 0
+plans resolve 237a7989-6ec3-45fd-9e9d-e022001e1e6f GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-6903bbda/decision-eb879fb6-cb9a-4f2b-ac9a-2a3baf68dcf4.json -> 0
+plans show 237a7989-6ec3-45fd-9e9d-e022001e1e6f --issues-only -> 0
+plans show 237a7989-6ec3-45fd-9e9d-e022001e1e6f -> 0
+plans bind 237a7989-6ec3-45fd-9e9d-e022001e1e6f --digest lab-jcs-v1:plan:4532cb36ffcd95e9f22f3529560b9396a725fa96a9fbbf1c2b6814ceb8c0c26f -> 0
+plans validate 237a7989-6ec3-45fd-9e9d-e022001e1e6f --revision 6 -> 0
+plans approve 237a7989-6ec3-45fd-9e9d-e022001e1e6f --revision 6 --digest lab-jcs-v1:plan:84a959112e8a0e80aa37017e6373afb63a9bc1244e69a6ad3e9081a32bf0f2be --actor desktop-scenario -> 0
+apply 237a7989-6ec3-45fd-9e9d-e022001e1e6f --revision 6 --split-group 2d42f7c7-36f4-48ee-829c-31be90916ba6 --apply -> 0
+jobs rollback 855196be-a3cd-4ba7-914e-f27af08b13ee --delete-unstudied-created --apply -> 0

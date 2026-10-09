@@ -4,7 +4,7 @@
  "status": "pass",
  "version_matrix": {
   "linguist-anki-bridge": "0.1.0",
-  "git_commit": "b88e8f8e3ad927b77a443b20c8d7f38e997ea84a",
+  "git_commit": "4e85a916b37b75ce9ff97a89e2675e5732f39f0c",
   "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
   "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
   "rust_msrv_declared": "1.98.1",
@@ -50,7 +50,7 @@
    ],
    "invocation_digest": "bac84cd4093b4800ce09690fb996b634433fe572abfc075e72eec71f5cbabf6e",
    "exit_code": 0,
-   "output_digest": "1b65339bf35752edfa6e97d01f476beb5bb31c8abc048c5fb206d140bb476dcc"
+   "output_digest": "baffaaaa862160a57eb293375f1b9a4ede13d858a23af5a740117066c622c6ee"
   },
   {
    "redacted_argv": [
@@ -69,7 +69,7 @@
    ],
    "invocation_digest": "20e337ed703325bbbeaa96024788d83947d339a8c7c750ec1d6b4d1c5b2de29c",
    "exit_code": 0,
-   "output_digest": "caae273f8fecceab15e22aeadf3403352b7fe3167d73b7ff5abc7cbf16ae6965"
+   "output_digest": "e55bfda635d07e98aaafec76baeee1d1143f64d48e065aef81cc5d0814d8f429"
   }
  ],
  "assertions": [

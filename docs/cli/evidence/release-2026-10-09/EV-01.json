@@ -4,7 +4,7 @@
  "status": "pass",
  "version_matrix": {
   "linguist-anki-bridge": "0.1.0",
-  "git_commit": "b88e8f8e3ad927b77a443b20c8d7f38e997ea84a",
+  "git_commit": "4e85a916b37b75ce9ff97a89e2675e5732f39f0c",
   "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
   "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
   "rust_msrv_declared": "1.98.1",
@@ -51,7 +51,7 @@
   "contracts/v2/backup-receipt.schema.json": "567df548e1935032784c3fdc401ddc8d5d139c8c33e101b1b3b1884c6f88cb4e",
   "contracts/v2/capability-report.schema.json": "753039b0f6255c37e8ed5a7a323870b04fa7ab870f8965b4c75a33afbce8273a",
   "contracts/v2/collection-binding.schema.json": "7bcb2ad2b64cd58a2f24388fc1cbb3213ed728cd168e7b663d2793b4eefaa86c",
-  "contracts/v2/config-file-normalized.schema.json": "9886bd2a00205f87195960472586d514e260a727730391fbfbd798b3acf82cb1",
+  "contracts/v2/config-file-normalized.schema.json": "e922d512e1ed5a6790526ce27417f1bf04ab4b182a7aca1de474d3edcace56a3",
   "contracts/v2/export-manifest.schema.json": "bc7a7f0dbd783c5c79f2012c86cc7d8701ba836a64dc716152486f58d022ca2c",
   "contracts/v2/gate-evidence.schema.json": "a0ca46910d1609e11e3bc41e5a8143c301ef140b2345481bd270f639dc1ae980",
   "contracts/v2/generation-supplement.schema.json": "c26da3a86e163b9f552c15d9b31751db5fd95f3f55448aa12443a6aebac1d8df",
@@ -83,7 +83,7 @@
    ],
    "invocation_digest": "1322de78d9278306ca20b9022599539847c17e6759cb05075046168aeadeee73",
    "exit_code": 0,
-   "output_digest": "da7c085089ff1260138640283cf1e452072044b4507151c0da375e552aae8463"
+   "output_digest": "a9abda7278fe319830809663bfa9f5492320418e3192646b9a12b0594316a618"
   },
   {
    "redacted_argv": [

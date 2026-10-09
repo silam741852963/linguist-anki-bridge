@@ -1,6 +1,6 @@
 $ /usr/bin/python3.14 scripts/verify-config-schema.py
 exit 0
 
-PASS: normalized config schema covers 159 registry entries, defaults and closed mappings
+PASS: normalized config schema covers 173 registry entries, defaults and closed mappings
 
 --- stderr ---

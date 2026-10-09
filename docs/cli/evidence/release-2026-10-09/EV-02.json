@@ -4,7 +4,7 @@
  "status": "blocked",
  "version_matrix": {
   "linguist-anki-bridge": "0.1.0",
-  "git_commit": "b88e8f8e3ad927b77a443b20c8d7f38e997ea84a",
+  "git_commit": "4e85a916b37b75ce9ff97a89e2675e5732f39f0c",
   "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
   "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
   "rust_msrv_declared": "1.98.1",
@@ -35,7 +35,7 @@
   "crate:zstd": "0.14.0"
  },
  "fixture_hashes": {
-  "docs/cli/configuration/settings-registry.json": "432fea105e75a344105f3c22bfde1670b4b8226d788e0a6a02de54c3033dae3b",
+  "docs/cli/configuration/settings-registry.json": "4aea49d211b4de6a33f6f9000bfdbb17b3dee3832fcce6c696813128e4bdbfa3",
   "docs/cli/configuration/purpose-defaults.json": "185af63701b2b0020cdd7ddf5034bbd016444cc2f893fe77e04ad7356468e5fa"
  },
  "commands": [
@@ -55,7 +55,7 @@
    ],
    "invocation_digest": "f119264ac7cab47eedb4eb6f5e77f7c28e66632e06dc6197cc94836ec70903e2",
    "exit_code": 0,
-   "output_digest": "afbb33872a50da77a0902f38c233db375ad51c8435d69756e8d87a3f94d898e8"
+   "output_digest": "b4cd13b5176da052e21d54cfcb962224daaf105e04d4060440af1b213ce0b6db"
   },
   {
    "redacted_argv": [
@@ -64,14 +64,14 @@
    ],
    "invocation_digest": "545334904da442d17c3fa9e7cf0ba90e3885235de1e8b1a3a226b8f2cbb7e3e2",
    "exit_code": 0,
-   "output_digest": "290a4a3f311ec49a974928cc33211dbfb8bfe68dda4b62f6abbdea27f4662fdc"
+   "output_digest": "97469c590fffb836ed2fa3ad13dad0a24c45fe649811eddd2f5178ed32948849"
   }
  ],
  "assertions": [
   {
    "name": "every registry entry has a consumer or reported unavailable feature",
    "passed": true,
-   "observed": "159 entries"
+   "observed": "173 entries"
   },
   {
    "name": "final purpose presets",
@@ -81,7 +81,7 @@
   {
    "name": "normalized config schema covers defaults",
    "passed": true,
-   "observed": "159 entries"
+   "observed": "173 entries"
   }
  ],
  "artifact_refs": [

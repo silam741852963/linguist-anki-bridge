@@ -11,7 +11,7 @@ test legacy_jobs_migrate_previews_imports_and_lists_read_only_history ... ok
 test diagnostic_log_follows_logging_settings_and_never_creates_state ... ok
 test legacy_config_import_then_guarded_activation ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
 
 
 --- stderr ---

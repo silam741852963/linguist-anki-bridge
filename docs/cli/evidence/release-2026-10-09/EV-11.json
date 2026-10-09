@@ -4,7 +4,7 @@
  "status": "fail",
  "version_matrix": {
   "linguist-anki-bridge": "0.1.0",
-  "git_commit": "b88e8f8e3ad927b77a443b20c8d7f38e997ea84a",
+  "git_commit": "4e85a916b37b75ce9ff97a89e2675e5732f39f0c",
   "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
   "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
   "rust_msrv_declared": "1.98.1",
@@ -52,7 +52,7 @@
    ],
    "invocation_digest": "ee29b8629d31b57d6dfbdfd723a3867c746ea1693b5e3cf253b6ad2ddfd41167",
    "exit_code": 0,
-   "output_digest": "1d3a80e8899b1965702414c3e0152fe979abb3d3a17f8df7b1d0106ed729b266"
+   "output_digest": "755fd853d49e6d7d8d05b3b3771be153027dafb7ae48948dedbebcfcf0403cd5"
   },
   {
    "redacted_argv": [
@@ -71,7 +71,7 @@
    ],
    "invocation_digest": "68a5aac8d41553bd435d92257614cbcb08013f60e46f9aecf4eaa0fb1a06d39d",
    "exit_code": 0,
-   "output_digest": "68928822dd725d8cd2480a111443a08b4a60d8fc63111898044afe50d4ab6637"
+   "output_digest": "d91867d48a247b064ff8ee990c18b75806ea30302f58ebccc3c1484d7d8ae1d6"
   }
  ],
  "assertions": [
@@ -83,7 +83,7 @@
   {
    "name": "local model schema compliance >= 95%",
    "passed": false,
-   "observed": "52/55 with gemma4:12b"
+   "observed": "51/55 with gemma4:12b"
   },
   {
    "name": "OCR packs for jpn and vie installed",

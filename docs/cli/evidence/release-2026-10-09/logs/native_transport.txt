@@ -15,7 +15,7 @@ running 2 tests
 test an_unverified_companion_cannot_bind_or_write ... ok
 test plans_bind_records_the_verified_binding_in_a_new_revision ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
 
 
 --- stderr ---

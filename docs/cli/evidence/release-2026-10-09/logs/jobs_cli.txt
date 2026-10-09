@@ -8,16 +8,16 @@ test apply_preview_reports_ready_items_without_any_effect ... ok
 test apply_flag_and_wrong_digest_fail_before_lease_or_journal ... ok
 test reconcile_proposal_is_local_and_writes_stay_unavailable ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
 
 running 4 tests
 test apply_jobs_need_a_checkpoint_and_the_current_apply_flag ... ok
 test simulate_jobs_are_created_inspected_and_never_write ... ok
-test idle_controls_are_confirmed_and_terminal_jobs_are_tombstoned ... ok
 test prepare_jobs_refuse_apply_and_classify_retries_without_running ... ok
+test idle_controls_are_confirmed_and_terminal_jobs_are_tombstoned ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
 
 
 running 4 tests

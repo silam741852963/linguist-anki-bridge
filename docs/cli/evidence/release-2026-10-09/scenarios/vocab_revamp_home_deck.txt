@@ -1,17 +1,17 @@
 vocab_revamp_home_deck
 scenario vocab_revamp_home_deck
 models install english_vocab --apply -> 0
-vocab revamp --note-id 1791538040161 -> 4
-plans show 38c4c4ae-8718-41bc-b1a8-2779d54b6ab7 --issues-only -> 0
-plans show 38c4c4ae-8718-41bc-b1a8-2779d54b6ab7 -> 0
-plans edit 38c4c4ae-8718-41bc-b1a8-2779d54b6ab7 --base-revision 1 --patch /tmp/lab-desk-44c93202/review.patch.json --save-draft -> 4
-plans resolve-history 38c4c4ae-8718-41bc-b1a8-2779d54b6ab7 --item ac6f2aba-fa2a-4c77-952c-67584559072d --map 0=comprehension --actor desktop-scenario -> 0
-plans bind 38c4c4ae-8718-41bc-b1a8-2779d54b6ab7 --digest lab-jcs-v1:plan:36f54189fd1668ce6e23ea52edbe78a6de97501687c4f178551110da14581a73 -> 0
-plans validate 38c4c4ae-8718-41bc-b1a8-2779d54b6ab7 --revision 4 -> 0
-plans approve 38c4c4ae-8718-41bc-b1a8-2779d54b6ab7 --revision 4 --digest lab-jcs-v1:plan:80df38e5a42a722dde5fa65afccafddd3e7fb1eb879c73161c4fb503c2556453 --actor desktop-scenario -> 0
-apply 38c4c4ae-8718-41bc-b1a8-2779d54b6ab7 --revision 4 --accept-schema-change --apply -> 0
-snapshots restore 62c172fd-b342-4725-ae44-b06f4ec05866 -> 0
-snapshots restore 62c172fd-b342-4725-ae44-b06f4ec05866 --decision /tmp/lab-desk-44c93202/decision-62c172fd-b342-4725-ae44-b06f4ec05866.json --apply -> 5
+vocab revamp --note-id 1791548118210 -> 4
+plans show 7a35c9f8-bb3f-4eea-9699-ab2d1523c880 --issues-only -> 0
+plans show 7a35c9f8-bb3f-4eea-9699-ab2d1523c880 -> 0
+plans edit 7a35c9f8-bb3f-4eea-9699-ab2d1523c880 --base-revision 1 --patch /tmp/lab-desk-fa563a0e/review.patch.json --save-draft -> 4
+plans resolve-history 7a35c9f8-bb3f-4eea-9699-ab2d1523c880 --item 66c4484f-ebda-4cee-8aa5-11e63ff5067a --map 0=comprehension --actor desktop-scenario -> 0
+plans bind 7a35c9f8-bb3f-4eea-9699-ab2d1523c880 --digest lab-jcs-v1:plan:2ba7b800e670a4460b787ac1ee1d64414c4cea61b4e9a985d30660802bb7de21 -> 0
+plans validate 7a35c9f8-bb3f-4eea-9699-ab2d1523c880 --revision 4 -> 0
+plans approve 7a35c9f8-bb3f-4eea-9699-ab2d1523c880 --revision 4 --digest lab-jcs-v1:plan:543373c1a4f9d89fcddd9e7d9ae0faf93389e6bfc9548de8785602e340b3026a --actor desktop-scenario -> 0
+apply 7a35c9f8-bb3f-4eea-9699-ab2d1523c880 --revision 4 --accept-schema-change --apply -> 0
+snapshots restore 8d0dfead-b1cf-413e-af3c-2eecefc993ea -> 0
+snapshots restore 8d0dfead-b1cf-413e-af3c-2eecefc993ea --decision /tmp/lab-desk-fa563a0e/decision-8d0dfead-b1cf-413e-af3c-2eecefc993ea.json --apply -> 5
 restore without a field decision refused: Meaning
-snapshots restore 62c172fd-b342-4725-ae44-b06f4ec05866 -> 0
-snapshots restore 62c172fd-b342-4725-ae44-b06f4ec05866 --decision /tmp/lab-desk-44c93202/decision-62c172fd-b342-4725-ae44-b06f4ec05866.json --apply -> 0
+snapshots restore 8d0dfead-b1cf-413e-af3c-2eecefc993ea -> 0
+snapshots restore 8d0dfead-b1cf-413e-af3c-2eecefc993ea --decision /tmp/lab-desk-fa563a0e/decision-8d0dfead-b1cf-413e-af3c-2eecefc993ea.json --apply -> 0
