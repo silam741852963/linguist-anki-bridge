@@ -2496,6 +2496,35 @@ fn run(cli: Cli) -> Result<u8, String> {
                     let request: linguist_application::vocab_split::SplitRequest =
                         canonical::parse(&raw).map_err(|e| e.to_string())?;
                     let base = store.revision(plan, request.base_revision)?;
+                    // A hand-written request is checked like a template: a word
+                    // that already has a note must merge into it.
+                    let mut checked = request.clone();
+                    linguist_application::vocab_split::find_existing(
+                        &base,
+                        &mut checked,
+                        &anki_client(&settings)?,
+                    )?;
+                    let missing: Vec<String> = request
+                        .units
+                        .iter()
+                        .zip(&checked.units)
+                        .filter(|(given, found)| {
+                            given.existing_note.is_none() && found.existing_note.is_some()
+                        })
+                        .map(|(given, found)| {
+                            format!(
+                                "{} (note {})",
+                                given.expression,
+                                found.existing_note.as_deref().unwrap_or_default()
+                            )
+                        })
+                        .collect();
+                    if !missing.is_empty() {
+                        return Err(format!(
+                            "VOCAB_SPLIT_EXISTING_NOTE: {} already in the deck; set existing_note (plans split-vocab --template does)",
+                            missing.join(", ")
+                        ));
+                    }
                     drop(store);
                     let child = linguist_application::vocab_split::split(
                         &mut linguist_store::Store::open_existing(&root)?,

@@ -116,7 +116,9 @@ source model's word field or a revamped note's `Expression`, compared without
 markup or spaces. A unit with such a note gets `existing_note` (its note ID)
 and makes no new note; the anchor moves to the first unit without one and
 takes the source note's pictures. The split output lists those units under
-`merged_into_existing`; revamp each listed note on its own
+`merged_into_existing`. A hand-written `--request` is checked the same way:
+a unit whose word already has a note but no `existing_note` is refused
+(`VOCAB_SPLIT_EXISTING_NOTE`). Revamp each listed note on its own
 (`vocab revamp --note-id ID`), which keeps its history. The anchor never
 merges (`VOCAB_SPLIT_UNIT_INVALID`). When only the anchor is left to make a
 note (折り目をつける / 味をつける with 味をつける already a note), the item is
