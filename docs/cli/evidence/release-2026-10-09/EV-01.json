@@ -1,0 +1,145 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-01",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "b88e8f8e3ad927b77a443b20c8d7f38e997ea84a",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.11.1",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,jpn,osd,vie",
+  "ollama": "0.40.1",
+  "kernel": "Linux 7.2.8-5-omarchy-bore",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "contracts/v2/fixtures/capability-report.json": "32b32581cf5c02dfde811b1b8313ff9dab4a08409a8ce2762f0c68f00fd5f7b2",
+  "contracts/v2/fixtures/gate-evidence-not-run.json": "f1444a0173e30a5ad9b4c55f861148e661da603c13a65c4483ecd7f5b36e0edd",
+  "contracts/v2/fixtures/grammar.json": "79300d55904eecc909691211741aa7abdc9eb72202c2f1bf43029a097d6a69ad",
+  "contracts/v2/fixtures/jcs-vectors.json": "ff19623c859744c810db121c33429051e6a2dedac6e15b4936e5e7ab422dab9d",
+  "contracts/v2/fixtures/native-capabilities.json": "ce10a9a5d6bbaa155e2f37be317115847e3b6c11356e3f9280f65ea44bd205e2",
+  "contracts/v2/fixtures/native-operation-receipt.json": "b88d2efe503c9395bbd8ae720cb5d99283fd66ae595099c94e822ba620b149f7",
+  "contracts/v2/fixtures/resume-binding-decision.json": "1bd4b8ae7c3040134935c3935d8cc621d516e7086fd265952ba887564403f06b",
+  "contracts/v2/fixtures/source-task-map.json": "1b6a1da53aa1106daa04bc777f08f429ee589a3e17ca09d4a3dcd6ca3c185f4f",
+  "contracts/v2/fixtures/vocabulary-rich-dictionary.json": "e43b5c87a6c3fc58c163a5a981882cfb06b8171b719081709c399b878fefde5c",
+  "contracts/v2/fixtures/vocabulary.json": "ecd3a0b59f66ffb0e96228f67f413afbdd02f9277658079164752faf62e78add",
+  "contracts/v2/add-input.schema.json": "2b4038c39fdeaeaeb60329fe1e8d6801a9adb14ddfbb04da2083a4c69a85ae03",
+  "contracts/v2/approval-request.schema.json": "65d45f610ce0bb6b899fffe413bfae01eab56607b2ed6fc9a5219cc7fa0f8092",
+  "contracts/v2/approval.schema.json": "a7ae045d6b3504e3cd75735d0f1bf42cf7aee94da587f1aba12853667f29ab06",
+  "contracts/v2/backup-receipt.schema.json": "567df548e1935032784c3fdc401ddc8d5d139c8c33e101b1b3b1884c6f88cb4e",
+  "contracts/v2/capability-report.schema.json": "753039b0f6255c37e8ed5a7a323870b04fa7ab870f8965b4c75a33afbce8273a",
+  "contracts/v2/collection-binding.schema.json": "7bcb2ad2b64cd58a2f24388fc1cbb3213ed728cd168e7b663d2793b4eefaa86c",
+  "contracts/v2/config-file-normalized.schema.json": "9886bd2a00205f87195960472586d514e260a727730391fbfbd798b3acf82cb1",
+  "contracts/v2/export-manifest.schema.json": "bc7a7f0dbd783c5c79f2012c86cc7d8701ba836a64dc716152486f58d022ca2c",
+  "contracts/v2/gate-evidence.schema.json": "a0ca46910d1609e11e3bc41e5a8143c301ef140b2345481bd270f639dc1ae980",
+  "contracts/v2/generation-supplement.schema.json": "c26da3a86e163b9f552c15d9b31751db5fd95f3f55448aa12443a6aebac1d8df",
+  "contracts/v2/grammar-split-request.schema.json": "85566d1b1f5cd3e5173dd464523eea65bcb180db68cbaabefa349143807a52aa",
+  "contracts/v2/job.schema.json": "17c81344152c93e90722ea3a4e3a921c0686a2d9e525bad3b67be68a13e94336",
+  "contracts/v2/learning-document.schema.json": "ed05fedd18d5eef587351c06d758699190508bef9bb28df730b89ffeac69cf55",
+  "contracts/v2/model-comparison.schema.json": "cdcfbf8e3879d2dfc7d1ab98c4e484bd06dd4d0573b401174f244839ba319c29",
+  "contracts/v2/native-operation-receipt.schema.json": "c22ae73dc1933b2ade8686e55175344fffd69e71525bb6bd2d275e2574d94a09",
+  "contracts/v2/operation-journal.schema.json": "7c49abc2bed4325cc16463806ed3867e1df0583a9d9c207dd02d33ce03a1e593",
+  "contracts/v2/plan-patch.schema.json": "331e4b30e496619f562dba062be85066ab4248e1ff53dc118ba1a463eb23f5e6",
+  "contracts/v2/plan-revision.schema.json": "339f408916c9c1d7a0166809cd35d545d76f0293709e16b31855ec4ba6437db1",
+  "contracts/v2/rendered-note.schema.json": "f2037108b4c4e852028b22abfd80ebc6ef5130397ffe767179bd2160d853125b",
+  "contracts/v2/resolution-request.schema.json": "0ede89532907778d3947b6d8587a0678e66e3f9074d17b63673917d5e022c078",
+  "contracts/v2/resolved-settings.schema.json": "a71c3d11a19eaad150fccc95e512dc65a125c5ba02ab3b4f5b8e4da6a23e9d09",
+  "contracts/v2/resume-binding-decision.schema.json": "cfd84dbdb26c7e35e20fbd721315a29e6ae8eda19a1aa9c4a2ca4bf3ee0b2cd4",
+  "contracts/v2/snapshot.schema.json": "9d71a4579f99ea37552355fc280edc20ca0f6e8eeded7a94eb02c31d2d3dd4e7",
+  "contracts/v2/source-field-mapping.schema.json": "c030d22ab31c5086c2ff814ac30906433c4e62fad65aaf8ebec6d23dbfc14b7e",
+  "contracts/v2/source-task-map.schema.json": "0436286db7b3ca586b360682a3cd356a50717303986c5840f793bdb180930845",
+  "contracts/v2/validation-evidence.schema.json": "8cb544dcf68b548137c880fbda25576d882efa40bc372168502cb64146db19c0"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-core"
+   ],
+   "invocation_digest": "1322de78d9278306ca20b9022599539847c17e6759cb05075046168aeadeee73",
+   "exit_code": 0,
+   "output_digest": "da7c085089ff1260138640283cf1e452072044b4507151c0da375e552aae8463"
+  },
+  {
+   "redacted_argv": [
+    "node",
+    "scripts/verify-jcs-vectors.mjs"
+   ],
+   "invocation_digest": "a50bf480fc25985798b0394ef2789e66afa2173adf0c74dcbf611a56b7e96553",
+   "exit_code": 0,
+   "output_digest": "49460cc0d3e0eab823558cc8e74f1ac23ef9fee0e9b1af1a119eeaa59e87adf2"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-v2-schemas.py"
+   ],
+   "invocation_digest": "d16a0eea198828bf83ef2f67e86a5905ce4bd52a0e032df9749f5e843ac800c4",
+   "exit_code": 0,
+   "output_digest": "b88279c4a539943fa0401be16452a2fd62a55030dfb722654172b094d5c80fb1"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-template-cards.py"
+   ],
+   "invocation_digest": "23d914bd720b46a54f6c773961da0f6adff52a698d0020c2c36e3160ee1dbb44",
+   "exit_code": 0,
+   "output_digest": "7296f2434871320840244284ef77e8a6291a0b88dd2c95791e8d1fb1e3787c16"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "v2 schemas and fixtures validate",
+   "passed": true,
+   "observed": "26 schemas, 8 fixtures"
+  },
+  {
+   "name": "JCS vectors match an independent ECMAScript serializer",
+   "passed": true,
+   "observed": "5 vectors"
+  },
+  {
+   "name": "domain intent/render/task contract tests pass",
+   "passed": true,
+   "observed": "linguist-core suite"
+  },
+  {
+   "name": "managed templates generate the expected cards in Anki",
+   "passed": true,
+   "observed": "Anki 25.09.2 3d813c83"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-09/logs/domain_contracts.txt",
+  "docs/cli/evidence/release-2026-10-09/logs/jcs_vectors.txt",
+  "docs/cli/evidence/release-2026-10-09/logs/native_templates.txt",
+  "docs/cli/evidence/release-2026-10-09/logs/v2_schemas.txt"
+ ],
+ "failure_code": null
+}

@@ -1,0 +1,10 @@
+$ python3 -m unittest discover -s addons/linguist_bridge/tests
+exit 0
+
+
+--- stderr ---
+.....................sssss............................................
+----------------------------------------------------------------------
+Ran 70 tests in 0.321s
+
+OK (skipped=5)

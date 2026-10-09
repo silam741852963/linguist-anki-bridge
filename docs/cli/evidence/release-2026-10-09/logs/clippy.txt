@@ -3,12 +3,5 @@ exit 0
 
 
 --- stderr ---
-   Compiling linguist-config v0.1.0 (<repo>/crates/linguist-config)
-    Checking linguist-core v0.1.0 (<repo>/crates/linguist-core)
-    Checking linguist-store v0.1.0 (<repo>/crates/linguist-store)
-    Checking linguist-provider v0.1.0 (<repo>/crates/linguist-provider)
-    Checking linguist-anki v0.1.0 (<repo>/crates/linguist-anki)
-    Checking linguist-dictionary v0.1.0 (<repo>/crates/linguist-dictionary)
-    Checking linguist-application v0.1.0 (<repo>/crates/linguist-application)
     Checking linguist-cli v0.1.0 (<repo>/crates/linguist-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.14s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.56s

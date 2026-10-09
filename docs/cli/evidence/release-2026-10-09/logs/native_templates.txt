@@ -1,0 +1,6 @@
+$ <stdin: target/debug/linguist-anki-bridge --output json models builtin> | /usr/bin/python3.14 scripts/verify-template-cards.py
+exit 0
+
+PASS: disposable Anki model/template card ordinals and optional front gates
+
+--- stderr ---

@@ -1,0 +1,24 @@
+$ cargo test --locked -p linguist-application --test native_port -p linguist-cli --test native_commands
+exit 0
+
+
+running 4 tests
+test export_copies_only_a_package_matching_the_receipt ... ok
+test a_transient_status_failure_is_retried_until_the_deadline ... ok
+test unverified_builds_and_missing_credentials_keep_writes_unavailable ... ok
+test mutations_poll_to_terminal_and_map_timeouts_and_refusals ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+
+running 2 tests
+test an_unverified_companion_cannot_bind_or_write ... ok
+test plans_bind_records_the_verified_binding_in_a_new_revision ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running tests/native_port.rs (target/debug/deps/native_port-87f0db5e888aa915)
+     Running tests/native_commands.rs (target/debug/deps/native_commands-e01aff91b3930a74)

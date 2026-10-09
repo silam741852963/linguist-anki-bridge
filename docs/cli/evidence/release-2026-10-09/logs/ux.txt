@@ -1,0 +1,32 @@
+$ cargo test --locked -p linguist-cli --test release_ux --test release_coverage
+exit 0
+
+
+running 3 tests
+test notes_count_reports_notes_and_cards_separately_and_read_only ... ok
+test config_unset_restores_inheritance_and_missing_override_is_a_no_op ... ok
+test models_list_and_inspect_compare_managed_manifests_read_only ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+
+running 11 tests
+test offline_dictionary_lookup_explains_the_authored_alternative ... ok
+test free_space_reserve_refuses_state_writes_but_not_reads ... ok
+test closed_stdout_pipe_exits_quietly ... ok
+test jsonl_unicode_paths_and_piped_documents_round_trip ... ok
+test versioned_command_examples_use_existing_commands_and_flags ... ok
+test every_command_and_argument_has_help_text ... ok
+test sigint_exits_130_and_sigterm_exits_143_without_damaging_state ... ok
+test ssh_no_terminal_and_dumb_terminal_output_is_plain ... ok
+test fresh_home_setup_and_offline_authored_preparation ... ok
+test dependency_and_capability_errors_name_the_next_step ... ok
+test large_batches_are_bounded_before_any_state_is_written ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.25s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running tests/release_coverage.rs (target/debug/deps/release_coverage-14eaeed384791c91)
+     Running tests/release_ux.rs (target/debug/deps/release_ux-34bd17748dec6b75)

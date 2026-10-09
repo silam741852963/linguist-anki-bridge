@@ -1,0 +1,10 @@
+grammar_add
+scenario grammar-add
+models install japanese_grammar --apply -> 0
+grammar add --document /tmp/lab-desk-b19bc418/grammar.json -> 0
+plans bind e77b0d2e-2884-47d4-b997-95f8d07fb7cd --digest lab-jcs-v1:plan:28ec7385e86b94a02994fd67e742991846a17bc6d49e7381ef30aac4725a6d31 -> 0
+plans validate e77b0d2e-2884-47d4-b997-95f8d07fb7cd --revision 2 -> 0
+plans approve e77b0d2e-2884-47d4-b997-95f8d07fb7cd --revision 2 --digest lab-jcs-v1:plan:3eb10e58a5f6fe5970b57af48bdb1d9870be38af9df31bc7281775af070bdce1 --actor desktop-scenario -> 0
+apply e77b0d2e-2884-47d4-b997-95f8d07fb7cd --revision 2 --apply -> 0
+snapshots restore ed29d41f-ff7b-48c1-ba95-b1cd2982ad7b -> 0
+snapshots restore ed29d41f-ff7b-48c1-ba95-b1cd2982ad7b --decision /tmp/lab-desk-b19bc418/decision-ed29d41f-ff7b-48c1-ba95-b1cd2982ad7b.json --apply -> 2

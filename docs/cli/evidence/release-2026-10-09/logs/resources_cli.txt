@@ -1,0 +1,19 @@
+$ cargo test --locked -p linguist-cli --test maintenance_commands
+exit 0
+
+
+running 7 tests
+test backup_preview_defaults_to_the_configured_backup_dir ... ok
+test resources_install_and_list_through_the_cli ... ok
+test unavailable_features_are_reported_or_refused_never_ignored ... ok
+test cache_status_and_prune_report_reachability_without_creating_state ... ok
+test legacy_jobs_migrate_previews_imports_and_lists_read_only_history ... ok
+test diagnostic_log_follows_logging_settings_and_never_creates_state ... ok
+test legacy_config_import_then_guarded_activation ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/maintenance_commands.rs (target/debug/deps/maintenance_commands-19e0f6eb7851d3f9)

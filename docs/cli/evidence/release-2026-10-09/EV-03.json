@@ -1,0 +1,170 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-03",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "b88e8f8e3ad927b77a443b20c8d7f38e997ea84a",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.11.1",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,jpn,osd,vie",
+  "ollama": "0.40.1",
+  "kernel": "Linux 7.2.8-5-omarchy-bore",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "addons/linguist_bridge/__init__.py": "14a343f45e1c0ecfe7377c2d8b474728474dc1ab75aef319fb2a7a1ab2fe8ceb",
+  "addons/linguist_bridge/addon_entrypoint.py": "9d4de790ada02e48ddb937ddc37abf89f8db694a0bb57e7f52852d0ff959e062",
+  "addons/linguist_bridge/compatibility.py": "076d9c782673967a806226f47e7ea2747801325165451d417731bb6b950b1bb5",
+  "addons/linguist_bridge/effects.py": "db7fc1f23822b628d76aa1f16d949b29e4a6d94f966458c0046798999ae11cdb",
+  "addons/linguist_bridge/identity.py": "20d4b5346f10fd0bfd03287772ec128184f94d09a17ae67c9839e0726b7428f9",
+  "addons/linguist_bridge/inspection.py": "670958975ff90eb851388d7290162bddc71c10377693b9fc3e51676e6ff7398e",
+  "addons/linguist_bridge/lineage.py": "36a8e8d969ac30e1bd887a3801bf21015ab32d0d0d37214791635e5dc73c6f2e",
+  "addons/linguist_bridge/manifest.py": "523a1ef5c775e61987486b5543377318cfe97507b887cf23697e071dfe3c0026",
+  "addons/linguist_bridge/native.py": "782d3f505687b56a3e588ecb7246e15b2c17bb2c70b4f84eddf1ebc13ddd31f4",
+  "addons/linguist_bridge/operations.py": "207b8012f0ebdc4bc5140236e77326a0901dca21aee1c0d7570a2c78ec90acba",
+  "addons/linguist_bridge/payloads.py": "760f213dba9efa7e6c9904dfd2c162f4051373920c659b3d383aa01fdbf7d7d5",
+  "addons/linguist_bridge/protocol.py": "6a43a0cd5252b1fe1409eea83d09702103c44a5b748f6927f1296add191544a8",
+  "addons/linguist_bridge/registration.py": "a7a0068e97402b5878f20664861a858af39024f2839712edd819f635f9d06e7a",
+  "addons/linguist_bridge/session.py": "d5dcc7e82e44d258394f7ac595fa9a36d0b3b4bd7aa6ada4a6d66eae0e1d2698",
+  "addons/linguist_bridge/startup.py": "c534cac61fa718cf652ea6e728c62150d52f6611253b6b97edd771f839b21553",
+  "scripts/disposable-anki-desktop.py": "622dc4e88a32ed55c04b0633b4a85ced0e32c0b9d1d78b9adfd6f43221a4e132"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "python3",
+    "addons/build_addon.py",
+    "<repo>/dist/linguist-bridge.ankiaddon"
+   ],
+   "invocation_digest": "bda3ce5ff4b10405e4ea3e2e4b65310fdffb0e563d00dfb8e261cf8297127790",
+   "exit_code": 0,
+   "output_digest": "998215642ca5e8919a4f4e7e5e9917a3913d148749ad0749059311f2ef4eace0"
+  },
+  {
+   "redacted_argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "addons/linguist_bridge/tests"
+   ],
+   "invocation_digest": "907d7a27ce58b01c4645f560cf71f8e701c5f036ee832c8617ebd6f5e0019d8a",
+   "exit_code": 0,
+   "output_digest": "6979c680ce74cdc21eabfc27a2986aa7ce9baeeab6596c0720fccb2aafdc35e7"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "addons/linguist_bridge/tests"
+   ],
+   "invocation_digest": "bac84cd4093b4800ce09690fb996b634433fe572abfc075e72eec71f5cbabf6e",
+   "exit_code": 0,
+   "output_digest": "1b65339bf35752edfa6e97d01f476beb5bb31c8abc048c5fb206d140bb476dcc"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-application",
+    "--test",
+    "native_port",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "native_commands"
+   ],
+   "invocation_digest": "8cdc4dad1c2f1316f2cedd4a64ca9cf8fe024a46427ebd6ac3a0add97935a520",
+   "exit_code": 0,
+   "output_digest": "8a3dad030b7b317057fea77c1e4daec5e3341d6d34b15656f686dea19361593f"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "desktop_scenarios",
+    "--",
+    "--ignored",
+    "--test-threads",
+    "1",
+    "--nocapture"
+   ],
+   "invocation_digest": "20e337ed703325bbbeaa96024788d83947d339a8c7c750ec1d6b4d1c5b2de29c",
+   "exit_code": 0,
+   "output_digest": "caae273f8fecceab15e22aeadf3403352b7fe3167d73b7ff5abc7cbf16ae6965"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "companion ledger, payload and protocol tests",
+   "passed": true,
+   "observed": "Anki-free"
+  },
+  {
+   "name": "controls, owner fences and serialized mutations over a real Anki collection",
+   "passed": true,
+   "observed": "Anki 25.09.2 3d813c83"
+  },
+  {
+   "name": "transport is fail-closed: unverified build, no key, no session",
+   "passed": true,
+   "observed": "scripted endpoint"
+  },
+  {
+   "name": "companion installed through Anki's add-on installer registers all 7 actions/variants in real AnkiConnect with API key",
+   "passed": true,
+   "observed": "dist/linguist-bridge.ankiaddon sha256 5b9f2843188d0bd27f7efb08a8a35c5cba11d9344d778ae10a317adfed922f3f"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-09/logs/addon_build.txt",
+  "docs/cli/evidence/release-2026-10-09/logs/native_transport.txt",
+  "docs/cli/evidence/release-2026-10-09/logs/python_companion.txt",
+  "docs/cli/evidence/release-2026-10-09/logs/python_companion_anki.txt",
+  "docs/cli/evidence/release-2026-10-09/logs/scenarios.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/batch_vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/grammar_add.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/grammar_split.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/grammar_split_crash.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/identity_preconditions.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/native_faults.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/vocab_add.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/vocab_revamp_home_deck.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/vocab_split.txt"
+ ],
+ "failure_code": null
+}

@@ -1,0 +1,117 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-10",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "b88e8f8e3ad927b77a443b20c8d7f38e997ea84a",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.11.1",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,jpn,osd,vie",
+  "ollama": "0.40.1",
+  "kernel": "Linux 7.2.8-5-omarchy-bore",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "crates/linguist-cli/tests/desktop_scenarios.rs": "033c7c8ba4d3987b5f976371511087042e014e76c0eb64aeaf56fb9857b0e954"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "desktop_scenarios",
+    "--",
+    "--ignored",
+    "--test-threads",
+    "1",
+    "--nocapture"
+   ],
+   "invocation_digest": "20e337ed703325bbbeaa96024788d83947d339a8c7c750ec1d6b4d1c5b2de29c",
+   "exit_code": 0,
+   "output_digest": "caae273f8fecceab15e22aeadf3403352b7fe3167d73b7ff5abc7cbf16ae6965"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-native-restore.py"
+   ],
+   "invocation_digest": "e032c22dd29bb18784dfc07c1d28596c7cebe55c7b9f9227c3b45e3213fe0e6f",
+   "exit_code": 0,
+   "output_digest": "a7f4bd852fe2eb6a29d1d350b1a6e139d40bcf40d4dfaafc33ed19bcaa9b5691"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-native-apply.py"
+   ],
+   "invocation_digest": "ae25684831367c76a7ee6ce8994a0bef4cf5fe175ba5cbe4a48f8d556b1c0645",
+   "exit_code": 0,
+   "output_digest": "792d88ee133314649c7883b78fd9833e1d3a0e30f0d32e11375b94cf83738da0"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "later reviews survive restore in real Anki",
+   "passed": true,
+   "observed": "vocab revamp, grammar split"
+  },
+  {
+   "name": "a later personal edit conflicts until a field decision",
+   "passed": true,
+   "observed": "vocab_revamp_home_deck"
+  },
+  {
+   "name": "home deck kept without a target mapping",
+   "passed": true,
+   "observed": "vocab_revamp_home_deck"
+  },
+  {
+   "name": "filtered-deck membership blocks apply and restore",
+   "passed": true,
+   "observed": "BRIDGE_FILTERED_DECK"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-09/logs/native_apply.txt",
+  "docs/cli/evidence/release-2026-10-09/logs/native_restore.txt",
+  "docs/cli/evidence/release-2026-10-09/logs/scenarios.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/batch_vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/grammar_add.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/grammar_split.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/grammar_split_crash.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/identity_preconditions.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/native_faults.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/vocab_add.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/vocab_revamp_home_deck.txt",
+  "docs/cli/evidence/release-2026-10-09/scenarios/vocab_split.txt"
+ ],
+ "failure_code": null
+}

@@ -1,0 +1,690 @@
+{
+ "schema_version": 1,
+ "model": "gemma4:12b",
+ "model_digest": "4eb23ef187e2c5462566d6a1d3bbbc2f1346d0b4327cbb66d58fffbcc9b2b05c",
+ "fixtures": 56,
+ "attempted": 55,
+ "generated": 52,
+ "schema_failures": 3,
+ "schema_compliance": 0.9455,
+ "bounded_repair_used": false,
+ "latency_seconds": {
+  "min": 8.31,
+  "median": 12.02,
+  "max": 95.54
+ },
+ "ollama_ps": [
+  {
+   "name": "gemma4:12b",
+   "size": 8372921302,
+   "size_vram": 8372921302
+  }
+ ],
+ "items": [
+  {
+   "id": "VA-JA-01",
+   "exit_code": 4,
+   "seconds": 13.78,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-JA-02",
+   "exit_code": 4,
+   "seconds": 12.59,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-JA-03",
+   "exit_code": 4,
+   "seconds": 12.75,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-JA-04",
+   "exit_code": 4,
+   "seconds": 9.85,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-JA-05",
+   "exit_code": 4,
+   "seconds": 11.98,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-JA-06",
+   "exit_code": 4,
+   "seconds": 10.86,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-JA-07",
+   "exit_code": 4,
+   "seconds": 14.08,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED",
+    "SPELLING_CUE_MISSING"
+   ]
+  },
+  {
+   "id": "VA-JA-08",
+   "exit_code": 4,
+   "seconds": 12.56,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED",
+    "SPELLING_CUE_MISSING"
+   ]
+  },
+  {
+   "id": "VA-JA-09",
+   "exit_code": 4,
+   "seconds": 0.09,
+   "generated": false,
+   "error": "GENERATION_ACCEPTED_ANSWER_REQUIRED",
+   "attempted": false
+  },
+  {
+   "id": "VA-JA-10",
+   "exit_code": 4,
+   "seconds": 9.89,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-JA-11",
+   "exit_code": 4,
+   "seconds": 11.53,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_EXAMPLE_EVIDENCE_REQUIRED",
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-JA-12",
+   "exit_code": 4,
+   "seconds": 10.8,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-JA-15",
+   "exit_code": 4,
+   "seconds": 10.26,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-01",
+   "exit_code": 4,
+   "seconds": 11.19,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-02",
+   "exit_code": 4,
+   "seconds": 11.45,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-03",
+   "exit_code": 4,
+   "seconds": 11.34,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-04",
+   "exit_code": 4,
+   "seconds": 9.89,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-05",
+   "exit_code": 4,
+   "seconds": 17.3,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-06",
+   "exit_code": 4,
+   "seconds": 13.64,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-07",
+   "exit_code": 4,
+   "seconds": 11.15,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED",
+    "SPELLING_CUE_MISSING"
+   ]
+  },
+  {
+   "id": "VA-EN-08",
+   "exit_code": 4,
+   "seconds": 11.21,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-09",
+   "exit_code": 4,
+   "seconds": 12.74,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-10",
+   "exit_code": 4,
+   "seconds": 10.31,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-11",
+   "exit_code": 4,
+   "seconds": 10.88,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-14",
+   "exit_code": 4,
+   "seconds": 11.82,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "VA-EN-15",
+   "exit_code": 4,
+   "seconds": 11.5,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-01",
+   "exit_code": 4,
+   "seconds": 10.58,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-02",
+   "exit_code": 4,
+   "seconds": 14.33,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-03",
+   "exit_code": 4,
+   "seconds": 13.97,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-04",
+   "exit_code": 4,
+   "seconds": 13.39,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-05",
+   "exit_code": 4,
+   "seconds": 10.21,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-06",
+   "exit_code": 4,
+   "seconds": 11.67,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-07",
+   "exit_code": 4,
+   "seconds": 95.36,
+   "generated": false,
+   "error": "OLLAMA_COMPLETION_INCOMPLETE",
+   "attempted": true
+  },
+  {
+   "id": "GA-JA-08",
+   "exit_code": 4,
+   "seconds": 8.31,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-09",
+   "exit_code": 4,
+   "seconds": 13.49,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "ANSWER_LEAK",
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-10",
+   "exit_code": 4,
+   "seconds": 15.89,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-11",
+   "exit_code": 4,
+   "seconds": 95.54,
+   "generated": false,
+   "error": "OLLAMA_COMPLETION_INCOMPLETE",
+   "attempted": true
+  },
+  {
+   "id": "GA-JA-12",
+   "exit_code": 4,
+   "seconds": 12.84,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-13",
+   "exit_code": 4,
+   "seconds": 16.44,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_EXAMPLE_EVIDENCE_REQUIRED",
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-14",
+   "exit_code": 4,
+   "seconds": 9.98,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-JA-15",
+   "exit_code": 4,
+   "seconds": 8.56,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-01",
+   "exit_code": 4,
+   "seconds": 13.18,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-02",
+   "exit_code": 4,
+   "seconds": 9.64,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-03",
+   "exit_code": 4,
+   "seconds": 12.02,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-04",
+   "exit_code": 4,
+   "seconds": 10.2,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-05",
+   "exit_code": 4,
+   "seconds": 15.17,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-06",
+   "exit_code": 4,
+   "seconds": 11.77,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-07",
+   "exit_code": 4,
+   "seconds": 95.51,
+   "generated": false,
+   "error": "OLLAMA_COMPLETION_INCOMPLETE",
+   "attempted": true
+  },
+  {
+   "id": "GA-EN-08",
+   "exit_code": 4,
+   "seconds": 14.43,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-09",
+   "exit_code": 4,
+   "seconds": 8.96,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-10",
+   "exit_code": 4,
+   "seconds": 15.22,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "ANSWER_LEAK",
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-11",
+   "exit_code": 4,
+   "seconds": 12.75,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-12",
+   "exit_code": 4,
+   "seconds": 13.12,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-13",
+   "exit_code": 4,
+   "seconds": 15.44,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_EXAMPLE_EVIDENCE_REQUIRED",
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-14",
+   "exit_code": 4,
+   "seconds": 13.63,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED"
+   ]
+  },
+  {
+   "id": "GA-EN-15",
+   "exit_code": 4,
+   "seconds": 13.73,
+   "generated": true,
+   "error": null,
+   "attempted": true,
+   "issues": [
+    "GENERATED_FACT_REVIEW",
+    "GENERATION_ENGINE_UNVERIFIED",
+    "REQUIRED_CONTENT"
+   ]
+  }
+ ]
+}

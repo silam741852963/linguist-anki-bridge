@@ -1,0 +1,14 @@
+vocab_revamp
+scenario vocab_revamp
+models install japanese_vocab --apply -> 0
+vocab revamp --note-id 1791538081685 -> 4
+plans show 15f3cc83-d20b-4802-9460-3f6245a26ce5 --issues-only -> 0
+plans show 15f3cc83-d20b-4802-9460-3f6245a26ce5 -> 0
+plans edit 15f3cc83-d20b-4802-9460-3f6245a26ce5 --base-revision 1 --patch /tmp/lab-desk-e6569ad7/review.patch.json --save-draft -> 4
+plans resolve-history 15f3cc83-d20b-4802-9460-3f6245a26ce5 --item cbcad266-543f-4eea-ac13-faefd6d00347 --map 0=comprehension --actor desktop-scenario -> 0
+plans bind 15f3cc83-d20b-4802-9460-3f6245a26ce5 --digest lab-jcs-v1:plan:974d888604a5bcb7586432ea07ac2d515d4fb938450c042c40470b9190c46229 -> 0
+plans validate 15f3cc83-d20b-4802-9460-3f6245a26ce5 --revision 4 -> 0
+plans approve 15f3cc83-d20b-4802-9460-3f6245a26ce5 --revision 4 --digest lab-jcs-v1:plan:cd97e1c28e273e03c82682e067d48bbbcabfca08cb3191f33687911867e10796 --actor desktop-scenario -> 0
+apply 15f3cc83-d20b-4802-9460-3f6245a26ce5 --revision 4 --accept-schema-change --apply -> 0
+snapshots restore fce393e5-8a05-4d8a-b801-86e21b3636d3 -> 0
+snapshots restore fce393e5-8a05-4d8a-b801-86e21b3636d3 --decision /tmp/lab-desk-e6569ad7/decision-fce393e5-8a05-4d8a-b801-86e21b3636d3.json --apply -> 0
