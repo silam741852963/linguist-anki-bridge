@@ -597,16 +597,27 @@ fn stage_images(
     candidate_review(document, digests)
 }
 
-/// The noun before the first particle of each collocation that uses the
-/// word (`生活費を賄う` gives `生活費`), at most two.
+/// The noun beside the first particle of each collocation that uses the
+/// word: before it (`生活費を賄う` gives `生活費`), or after it when the word
+/// comes first (`既存のシステム` gives `システム`); at most two.
 fn collocation_nouns(vocab: &linguist_core::Vocabulary) -> Vec<String> {
     let mut nouns: Vec<String> = Vec::new();
     for collocation in &vocab.collocations {
         let phrase = collocation.phrase.trim();
-        let Some(at) = phrase.find(['を', 'が', 'に', 'で', 'と', 'の', 'へ', 'も']) else {
+        let Some((at, particle)) = phrase
+            .char_indices()
+            .find(|(_, c)| "をがにでとのへも".contains(*c))
+        else {
             continue;
         };
-        let noun = &phrase[..at];
+        let particles = ['を', 'が', 'に', 'で', 'と', 'の', 'へ', 'も'];
+        let before = &phrase[..at];
+        let noun = if before.contains(&vocab.expression) {
+            let after = &phrase[at + particle.len_utf8()..];
+            after.split(particles).next().unwrap_or_default()
+        } else {
+            before
+        };
         if !phrase.contains(&vocab.expression)
             || noun.is_empty()
             || noun.chars().count() > 8

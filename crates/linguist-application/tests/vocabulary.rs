@@ -875,12 +875,17 @@ fn japanese_pictures_search_irasutoya_first_and_commons_by_the_selected_sense() 
         v.collocations = serde_json::from_value(json!([
             {"phrase": "ご飯を食べる", "gloss": "eat a meal"},
             {"phrase": "食べる量", "gloss": "amount eaten"},
-            {"phrase": "朝ご飯", "gloss": "breakfast"}
+            {"phrase": "朝ご飯", "gloss": "breakfast"},
+            {"phrase": "食べるのが好き", "gloss": "like eating"},
+            {"phrase": "食べるの時間", "gloss": "time to eat"}
         ]))
         .unwrap();
     }
     linguist_application::vocab::enrich_document(&again, &settings, &f.environment, providers)
         .unwrap();
     assert_eq!(*commons.0.lock().unwrap(), ["to eat", "to live on"]);
-    assert_eq!(*irasutoya.0.lock().unwrap(), ["食べる", "食べる", "ご飯"]);
+    assert_eq!(
+        *irasutoya.0.lock().unwrap(),
+        ["食べる", "食べる", "ご飯", "時間"]
+    );
 }
