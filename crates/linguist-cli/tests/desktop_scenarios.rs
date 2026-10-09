@@ -1538,7 +1538,7 @@ const BATCH_PICTURE: &str = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEEl
 
 /// Resolve every open review of a multi-item vocabulary revamp: native
 /// history, then source pictures kept as pictures, then any templated choice.
-fn review_batch(s: &mut Scenario, plan: &str) -> String {
+fn review_batch(s: &mut Scenario, plan: &str, anchor: Option<&str>) -> String {
     for _ in 0..60 {
         let page = s.ok(&["plans", "show", plan, "--issues-only"]);
         let entries = page["issues"].as_array().cloned().unwrap_or_default();
@@ -1596,6 +1596,9 @@ fn review_batch(s: &mut Scenario, plan: &str) -> String {
                     "source_id": issue["source_refs"][0], "asset_digest": asset["digest"],
                     "original_filename": name, "evidence_id": evidence, "role": "picture",
                     "attribution": "Disposable scenario picture.", "license": null}})
+            }
+            "GRAMMAR_SPLIT_NATIVE_REVIEW" => {
+                json!({"decision": "anchor", "value": anchor.unwrap()})
             }
             _ => entry["templates"][0]["choice"].clone(),
         };
@@ -1712,7 +1715,7 @@ fn batch_vocab_revamp_apply_resume_rollback() {
         "--save-draft",
     ]);
     assert!(code == 0 || code == 4, "{stderr} {edited}");
-    let digest = review_batch(&mut s, &plan);
+    let digest = review_batch(&mut s, &plan, None);
     let (revision, digest) = s.bind_and_approve(&plan, &digest);
     let rev = revision.to_string();
     let created = s.ok(&[
@@ -1822,4 +1825,149 @@ fn batch_vocab_revamp_apply_resume_rollback() {
         assert_eq!(back["cards"][0]["review_count"], 1);
     }
     s.report("batch_vocab_revamp");
+}
+
+/// WP-20: one studied note holding two words is detected, split by
+/// `plans split-vocab` into an anchor (keeps the note and history) and a new
+/// sibling note, applied as one group, and rolled back as one group.
+#[test]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+fn vocab_split_apply_study_rollback() {
+    let mut s = Scenario::new(
+        "vocab_split",
+        "japanese_vocab",
+        Some("Japanese::Vocab"),
+        true,
+    );
+    s.install_model("japanese_vocab");
+    let note = s.desktop.add_note(
+        "Basic",
+        "Default",
+        json!({"Front": "私<div>僕</div>", "Back": "わたし<div>ぼく</div>"}),
+        &["legacy"],
+    );
+    s.desktop.study(note);
+    let before = s.desktop.note(note);
+    s.settings.push(format!(
+        "purposes.japanese_vocab.fields={}",
+        json!({"expression": "Front", "pronunciation": "Back"})
+    ));
+    s.settings
+        .push("purposes.japanese_vocab.source_model=Basic".into());
+    let (code, drafted, stderr) = s.cli(&["vocab", "revamp", "--note-id", &note.to_string()]);
+    assert_eq!(code, 4, "{stderr} {drafted}");
+    let root = if drafted["plan_id"].is_string() {
+        &drafted
+    } else {
+        &drafted["result"]
+    };
+    let plan = root["plan_id"].as_str().unwrap().to_owned();
+    let item = root["document_id"].as_str().unwrap().to_owned();
+    let issues = s.ok(&["plans", "show", &plan, "--issues-only"]);
+    assert!(
+        issues.to_string().contains("VOCAB_SPLIT_REQUIRED") || {
+            let shown = s.ok(&["plans", "validate", &plan]);
+            shown.to_string().contains("VOCAB_SPLIT_REQUIRED")
+        }
+    );
+    let mut request = s.ok(&["plans", "split-vocab", &plan, "--template", &item]);
+    assert_eq!(request["units"][1]["expression"], "僕", "{request}");
+    assert_eq!(request["units"][1]["pronunciation"], "ぼく", "{request}");
+    request["actor"] = json!("desktop-scenario");
+    let path = s.root.join("vocab-split.json");
+    std::fs::write(&path, request.to_string()).unwrap();
+    let (code, split, stderr) = s.cli(&[
+        "plans",
+        "split-vocab",
+        &plan,
+        "--request",
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 4, "{stderr} {split}");
+    let group = split["split_groups"][0]["id"].as_str().unwrap().to_owned();
+    // Author each unit's meaning and sense (authored dictionary policy).
+    let shown = s.ok(&["plans", "show", &plan]);
+    let items: Vec<Value> = shown["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            let word = d["content"]["body"]["expression"].as_str().unwrap();
+            json!({"document_id": d["id"], "fields": {
+                "Meaning": {"intent": "set", "value": format!("I ({word})")},
+                "SenseKey": {"intent": "set", "value": format!("first-person-{word}")}}})
+        })
+        .collect();
+    let patch = s.root.join("units.patch.json");
+    std::fs::write(
+        &patch,
+        json!({"schema_version": 2, "base_digest": root_digest(&shown), "items": items})
+            .to_string(),
+    )
+    .unwrap();
+    let revision = shown["revision"].to_string();
+    let (code, edited, stderr) = s.cli(&[
+        "plans",
+        "edit",
+        &plan,
+        "--base-revision",
+        &revision,
+        "--patch",
+        patch.to_str().unwrap(),
+        "--save-draft",
+    ]);
+    assert!(code == 0 || code == 4, "{stderr} {edited}");
+    let anchor = split["split_groups"][0]["anchor_document"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let digest = review_batch(&mut s, &plan, Some(&anchor));
+    let (revision, _) = s.bind_and_approve(&plan, &digest);
+    let rev = revision.to_string();
+    let applied = s.ok(&[
+        "apply",
+        &plan,
+        "--revision",
+        &rev,
+        "--split-group",
+        &group,
+        "--accept-schema-change",
+        "--apply",
+    ]);
+    assert_eq!(applied["split"]["state"], "complete", "{applied}");
+    let after = s.desktop.note(note);
+    assert_eq!(after["model_name"], "Linguist Vocabulary v3", "{after}");
+    assert_eq!(after["fields"]["Expression"], "私");
+    assert_eq!(after["cards"][0]["id"], before["cards"][0]["id"]);
+    assert_eq!(after["cards"][0]["review_count"], 1);
+    let sibling = s
+        .desktop
+        .call("findNotes", json!({"query": "Expression:僕"}));
+    assert_eq!(sibling.as_array().unwrap().len(), 1, "one new note for 僕");
+    let execution = applied["split"]["execution_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let rolled = s.ok(&[
+        "jobs",
+        "rollback",
+        &execution,
+        "--accept-schema-change",
+        "--delete-unstudied-created",
+        "--apply",
+    ]);
+    s.log.push(format!("rollback -> {rolled}"));
+    let back = s.desktop.note(note);
+    assert_eq!(back["model_name"], "Basic");
+    assert_eq!(back["fields"], before["fields"]);
+    assert_eq!(back["cards"][0]["review_count"], 1);
+    let gone = s
+        .desktop
+        .call("findNotes", json!({"query": "Expression:僕"}));
+    assert_eq!(
+        gone.as_array().unwrap().len(),
+        0,
+        "the unstudied sibling is removed"
+    );
+    s.report("vocab_split");
 }
