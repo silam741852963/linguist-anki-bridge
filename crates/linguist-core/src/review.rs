@@ -905,6 +905,20 @@ fn reject_generated(
         (crate::LearningContent::Vocabulary(v), "usage") => v.usage.clear(),
         (crate::LearningContent::Vocabulary(v), "nuance") => v.nuance.clear(),
         (crate::LearningContent::Vocabulary(v), "collocations") => v.collocations.clear(),
+        // A rejected generated dictionary entry goes, with any sense chosen from it.
+        (crate::LearningContent::Vocabulary(v), "dictionary") => {
+            let chosen = v.dictionary.iter().any(|e| {
+                e.provider == crate::document::GENERATED_DICTIONARY_PROVIDER
+                    && e.senses.iter().any(|s| s.key == v.sense_key)
+            });
+            v.dictionary
+                .retain(|e| e.provider != crate::document::GENERATED_DICTIONARY_PROVIDER);
+            if chosen {
+                v.sense_key.clear();
+                v.meaning.clear();
+                v.reading.clear();
+            }
+        }
         (crate::LearningContent::Grammar(g), "usage") => g.usage.clear(),
         (crate::LearningContent::Grammar(g), "meaning") => g.meaning.clear(),
         (crate::LearningContent::Grammar(g), "formation") => g.formation.clear(),

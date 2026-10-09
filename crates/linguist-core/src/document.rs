@@ -163,6 +163,10 @@ pub struct Sense {
     #[serde(default)]
     pub examples: Vec<Example>,
 }
+/// Provider of an entry written by the generation chain for a word the
+/// dictionary does not list (WP-20); it needs a reviewer's verification.
+pub const GENERATED_DICTIONARY_PROVIDER: &str = "generated-dictionary-v1";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DictionaryEntry {

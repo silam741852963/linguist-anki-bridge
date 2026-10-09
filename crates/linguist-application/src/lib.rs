@@ -815,6 +815,7 @@ pub mod cache;
 pub mod capture;
 pub mod checkpoint;
 pub mod dictionary;
+pub mod dictionary_entry;
 pub mod duplicate_candidates;
 pub mod editor;
 pub mod export;

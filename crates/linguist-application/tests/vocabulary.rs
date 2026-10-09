@@ -950,3 +950,118 @@ fn a_kana_word_matches_its_reading_only_dictionary_entry() {
     .unwrap();
     assert_eq!(*commons.0.lock().unwrap(), ["vitamin"]);
 }
+
+#[test]
+fn a_word_the_dictionary_lacks_gets_a_generated_entry_in_its_style() {
+    use std::os::unix::fs::PermissionsExt;
+    struct Dictionary;
+    impl DictionaryPort for Dictionary {
+        fn lookup(
+            &self,
+            query: &str,
+            target: &Language,
+        ) -> Result<linguist_dictionary::JishoPage, String> {
+            linguist_dictionary::parse_jisho(query, target, r#"{"meta":{"status":200},"data":[{"slug":"fuku","japanese":[{"word":"副","reading":"ふく"}],"senses":[{"english_definitions":["vice-"]}]}]}"#.as_bytes(), 1024, 10)
+                .map_err(|e| e.to_string())
+        }
+    }
+    let f = Fixture::new();
+    let bin = std::env::temp_dir().join(format!("lab-dict-agent-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&bin).unwrap();
+    let reply = json!({"type":"result","subtype":"success","is_error":false,
+        "structured_output":{"readings":["ふくいいんちょう"],"senses":[{"definitions":["vice-chairperson","deputy chair"],"parts_of_speech":["Noun"]}]},
+        "modelUsage":{"fake-model":{}}});
+    std::fs::write(
+        bin.join("claude"),
+        format!("#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '9.9.9'; exit 0; }}\ncat > /dev/null\nprintf '%s' '{reply}'\n"),
+    )
+    .unwrap();
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut environment = f.environment.clone();
+    environment.insert("PATH".into(), format!("{}:/usr/bin:/bin", bin.display()));
+    let mut settings = f.settings.clone();
+    for (key, value) in [
+        ("dictionary.provider", json!("jisho")),
+        ("kanji.enabled", json!(false)),
+        ("images.provider", json!("disabled")),
+        ("audio.provider", json!("preserve")),
+        ("llm.enabled", json!(true)),
+        ("llm.provider", json!("claude_code")),
+        ("llm.fallback", json!([])),
+    ] {
+        settings.values.insert(key.into(), value);
+    }
+    let bytes = r#"{"schema_version":2,"kind":"vocabulary","target_language":"ja","explanation_language":"en","requested_tasks":["comprehension"],"body":{"expression":"副委員長"}}"#.as_bytes();
+    let result = prepare_with_providers(
+        bytes,
+        Kind::Vocabulary,
+        &settings,
+        &environment,
+        Providers {
+            dictionary: Some(&Dictionary),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let plan = f.store().revision(result.plan_id, 1).unwrap();
+    let doc = &plan.documents[0];
+    let LearningContent::Vocabulary(vocab) = &doc.content else {
+        panic!()
+    };
+    let generated = vocab
+        .dictionary
+        .iter()
+        .find(|e| e.provider == "generated-dictionary-v1")
+        .unwrap();
+    assert_eq!(generated.forms, ["副委員長"]);
+    assert_eq!(generated.readings, ["ふくいいんちょう"]);
+    assert_eq!(generated.senses[0].labels, ["Noun"]);
+    let issues = validation::validate(doc);
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.code == "DICTIONARY_ENTRY_GENERATED")
+    );
+    // It is reviewed like any generated fact, and offers its sense.
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.code == "GENERATED_FACT_REVIEW" && i.field.as_deref() == Some("dictionary"))
+    );
+    let sense = issues
+        .iter()
+        .find(|i| i.code == "DICTIONARY_SENSE_REVIEW")
+        .unwrap();
+    let choices = decision_templates(doc, sense);
+    assert!(choices.iter().any(|c| matches!(c, ReviewChoice::SenseWithReading { reading, .. } if reading == "ふくいいんちょう")), "{choices:?}");
+    let chosen = choices
+        .iter()
+        .find(|c| matches!(c, ReviewChoice::SenseWithReading { reading, .. } if reading == "ふくいいんちょう"))
+        .unwrap()
+        .clone();
+    let picked = decide(&plan, &sense.id, chosen);
+    let LearningContent::Vocabulary(v) = &picked.documents[0].content else {
+        panic!()
+    };
+    assert_eq!(v.meaning, "vice-chairperson; deputy chair");
+    // Rejecting the generated entry removes it and the sense chosen from it.
+    let fact = validation::validate(&picked.documents[0])
+        .into_iter()
+        .find(|i| i.code == "GENERATED_FACT_REVIEW" && i.field.as_deref() == Some("dictionary"))
+        .unwrap();
+    let reject = decision_templates(&picked.documents[0], &fact)
+        .into_iter()
+        .find(|c| matches!(c, ReviewChoice::ContentRejected { .. }))
+        .unwrap();
+    let rejected = decide(&picked, &fact.id, reject);
+    let LearningContent::Vocabulary(v) = &rejected.documents[0].content else {
+        panic!()
+    };
+    assert!(
+        v.dictionary
+            .iter()
+            .all(|e| e.provider != "generated-dictionary-v1")
+    );
+    assert!(v.meaning.is_empty() && v.sense_key.is_empty());
+    let _ = std::fs::remove_dir_all(&bin);
+}

@@ -65,6 +65,16 @@
       "consumer": "dictionary adapter",
       "description": "Identify client; site limits/terms still apply.",
       "sensitive": false
+    },
+    {
+      "key": "dictionary.generate_missing",
+      "type": "boolean",
+      "default": true,
+      "constraints": {},
+      "scope": "purpose",
+      "consumer": "dictionary adapter",
+      "description": "When the dictionary has no entry for the word itself, the generation provider chain (llm.provider, llm.fallback) writes a dictionary-style entry (readings, parts of speech, senses) so the card renders like the others; it is labelled generated and needs review.",
+      "sensitive": false
     }
   ]
 }

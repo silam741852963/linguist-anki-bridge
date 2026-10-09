@@ -258,7 +258,11 @@ impl Client {
     /// engine-specific parameter/no-truncation compatibility evidence is available.
     /// Inference is sent once; ambiguous transport errors never trigger blind retry.
     pub fn generate_candidate(&self, document: &LearningDocument) -> Result<Candidate, String> {
-        let request = build_request(document, &self.settings)?;
+        self.complete(build_request(document, &self.settings)?)
+    }
+    /// Send one prepared request (supplement or dictionary entry) with the
+    /// same transport, schema and budget rules.
+    pub fn complete(&self, request: GenerationRequest) -> Result<Candidate, String> {
         let body = json!({
             "model": self.settings.values["llm.model"],
             "messages": [

@@ -333,6 +333,116 @@ pub fn enrich_document(
                     });
                 }
             }
+            // No entry for the word itself: the generation chain writes one in
+            // the dictionary's style (`dictionary.generate_missing`).
+            let listed = vocab.dictionary.iter().any(|e| {
+                e.forms.contains(&vocab.expression) || e.readings.contains(&vocab.expression)
+            });
+            if !listed
+                && japanese
+                && settings.values.get("dictionary.generate_missing")
+                    == Some(&serde_json::json!(true))
+                && settings.values.get("llm.enabled") == Some(&serde_json::json!(true))
+            {
+                let hint: String = vocab.pronunciation.split_whitespace().collect();
+                let note = [
+                    document.personal_notes.as_str(),
+                    document.source_summary.as_str(),
+                ]
+                .iter()
+                .filter(|t| !t.trim().is_empty())
+                .copied()
+                .collect::<Vec<_>>()
+                .join("\n");
+                match crate::dictionary_entry::write(
+                    &vocab.expression,
+                    &hint,
+                    &note,
+                    &document.target_language,
+                    settings,
+                    environment,
+                ) {
+                    Ok(written) => {
+                        let fields = BTreeMap::from([
+                            ("provider".into(), written.provider.clone()),
+                            ("engine_identity".into(), written.identity.to_string()),
+                            ("request".into(), written.request.to_string()),
+                            (
+                                "provider_response".into(),
+                                String::from_utf8_lossy(&written.raw).into_owned(),
+                            ),
+                        ]);
+                        let manifest = canonical::bytes(&fields).map_err(|e| e.to_string())?;
+                        let digest = canonical::asset_digest(&manifest);
+                        let raw_digest = canonical::asset_digest(&written.raw);
+                        let source_id = uuid::Uuid::new_v4();
+                        document.sources.push(SourceRecord {
+                            id: source_id,
+                            kind: "generated_dictionary_v1".into(),
+                            location: "local_generation_artifact".into(),
+                            digest: digest.clone(),
+                            text: None,
+                            fields: fields.clone(),
+                            model_manifest: crate::dictionary_entry::PROVIDER.into(),
+                            template_manifest: None,
+                            captured_at_unix_seconds: None,
+                            tags: vec![],
+                            cards: vec![],
+                            media_refs: vec![],
+                        });
+                        document.archives.push(SourceArchive {
+                            id: uuid::Uuid::new_v4(),
+                            source_id,
+                            digest: digest.clone(),
+                            original_text: None,
+                            original_fields: fields,
+                            asset_digests: vec![digest, raw_digest],
+                        });
+                        document.evidence.push(Evidence {
+                            id: uuid::Uuid::new_v4(),
+                            field: "dictionary".into(),
+                            provenance: Provenance::Generated,
+                            source_id: Some(source_id),
+                            region_id: None,
+                            target: None,
+                            source_span: None,
+                            language: "en".to_owned().try_into()?,
+                            claim: serde_json::to_string(&serde_json::json!({
+                                "readings": written.entry.readings,
+                                "senses": written.entry.senses.iter().map(|s| serde_json::json!({
+                                    "definitions": s.definitions, "parts_of_speech": s.labels})).collect::<Vec<_>>(),
+                            }))
+                            .map_err(|e| e.to_string())?,
+                            source_url: None,
+                            ambiguous: false,
+                        });
+                        let mut issue = Issue::new(
+                            "DICTIONARY_ENTRY_GENERATED",
+                            Severity::Warning,
+                            Some("dictionary"),
+                            format!(
+                                "The dictionary has no entry for this word; {} wrote one in its style. Verify it.",
+                                written.provider
+                            ),
+                        );
+                        issue.stage = "dictionary".into();
+                        document.issues.push(issue);
+                        vocab.dictionary.push(written.entry);
+                        provider_assets.push(manifest);
+                        provider_assets.push(written.raw);
+                    }
+                    Err(error) => {
+                        let mut issue = Issue::new(
+                            "DICTIONARY_ENTRY_GENERATION_FAILED",
+                            Severity::Warning,
+                            Some("dictionary"),
+                            format!("{error}; author the meaning instead."),
+                        );
+                        issue.stage = "dictionary".into();
+                        document.issues.push(issue);
+                    }
+                }
+            }
             if vocab.dictionary.is_empty() {
                 let mut issue = Issue::new(
                     "DICTIONARY_NOT_FOUND",

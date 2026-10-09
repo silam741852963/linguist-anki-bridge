@@ -132,6 +132,7 @@ const DTRANSPORT: &str = "crates/linguist-dictionary/src/transport.rs";
 const KANJI: &str = "crates/linguist-dictionary/src/kanji.rs";
 const IMAGES: &str = "crates/linguist-application/src/images.rs";
 const AGENTS: &str = "crates/linguist-application/src/agents.rs";
+const DICTIONARY_STAGE: &str = "crates/linguist-application/src/dictionary.rs";
 const ILLUSTRATIONS: &str = "crates/linguist-application/src/illustrations.rs";
 const GEN: &str = "crates/linguist-application/src/generation.rs";
 const OLLAMA: &str = "crates/linguist-application/src/ollama/transport.rs";
@@ -259,6 +260,7 @@ pub const ROWS: &[Row] = &[
         &["true"],
         "controlled browser helper",
     ),
+    c("dictionary.generate_missing", DICTIONARY_STAGE),
     c("dictionary.user_agent", PROVIDER),
     c("editing.editor_argv", CLI),
     c("filters.remove_parentheses", DICT),

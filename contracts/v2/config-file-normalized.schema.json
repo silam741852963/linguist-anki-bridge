@@ -227,6 +227,14 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "dictionary.generate_missing": {
+          "default": true,
+          "description": "When the dictionary has no entry for the word itself, the generation provider chain (llm.provider, llm.fallback) writes a dictionary-style entry (readings, parts of speech, senses) so the card renders like the others; it is labelled generated and needs review.",
+          "type": "boolean",
+          "x-consumer": "dictionary adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "dictionary.provider": {
           "default": "auto",
           "description": "Auto routes by supported target language; never Japanese fallback.",
@@ -1530,6 +1538,14 @@
         "dictionary.browser_fallback": {
           "default": false,
           "description": "Explicit optional browser dependency.",
+          "type": "boolean",
+          "x-consumer": "dictionary adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "dictionary.generate_missing": {
+          "default": true,
+          "description": "When the dictionary has no entry for the word itself, the generation provider chain (llm.provider, llm.fallback) writes a dictionary-style entry (readings, parts of speech, senses) so the card renders like the others; it is labelled generated and needs review.",
           "type": "boolean",
           "x-consumer": "dictionary adapter",
           "x-scope": "purpose",
@@ -2881,6 +2897,14 @@
     "dictionary.browser_fallback": {
       "default": false,
       "description": "Explicit optional browser dependency.",
+      "type": "boolean",
+      "x-consumer": "dictionary adapter",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "dictionary.generate_missing": {
+      "default": true,
+      "description": "When the dictionary has no entry for the word itself, the generation provider chain (llm.provider, llm.fallback) writes a dictionary-style entry (readings, parts of speech, senses) so the card renders like the others; it is labelled generated and needs review.",
       "type": "boolean",
       "x-consumer": "dictionary adapter",
       "x-scope": "purpose",

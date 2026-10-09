@@ -122,6 +122,9 @@ dictionary.browser_fallback = false
 # Identify client; site limits/terms still apply.
 dictionary.user_agent = "LinguistAnkiBridge/CLI"
 
+# When the dictionary has no entry for the word itself, the generation provider chain (llm.provider, llm.fallback) writes a dictionary-style entry (readings, parts of speech, senses) so the card renders like the others; it is labelled generated and needs review.
+dictionary.generate_missing = true
+
 # Optional lookup normalization, never source archive mutation.
 filters.remove_parentheses = false
 
