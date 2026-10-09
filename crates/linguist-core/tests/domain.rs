@@ -982,7 +982,8 @@ fn v3_vocabulary_renders_fixed_sections_kanji_strokes_and_tags() {
     );
     assert_eq!(rendered.fields["Pronunciation"], "たべる");
     // Spaces older notes put at kanji boundaries are dropped from kana only.
-    for (authored, shown) in [("た\u{a0}べ る", "たべる"), ("ふし／ せつ", "ふし／ せつ")] {
+    for (authored, shown) in [("た\u{a0}べ る", "たべる"), ("ふし／ せつ", "ふし／ せつ")]
+    {
         let mut spaced = doc.clone();
         if let LearningContent::Vocabulary(v) = &mut spaced.content {
             v.pronunciation = authored.into();

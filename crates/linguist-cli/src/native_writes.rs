@@ -494,7 +494,14 @@ pub(crate) fn rollback(
                     ));
                 }
             };
-            if !plan.conflicts.is_empty() || !plan.blockers.is_empty() {
+            // `--accept-schema-change` is the decision for the one conflict a
+            // note-type migration always reports; any other needs a file.
+            let accepted = |c: &String| {
+                accept_schema_change
+                    && plan.model.is_some()
+                    && c == "RESTORE_SCHEMA_CHANGE_NOT_ACCEPTED"
+            };
+            if plan.conflicts.iter().any(|c| !accepted(c)) || !plan.blockers.is_empty() {
                 return Err(format!(
                     "ROLLBACK_DECISION_REQUIRED: snapshot {} has {:?} {:?}; restore it with `snapshots restore {} --decision FILE --apply`",
                     item.snapshot_id, plan.conflicts, plan.blockers, item.snapshot_id
@@ -792,4 +799,102 @@ pub(crate) fn native_history_request(
     port.refresh()?;
     let evidence = port.note_evidence(note_id)?;
     linguist_application::revamp::native_history_request(plan, item, &evidence, maps, actor)
+}
+
+/// What `jobs run|resume|retry` asks of a simulate/apply job before it runs.
+pub(crate) enum JobStart {
+    Run,
+    Resume,
+    Retry { item_ids: Vec<Uuid>, failed: bool },
+}
+
+/// OP-39/OP-41 `jobs run|resume|retry JOB [--apply]` for simulate/apply jobs:
+/// the job executor over the verified companion. Apply jobs hold the
+/// collection-writer lease for the whole run; every item reuses the job's
+/// checkpoint. Simulate jobs read Anki and never take the writer lease.
+pub(crate) fn run_apply_job(
+    settings: &linguist_config::Effective,
+    job: Uuid,
+    write: bool,
+    start: JobStart,
+) -> Result<u8, String> {
+    use linguist_application::job_executor::{self, RunRequest};
+    use linguist_store::apply_job::JobControl;
+    // The resume or retry request is recorded locally first; a refusal or an
+    // empty retry never contacts Anki.
+    let request = {
+        let mut store = Store::open_existing(&state_root(settings)?)?;
+        match &start {
+            JobStart::Run => None,
+            JobStart::Resume => Some(
+                serde_json::to_value(job_executor::request_control(
+                    &mut store,
+                    job,
+                    JobControl::Resume,
+                )?)
+                .map_err(|e| e.to_string())?,
+            ),
+            JobStart::Retry { item_ids, failed } => {
+                let outcome = job_executor::request_retry(&mut store, job, item_ids, *failed)?;
+                if outcome.accepted.is_empty() {
+                    emit(&json!({
+                        "schema_version": 2, "retry": outcome, "run": null,
+                        "collection_writes_enabled": false,
+                    }))?;
+                    return Ok(4);
+                }
+                Some(json!({ "retry": outcome }))
+            }
+        }
+    };
+    let client = crate::anki_client(settings)?;
+    let port = connect(&client, settings)?;
+    let run = |store: &mut Store, lease: Option<&LeaseToken>, port: &mut NativePort| {
+        let report = job_executor::run(
+            store,
+            lease,
+            port,
+            &RunRequest {
+                job,
+                apply: write,
+                now_ms: now_ms()?,
+            },
+        )?;
+        let exit = report.exit_code;
+        emit(&json!({
+            "schema_version": 2, "request": request, "run": report,
+            "collection_writes_enabled": write,
+        }))?;
+        Ok(exit)
+    };
+    if write {
+        let mut writer = Writer::open(port, settings)?;
+        let result = run(&mut writer.store, Some(&writer.lease), &mut writer.port);
+        writer.finish();
+        result
+    } else {
+        let mut port = port;
+        let mut store = Store::open_existing(&state_root(settings)?)?;
+        run(&mut store, None, &mut port)
+    }
+}
+
+/// `jobs create --mode apply --create-checkpoint`: one verified checkpoint
+/// over every selected item's source notes, created for a new group that the
+/// job then adopts as its ID, so every item shares it.
+pub(crate) fn job_checkpoint(
+    settings: &linguist_config::Effective,
+    plan: Uuid,
+    revision: u32,
+    items: &[Uuid],
+) -> Result<(Uuid, String), String> {
+    let client = crate::anki_client(settings)?;
+    let port = connect(&client, settings)?;
+    let mut writer = Writer::open(port, settings)?;
+    let result = (|| {
+        let notes = source_note_ids(&writer.store, plan, revision, items)?;
+        writer.checkpoint(settings, &notes, &[], Some(Uuid::new_v4()))
+    })();
+    writer.finish();
+    result
 }

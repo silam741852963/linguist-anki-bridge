@@ -144,7 +144,7 @@ fn simulate_jobs_are_created_inspected_and_never_write() {
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("JOB_MODE_NEVER_WRITES"));
-    // Running needs the native read adapter, which does not exist yet.
+    // Running needs the verified companion, which this fixture lacks.
     let out = cli(&f).args(["jobs", "run", &job]).output().unwrap();
     assert_eq!(out.status.code(), Some(3));
     assert!(String::from_utf8_lossy(&out.stderr).contains("CAPABILITY_UNAVAILABLE"));

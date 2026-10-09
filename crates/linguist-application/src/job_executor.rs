@@ -23,6 +23,9 @@ use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, String>;
 
+/// The job's checkpoint belongs to an Anki session that has ended.
+pub const SESSION_ENDED: &str = "JOB_CHECKPOINT_SESSION_ENDED";
+
 /// Error codes produced when a fault is shared by every item of the group:
 /// collection identity, session, shared schema/model, approval scope or local
 /// durability. They halt the group whatever `jobs.on_item_error` says.
@@ -396,6 +399,15 @@ impl Worker<'_> {
     fn renew(&mut self) -> Result<()> {
         self.store.renew_lease(&self.lease, self.seconds)
     }
+    /// The job lease and, for apply jobs, the collection-writer lease, so a
+    /// long job keeps both while it accounts for or dispatches each item.
+    fn renew_with(&mut self, writer: Option<&LeaseToken>) -> Result<()> {
+        self.renew()?;
+        match writer {
+            Some(writer) => self.store.renew_lease(writer, self.seconds),
+            None => Ok(()),
+        }
+    }
     fn stop(
         &mut self,
         reason: StopReason,
@@ -481,6 +493,19 @@ pub fn run(
     };
     match stop {
         StopReason::Paused => next_commands.push(format!("lab jobs resume {}{flag}", def.job.id)),
+        StopReason::Halted if stop_code.as_deref() == Some(SESSION_ENDED) => {
+            let mut command = format!(
+                "lab jobs create --mode apply --plan {} --revision {} --digest {}",
+                def.plan_id, def.revision, def.plan_digest
+            );
+            for item in items.iter().filter(|i| i.state == "pending") {
+                command.push_str(&format!(" --item-id {}", item.item_id));
+            }
+            if def.accept_schema_change {
+                command.push_str(" --accept-schema-change");
+            }
+            next_commands.push(command + " --create-checkpoint");
+        }
         StopReason::Halted | StopReason::ItemErrorPolicy => {
             next_commands.push(format!("lab jobs items {}", def.job.id));
             next_commands.push(format!("lab jobs retry {} --failed{flag}", def.job.id));
@@ -535,7 +560,7 @@ fn drive(
         .iter()
         .filter(|i| i.state == "started" || i.state == "needs_recovery")
     {
-        worker.renew()?;
+        worker.renew_with(writer)?;
         let report = account(worker, writer, port, item)?;
         reconciled.push(report);
     }
@@ -572,6 +597,21 @@ fn drive(
                                 .is_some_and(|c| c.starts_with("JOB_ITEM_INTERRUPTED")))))
         })
         .collect();
+    // A checkpoint authorizes writes only in the session it was taken in. After
+    // a restart (or a full sync that replaced the collection) the remaining
+    // items need a new job with a fresh checkpoint; nothing is dispatched.
+    if def.job.mode == JobMode::Apply
+        && !eligible.is_empty()
+        && let Some(checkpoint) = def.checkpoint_id
+    {
+        let live = port.execution_binding()?;
+        let record = worker.store.checkpoint(checkpoint)?;
+        if !crate::backup::same_execution(&record.receipt.binding, &live) {
+            let code = Some(SESSION_ENDED.to_owned());
+            worker.stop(StopReason::Halted, None, code.clone())?;
+            return Ok((reconciled, vec![], StopReason::Halted, code));
+        }
+    }
     let mut dispatched = Vec::new();
     // `anki.commit_interval_seconds`: minimum gap between note mutations.
     let interval = std::time::Duration::from_secs_f64(
@@ -586,7 +626,7 @@ fn drive(
         {
             std::thread::sleep(interval.saturating_sub(last.elapsed()));
         }
-        worker.renew()?;
+        worker.renew_with(writer)?;
         let attempt = item.attempt + 1;
         let slot = Slot {
             operation: Uuid::new_v4(),

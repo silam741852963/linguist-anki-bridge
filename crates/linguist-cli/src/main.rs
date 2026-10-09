@@ -507,6 +507,10 @@ enum JobCommand {
         /// Accept the schema/full-sync warning of mapped note-type migrations.
         #[arg(long, requires = "plan")]
         accept_schema_change: bool,
+        /// Apply jobs: first export one verified checkpoint over every item's
+        /// notes through the companion; the job adopts its group as its ID.
+        #[arg(long, requires = "plan", conflicts_with = "checkpoint")]
+        create_checkpoint: bool,
     },
     /// List jobs, newest first.
     List {
@@ -932,8 +936,12 @@ enum PlanCommand {
         /// Plan ID.
         plan: uuid::Uuid,
         /// Plan item to generate for.
-        #[arg(long)]
-        item_id: uuid::Uuid,
+        #[arg(long, required_unless_present = "all_items")]
+        item_id: Option<uuid::Uuid>,
+        /// Generate every item in plan order, each on the newest revision;
+        /// an item that cannot be generated is reported and the rest continue.
+        #[arg(long, conflicts_with = "item_id")]
+        all_items: bool,
         /// Latest revision the generation extends.
         #[arg(long)]
         base_revision: u32,
@@ -1986,6 +1994,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 protected_manifest,
                 item_ids,
                 accept_schema_change,
+                create_checkpoint,
             } = command
             {
                 if mode != JobModeArg::Prepare {
@@ -2003,6 +2012,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                         protected_manifest,
                         item_ids,
                         accept_schema_change,
+                        create_checkpoint,
                     );
                 }
                 if plan.is_some() {
@@ -2081,7 +2091,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 )?)?;
                 return Ok(0);
             }
-            if let Some(code) = run_job_command(&root, &command)? {
+            if let Some(code) = run_job_command(&settings, &root, &command)? {
                 return Ok(code);
             }
             let control = match &command {
@@ -2323,6 +2333,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 PlanCommand::Generate {
                     plan,
                     item_id,
+                    all_items,
                     base_revision,
                     digest,
                     use_current_settings,
@@ -2340,14 +2351,36 @@ fn run(cli: Cli) -> Result<u8, String> {
                     let client = linguist_application::ollama::transport::Client::from_settings(
                         &settings, &env,
                     )?;
+                    let mut store = linguist_store::Store::open_existing(&root)?;
+                    let Some(item_id) = item_id.filter(|_| !all_items) else {
+                        let mut items = Vec::new();
+                        for document in &base.documents {
+                            let latest = store.revision(plan, store.latest_revision(plan)?)?;
+                            let latest_digest =
+                                latest.approval_digest().map_err(|e| e.to_string())?;
+                            let result = linguist_application::generation::publish_candidate(
+                                &mut store,
+                                &latest,
+                                document.id,
+                                &latest_digest,
+                                &settings,
+                                &env,
+                                &client,
+                            );
+                            items.push(match result {
+                                Ok(result) => serde_json::json!({"document_id": document.id, "result": result}),
+                                Err(error) => serde_json::json!({"document_id": document.id, "error": error}),
+                            });
+                        }
+                        let revision = store.latest_revision(plan)?;
+                        emit(&serde_json::json!({
+                            "schema_version": 2, "plan_id": plan, "revision": revision,
+                            "items": items, "collection_writes_enabled": false,
+                        }))?;
+                        return Ok(4);
+                    };
                     let result = linguist_application::generation::publish_candidate(
-                        &mut linguist_store::Store::open_existing(&root)?,
-                        &base,
-                        item_id,
-                        &digest,
-                        &settings,
-                        &env,
-                        &client,
+                        &mut store, &base, item_id, &digest, &settings, &env, &client,
                     )?;
                     emit(&result)?;
                     return Ok(4);
@@ -3982,6 +4015,7 @@ fn run_create_apply_job(
     protected_manifest: Option<String>,
     item_ids: Vec<uuid::Uuid>,
     accept_schema_change: bool,
+    create_checkpoint: bool,
 ) -> Result<u8, String> {
     use linguist_application::job_executor;
     let frozen = linguist_application::freeze_settings(settings, env)?;
@@ -4008,7 +4042,22 @@ fn run_create_apply_job(
             }
         }
     };
+    let selected = if item_ids.is_empty() {
+        reader.approval(approval)?.approval.item_ids
+    } else {
+        item_ids.clone()
+    };
     drop(reader);
+    if create_checkpoint && mode != JobModeArg::Apply {
+        return Err("JOB_MODE_ARGUMENT_CONFLICT: --create-checkpoint is for apply jobs".into());
+    }
+    let (checkpoint, protected_manifest) = if create_checkpoint {
+        let (checkpoint, protected) =
+            native_writes::job_checkpoint(settings, plan, revision, &selected)?;
+        (Some(checkpoint), Some(protected))
+    } else {
+        (checkpoint, protected_manifest)
+    };
     if mode == JobModeArg::Apply && protected_manifest.is_none() {
         return Err("JOB_PROTECTED_MANIFEST_REQUIRED: apply jobs name the protected-manifest digest their checkpoint was created with".into());
     }
@@ -4033,7 +4082,7 @@ fn run_create_apply_job(
     emit(&serde_json::json!({
         "schema_version": 2,
         "job": outcome,
-        "execution_available": false,
+        "execution_available": true,
         "writes_enabled": false,
     }))?;
     Ok(0)
@@ -4041,7 +4090,11 @@ fn run_create_apply_job(
 
 /// Jobs subcommands that differ by job kind. Returns `None` to let the
 /// preparation handlers run.
-fn run_job_command(root: &std::path::Path, command: &JobCommand) -> Result<Option<u8>, String> {
+fn run_job_command(
+    settings: &linguist_config::Effective,
+    root: &std::path::Path,
+    command: &JobCommand,
+) -> Result<Option<u8>, String> {
     use linguist_application::job_executor;
     use linguist_store::apply_job::JobControl;
     let job = match command {
@@ -4103,23 +4156,18 @@ fn run_job_command(root: &std::path::Path, command: &JobCommand) -> Result<Optio
             _ => Ok(()),
         }
     };
-    let unavailable = |what: &str| -> String {
-        format!(
-            "CAPABILITY_UNAVAILABLE: {what} for simulate/apply jobs requires the verified native lab-native-v1 read/mutation adapter; no lease, job event or Anki request was made"
-        )
-    };
     match command {
         JobCommand::Run { apply, .. } => {
             check_flag(*apply)?;
-            Err(unavailable("jobs run"))
+            drop(reader);
+            native_writes::run_apply_job(settings, job, *apply, native_writes::JobStart::Run)
+                .map(Some)
         }
         JobCommand::Resume { apply, .. } => {
             check_flag(*apply)?;
             drop(reader);
-            let mut store = linguist_store::Store::open_existing(root)?;
-            // The resume request is durable even though execution is unavailable.
-            job_executor::request_control(&mut store, job, JobControl::Resume)?;
-            Err(unavailable("jobs resume"))
+            native_writes::run_apply_job(settings, job, *apply, native_writes::JobStart::Resume)
+                .map(Some)
         }
         JobCommand::Pause { .. } | JobCommand::Cancel { .. } => {
             let action = if matches!(command, JobCommand::Pause { .. }) {
@@ -4143,19 +4191,21 @@ fn run_job_command(root: &std::path::Path, command: &JobCommand) -> Result<Optio
         } => {
             check_flag(*apply)?;
             drop(reader);
-            let mut store = linguist_store::Store::open_existing(root)?;
-            let outcome = job_executor::request_retry(&mut store, job, item_ids, *failed)?;
-            let exit = if outcome.accepted.is_empty() { 4 } else { 0 };
-            let flag = if apply_mode { " --apply" } else { "" };
-            emit(
-                &serde_json::json!({"schema_version":2,"retry":outcome,"execution_available":false,"next_command":format!("lab jobs run {job}{flag}"),"writes_enabled":false}),
-            )?;
-            Ok(Some(exit))
+            native_writes::run_apply_job(
+                settings,
+                job,
+                *apply,
+                native_writes::JobStart::Retry {
+                    item_ids: item_ids.clone(),
+                    failed: *failed,
+                },
+            )
+            .map(Some)
         }
         JobCommand::Show { .. } => {
             let view = job_executor::show(&reader, job)?;
             emit(
-                &serde_json::json!({"schema_version":2,"mode":definition.job.mode,"job":view,"execution_available":false,"writes_enabled":false}),
+                &serde_json::json!({"schema_version":2,"mode":definition.job.mode,"job":view,"execution_available":true,"writes_enabled":false}),
             )?;
             Ok(Some(0))
         }
@@ -4174,7 +4224,7 @@ fn run_job_command(root: &std::path::Path, command: &JobCommand) -> Result<Optio
             let items = job_executor::items(&reader, job, *after_index, limit)?;
             let next = items.last().map(|i| i.index + 1);
             emit(
-                &serde_json::json!({"schema_version":2,"job_id":job,"items":items,"next_index":next,"execution_available":false}),
+                &serde_json::json!({"schema_version":2,"job_id":job,"items":items,"next_index":next,"execution_available":true}),
             )?;
             Ok(Some(0))
         }

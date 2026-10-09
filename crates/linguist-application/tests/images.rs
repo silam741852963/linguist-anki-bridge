@@ -289,7 +289,10 @@ fn irasutoya_candidates_rank_title_matches_and_keep_the_site_terms() {
         .insert("images.candidate_limit".into(), json!(1));
     let client = IllustrationClient::with_reader(reader, &config);
     let result = client
-        .search_at(&format!("{base}/feeds/posts/summary").parse().unwrap(), " 窮屈 ")
+        .search_at(
+            &format!("{base}/feeds/posts/summary").parse().unwrap(),
+            " 窮屈 ",
+        )
         .unwrap();
     let requests = server.join().unwrap();
     assert!(requests[0].contains("alt=json"));
@@ -300,7 +303,10 @@ fn irasutoya_candidates_rank_title_matches_and_keep_the_site_terms() {
     let man = &result.candidates[0];
     assert_eq!(man.provider, "irasutoya");
     assert_eq!(man.title, "窮屈な社会のイラスト（男性）");
-    assert_eq!(man.page_url, "https://www.irasutoya.com/窮屈な社会のイラスト（男性）.html");
+    assert_eq!(
+        man.page_url,
+        "https://www.irasutoya.com/窮屈な社会のイラスト（男性）.html"
+    );
     assert_eq!(man.license_url.as_deref(), Some(TERMS_URL));
     assert_eq!(man.description.as_deref(), Some("A man in a narrow space."));
     assert!(man.review_required);
@@ -328,9 +334,15 @@ fn irasutoya_is_on_by_default_and_can_be_disabled() {
         json!(std::env::temp_dir().join("lab-images-cache-unused")),
     );
     let env = Default::default();
-    assert!(matches!(IllustrationClient::from_settings(&config, &env), Ok(Some(_))));
+    assert!(matches!(
+        IllustrationClient::from_settings(&config, &env),
+        Ok(Some(_))
+    ));
     config
         .values
         .insert("images.illustrations".into(), json!("disabled"));
-    assert!(matches!(IllustrationClient::from_settings(&config, &env), Ok(None)));
+    assert!(matches!(
+        IllustrationClient::from_settings(&config, &env),
+        Ok(None)
+    ));
 }

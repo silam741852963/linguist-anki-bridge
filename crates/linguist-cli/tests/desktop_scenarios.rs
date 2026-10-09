@@ -1533,3 +1533,293 @@ fn grammar_split_crash_resume() {
     );
     s.report("grammar_split_crash");
 }
+
+const BATCH_PICTURE: &str = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGM4YWMDRww4OQArRg8Bc3oMDAAAAABJRU5ErkJggg==";
+
+/// Resolve every open review of a multi-item vocabulary revamp: native
+/// history, then source pictures kept as pictures, then any templated choice.
+fn review_batch(s: &mut Scenario, plan: &str) -> String {
+    for _ in 0..60 {
+        let page = s.ok(&["plans", "show", plan, "--issues-only"]);
+        let entries = page["issues"].as_array().cloned().unwrap_or_default();
+        let Some(entry) = entries.iter().find(|e| e["issue"]["severity"] == "review") else {
+            let shown = s.ok(&["plans", "show", plan]);
+            return root_digest(&shown);
+        };
+        let identity = &entry["request_identity"];
+        let issue = &entry["issue"];
+        let code = issue["code"].as_str().unwrap();
+        let document = identity["document_id"].as_str().unwrap().to_owned();
+        let choice = match code {
+            "SOURCE_NATIVE_HISTORY_REVIEW" => {
+                let (status, value, stderr) = s.cli(&[
+                    "plans",
+                    "resolve-history",
+                    plan,
+                    "--item",
+                    &document,
+                    "--map",
+                    "0=comprehension",
+                    "--actor",
+                    "desktop-scenario",
+                ]);
+                assert!(status == 0 || status == 4, "{stderr} {value}");
+                continue;
+            }
+            "SOURCE_MEDIA_CONTENT_REVIEW" => {
+                let shown = s.ok(&["plans", "show", plan]);
+                let doc = shown["documents"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|d| d["id"] == document.as_str())
+                    .unwrap()
+                    .clone();
+                let name = issue["field"].as_str().unwrap();
+                let asset = doc["media"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|m| m["filename"] == name || m["original_filename"] == name)
+                    .unwrap()
+                    .clone();
+                let evidence = doc["evidence"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|e| {
+                        e["field"] == "media_format" && e["target"]["digest"] == asset["digest"]
+                    })
+                    .unwrap()["id"]
+                    .clone();
+                json!({"decision": "source_media_role", "value": {
+                    "source_id": issue["source_refs"][0], "asset_digest": asset["digest"],
+                    "original_filename": name, "evidence_id": evidence, "role": "picture",
+                    "attribution": "Disposable scenario picture.", "license": null}})
+            }
+            _ => entry["templates"][0]["choice"].clone(),
+        };
+        assert!(!choice.is_null(), "no decision for {code}: {entry}");
+        let mut decision = identity.clone();
+        decision["actor"] = json!("desktop-scenario");
+        decision["choice"] = choice;
+        let path = s.root.join(format!("decision-{}.json", Uuid::new_v4()));
+        std::fs::write(&path, decision.to_string()).unwrap();
+        let issue_id = identity["issue_id"].as_str().unwrap().to_owned();
+        let (status, value, stderr) = s.cli(&[
+            "plans",
+            "resolve",
+            plan,
+            &issue_id,
+            "--decision",
+            path.to_str().unwrap(),
+        ]);
+        assert!(status == 0 || status == 4, "{code}: {stderr} {value}");
+    }
+    panic!("review did not converge");
+}
+
+/// WP-21: four studied notes revamped as one plan and one apply job with one
+/// checkpoint. Anki crashes right after the first picture is stored (item 3).
+/// After a restart item 3 is reconciled; the crashed session's checkpoint stops the
+/// job before item 4, a follow-up job with a fresh checkpoint applies it,
+/// nothing is duplicated, and two rollbacks restore every item.
+#[test]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+fn batch_vocab_revamp_apply_resume_rollback() {
+    let mut s = Scenario::new(
+        "batch_vocab_revamp",
+        "japanese_vocab",
+        Some("Japanese::Vocab"),
+        true,
+    );
+    s.install_model("japanese_vocab");
+    s.desktop.call(
+        "createModel",
+        json!({"modelName": "Batch Source", "inOrderFields": ["Front", "Back", "Picture"],
+               "css": ".card {}", "cardTemplates": [{"Name": "Card 1", "Front": "{{Front}}",
+               "Back": "{{Back}}<br>{{Picture}}"}]}),
+    );
+    s.desktop.call(
+        "storeMediaFile",
+        json!({"filename": "batch-picture.png", "data": BATCH_PICTURE}),
+    );
+    let words = [
+        ("食べる", "to eat", false),
+        ("飲む", "to drink", false),
+        ("見る", "to see", true),
+        ("聞く", "to hear", true),
+    ];
+    let mut notes = Vec::new();
+    for (word, meaning, picture) in words {
+        let picture = if picture {
+            "<img src=\"batch-picture.png\">"
+        } else {
+            ""
+        };
+        let note = s.desktop.add_note(
+            "Batch Source",
+            "Default",
+            json!({"Front": word, "Back": meaning, "Picture": picture}),
+            &["legacy"],
+        );
+        s.desktop.study(note);
+        notes.push((note, s.desktop.note(note)));
+    }
+    s.settings.push(format!(
+        "purposes.japanese_vocab.fields={}",
+        json!({"expression": "Front", "meaning": "Back", "picture": "Picture"})
+    ));
+    s.settings
+        .push("purposes.japanese_vocab.source_model=Batch Source".into());
+    let ids: Vec<String> = notes.iter().map(|(n, _)| n.to_string()).collect();
+    let mut args = vec!["vocab", "revamp"];
+    for id in &ids {
+        args.extend(["--note-id", id.as_str()]);
+    }
+    let (code, drafted, stderr) = s.cli(&args);
+    assert_eq!(code, 4, "{stderr} {drafted}");
+    let plan = drafted["result"]["items"][0]["plan_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // One typed patch authors every item's sense key.
+    let shown = s.ok(&["plans", "show", &plan]);
+    let items: Vec<Value> = shown["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, d)| json!({"document_id": d["id"], "fields": {"SenseKey": {"intent": "set", "value": format!("batch-{i}")}}}))
+        .collect();
+    assert_eq!(items.len(), 4, "{shown}");
+    let patch = s.root.join("batch.patch.json");
+    std::fs::write(
+        &patch,
+        json!({"schema_version": 2, "base_digest": root_digest(&shown), "items": items})
+            .to_string(),
+    )
+    .unwrap();
+    let revision = shown["revision"].to_string();
+    let (code, edited, stderr) = s.cli(&[
+        "plans",
+        "edit",
+        &plan,
+        "--base-revision",
+        &revision,
+        "--patch",
+        patch.to_str().unwrap(),
+        "--save-draft",
+    ]);
+    assert!(code == 0 || code == 4, "{stderr} {edited}");
+    let digest = review_batch(&mut s, &plan);
+    let (revision, digest) = s.bind_and_approve(&plan, &digest);
+    let rev = revision.to_string();
+    let created = s.ok(&[
+        "jobs",
+        "create",
+        "--mode",
+        "apply",
+        "--plan",
+        &plan,
+        "--revision",
+        &rev,
+        "--digest",
+        &digest,
+        "--create-checkpoint",
+        "--accept-schema-change",
+    ]);
+    let job = created["job"]["job_id"].as_str().unwrap().to_owned();
+    assert_eq!(created["job"]["item_count"], 4, "{created}");
+    s.desktop
+        .arm(json!({"point": "after_effect", "action": "crash", "variant": "store_media"}));
+    let (code, crashed, stderr) = s.cli(&["jobs", "run", &job, "--apply"]);
+    assert_ne!(code, 0, "{stderr} {crashed}");
+    s.desktop.wait_for_exit();
+    s.desktop.restart();
+    let model = |s: &Scenario, note: i64| s.desktop.note(note)["model_name"].clone();
+    assert_eq!(
+        model(&s, notes[0].0),
+        "Linguist Vocabulary v3",
+        "item 1 before the crash"
+    );
+    assert_eq!(
+        model(&s, notes[1].0),
+        "Linguist Vocabulary v3",
+        "item 2 before the crash"
+    );
+    // The interrupted item is reconciled, never re-sent blindly.
+    let (code, resumed, stderr) = s.cli(&["jobs", "resume", &job, "--apply"]);
+    s.log.push(format!(
+        "resume before reconcile -> {code}: {stderr} {resumed}"
+    ));
+    let pending = s.ok(&["recover", "inspect", "--pending"]);
+    for version in pending["journals"].as_array().unwrap() {
+        let operation = version["journal"]["id"].as_str().unwrap();
+        let reconciled = s.ok(&["recover", "reconcile", operation, "--rebind", "--apply"]);
+        s.log.push(format!(
+            "reconcile {operation} -> {}",
+            reconciled["reconcile"]["state"]
+        ));
+    }
+    // The checkpoint belonged to the crashed session: after accounting for
+    // item 3 the job stops before dispatching item 4 and names a follow-up job.
+    let (code, halted, stderr) = s.cli(&["jobs", "resume", &job, "--apply"]);
+    assert_eq!(code, 5, "{stderr} {halted}");
+    assert_eq!(
+        halted["run"]["stop_code"], "JOB_CHECKPOINT_SESSION_ENDED",
+        "{halted}"
+    );
+    assert_eq!(
+        halted["run"]["status"]["counts"]["committed"], 3,
+        "{halted}"
+    );
+    let follow_up = halted["run"]["next_commands"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let follow_up: Vec<&str> = follow_up.split(' ').skip(1).collect();
+    assert_eq!(
+        follow_up.iter().filter(|a| **a == "--item-id").count(),
+        1,
+        "{halted}"
+    );
+    let created = s.ok(&follow_up);
+    let rest = created["job"]["job_id"].as_str().unwrap().to_owned();
+    let finished = s.ok(&["jobs", "run", &rest, "--apply"]);
+    assert_eq!(
+        finished["run"]["status"]["counts"]["committed"], 1,
+        "{finished}"
+    );
+    for ((note, before), (word, _, _)) in notes.iter().zip(words) {
+        let after = s.desktop.note(*note);
+        assert_eq!(after["model_name"], "Linguist Vocabulary v3", "{after}");
+        assert_eq!(after["cards"][0]["id"], before["cards"][0]["id"]);
+        assert_eq!(after["cards"][0]["review_count"], 1);
+        assert_eq!(
+            after["cards"][0]["history_digest"],
+            before["cards"][0]["history_digest"]
+        );
+        let found = s
+            .desktop
+            .call("findNotes", json!({"query": format!("Expression:{word}")}));
+        assert_eq!(found.as_array().unwrap().len(), 1, "no duplicate of {word}");
+    }
+    for id in [&job, &rest] {
+        let audit = s.ok(&["jobs", "audit", id]);
+        assert_eq!(audit["audit"]["issues"], json!([]), "{audit}");
+    }
+    // Each job rolls back as one group.
+    for id in [&rest, &job] {
+        let rolled = s.ok(&["jobs", "rollback", id, "--accept-schema-change", "--apply"]);
+        s.log.push(format!("rollback {id} -> {rolled}"));
+    }
+    for (note, before) in &notes {
+        let back = s.desktop.note(*note);
+        assert_eq!(back["model_name"], "Batch Source", "{back}");
+        assert_eq!(back["fields"], before["fields"]);
+        assert_eq!(back["cards"][0]["id"], before["cards"][0]["id"]);
+        assert_eq!(back["cards"][0]["review_count"], 1);
+    }
+    s.report("batch_vocab_revamp");
+}

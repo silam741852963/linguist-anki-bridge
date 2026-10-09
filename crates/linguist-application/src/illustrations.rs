@@ -101,8 +101,7 @@ impl IllustrationClient {
         expression: &str,
     ) -> Result<ImageSearch, ImageSearchError> {
         let query = expression.trim();
-        if query.is_empty() || query.chars().count() > 200 || query.chars().any(char::is_control)
-        {
+        if query.is_empty() || query.chars().count() > 200 || query.chars().any(char::is_control) {
             return Err(ImageSearchError::ImageQueryInvalid);
         }
         let mut url = base.clone();

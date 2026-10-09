@@ -235,13 +235,7 @@ pub fn enrich_document(
         )?;
     }
     if images_requested(settings, &document) {
-        stage_images(
-            &mut document,
-            settings,
-            environment,
-            providers,
-            &mut assets,
-        )?;
+        stage_images(&mut document, settings, environment, providers, &mut assets)?;
     }
     if audio_requested(settings, &document) && settings.values["audio.provider"] == "dictionary" {
         stage_recording(

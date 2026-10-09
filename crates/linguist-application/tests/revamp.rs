@@ -1684,11 +1684,17 @@ fn source_media_keep_the_order_the_fields_reference_them_in() {
     let png = |n: u8| {
         let mut bytes = Vec::new();
         image::RgbImage::from_pixel(2, 2, image::Rgb([n, 0, 0]))
-            .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
             .unwrap();
         bytes
     };
-    assert_eq!(capture.captured.source.media_refs, ["book-box.jpg", "秘书.jpg"]);
+    assert_eq!(
+        capture.captured.source.media_refs,
+        ["book-box.jpg", "秘书.jpg"]
+    );
     linguist_application::source_archive::media::attach_original_media(
         &mut capture.captured,
         BTreeMap::from([

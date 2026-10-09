@@ -489,7 +489,7 @@ pub struct CheckpointAuthorization {
     pub reuse_reason: Option<&'static str>,
 }
 
-fn same_execution(a: &CollectionBinding, b: &CollectionBinding) -> bool {
+pub(crate) fn same_execution(a: &CollectionBinding, b: &CollectionBinding) -> bool {
     a.endpoint == b.endpoint
         && a.profile_fingerprint == b.profile_fingerprint
         && a.path_fingerprint == b.path_fingerprint

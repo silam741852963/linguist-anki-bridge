@@ -799,7 +799,11 @@ fn japanese_pictures_search_irasutoya_first_and_commons_by_the_selected_sense() 
         fn search(&self, expression: &str) -> Result<ImageSearch, String> {
             self.0.lock().unwrap().push(expression.into());
             let mut found = candidate(self.1, if self.1.starts_with("File:") { 10 } else { 90 });
-            found.provider = if self.1.starts_with("File:") { "wikimedia_commons" } else { "irasutoya" };
+            found.provider = if self.1.starts_with("File:") {
+                "wikimedia_commons"
+            } else {
+                "irasutoya"
+            };
             Ok(ImageSearch {
                 query: expression.into(),
                 request_url: "https://example.invalid/search".into(),
@@ -828,9 +832,14 @@ fn japanese_pictures_search_irasutoya_first_and_commons_by_the_selected_sense() 
         ..Default::default()
     };
     let bytes = r#"{"schema_version":2,"kind":"vocabulary","target_language":"ja","explanation_language":"en","requested_tasks":["comprehension"],"body":{"expression":"食べる"}}"#.as_bytes();
-    let result =
-        prepare_with_providers(bytes, Kind::Vocabulary, &settings, &f.environment, providers)
-            .unwrap();
+    let result = prepare_with_providers(
+        bytes,
+        Kind::Vocabulary,
+        &settings,
+        &f.environment,
+        providers,
+    )
+    .unwrap();
     let plan = f.store().revision(result.plan_id, 1).unwrap();
     let doc = &plan.documents[0];
     // いらすとや is searched by the word and staged before Commons, which is
