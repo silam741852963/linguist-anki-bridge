@@ -229,3 +229,108 @@ fn provider_selection_is_explicit() {
         ImageSearchError::ImageQueryInvalid
     );
 }
+
+#[test]
+fn irasutoya_candidates_rank_title_matches_and_keep_the_site_terms() {
+    use linguist_application::illustrations::{IllustrationClient, TERMS_URL};
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let entry = |title: &str, thumb: Option<String>| {
+        let mut e = json!({"title": {"$t": title}, "summary": {"$t": "  A man \n in a narrow space. "},
+            "link": [{"rel": "alternate", "href": format!("https://www.irasutoya.com/{title}.html")}]});
+        if let Some(url) = thumb {
+            e["media$thumbnail"] = json!({"url": url});
+        }
+        e
+    };
+    let feed = json!({"feed": {"entry": [
+        entry("IHクッキングヒーターのイラスト", Some(format!("{base}/img/s72-c/ih.png"))),
+        entry("窮屈な服のイラスト", Some(format!("{base}/img/s1600/odd.png"))),
+        entry("窮屈な部屋のイラスト", None),
+        entry("窮屈な社会のイラスト（男性）", Some(format!("{base}/img/s72-c/man.png"))),
+    ]}});
+    let server = serve(
+        listener,
+        vec![
+            (
+                "/feeds/posts/summary",
+                "200 OK",
+                "Content-Type: application/json; charset=UTF-8\r\n".into(),
+                serde_json::to_vec(&feed).unwrap(),
+            ),
+            (
+                "/img/s400/man.png",
+                "200 OK",
+                "Content-Type: image/png\r\n".into(),
+                png(),
+            ),
+        ],
+    );
+    let mut destinations = Destinations::default();
+    destinations.configured.insert("127.0.0.1".into());
+    let limits = Limits {
+        attempts: 1,
+        timeout: Duration::from_secs(5),
+        connect_timeout: Duration::from_secs(2),
+        interval: Duration::ZERO,
+        concurrency: 1,
+        initial_backoff: Duration::from_millis(1),
+        max_backoff: Duration::from_millis(1),
+        jitter: 0.0,
+        max_body: 1 << 20,
+        max_redirects: 0,
+    };
+    let reader = Reader::new(Service::Image, destinations, limits, "test", None)
+        .unwrap()
+        .with_gates(Box::leak(Box::default()));
+    let mut config = settings();
+    config
+        .values
+        .insert("images.candidate_limit".into(), json!(1));
+    let client = IllustrationClient::with_reader(reader, &config);
+    let result = client
+        .search_at(&format!("{base}/feeds/posts/summary").parse().unwrap(), " 窮屈 ")
+        .unwrap();
+    let requests = server.join().unwrap();
+    assert!(requests[0].contains("alt=json"));
+    assert!(requests[0].contains("q=%E7%AA%AE%E5%B1%88"));
+    assert_eq!(result.query, "窮屈");
+    // Title matches first; the limit stops before the IH heater is downloaded.
+    assert_eq!(result.candidates.len(), 1);
+    let man = &result.candidates[0];
+    assert_eq!(man.provider, "irasutoya");
+    assert_eq!(man.title, "窮屈な社会のイラスト（男性）");
+    assert_eq!(man.page_url, "https://www.irasutoya.com/窮屈な社会のイラスト（男性）.html");
+    assert_eq!(man.license_url.as_deref(), Some(TERMS_URL));
+    assert_eq!(man.description.as_deref(), Some("A man in a narrow space."));
+    assert!(man.review_required);
+    assert_eq!(man.bytes, png());
+    let rejected: Vec<_> = result
+        .rejected
+        .iter()
+        .map(|r| (r.title.as_str(), r.code.as_str()))
+        .collect();
+    assert_eq!(
+        rejected,
+        [
+            ("窮屈な服のイラスト", "IMAGE_CANDIDATE_URL_INVALID"),
+            ("窮屈な部屋のイラスト", "IMAGE_CANDIDATE_METADATA_MISSING"),
+        ]
+    );
+}
+
+#[test]
+fn irasutoya_is_on_by_default_and_can_be_disabled() {
+    use linguist_application::illustrations::IllustrationClient;
+    let mut config = settings();
+    config.values.insert(
+        "storage.cache_dir".into(),
+        json!(std::env::temp_dir().join("lab-images-cache-unused")),
+    );
+    let env = Default::default();
+    assert!(matches!(IllustrationClient::from_settings(&config, &env), Ok(Some(_))));
+    config
+        .values
+        .insert("images.illustrations".into(), json!("disabled"));
+    assert!(matches!(IllustrationClient::from_settings(&config, &env), Ok(None)));
+}

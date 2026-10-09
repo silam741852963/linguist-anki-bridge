@@ -7,7 +7,7 @@ fn file(text: &str) -> ConfigFile {
 #[test]
 fn every_registry_default_validates_and_example_resolves() {
     let r = Registry::builtin();
-    assert_eq!(r.entries.len(), 157);
+    assert_eq!(r.entries.len(), 158);
     for e in r.entries.values() {
         r.validate_value(&e.key, &e.default)
             .unwrap_or_else(|err| panic!("{}: {err}", e.key));

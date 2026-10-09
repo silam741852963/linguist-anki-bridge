@@ -778,3 +778,90 @@ fn dictionary_recordings_become_reviewed_audio_candidates() {
     assert!(result.ready, "{:?}", result.issues);
     assert!(result.issues.iter().any(|i| i.code == "AUDIO_NOT_FOUND"));
 }
+
+#[test]
+fn japanese_pictures_search_irasutoya_first_and_commons_by_the_selected_sense() {
+    use linguist_core::records::MediaOwner;
+    use std::sync::Mutex;
+    struct Dictionary;
+    impl DictionaryPort for Dictionary {
+        fn lookup(
+            &self,
+            query: &str,
+            target: &Language,
+        ) -> Result<linguist_dictionary::JishoPage, String> {
+            linguist_dictionary::parse_jisho(query, target, r#"{"meta":{"status":200},"data":[{"slug":"eat","japanese":[{"word":"食べる","reading":"たべる"}],"senses":[{"english_definitions":["to eat"]},{"english_definitions":["to live on"]}]}]}"#.as_bytes(), 1024, 10)
+                .map_err(|e| e.to_string())
+        }
+    }
+    struct Recorder(Mutex<Vec<String>>, &'static str);
+    impl ImagePort for Recorder {
+        fn search(&self, expression: &str) -> Result<ImageSearch, String> {
+            self.0.lock().unwrap().push(expression.into());
+            let mut found = candidate(self.1, if self.1.starts_with("File:") { 10 } else { 90 });
+            found.provider = if self.1.starts_with("File:") { "wikimedia_commons" } else { "irasutoya" };
+            Ok(ImageSearch {
+                query: expression.into(),
+                request_url: "https://example.invalid/search".into(),
+                response_sha256: String::new(),
+                candidates: vec![found],
+                rejected: vec![],
+                response: format!("{{\"{}\":1}}", self.1).into_bytes(),
+            })
+        }
+    }
+    let f = Fixture::new();
+    let mut settings = f.settings.clone();
+    settings
+        .values
+        .insert("dictionary.provider".into(), json!("jisho"));
+    settings.values.insert("kanji.enabled".into(), json!(false));
+    settings
+        .values
+        .insert("audio.provider".into(), json!("preserve"));
+    let commons = Recorder(Mutex::default(), "File:Meal.png");
+    let irasutoya = Recorder(Mutex::default(), "食事のイラスト");
+    let providers = Providers {
+        dictionary: Some(&Dictionary),
+        images: Some(&commons),
+        illustrations: Some(&irasutoya),
+        ..Default::default()
+    };
+    let bytes = r#"{"schema_version":2,"kind":"vocabulary","target_language":"ja","explanation_language":"en","requested_tasks":["comprehension"],"body":{"expression":"食べる"}}"#.as_bytes();
+    let result =
+        prepare_with_providers(bytes, Kind::Vocabulary, &settings, &f.environment, providers)
+            .unwrap();
+    let plan = f.store().revision(result.plan_id, 1).unwrap();
+    let doc = &plan.documents[0];
+    // いらすとや is searched by the word and staged before Commons, which is
+    // searched by the first sense's gloss until a sense is chosen.
+    assert_eq!(*irasutoya.0.lock().unwrap(), ["食べる"]);
+    assert_eq!(*commons.0.lock().unwrap(), ["to eat"]);
+    let staged: Vec<_> = doc
+        .media
+        .iter()
+        .filter_map(|m| m.original_filename.as_deref())
+        .collect();
+    assert_eq!(staged, ["食事のイラスト", "File:Meal.png"]);
+    let review = doc
+        .issues
+        .iter()
+        .find(|i| i.code == "IMAGE_CANDIDATE_REVIEW")
+        .unwrap();
+    assert_eq!(review.source_refs[0], doc.media[0].digest);
+    let LearningContent::Vocabulary(vocab) = &doc.content else {
+        panic!()
+    };
+    let key = vocab.dictionary[0].senses[1].key.clone();
+    let chosen = decide(
+        &plan,
+        &format!("DICTIONARY_SENSE_REVIEW:{}", doc.id),
+        ReviewChoice::Sense(key),
+    );
+    let mut again = chosen.documents[0].clone();
+    again.issues.retain(|i| i.code != "IMAGE_CANDIDATE_REVIEW");
+    again.media.retain(|m| m.owner != MediaOwner::External);
+    linguist_application::vocab::enrich_document(&again, &settings, &f.environment, providers)
+        .unwrap();
+    assert_eq!(*commons.0.lock().unwrap(), ["to eat", "to live on"]);
+}

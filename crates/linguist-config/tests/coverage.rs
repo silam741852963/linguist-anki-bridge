@@ -34,7 +34,7 @@ fn every_registry_entry_has_exactly_one_coverage_row() {
         entries.len(),
         "rows must match registry entries exactly"
     );
-    assert_eq!(rows.len(), 157);
+    assert_eq!(rows.len(), 158);
 }
 
 #[test]

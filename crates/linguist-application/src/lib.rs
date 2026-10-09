@@ -819,6 +819,7 @@ pub mod editor;
 pub mod export;
 pub mod generation;
 pub mod grammar;
+pub mod illustrations;
 pub mod images;
 pub mod job_executor;
 pub mod jobs;

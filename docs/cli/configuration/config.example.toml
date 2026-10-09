@@ -140,6 +140,9 @@ images.search_when_missing = true
 # Provider attribution retained.
 images.provider = "wikimedia"
 
+# Japanese words also search いらすとや illustrations by the expression; candidates are reviewed like any other.
+images.illustrations = "irasutoya"
+
 # Required for custom provider.
 # images.custom_endpoint = "<explicit value when needed>"
 

@@ -45,6 +45,21 @@
       "sensitive": false
     },
     {
+      "key": "images.illustrations",
+      "type": "enum",
+      "default": "irasutoya",
+      "constraints": {
+        "values": [
+          "irasutoya",
+          "disabled"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "image adapter",
+      "description": "Japanese words also search いらすとや illustrations by the expression; candidates are reviewed like any other.",
+      "sensitive": false
+    },
+    {
       "key": "images.custom_endpoint",
       "type": "string|null",
       "default": null,

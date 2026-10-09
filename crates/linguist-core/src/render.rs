@@ -26,6 +26,18 @@ pub fn escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
+
+/// Kana-only pronunciation without the spaces older notes put at kanji
+/// boundaries (`こわ す` renders `こわす`); any other text is kept as written.
+fn compact_kana(text: &str) -> std::borrow::Cow<'_, str> {
+    let kana = |c: char| matches!(c, '\u{3041}'..='\u{309F}' | '\u{30A0}'..='\u{30FF}');
+    if text.chars().any(kana) && text.chars().all(|c| kana(c) || c.is_whitespace()) {
+        text.split_whitespace().collect::<String>().into()
+    } else {
+        text.into()
+    }
+}
+
 pub fn sanitize_reference(s: &str) -> String {
     ammonia::Builder::default()
         .tags(HashSet::from([
@@ -432,7 +444,7 @@ pub fn render(
             } else {
                 &v.pronunciation
             };
-            fields.insert("Pronunciation".into(), escape(spoken));
+            fields.insert("Pronunciation".into(), escape(&compact_kana(spoken)));
             fields.insert(
                 "Meaning".into(),
                 dictionary::meaning(&v.dictionary, &v.expression, &v.sense_key, &v.meaning),

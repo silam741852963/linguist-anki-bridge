@@ -131,6 +131,7 @@ const DICT: &str = "crates/linguist-application/src/dictionary.rs";
 const DTRANSPORT: &str = "crates/linguist-dictionary/src/transport.rs";
 const KANJI: &str = "crates/linguist-dictionary/src/kanji.rs";
 const IMAGES: &str = "crates/linguist-application/src/images.rs";
+const ILLUSTRATIONS: &str = "crates/linguist-application/src/illustrations.rs";
 const GEN: &str = "crates/linguist-application/src/generation.rs";
 const OLLAMA: &str = "crates/linguist-application/src/ollama/transport.rs";
 const APP: &str = "crates/linguist-application/src/lib.rs";
@@ -278,6 +279,7 @@ pub const ROWS: &[Row] = &[
         "images.provider=custom",
         "custom image search adapter",
     ),
+    c("images.illustrations", ILLUSTRATIONS),
     c("images.query_suffix", IMAGES),
     c("images.candidate_limit", IMAGES),
     c("input.max_file_mb", CLI),

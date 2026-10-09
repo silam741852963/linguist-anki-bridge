@@ -111,6 +111,9 @@ pub struct Providers<'a> {
     pub dictionary: Option<&'a dyn crate::DictionaryPort>,
     pub kanji: Option<&'a dyn KanjiPort>,
     pub images: Option<&'a dyn ImagePort>,
+    /// Japanese illustrations (いらすとや). With `images` injected and this
+    /// left `None`, no live illustration search runs.
+    pub illustrations: Option<&'a dyn ImagePort>,
     pub speech: Option<&'a dyn SpeechPort>,
     pub recordings: Option<&'a dyn RecordingPort>,
     pub dictionary_media: Option<&'a dyn DictionaryMediaPort>,
@@ -231,8 +234,7 @@ pub fn enrich_document(
             &mut document,
             settings,
             environment,
-            providers.images,
-            providers.dictionary_media,
+            providers,
             &mut assets,
         )?;
     }
@@ -457,19 +459,25 @@ fn stage_images(
     document: &mut LearningDocument,
     settings: &Effective,
     environment: &BTreeMap<String, String>,
-    port: Option<&dyn ImagePort>,
-    media_port: Option<&dyn DictionaryMediaPort>,
+    providers: Providers<'_>,
     assets: &mut Vec<Vec<u8>>,
 ) -> Result<(), String> {
+    let (port, media_port) = (providers.images, providers.dictionary_media);
     let LearningContent::Vocabulary(vocab) = &document.content else {
         return Ok(());
     };
     // Japanese titles rarely match Commons files; the dictionary's English
-    // gloss of the first exact entry finds illustrations.
+    // gloss of the selected sense (else the first exact entry's first sense)
+    // finds illustrations.
     let japanese = document.target_language.as_str().split('-').next() == Some("ja");
-    let expression = exact_entries(vocab)
-        .first()
-        .and_then(|entry| entry.senses.first())
+    let senses: Vec<_> = exact_entries(vocab)
+        .into_iter()
+        .flat_map(|entry| entry.senses.iter())
+        .collect();
+    let expression = senses
+        .iter()
+        .find(|sense| !vocab.sense_key.is_empty() && sense.key == vocab.sense_key)
+        .or(senses.first())
         .and_then(|sense| sense.definitions.first())
         .filter(|_| japanese)
         .map(|gloss| gloss.split(';').next().unwrap_or(gloss).trim().to_owned())
@@ -482,6 +490,7 @@ fn stage_images(
         .take(2)
         .cloned()
         .collect();
+    let japanese_expression = vocab.expression.clone();
     let mut digests = Vec::new();
     if !illustrations.is_empty() {
         let mut live = None;
@@ -508,6 +517,34 @@ fn stage_images(
             ),
         }
     }
+    // いらすとや illustrations are searched by the Japanese word itself and
+    // come before Commons photographs.
+    if japanese {
+        let result = match (providers.illustrations, port) {
+            (Some(port), _) => Some(port.search(&japanese_expression)),
+            (None, Some(_)) => None,
+            (None, None) => {
+                match crate::illustrations::IllustrationClient::from_settings(settings, environment)
+                {
+                    Ok(Some(client)) => {
+                        Some(client.search(&japanese_expression).map_err(|e| e.to_string()))
+                    }
+                    Ok(None) => None,
+                    Err(error) => Some(Err(error.to_string())),
+                }
+            }
+        };
+        match result {
+            Some(Ok(search)) => stage_search(document, search, &mut digests, assets)?,
+            Some(Err(error)) => warning(
+                document,
+                "IMAGE_SEARCH_FAILED",
+                "picture",
+                format!("{error}; no illustration candidate was staged."),
+            ),
+            None => {}
+        }
+    }
     let result = match port {
         Some(port) => port.search(&expression),
         None => match ImageSearchClient::from_settings(settings, environment) {
@@ -532,6 +569,17 @@ fn stage_images(
             return candidate_review(document, digests);
         }
     };
+    stage_search(document, search, &mut digests, assets)?;
+    candidate_review(document, digests)
+}
+
+/// Stage every candidate of one search as a reviewable archive asset.
+fn stage_search(
+    document: &mut LearningDocument,
+    search: ImageSearch,
+    digests: &mut Vec<String>,
+    assets: &mut Vec<Vec<u8>>,
+) -> Result<(), String> {
     assets.push(search.response.clone());
     let response_digest = canonical::asset_digest(&search.response);
     for candidate in search.candidates {
@@ -591,7 +639,7 @@ fn stage_images(
             format!("{} was not staged: {}", rejected.title, rejected.code),
         );
     }
-    candidate_review(document, digests)
+    Ok(())
 }
 
 /// One review issue over every staged picture candidate.

@@ -346,6 +346,19 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "images.illustrations": {
+          "default": "irasutoya",
+          "description": "Japanese words also search いらすとや illustrations by the expression; candidates are reviewed like any other.",
+          "enum": [
+            "irasutoya",
+            "disabled"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "image adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "images.provider": {
           "default": "wikimedia",
           "description": "Provider attribution retained.",
@@ -1482,6 +1495,19 @@
           "maxLength": 1048576,
           "type": "string",
           "x-consumer": "ALG-OCR",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.illustrations": {
+          "default": "irasutoya",
+          "description": "Japanese words also search いらすとや illustrations by the expression; candidates are reviewed like any other.",
+          "enum": [
+            "irasutoya",
+            "disabled"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "image adapter",
           "x-scope": "purpose",
           "x-sensitive": false
         },
@@ -2698,6 +2724,19 @@
       "maxLength": 1048576,
       "type": "string",
       "x-consumer": "ALG-OCR",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "images.illustrations": {
+      "default": "irasutoya",
+      "description": "Japanese words also search いらすとや illustrations by the expression; candidates are reviewed like any other.",
+      "enum": [
+        "irasutoya",
+        "disabled"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "image adapter",
       "x-scope": "purpose",
       "x-sensitive": false
     },
