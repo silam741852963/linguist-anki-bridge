@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 pub use linguist_core::document::GENERATED_DICTIONARY_PROVIDER as PROVIDER;
 
 const PROMPT: &str = "You write one dictionary entry in the style of Jisho.org (JMdict) for a Japanese word or phrase that the dictionary does not list. \
-Give its reading(s) in hiragana or katakana (the whole phrase, no spaces), then 1 to 5 senses, most common first. \
+Give its reading(s) in kana (the whole phrase, no spaces), keeping katakana where the word is written in katakana (エンジンがかかる, not えんじんがかかる), then 1 to 5 senses, most common first. \
 Each sense has 1 to 6 short English definitions, as JMdict writes them (\"to make a crease\", \"vice-chairperson\"; no full sentences), \
 and its parts of speech, chosen exactly from the allowed labels, as Jisho lists them: a phrase gets \"Expressions (phrases, clauses, etc.)\" \
 followed by the conjugation class and transitivity of its final verb (for example \"Godan verb with 'ru' ending\", \"Intransitive verb\"); \
@@ -137,6 +137,22 @@ pub fn entry_from(
         })
     {
         return Err(invalid());
+    }
+    // Kana written in the word stays as written in the reading (katakana
+    // stays katakana).
+    let katakana: String = expression
+        .chars()
+        .filter(|c| matches!(c, '\u{30A1}'..='\u{30FA}'))
+        .collect();
+    if !katakana.is_empty()
+        && readings.iter().any(|r| {
+            r.chars()
+                .filter(|c| matches!(c, '\u{30A1}'..='\u{30FA}'))
+                .collect::<String>()
+                != katakana
+        })
+    {
+        return Err("DICTIONARY_ENTRY_INVALID: the reading changes the word's katakana".into());
     }
     // A Godan label names the verb's final kana; it must be this word's.
     let last = expression.chars().last().unwrap_or_default();
@@ -325,5 +341,9 @@ mod tests {
         assert!(entry_from("迷惑がかかる", &ja, phrase, "x").is_ok());
         let wrong = phrase.replace("'ru'", "'u'");
         assert!(entry_from("迷惑がかかる", &ja, &wrong, "x").is_err());
+        let engine = r#"{"readings":["えんじんがかかる"],"senses":[{"definitions":["the engine starts"],"parts_of_speech":["Expressions (phrases, clauses, etc.)"]}]}"#;
+        assert!(entry_from("エンジンがかかる", &ja, engine, "x").is_err());
+        let engine = engine.replace("えんじん", "エンジン");
+        assert!(entry_from("エンジンがかかる", &ja, &engine, "x").is_ok());
     }
 }
