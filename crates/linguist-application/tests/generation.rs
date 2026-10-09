@@ -205,6 +205,26 @@ fn output_examples_respect_budget_and_cross_language_translation() {
     let valid = output(json!([{"sentence":"I eat.","translation":""}]));
     assert!(validate_output(&english, &request, &valid, 10000, 10000).is_ok());
 }
+/// WP-20 (迷惑がかかる): a collocation gloss that repeats the Japanese phrase is
+/// not a translation; the output is refused so the next provider can try.
+#[test]
+fn a_collocation_gloss_must_translate_the_phrase() {
+    let doc = document();
+    let request = build_request(&doc, &settings()).unwrap();
+    assert!(request.allowed_fields.iter().any(|f| f == "collocations"));
+    let output = |gloss: &str| {
+        serde_json::to_vec(
+            &json!({"kind":"vocabulary","body":{"usage":"","examples":[],"nuance":[],
+            "collocations":[{"phrase":"ご飯を食べる","gloss":gloss}]}}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        validate_output(&doc, &request, &output("ご飯 を食べる"), 10000, 10000).unwrap_err(),
+        "GENERATION_GLOSS_UNTRANSLATED"
+    );
+    assert!(validate_output(&doc, &request, &output("eat a meal"), 10000, 10000).is_ok());
+}
 #[test]
 fn grammar_fields_are_preserved_and_disabled_generation_is_explicit() {
     let doc = LearningDocument::from_json(include_bytes!(

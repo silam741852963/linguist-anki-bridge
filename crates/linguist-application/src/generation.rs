@@ -590,6 +590,18 @@ pub fn validate_output(
             {
                 return Err("GENERATION_INCOMPLETE_ENTRY".into());
             }
+            // A gloss in another language than the phrase's must translate it,
+            // not repeat it (迷惑がかかる状況 (迷惑がかかる状況)).
+            let bilingual = doc.target_language.as_str().split('-').next()
+                != doc.explanation_language.as_str().split('-').next();
+            let squash = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+            if bilingual
+                && v.collocations
+                    .iter()
+                    .any(|c| !c.gloss.trim().is_empty() && squash(&c.gloss) == squash(&c.phrase))
+            {
+                return Err("GENERATION_GLOSS_UNTRANSLATED".into());
+            }
             (vec![("usage", &v.usage)], &v.examples)
         }
         (LearningContent::Grammar(_), Supplement::Grammar(g)) => (

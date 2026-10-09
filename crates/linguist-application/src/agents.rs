@@ -295,6 +295,27 @@ mod tempdir {
     }
 }
 
+/// The output schema as agents accept it: an object at the top (Codex and
+/// OpenAI refuse anything else), a single `oneOf` branch hoisted into it, and
+/// no draft-2020-12 meta-schema marker (Claude Code's validator knows none).
+/// Accepted output is unchanged: the branch was the only one.
+pub fn agent_schema(schema: &Value) -> Value {
+    let mut schema = schema.clone();
+    let Some(object) = schema.as_object_mut() else {
+        return schema;
+    };
+    object.remove("$schema");
+    if let Some(Value::Array(branches)) = object.get("oneOf")
+        && let [Value::Object(branch)] = branches.as_slice()
+        && branch.get("type") == Some(&json!("object"))
+    {
+        let branch = branch.clone();
+        object.remove("oneOf");
+        object.extend(branch);
+    }
+    schema
+}
+
 fn setting<'a>(settings: &'a Effective, key: &str) -> Option<&'a str> {
     settings.values.get(key).and_then(Value::as_str)
 }
@@ -312,13 +333,8 @@ fn claude_code(
         return Ok(None);
     };
     let model = setting(settings, "llm.agents.claude_code.model");
-    // Claude Code's validator knows no draft-2020-12 meta-schema; the schema
-    // itself uses only keywords both drafts share.
-    let mut schema = request.output_schema.clone();
-    if let Some(object) = schema.as_object_mut() {
-        object.remove("$schema");
-    }
-    let schema = serde_json::to_string(&schema).map_err(|e| e.to_string())?;
+    let schema =
+        serde_json::to_string(&agent_schema(&request.output_schema)).map_err(|e| e.to_string())?;
     let workdir = private_workdir()?;
     let mut command = Command::new(&executable);
     command.args([
@@ -389,7 +405,7 @@ fn codex(
     let answer_path = workdir.path().join("answer.json");
     std::fs::write(
         &schema_path,
-        serde_json::to_vec(&request.output_schema).map_err(|e| e.to_string())?,
+        serde_json::to_vec(&agent_schema(&request.output_schema)).map_err(|e| e.to_string())?,
     )
     .map_err(|_| "AGENT_WORKDIR_UNAVAILABLE")?;
     let mut command = Command::new(&executable);
@@ -470,7 +486,7 @@ fn api(
             {"role": "user", "content": request.user_json},
         ],
         "response_format": {"type": "json_schema", "json_schema": {
-            "name": "supplement", "schema": request.output_schema, "strict": false}},
+            "name": "supplement", "schema": agent_schema(&request.output_schema), "strict": false}},
         "temperature": settings.values.get("llm.temperature").cloned().unwrap_or(json!(0.0)),
     });
     let client = reqwest::blocking::Client::builder()
@@ -516,6 +532,24 @@ fn api(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agents_get_an_object_schema_without_the_meta_schema() {
+        let schema = json!({"$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Supplement", "$defs": {"B": {"type": "object"}},
+            "oneOf": [{"type": "object", "properties": {"kind": {"const": "vocabulary"},
+                "body": {"$ref": "#/$defs/B"}}, "required": ["kind", "body"],
+                "additionalProperties": false}]});
+        let agent = agent_schema(&schema);
+        assert_eq!(agent["type"], "object");
+        assert_eq!(agent["required"], json!(["kind", "body"]));
+        assert!(agent.get("oneOf").is_none() && agent.get("$schema").is_none());
+        assert_eq!(agent["$defs"]["B"]["type"], "object");
+        // Several branches stay as they are.
+        let mut two = schema.clone();
+        two["oneOf"] = json!([{"type": "object"}, {"type": "object"}]);
+        assert!(agent_schema(&two).get("oneOf").is_some());
+    }
 
     #[test]
     fn agents_are_found_only_on_the_given_path() {
