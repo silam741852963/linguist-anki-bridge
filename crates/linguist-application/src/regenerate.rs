@@ -43,12 +43,16 @@ fn stage_fields(stage: Stage, document: &LearningDocument) -> &'static [&'static
             "meaning",
             "formation",
             "usage",
-            "recognition_prompt",
+            "nuance",
+            "forms",
+            "jlpt",
             "exercise_prompt",
             "exercise_answer",
             "examples",
         ],
         (Stage::Enrichment, LearningContent::Vocabulary(_)) => &["kanji", "picture", "audio"],
+        // Grammar v3 audio speaks the cue example.
+        (Stage::Enrichment, LearningContent::Grammar(_)) => &["audio"],
         (Stage::Dictionary, LearningContent::Vocabulary(_)) => &["meaning", "sense_key", "reading"],
         _ => &[],
     }
@@ -90,6 +94,7 @@ fn text_field<'a>(document: &'a mut LearningDocument, field: &str) -> Option<&'a
             "recognition_prompt" => Some(&mut g.recognition_prompt),
             "exercise_prompt" => Some(&mut g.exercise_prompt),
             "exercise_answer" => Some(&mut g.exercise_answer),
+            "jlpt" => Some(&mut g.jlpt),
             _ => None,
         },
     }
@@ -226,14 +231,13 @@ pub fn prepare_item(
                     _ => true,
                 });
             }
-            "nuance" | "collocations" => {
-                let LearningContent::Vocabulary(v) = &mut prepared.content else {
-                    continue;
-                };
-                let empty = if field == "nuance" {
-                    v.nuance.is_empty()
-                } else {
-                    v.collocations.is_empty()
+            "nuance" | "collocations" | "forms" => {
+                let empty = match (&prepared.content, field) {
+                    (LearningContent::Vocabulary(v), "nuance") => v.nuance.is_empty(),
+                    (LearningContent::Vocabulary(v), "collocations") => v.collocations.is_empty(),
+                    (LearningContent::Grammar(g), "nuance") => g.nuance.is_empty(),
+                    (LearningContent::Grammar(g), "forms") => g.forms.is_empty(),
+                    _ => true,
                 };
                 if empty {
                     continue;
@@ -251,10 +255,11 @@ pub fn prepare_item(
                 } else {
                     preview.overwritten.push(field.into());
                 }
-                if field == "nuance" {
-                    v.nuance.clear();
-                } else {
-                    v.collocations.clear();
+                match (&mut prepared.content, field) {
+                    (LearningContent::Vocabulary(v), "nuance") => v.nuance.clear(),
+                    (LearningContent::Vocabulary(v), _) => v.collocations.clear(),
+                    (LearningContent::Grammar(g), "nuance") => g.nuance.clear(),
+                    (LearningContent::Grammar(g), _) => g.forms.clear(),
                 }
                 prepared
                     .evidence

@@ -1183,9 +1183,15 @@ fn grammar_forms_drop_slots_and_expand_optional_parts() {
         render::grammar_forms(&grammar("V-て + もいい")),
         ["てもいい"]
     );
-    // Reviewed forms win over derived ones.
+    // Reviewed forms join the derived ones; the longest match wins.
+    let mut joined = grammar("〜に加え（て）");
+    joined.forms = vec!["に加え".into(), "加えて".into()];
+    assert_eq!(
+        render::grammar_forms(&joined),
+        ["に加えて", "に加え", "加えて"]
+    );
     let mut reviewed = grammar("〜ために");
-    reviewed.forms = vec!["ために".into(), "ための".into()];
+    reviewed.forms = vec!["〜ために".into(), "ための".into()];
     assert_eq!(render::grammar_forms(&reviewed), ["ために", "ための"]);
 }
 

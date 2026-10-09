@@ -960,6 +960,19 @@ fn reject_generated(
         (crate::LearningContent::Grammar(g), "usage") => g.usage.clear(),
         (crate::LearningContent::Grammar(g), "meaning") => g.meaning.clear(),
         (crate::LearningContent::Grammar(g), "formation") => g.formation.clear(),
+        (crate::LearningContent::Grammar(g), "nuance") => g.nuance.clear(),
+        (crate::LearningContent::Grammar(g), "forms") => g.forms.clear(),
+        (crate::LearningContent::Grammar(g), "jlpt") => g.jlpt.clear(),
+        // An exercise is a pair: rejecting either half removes both, with
+        // the other half's generated evidence.
+        (crate::LearningContent::Grammar(g), "exercise_prompt" | "exercise_answer") => {
+            g.exercise_prompt.clear();
+            g.exercise_answer.clear();
+            document.evidence.retain(|e| {
+                !(e.provenance == crate::Provenance::Generated
+                    && matches!(e.field.as_str(), "exercise_prompt" | "exercise_answer"))
+            });
+        }
         (content, "examples") => {
             let Some(crate::records::EvidenceTarget::Example { index }) = evidence.target else {
                 return Err(ContractError("REVIEW_EVIDENCE_TARGET_INVALID".into()));

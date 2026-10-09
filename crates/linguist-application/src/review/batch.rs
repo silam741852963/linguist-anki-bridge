@@ -28,11 +28,12 @@ pub const MAX_PASSES: usize = 4;
 /// Application order; lower goes first. Source media roles clear every
 /// decision of their document, so they go first; then identity (sense,
 /// expression, segmentation), cue repairs, native history, source
-/// verifications, candidate media and generated facts.
+/// verifications, candidate media, rejected and then verified generated
+/// facts.
 pub fn rank(decision: &BatchDecision) -> u8 {
     // Assertions are checked once every decision applied.
     if decision.expect_resolved {
-        return 8;
+        return 9;
     }
     if decision.history_map.is_some() {
         return 3;
@@ -53,8 +54,10 @@ pub fn rank(decision: &BatchDecision) -> u8 {
             ReviewChoice::SourceContentVerified { .. } | ReviewChoice::SourceFieldDropped { .. },
         ) => 4,
         Some(ReviewChoice::Media(_)) => 5,
-        Some(ReviewChoice::ContentVerified { .. } | ReviewChoice::ContentRejected { .. }) => 6,
-        None => 7,
+        // A rejection removes content, so it precedes the verifications.
+        Some(ReviewChoice::ContentRejected { .. }) => 6,
+        Some(ReviewChoice::ContentVerified { .. }) => 7,
+        None => 8,
     }
 }
 
@@ -117,6 +120,9 @@ pub struct BatchOutcome {
     pub passes: usize,
     pub applied: Vec<AppliedDecision>,
     pub verified_closed: Vec<VerifiedClosed>,
+    /// Decisions whose issue was open at the base revision and was closed by
+    /// an earlier decision of this batch; they were not applied.
+    pub closed_by_batch: Vec<VerifiedClosed>,
     /// The first entry that did not apply; the batch stopped there.
     pub conflict: Option<BatchConflict>,
     /// Entries never tried because the batch stopped first.
@@ -251,6 +257,7 @@ pub fn resolve_batch(
     };
     let mut applied = Vec::new();
     let mut verified_closed = Vec::new();
+    let mut closed_by_batch = Vec::new();
     let mut attempted = 0usize;
     let mut passes = 0usize;
     let mut queue = decisions.clone();
@@ -268,6 +275,31 @@ pub fn resolve_batch(
                     if start.get(&decision.document_id) != Some(&decision.input_digest) {
                         break 'run Some((index, passes, "REVIEW_INPUT_CONFLICT".to_owned()));
                     }
+                    match open(base, decision.document_id, &decision.issue_id) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            break 'run Some((
+                                index,
+                                passes,
+                                "REVIEW_ISSUE_NOT_UNRESOLVED".to_owned(),
+                            ));
+                        }
+                        Err(error) => break 'run Some((index, passes, error)),
+                    }
+                }
+                // Open at the base, closed since by this batch (for example
+                // the other half of a rejected exercise): nothing to decide.
+                match open(&run.current, decision.document_id, &decision.issue_id) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        closed_by_batch.push(VerifiedClosed {
+                            index,
+                            document_id: decision.document_id,
+                            issue_id: decision.issue_id.clone(),
+                        });
+                        continue;
+                    }
+                    Err(error) => break 'run Some((index, passes, error)),
                 }
                 match run.apply(index) {
                     Ok((revision, digest, decision_id)) => applied.push(AppliedDecision {
@@ -321,6 +353,7 @@ pub fn resolve_batch(
         passes,
         applied,
         verified_closed,
+        closed_by_batch,
         conflict: conflict.map(|(index, pass, error)| BatchConflict {
             index,
             pass,

@@ -3,10 +3,11 @@ The accepted pattern, use key, source meaning and authored examples are immutabl
 Ground everything in this one pattern and use. The source (for example a textbook page in another explanation language, with its meaning line, formation, examples and notes contrasting similar patterns) is the main evidence; translate and condense it rather than inventing new rules.
 Write for a learner reviewing a flashcard. Keep a fixed, plain-text format with no markdown, HTML, bullets, numbering, romaji or furigana:
 - meaning: one short line, like a dictionary gloss, in the explanation language.
-- formation: how the pattern attaches, using the slots N (noun), V (verb, with the form: V-dictionary, V-ます stem, V-て, V-ない, V-た), いA and なA, for example "N + だらけ" or "V-dictionary / N の + ために". One line per alternative.
+- formation: how the pattern attaches to every word class it takes (verbs, い-adjectives, な-adjectives, nouns), using the slots N (noun), V (verb, with the form: V-dictionary, V-ます stem, V-て, V-ない, V-た), いA (with the stem when い drops) and なA, for example "N + だらけ" or "V-ます stem / いA stem (drop い) / なA + そうです". Separate alternatives with " / ".
 - usage: one to three short sentences: what the pattern expresses, register (casual, neutral, formal, written), typical situations and restrictions (for example volitional verbs only, negative nuance). No examples inside usage.
 - nuance: up to three similar patterns a learner could confuse with this one; for each, expression is the other pattern and difference is one sentence saying how it differs from this pattern. Use the source's contrast notes first. Leave it empty when there is no real near-synonym.
-- forms: the exact strings the pattern takes inside sentences, as they appear in the examples (for example "に加えて", "に加え"), so they can be highlighted.
+- forms: the exact strings the pattern takes inside sentences, as they appear in the examples, without 〜 or slot letters (for example "に加えて", "に加え", "そうです", "そうな"), so they can be highlighted.
+- examples: always supply exactly examples_requested examples.
 - examples: at most examples_requested natural sentences that use the pattern, each with a faithful translation into the explanation language. Vary the situations.
 - exercise_prompt and exercise_answer: one fill-in sentence in the target language with the pattern's position shown as ＿＿ and enough context that only this pattern fits; the answer is the completed part followed by a short translation of the whole sentence.
 - jlpt: the JLPT level of the pattern as n5, n4, n3, n2 or n1 when it is well known; otherwise empty.

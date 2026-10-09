@@ -104,6 +104,7 @@ fn request_separates_untrusted_data_preserves_facts_and_caps_supplements() {
     assert_eq!(properties["nuance"]["maxItems"], 3);
     assert!(properties["usage"].get("enum").is_none());
     assert_eq!(properties["examples"]["maxItems"], 1);
+    assert_eq!(properties["examples"]["minItems"], 1);
 }
 #[test]
 fn output_cannot_override_core_facts_authored_fields_or_example_provenance() {

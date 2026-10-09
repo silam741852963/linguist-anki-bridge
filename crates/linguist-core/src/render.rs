@@ -349,17 +349,22 @@ fn grammar_meaning(g: &crate::document::Grammar) -> String {
     html
 }
 /// The forms a grammar pattern takes in a sentence, longest first: reviewed
-/// `forms` when present, else derived from the pattern by dropping the 〜
+/// `forms` plus forms derived from the pattern by dropping the 〜
 /// placeholder, word-class slots (N, V, Aい, ...) and `+`, splitting
 /// alternatives (／, /, ・) and expanding optional parts in parentheses.
 pub fn grammar_forms(g: &crate::document::Grammar) -> Vec<String> {
     let mut forms: Vec<String> = g
         .forms
         .iter()
-        .map(|form| form.trim().to_owned())
+        .map(|form| {
+            form.trim()
+                .trim_matches(['〜', '～', '~'])
+                .trim()
+                .to_owned()
+        })
         .filter(|form| !form.is_empty())
         .collect();
-    if forms.is_empty() {
+    {
         let pattern = g
             .pattern
             .replace(['（', '〔'], "(")
@@ -405,8 +410,9 @@ pub fn grammar_forms(g: &crate::document::Grammar) -> Vec<String> {
             forms.extend(expanded.into_iter().filter(|form| form.chars().count() > 0));
         }
     }
+    let mut seen = std::collections::BTreeSet::new();
+    forms.retain(|form| seen.insert(form.clone()));
     forms.sort_by_key(|form| std::cmp::Reverse(form.chars().count()));
-    forms.dedup();
     forms
 }
 /// Example text with every occurrence of the longest matching form highlighted.

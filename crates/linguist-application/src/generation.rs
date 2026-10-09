@@ -542,6 +542,8 @@ fn constrained_schema(kind: &str, allowed: &[String], examples: usize) -> Result
         .ok_or("GENERATION_SCHEMA_INVALID")?;
     for (name, property) in properties.iter_mut() {
         if name == "examples" {
+            // Requested examples are required: a model left free returns none.
+            property["minItems"] = json!(examples);
             property["maxItems"] = json!(examples);
         } else if name == "nuance" || name == "collocations" || name == "forms" {
             let max = if !allowed.iter().any(|field| field == name) {
@@ -931,12 +933,17 @@ fn merge_checked_output(
                 if !g.nuance.is_empty() {
                     return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
                 }
-                // A pattern is never its own near-synonym.
-                let own: String = g.pattern.split_whitespace().collect();
+                // A pattern is never its own near-synonym, whatever its 〜 spelling.
+                let bare = |text: &str| -> String {
+                    text.chars()
+                        .filter(|c| !c.is_whitespace() && !matches!(c, '〜' | '～' | '~'))
+                        .collect()
+                };
+                let own = bare(&g.pattern);
                 g.nuance = s
                     .nuance
                     .into_iter()
-                    .filter(|c| c.expression.split_whitespace().collect::<String>() != own)
+                    .filter(|c| bare(&c.expression) != own)
                     .map(|c| linguist_core::document::Contrast {
                         expression: c.expression,
                         difference: c.difference,
@@ -953,7 +960,13 @@ fn merge_checked_output(
                 if !g.forms.is_empty() {
                     return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
                 }
-                g.forms = s.forms.into_iter().map(|f| f.trim().to_owned()).collect();
+                // Forms are sentence text: no 〜 placeholder.
+                g.forms = s
+                    .forms
+                    .into_iter()
+                    .map(|f| f.trim().trim_matches(['〜', '～', '~']).trim().to_owned())
+                    .filter(|f| !f.is_empty())
+                    .collect();
                 claims.push((
                     "forms".into(),
                     serde_json::to_string(&g.forms).map_err(|_| "GENERATION_ENCODING")?,
