@@ -108,9 +108,9 @@ add("VA-JA-06", W, L, ["kanji", "task_leakage"], "The Production front masks the
     {"expression": "飲む", "meaning": "to drink (飲む)", "sense_key": "drink"},
     ready(rendered_contains={"Meaning": "〜"}, rendered_excludes={"Meaning": "飲む"}),
     tasks=["comprehension", "production"])
-add("VA-JA-07", W, L, ["kana", "task_leakage"], "A kana-only word cannot be a Spelling card: its pronunciation is the answer.",
+add("VA-JA-07", W, L, ["kana", "task_leakage"], "A kana word's reading is its Spelling answer, so it is not shown: the front needs a recording.",
     {"expression": "すごい", "meaning": "amazing", "sense_key": "amazing", "reading": "すごい"},
-    blocked("ANSWER_LEAK"), tasks=["comprehension", "spelling"])
+    blocked("SPELLING_CUE_MISSING"), tasks=["comprehension", "spelling"])
 add("VA-JA-08", W, L, ["kanji", "task_leakage"], "Spelling without a pronunciation or audio blocks.",
     {"expression": "飲む", "meaning": "to drink", "sense_key": "drink"},
     blocked("SPELLING_CUE_MISSING"), tasks=["comprehension", "spelling"])

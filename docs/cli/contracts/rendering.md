@@ -13,7 +13,7 @@
 
 - Comprehension requires Expression + meaningful selected Meaning. Primary front does not show answer/translation.
 - Production (v3) requires enabled flag + Expression + meaningful Meaning. Its front shows Picture and the Meaning field. Meaning is the selected entry's sense list with the selection marked by the `lab-selected` class; it never shows provider names, URLs, sense keys, readings, examples or headwords, and every occurrence of the expression is masked as `〜`.
-- Spelling (v3) requires enabled flag + Expression + a Pronunciation (or Reading) or a selected audio (`SPELLING_CUE_MISSING`). A Pronunciation equal to the written form (a kana-only word) is `ANSWER_LEAK`.
+- Spelling (v3) requires enabled flag + Expression + a Pronunciation (or Reading) or a selected audio (`SPELLING_CUE_MISSING`). A Pronunciation (or Reading) equal to the written form (a kana word such as いじめ) is not rendered, because it is the Spelling answer; such a Spelling card then needs a selected audio (WP-20).
 - Recognition requires Pattern + meaningful Meaning + approved/derived RecognitionPrompt whose scope matches the use. Formation/examples live after reveal.
 - Application requires enabled flag + unambiguous ExercisePrompt + ExerciseAnswer. Regular card; no native cloze markup in a regular model.
 - Retained task missing prerequisites: block migration until a retained/edited valid cue is approved. Disabling its flag does not authorize deleting/suspending its mature card. V1 has no automatic card deletion/suspension operation.

@@ -220,7 +220,7 @@
     "kana",
     "task_leakage"
    ],
-   "rationale": "A kana-only word cannot be a Spelling card: its pronunciation is the answer.",
+   "rationale": "A kana word's reading is its Spelling answer, so it is not shown: the front needs a recording.",
    "input": {
     "schema_version": 2,
     "kind": "vocabulary",
@@ -241,7 +241,7 @@
    "expect": {
     "ready": false,
     "issues": [
-     "ANSWER_LEAK"
+     "SPELLING_CUE_MISSING"
     ]
    }
   },

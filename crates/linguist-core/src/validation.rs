@@ -168,11 +168,9 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             // v3 fronts show fields, not text cues: Production shows Picture and
             // Meaning (masked), Spelling shows Audio, Pronunciation and Meaning.
             if tasks.contains(&Task::Spelling) {
-                let spoken = if v.pronunciation.trim().is_empty() {
-                    &v.reading
-                } else {
-                    &v.pronunciation
-                };
+                // A reading equal to the word (a kana word) is not shown; the
+                // front is then the recording and the meaning.
+                let spoken = crate::render::spoken_cue(v);
                 let has_audio = doc.media.iter().any(|m| m.role == MediaRole::Audio);
                 if spoken.trim().is_empty() && !has_audio {
                     add(
@@ -180,15 +178,6 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                         Severity::Error,
                         Some("pronunciation"),
                         "Spelling needs a pronunciation or audio on its front.",
-                    )
-                }
-                let squash = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
-                if !spoken.trim().is_empty() && squash(spoken) == squash(&v.expression) {
-                    add(
-                        "ANSWER_LEAK",
-                        Severity::Error,
-                        Some("pronunciation"),
-                        "The Spelling front shows the pronunciation, which equals the written form.",
                     )
                 }
             }

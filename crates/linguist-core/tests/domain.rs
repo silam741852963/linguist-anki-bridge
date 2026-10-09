@@ -345,18 +345,26 @@ fn rich_dictionary_roundtrip_keeps_all_senses_and_renders_inert_reference() {
 }
 #[test]
 fn task_cues_reject_answer_leakage_and_invalid_task_kinds() {
-    // v3 Spelling fronts show the pronunciation: a kana-only word would leak.
+    // A kana word's reading is the answer: it is not shown, so the Spelling
+    // front needs the recording.
     let mut doc = vocabulary();
     doc.requested_tasks.push(Task::Spelling);
+    doc.media
+        .retain(|m| m.role != linguist_core::records::MediaRole::Audio);
     if let LearningContent::Vocabulary(v) = &mut doc.content {
         v.expression = "たべる".into();
         v.pronunciation = "た べる".into();
+        assert_eq!(render::spoken_cue(v), "");
     }
+    let codes: Vec<_> = validation::validate(&doc)
+        .into_iter()
+        .map(|i| i.code)
+        .collect();
     assert!(
-        validation::validate(&doc)
-            .iter()
-            .any(|i| i.code == "ANSWER_LEAK")
+        codes.contains(&"SPELLING_CUE_MISSING".to_owned()),
+        "{codes:?}"
     );
+    assert!(!codes.contains(&"ANSWER_LEAK".to_owned()), "{codes:?}");
     doc.requested_tasks = vec![Task::Application];
     assert!(!validation::ready(&doc));
 }

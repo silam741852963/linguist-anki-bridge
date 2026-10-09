@@ -27,6 +27,23 @@ pub fn escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// The Pronunciation (else the Reading) a card shows. A reading equal to the
+/// written word (いじめ, ビタミン) adds nothing and would give the Spelling
+/// answer away, so it is not shown.
+pub fn spoken_cue(v: &crate::Vocabulary) -> &str {
+    let spoken = if v.pronunciation.trim().is_empty() {
+        &v.reading
+    } else {
+        &v.pronunciation
+    };
+    let squash = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    if squash(spoken) == squash(&v.expression) {
+        ""
+    } else {
+        spoken
+    }
+}
+
 /// Kana-only pronunciation without the spaces older notes put at kanji
 /// boundaries (`こわ す` renders `こわす`); any other text is kept as written.
 fn compact_kana(text: &str) -> std::borrow::Cow<'_, str> {
@@ -439,12 +456,7 @@ pub fn render(
     match &doc.content {
         LearningContent::Vocabulary(v) => {
             fields.insert("Expression".into(), escape(&v.expression));
-            let spoken = if v.pronunciation.trim().is_empty() {
-                &v.reading
-            } else {
-                &v.pronunciation
-            };
-            fields.insert("Pronunciation".into(), escape(&compact_kana(spoken)));
+            fields.insert("Pronunciation".into(), escape(&compact_kana(spoken_cue(v))));
             fields.insert(
                 "Meaning".into(),
                 dictionary::meaning(&v.dictionary, &v.expression, &v.sense_key, &v.meaning),
