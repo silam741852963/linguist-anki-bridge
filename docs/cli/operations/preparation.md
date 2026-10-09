@@ -118,9 +118,10 @@ and makes no new note; the anchor moves to the first unit without one and
 takes the source note's pictures. The split output lists those units under
 `merged_into_existing`; revamp each listed note on its own
 (`vocab revamp --note-id ID`), which keeps its history. The anchor never
-merges (`VOCAB_SPLIT_UNIT_INVALID`). When only one unit is left to make a note,
-the split is refused (`VOCAB_SPLIT_SINGLE_UNIT`) and the item's expression is
-edited instead.
+merges (`VOCAB_SPLIT_UNIT_INVALID`). When only the anchor is left to make a
+note (折り目をつける / 味をつける with 味をつける already a note), the item is
+narrowed to the anchor's word in place and applied as a plain revamp, without
+a split group.
 
 Current authored grammar split staging: `plans split-grammar PLAN --request FILE`
 loads the retained source draft and verifies the request's base revision/digest,

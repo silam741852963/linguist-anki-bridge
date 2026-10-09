@@ -187,6 +187,9 @@ pub(crate) fn publish_split(
         .unwrap();
     let mut documents = Vec::new();
     let mut units = Vec::new();
+    // One unit left (the others merged into existing notes): the item is
+    // narrowed in place and applied as a plain revamp, without a group.
+    let group = split_units.len() > 1;
     for (index, unit) in split_units.into_iter().enumerate() {
         let mut document = original.clone();
         document.id = if index == anchor_index {
@@ -257,20 +260,24 @@ pub(crate) fn publish_split(
         );
         issue.stage = "capture".into();
         issue.source_refs = vec![source_id.to_string()];
-        document.issues.push(issue);
+        if group {
+            document.issues.push(issue);
+        }
         document.issues = validation::validate(&document);
         units.push(document.id);
         documents.push(document);
     }
     child.documents.splice(position..position + 1, documents);
-    child.grammar_groups.push(GrammarGroup {
-        id: uuid::Uuid::new_v4(),
-        source_id,
-        anchor_document: original.id,
-        units,
-        actor: actor.to_owned(),
-        request_asset_digest: raw_digest,
-    });
+    if group {
+        child.grammar_groups.push(GrammarGroup {
+            id: uuid::Uuid::new_v4(),
+            source_id,
+            anchor_document: original.id,
+            units,
+            actor: actor.to_owned(),
+            request_asset_digest: raw_digest,
+        });
+    }
     child.review_decisions.retain(|decision| {
         !original
             .reviews

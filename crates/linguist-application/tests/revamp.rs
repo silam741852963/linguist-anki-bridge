@@ -2102,6 +2102,7 @@ fn a_split_unit_that_already_has_a_note_merges_into_it() {
             command_limit: None,
         });
     }
+    let selection = selected.selection.clone();
     vocab_split::find_existing(&selected, &mut request, &Collection).unwrap();
     assert_eq!(request.units[0].existing_note.as_deref(), Some("777"));
     assert_eq!(request.units[1].existing_note, None);
@@ -2128,4 +2129,43 @@ fn a_split_unit_that_already_has_a_note_merges_into_it() {
     assert_eq!(words, ["太陽に雲がかかる", "エンジンがかかる"]);
     assert_eq!(child.documents[0].id, plan.documents[0].id);
     child.grammar_groups[0].validate(&child).unwrap();
+    // Two words, the second already a note: the item is narrowed in place.
+    let (capture, mut settings) = setup(
+        "japanese_vocab",
+        &[("Word", "折り目をつける<div>迷惑がかかる</div>")],
+        &[("expression", "Word")],
+    );
+    let root = std::env::temp_dir().join(format!("lab-split-merge-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    settings.values.insert(
+        "purposes.japanese_vocab.target_deck".into(),
+        json!("森の言葉"),
+    );
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "japanese_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-split-merge".into())]),
+    )
+    .unwrap();
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let mut request = vocab_split::template(&plan, plan.documents[0].id).unwrap();
+    let mut selected = plan.clone();
+    selected.selection = selection.clone();
+    vocab_split::find_existing(&selected, &mut request, &Collection).unwrap();
+    assert_eq!(request.anchor_index, 0);
+    assert_eq!(request.units[1].existing_note.as_deref(), Some("777"));
+    request.actor = "reviewer".into();
+    let raw = linguist_core::canonical::bytes(&request).unwrap();
+    let child = vocab_split::split(&mut store, &plan, &request, &raw).unwrap();
+    assert_eq!(child.documents.len(), 1);
+    assert!(child.grammar_groups.is_empty());
+    assert_eq!(child.documents[0].id, plan.documents[0].id);
+    let LearningContent::Vocabulary(v) = &child.documents[0].content else {
+        panic!()
+    };
+    assert_eq!(v.expression, "折り目をつける");
 }

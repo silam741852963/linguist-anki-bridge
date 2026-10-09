@@ -380,9 +380,10 @@ pub fn split(
             keep_media: Some(unit.media.iter().cloned().collect()),
         });
     }
-    // A group needs two notes; with one left, edit the item's word instead.
-    if units.len() < 2 {
-        return Err("VOCAB_SPLIT_SINGLE_UNIT: only one unit needs a note; edit the item's expression instead".into());
+    // With every other unit merged into an existing note, the anchor is
+    // narrowed in place (no group); a split always splits something.
+    if units.len() == 1 && request.units.iter().all(|u| u.existing_note.is_none()) {
+        return Err("VOCAB_SPLIT_UNIT_INVALID".into());
     }
     publish_split(
         store,
