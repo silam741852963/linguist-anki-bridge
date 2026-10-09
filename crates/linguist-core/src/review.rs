@@ -23,6 +23,37 @@ pub struct ResolutionRequest {
     pub actor: String,
     pub choice: ReviewChoice,
 }
+/// `plans resolve-batch`: decisions bound to one revision and, each, to its
+/// document's semantic digest at that revision.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ResolutionBatch {
+    #[schemars(range(min = 2, max = 2))]
+    pub schema_version: u16,
+    pub base_revision: u32,
+    pub base_digest: String,
+    pub actor: String,
+    pub decisions: Vec<BatchDecision>,
+}
+
+/// One decision. Exactly one of `choice` and `history_map` is set;
+/// `history_map` resolves SOURCE_NATIVE_HISTORY_REVIEW from live companion
+/// evidence like `plans resolve-history`. `options` is informational (the
+/// templates `plans resolve-batch --template` printed) and is ignored.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BatchDecision {
+    pub document_id: uuid::Uuid,
+    pub issue_id: String,
+    pub input_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choice: Option<ReviewChoice>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_map: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ResolutionResult {
     pub revision: PlanRevision,

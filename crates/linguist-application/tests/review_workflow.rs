@@ -525,3 +525,182 @@ fn summaries_classify_status_and_workflow_without_payloads() {
     assert_eq!(summary["workflow"], "vocab_add");
     assert!(summary.get("documents").is_none());
 }
+
+/// A two-document plan where each document has an open dictionary sense review.
+fn two_sense_plan(f: &Fixture) -> PlanRevision {
+    struct Dictionary;
+    impl DictionaryPort for Dictionary {
+        fn lookup(
+            &self,
+            query: &str,
+            target: &Language,
+        ) -> Result<linguist_dictionary::JishoPage, String> {
+            let body = r#"{"meta":{"status":200},"data":[{"slug":"eat","japanese":[{"word":"食べる","reading":"たべる"}],"senses":[{"english_definitions":["to eat"]},{"english_definitions":["to live on"]}]}]}"#;
+            linguist_dictionary::parse_jisho(query, target, body.as_bytes(), 4096, 10)
+                .map_err(|e| e.to_string())
+        }
+    }
+    let mut settings = f.settings.clone();
+    settings
+        .values
+        .insert("dictionary.provider".into(), json!("jisho"));
+    settings.values.insert("kanji.enabled".into(), json!(false));
+    let bytes = r#"{"schema_version":2,"kind":"vocabulary","target_language":"ja","explanation_language":"en","requested_tasks":["comprehension"],"body":{"expression":"食べる"}}"#.as_bytes();
+    let result = prepare_with_providers(
+        bytes,
+        Kind::Vocabulary,
+        &settings,
+        &f.environment,
+        Providers {
+            dictionary: Some(&Dictionary),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let first = latest(f, result.plan_id);
+    let mut second = first.documents[0].clone();
+    second.id = uuid::Uuid::new_v4();
+    let mut plan = first.clone();
+    plan.documents.push(second);
+    plan.revision = 2;
+    plan.parent_digest = Some(first.approval_digest().unwrap());
+    let mut store = linguist_store::Store::open(&f.state()).unwrap();
+    store.publish_revision(&plan).unwrap();
+    latest(f, result.plan_id)
+}
+
+fn sense_key(plan: &PlanRevision, index: usize, nth: usize) -> String {
+    let LearningContent::Vocabulary(vocab) = &plan.documents[index].content else {
+        panic!()
+    };
+    vocab.dictionary[0].senses[nth].key.clone()
+}
+
+#[test]
+fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict() {
+    use linguist_application::review::batch::{
+        BatchDecision, ResolutionBatch, resolve_batch, template,
+    };
+    let f = Fixture::new();
+    let base = two_sense_plan(&f);
+    // The template lists both open sense reviews and decides nothing.
+    let skeleton = template(&base, "reviewer").unwrap();
+    let listed: Vec<_> = skeleton["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| {
+            d["issue_id"]
+                .as_str()
+                .unwrap()
+                .starts_with("DICTIONARY_SENSE_REVIEW")
+        })
+        .collect();
+    assert_eq!(listed.len(), 2, "{skeleton}");
+    assert!(listed.iter().all(|d| d["choice"].is_null()));
+    assert!(
+        listed
+            .iter()
+            .all(|d| d["options"]["templates"].as_array().unwrap().len() >= 2)
+    );
+    // A null choice is refused before anything is published.
+    let unfilled: ResolutionBatch = serde_json::from_value(skeleton.clone()).unwrap();
+    let mut no_history = |_: &PlanRevision, _: uuid::Uuid, _: &[_], _: &str| -> Result<_, String> {
+        panic!("no history decisions here")
+    };
+    let clock = || Ok("unix-seconds:1".to_string());
+    let mut store = linguist_store::Store::open(&f.state()).unwrap();
+    let error = resolve_batch(&mut store, &base, &unfilled, &clock, &mut no_history).unwrap_err();
+    assert!(error.starts_with("REVIEW_BATCH_DECISION_INVALID"), "{error}");
+    assert_eq!(latest(&f, base.id).revision, base.revision);
+
+    let decision = |index: usize, choice: ReviewChoice| BatchDecision {
+        document_id: base.documents[index].id,
+        issue_id: format!("DICTIONARY_SENSE_REVIEW:{}", base.documents[index].id),
+        input_digest: base.documents[index].semantic_digest().unwrap(),
+        choice: Some(choice),
+        history_map: None,
+        options: None,
+    };
+    let batch = ResolutionBatch {
+        schema_version: 2,
+        base_revision: base.revision,
+        base_digest: base.approval_digest().unwrap(),
+        actor: "reviewer".into(),
+        decisions: vec![
+            decision(0, ReviewChoice::Sense(sense_key(&base, 0, 1))),
+            decision(1, ReviewChoice::Sense(sense_key(&base, 1, 0))),
+        ],
+    };
+    // A batch bound to another revision is refused outright.
+    let mut stale = batch.clone();
+    stale.base_digest = "0".repeat(64);
+    assert_eq!(
+        resolve_batch(&mut store, &base, &stale, &clock, &mut no_history).unwrap_err(),
+        "REVIEW_BASE_CONFLICT"
+    );
+    let outcome = resolve_batch(&mut store, &base, &batch, &clock, &mut no_history).unwrap();
+    assert!(outcome.conflict.is_none());
+    assert_eq!(outcome.applied.len(), 2);
+    assert_eq!(outcome.revision, base.revision + 2);
+    let after = latest(&f, base.id);
+    assert_eq!(after.revision, outcome.revision);
+    assert_eq!(after.approval_digest().unwrap(), outcome.digest);
+    for (index, nth) in [(0, 1), (1, 0)] {
+        let LearningContent::Vocabulary(vocab) = &after.documents[index].content else {
+            panic!()
+        };
+        assert_eq!(vocab.sense_key, sense_key(&base, index, nth));
+    }
+
+    // Stop at the first conflict: the earlier decision is published, the
+    // conflicting one and every later one are not.
+    let base = two_sense_plan(&f);
+    let mut conflicting = ResolutionBatch {
+        schema_version: 2,
+        base_revision: base.revision,
+        base_digest: base.approval_digest().unwrap(),
+        actor: "reviewer".into(),
+        decisions: vec![
+            BatchDecision {
+                document_id: base.documents[0].id,
+                issue_id: format!("DICTIONARY_SENSE_REVIEW:{}", base.documents[0].id),
+                input_digest: base.documents[0].semantic_digest().unwrap(),
+                choice: Some(ReviewChoice::Sense(sense_key(&base, 0, 0))),
+                history_map: None,
+                options: None,
+            },
+            BatchDecision {
+                document_id: base.documents[1].id,
+                issue_id: format!("DICTIONARY_SENSE_REVIEW:{}", base.documents[1].id),
+                input_digest: "0".repeat(64),
+                choice: Some(ReviewChoice::Sense(sense_key(&base, 1, 0))),
+                history_map: None,
+                options: None,
+            },
+        ],
+    };
+    // Generated-fact decisions sort after sense decisions, whatever the file order.
+    conflicting.decisions.insert(
+        0,
+        BatchDecision {
+            document_id: base.documents[0].id,
+            issue_id: "GENERATED_FACT_REVIEW:usage".into(),
+            input_digest: base.documents[0].semantic_digest().unwrap(),
+            choice: Some(ReviewChoice::ContentVerified {
+                evidence_ids: vec![uuid::Uuid::new_v4()],
+            }),
+            history_map: None,
+            options: None,
+        },
+    );
+    let outcome =
+        resolve_batch(&mut store, &base, &conflicting, &clock, &mut no_history).unwrap();
+    assert_eq!(outcome.applied.len(), 1);
+    assert_eq!(outcome.applied[0].index, 1);
+    let conflict = outcome.conflict.unwrap();
+    assert_eq!(conflict.index, 2);
+    assert_eq!(conflict.error, "REVIEW_INPUT_CONFLICT");
+    assert_eq!(outcome.not_attempted, 1);
+    assert_eq!(latest(&f, base.id).revision, base.revision + 1);
+}

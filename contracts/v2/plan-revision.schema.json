@@ -532,6 +532,7 @@
       ]
     },
     "GrammarGroup": {
+      "description": "A reviewed split of one source note: grammar patterns or vocabulary words.\nThe anchor keeps the source note and its history; other units are new notes.",
       "type": "object",
       "properties": {
         "actor": {

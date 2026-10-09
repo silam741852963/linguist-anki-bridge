@@ -1063,6 +1063,29 @@ enum PlanCommand {
         #[arg(long)]
         decision: PathBuf,
     },
+    /// Resolve many review issues in one call from a JSON decisions file
+    /// (see --template). Decisions apply in a fixed order (sense, cue and
+    /// exercise repairs, media roles, history, source verifications,
+    /// generated facts), each digest-bound; the batch stops at the first
+    /// conflict.
+    ResolveBatch {
+        /// Plan ID.
+        plan: uuid::Uuid,
+        /// JSON decisions file bound to the latest revision.
+        #[arg(
+            long,
+            required_unless_present = "template",
+            conflicts_with = "template"
+        )]
+        decisions: Option<PathBuf>,
+        /// Print a decisions file for every open review issue; each choice is
+        /// left null for the reviewer to fill.
+        #[arg(long, requires = "actor")]
+        template: bool,
+        /// Reviewer recorded in the template.
+        #[arg(long, requires = "template")]
+        actor: Option<String>,
+    },
     /// Record content approval; collection apply still requires separate authorization.
     Approve {
         /// Plan ID.
@@ -2745,6 +2768,53 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":result.revision.revision,"digest":digest,"decision_id":result.decision_id,"ready":result.ready,"issues":result.revision.documents.iter().map(|doc|serde_json::json!({"document_id":doc.id,"issues":doc.issues})).collect::<Vec<_>>()}),
                     )?;
                     if !result.ready {
+                        return Ok(4);
+                    }
+                }
+                PlanCommand::ResolveBatch {
+                    plan,
+                    decisions,
+                    template,
+                    actor,
+                } => {
+                    let latest = store.latest_revision(plan)?;
+                    let base = store.revision(plan, latest)?;
+                    if template {
+                        emit(&linguist_application::review::batch::template(
+                            &base,
+                            actor.as_deref().unwrap_or_default(),
+                        )?)?;
+                        return Ok(0);
+                    }
+                    let bytes = read_input(decisions.as_ref().unwrap(), max_bytes, max_chars)?;
+                    let batch: linguist_application::review::batch::ResolutionBatch =
+                        canonical::parse(&bytes).map_err(|e| e.to_string())?;
+                    let created_at = || -> Result<String, String> {
+                        let seconds = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map_err(|_| "CLOCK_UNAVAILABLE")?
+                            .as_secs();
+                        Ok(format!("unix-seconds:{seconds}"))
+                    };
+                    let mut history = |plan: &linguist_core::records::PlanRevision,
+                                       item: uuid::Uuid,
+                                       maps: &[(u16, linguist_core::document::Task)],
+                                       actor: &str| {
+                        native_writes::native_history_request(&settings, plan, item, maps, actor)
+                    };
+                    drop(store);
+                    let outcome = linguist_application::review::batch::resolve_batch(
+                        &mut linguist_store::Store::open(&root)?,
+                        &base,
+                        &batch,
+                        &created_at,
+                        &mut history,
+                    )?;
+                    emit(&outcome)?;
+                    if outcome.conflict.is_some() {
+                        return Ok(5);
+                    }
+                    if !outcome.ready {
                         return Ok(4);
                     }
                 }

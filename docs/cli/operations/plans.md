@@ -232,6 +232,42 @@ An interrupted operation whose session changed resumes only through
 `ResumeBindingDecision` bound to the state observed at that moment. Binding the
 same collection again is a no-op.
 
+## `plans resolve-batch PLAN --decisions FILE` (OP-29 batch, WP-21)
+
+Resolves many review issues in one call. `plans resolve-batch PLAN --template
+--actor NAME` prints a decisions file for every open review issue of the latest
+revision: each entry carries `document_id`, `issue_id`, `input_digest`, a null
+`choice` and, under `options`, the issue and its decision templates
+(informational, ignored on submit). `SOURCE_NATIVE_HISTORY_REVIEW` entries get
+an empty `history_map` instead (`["0=comprehension", ...]`, the
+`plans resolve-history --map` syntax; it reads the live companion evidence).
+Nothing is decided for the reviewer: an entry without exactly one of `choice`
+and `history_map` fails with `REVIEW_BATCH_DECISION_INVALID` before any write.
+Schema: `contracts/v2/resolution-batch.schema.json`.
+
+The file is bound to the latest revision (`base_revision`, `base_digest`,
+otherwise `REVIEW_BASE_CONFLICT`), and each entry to its document's semantic
+digest at that revision (`REVIEW_INPUT_CONFLICT`). Entries are applied in a
+fixed order, stable within a group, so content-changing decisions go first:
+
+1. sense, expression, segmentation, anchor and duplicate decisions;
+2. cue and exercise repairs (they drop every non-rebindable decision);
+3. media roles, candidate media and missing media;
+4. native history;
+5. source content verification and dropped source fields;
+6. generated facts (`content_verified`, `content_rejected`).
+
+Between two entries on the same document only this batch has changed it, so
+each entry is re-bound to the current revision and digest and then runs
+through the same checks as `plans resolve`. Each decision is published as its
+own child revision (the audit trail is the same as N `plans resolve` calls).
+The batch stops at the first entry that fails: the result lists the applied
+entries (file `index`, revision, digest, decision ID), the `conflict` (file
+index, issue, error) and how many entries were `not_attempted`. Applied
+decisions stay published; fix the file against the new latest revision
+(`--template` again) and resubmit the rest. Exit codes: 0 ready, 4 review
+still needed, 5 conflict.
+
 ## `plans resolve-history PLAN --item ITEM --map ORDINAL=TASK --actor NAME` (RI-04)
 
 Resolves `SOURCE_NATIVE_HISTORY_REVIEW` for one revamp item. The CLI reads the

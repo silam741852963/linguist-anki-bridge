@@ -20,6 +20,7 @@ fn main() {
     write::<linguist_core::plan_validation::ValidationEvidence>("validation-evidence");
     write::<linguist_core::approval::ApprovalRequest>("approval-request");
     write::<linguist_core::review::ResolutionRequest>("resolution-request");
+    write::<linguist_core::review::ResolutionBatch>("resolution-batch");
     write::<Approval>("approval");
     write::<OperationJournal>("operation-journal");
     write::<NativeOperationReceipt>("native-operation-receipt");

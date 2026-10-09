@@ -1,0 +1,705 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResolutionBatch",
+  "description": "`plans resolve-batch`: decisions bound to one revision and, each, to its\ndocument's semantic digest at that revision.",
+  "type": "object",
+  "properties": {
+    "actor": {
+      "type": "string"
+    },
+    "base_digest": {
+      "type": "string"
+    },
+    "base_revision": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/BatchDecision"
+      }
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 2,
+      "minimum": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "base_revision",
+    "base_digest",
+    "actor",
+    "decisions"
+  ],
+  "$defs": {
+    "AnkiId": {
+      "description": "Canonical positive decimal Anki ID, at most 9007199254740991",
+      "type": "string",
+      "maxLength": 16,
+      "minLength": 1,
+      "pattern": "^(?:[1-9][0-9]{0,14}|[1-8][0-9]{15}|900[0-6][0-9]{12}|90070[0-9]{11}|90071[0-8][0-9]{10}|900719[0-8][0-9]{9}|9007199[0-1][0-9]{8}|90071992[0-4][0-9]{7}|900719925[0-3][0-9]{6}|9007199254[0-6][0-9]{5}|90071992547[0-3][0-9]{4}|9007199254740[0-8][0-9]{2}|90071992547409[0-8][0-9]{1}|9007199254740990[0-9]{0}|9007199254740991)$"
+    },
+    "BatchDecision": {
+      "description": "One decision. Exactly one of `choice` and `history_map` is set;\n`history_map` resolves SOURCE_NATIVE_HISTORY_REVIEW from live companion\nevidence like `plans resolve-history`. `options` is informational (the\ntemplates `plans resolve-batch --template` printed) and is ignored.",
+      "type": "object",
+      "properties": {
+        "choice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReviewChoice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "document_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "history_map": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "input_digest": {
+          "type": "string"
+        },
+        "issue_id": {
+          "type": "string"
+        },
+        "options": true
+      },
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "issue_id",
+        "input_digest"
+      ]
+    },
+    "MediaRole": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "picture",
+            "audio",
+            "archive"
+          ]
+        },
+        {
+          "description": "Animated stroke-order image for one kanji (v3 Kanji field).",
+          "type": "string",
+          "const": "kanji_stroke"
+        }
+      ]
+    },
+    "NativeCardEvidence": {
+      "description": "One source card as observed through `labInspect` note evidence.",
+      "type": "object",
+      "properties": {
+        "card_id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "deck_id": {
+          "$ref": "#/$defs/AnkiId"
+        },
+        "history_digest": {
+          "description": "SHA-256 of the card's canonical review rows.",
+          "type": "string"
+        },
+        "ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "repetitions": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "review_count": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "card_id",
+        "ordinal",
+        "deck_id",
+        "repetitions",
+        "review_count",
+        "history_digest"
+      ]
+    },
+    "ReviewChoice": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "sense"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "sense_with_reading"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "reading": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "key",
+                "reading"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "anchor"
+            },
+            "value": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "segmentation"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "duplicate"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "note_id": {
+                  "$ref": "#/$defs/AnkiId"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "note_id",
+                "action"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "media"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "expression"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "region_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "region_id"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "cue"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "task": {
+                  "$ref": "#/$defs/Task"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "task",
+                "text"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "exercise"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "answer": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "prompt",
+                "answer"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "content_verified"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "evidence_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "evidence_ids"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "description": "A reviewer rejects one generated fact: its content and evidence are\nremoved, so it can be generated again or authored.",
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "content_rejected"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "evidence_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "evidence_id"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "source_content_verified"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "evidence_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "evidence_ids"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "description": "An unmapped source field is intentionally not carried into the target\nmodel; its original value stays in the source archive.",
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "source_field_dropped"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "field"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "source_media_role"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "asset_digest": {
+                  "type": "string"
+                },
+                "attribution": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "license": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "original_filename": {
+                  "type": "string"
+                },
+                "role": {
+                  "$ref": "#/$defs/MediaRole"
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "asset_digest",
+                "original_filename",
+                "evidence_id",
+                "role",
+                "attribution"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "description": "Resolves `SOURCE_NATIVE_HISTORY_REVIEW` from companion note evidence:\nevery source card with its observed study, and the reviewed mapping of\neach source template ordinal to a target task. No card is dropped.\nAcknowledges that a media file the source note references is absent\nfrom the collection at capture time. The original field (with its\nreference) stays archived; no bytes exist to archive or render.",
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "missing_media"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "filename": {
+                  "type": "string"
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "filename"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "const": "native_history"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "cards": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/NativeCardEvidence"
+                  }
+                },
+                "evidence_digest": {
+                  "type": "string"
+                },
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "task_map": {
+                  "$ref": "#/$defs/SourceTaskMap"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "source_id",
+                "cards",
+                "evidence_digest",
+                "task_map"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "decision",
+            "value"
+          ]
+        }
+      ]
+    },
+    "SourceTaskMap": {
+      "description": "A declared source-template mapping. Native ordinal/history verification belongs to WP-03.",
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceTaskMapEntry"
+          }
+        },
+        "schema_version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 1,
+          "minimum": 1
+        },
+        "source_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "source_model_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "target_model": {
+          "$ref": "#/$defs/TargetModelKind"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "source_id",
+        "source_model_digest",
+        "target_model",
+        "entries"
+      ]
+    },
+    "SourceTaskMapEntry": {
+      "type": "object",
+      "properties": {
+        "source_ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "target_ordinal": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "target_task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source_ordinal",
+        "target_task",
+        "target_ordinal"
+      ]
+    },
+    "TargetModelKind": {
+      "type": "string",
+      "enum": [
+        "vocabulary",
+        "grammar"
+      ]
+    },
+    "Task": {
+      "type": "string",
+      "enum": [
+        "comprehension",
+        "production",
+        "spelling",
+        "recognition",
+        "application"
+      ]
+    }
+  }
+}
