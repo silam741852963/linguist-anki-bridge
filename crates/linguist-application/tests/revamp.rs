@@ -2018,7 +2018,8 @@ fn a_kana_sibling_leaves_out_the_spelling_task() {
         request.units[0].tasks.is_empty(),
         "the anchor keeps its cards"
     );
-    assert_eq!(request.units[1].tasks, [Task::Comprehension]);
+    assert!(request.units[1].tasks.contains(&Task::Comprehension));
+    assert!(!request.units[1].tasks.contains(&Task::Spelling));
     // The anchor never takes tasks.
     request.actor = "reviewer".into();
     request.units[0].tasks = vec![Task::Comprehension];

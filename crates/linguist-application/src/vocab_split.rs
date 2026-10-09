@@ -138,15 +138,19 @@ pub fn template(plan: &PlanRevision, document_id: uuid::Uuid) -> Result<SplitReq
             if per_unit_sound {
                 media.push(sounds[i].clone());
             }
-            // A word written in kana cannot be a Spelling card (its reading is
-            // the answer); a new sibling simply leaves that task out.
-            let tasks = if i > 0 && kana_only(&expression) {
-                document
-                    .requested_tasks
-                    .iter()
-                    .copied()
-                    .filter(|t| *t != Task::Spelling)
-                    .collect()
+            // A new sibling gets the tasks the purpose gives a new word; a
+            // word written in kana leaves out Spelling (its reading is the answer).
+            let tasks = if i > 0 {
+                let on =
+                    |key: &str| plan.settings.values.get(key) == Some(&serde_json::json!(true));
+                let mut tasks = vec![Task::Comprehension];
+                if on("learning.vocabulary.production") {
+                    tasks.push(Task::Production);
+                }
+                if on("learning.vocabulary.spelling") && !kana_only(&expression) {
+                    tasks.push(Task::Spelling);
+                }
+                tasks
             } else {
                 vec![]
             };
