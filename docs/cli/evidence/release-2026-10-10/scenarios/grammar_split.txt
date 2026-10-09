@@ -1,0 +1,19 @@
+grammar_split
+scenario grammar-split
+models install japanese_grammar --apply -> 0
+grammar revamp --note-id 1791587761409 -> 4
+plans show ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --issues-only -> 0
+plans split-grammar ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --request /tmp/lab-desk-21136931/split.json -> 4
+plans show ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --issues-only -> 0
+plans resolve-history ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --item d290db2c-6cbf-4413-b8ae-b41b1c2b5831 --map 0=recognition --actor desktop-scenario -> 4
+plans show ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --issues-only -> 0
+plans resolve ba6874cf-5311-4e96-a2b6-5496ef5b7a95 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-21136931/decision-b230e2d4-3ee8-4a35-aec3-792ccba2581c.json -> 4
+plans show ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --issues-only -> 0
+plans resolve ba6874cf-5311-4e96-a2b6-5496ef5b7a95 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-21136931/decision-f11b7bec-99ed-4ee0-a7a3-18f8f29ada87.json -> 0
+plans show ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --issues-only -> 0
+plans show ba6874cf-5311-4e96-a2b6-5496ef5b7a95 -> 0
+plans bind ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --digest lab-jcs-v1:plan:800dfc5a655a1b4465e50101f4948c8d076332fe8e25ba6ac6747acf856e1891 -> 0
+plans validate ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --revision 6 -> 0
+plans approve ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --revision 6 --digest lab-jcs-v1:plan:4632bfbd43979c8054bb236443adef6d9d003f1d13cb2fc55f6f38ce7287d7d4 --actor desktop-scenario -> 0
+apply ba6874cf-5311-4e96-a2b6-5496ef5b7a95 --revision 6 --split-group 72d09332-f57b-4ec1-a96a-fe77f8313d7a --accept-schema-change --apply -> 0
+jobs rollback 117f812a-a542-4681-850a-18dda3cbc8d4 --accept-schema-change --delete-unstudied-created --apply -> 0

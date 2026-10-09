@@ -1,0 +1,53 @@
+$ cargo test --locked -p linguist-application --test maintenance --test ollama
+exit 0
+
+
+running 11 tests
+test non_legacy_databases_are_refused ... ok
+test pinned_local_pack_installs_once_with_a_verified_receipt ... ok
+test provider_cache_prunes_by_retention_and_budget_but_never_unmanaged_files ... ok
+test offline_and_unlisted_hosts_block_downloads_before_any_request ... ok
+test legacy_jobs_translate_read_only_and_never_assume_commits_absent ... ok
+test cache_prune_rechecks_active_readers_and_store_reachability ... ok
+test lookup_filters_change_only_the_dictionary_query ... ok
+test checksum_license_type_and_destination_are_checked_before_install ... ok
+test unsafe_archives_are_refused_and_safe_ones_extract_without_exec_bits ... ok
+test loopback_download_is_streamed_hashed_and_redirects_are_policy_checked ... ok
+test ollama_models_are_pulled_explicitly_and_digest_verified ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+running 24 tests
+test complete_text_response_retains_exact_raw_bytes_without_claiming_input_fit ... ok
+test exact_local_model_metadata_is_bound_to_raw_archives_without_claiming_generation_readiness ... ok
+test missing_duplicate_changed_or_remote_models_cannot_be_substituted ... ok
+test completion_and_architecture_context_must_be_explicit_and_fit_requested_limits ... ok
+test malformed_payloads_digests_and_response_limits_fail_explicitly ... ok
+test truncated_tool_bearing_malformed_or_over_budget_completions_are_rejected ... ok
+test bearer_credentials_are_sent_by_reference_and_never_enter_metadata_receipts ... ok
+test http_probe_uses_only_inventory_and_selected_show_without_model_load_or_pull ... ok
+test unsupported_endpoints_credentials_and_concurrency_fail_before_dispatch ... ok
+test candidate_generation_rejects_model_change_after_inference ... ok
+test candidate_generation_binds_inventory_and_separates_source_from_instructions ... ok
+test separate_clients_share_server_cooldown_and_response_caps_are_enforced ... ok
+test inference_draft_archives_wire_and_model_evidence_and_recovers_after_restart ... ok
+test candidate_publication_freezes_current_settings_and_keeps_engine_blocker ... ok
+test inference_draft_rejects_schema_invalid_and_protected_field_output ... ok
+test pending_generation_runs_eligible_items_and_reports_the_rest ... ok
+test redirects_auth_schema_remote_forwarding_and_excessive_delays_do_not_dispatch_more_reads ... ok
+test candidate_inference_failures_never_retry_or_continue_metadata_reads ... ok
+test a_failed_local_generation_falls_back_to_an_agent ... ok
+test candidate_metadata_retries_share_budget_and_inference_cooldown_survives_failure ... ok
+test generation_regeneration_replaces_generated_usage_and_keeps_authored_fields ... ok
+test metadata_retries_share_one_budget_across_the_whole_probe ... ok
+test passed_engine_certification_replaces_the_blocker_for_that_identity_only ... ok
+test slow_inference_uses_the_llm_budget_not_the_network_read_timeout ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.62s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/maintenance.rs (target/debug/deps/maintenance-3bb5d4b1b932d5e0)
+     Running tests/ollama.rs (target/debug/deps/ollama-73298a5018032542)

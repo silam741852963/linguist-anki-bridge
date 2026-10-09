@@ -1,0 +1,6 @@
+$ python3 scripts/release-build.py --verify-reproducible --clean
+exit 1
+
+
+--- stderr ---
+RELEASE_TREE_DIRTY: commit or pass --allow-dirty (recorded in the manifest)

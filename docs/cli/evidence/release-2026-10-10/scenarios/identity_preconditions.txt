@@ -1,0 +1,30 @@
+identity_preconditions
+scenario identity
+models install japanese_vocab --apply -> 0
+vocab revamp --note-id 1791587845959 -> 4
+plans show 9e715089-faae-438b-affb-126bef7a1bb5 -> 0
+plans edit 9e715089-faae-438b-affb-126bef7a1bb5 --base-revision 1 --patch /tmp/lab-desk-cc80bc39/sense.json --save-draft -> 4
+plans resolve-history 9e715089-faae-438b-affb-126bef7a1bb5 --item efdbe0c1-6da6-4114-9250-0efb1440f36f --map 0=comprehension --actor desktop-scenario -> 0
+plans bind 9e715089-faae-438b-affb-126bef7a1bb5 --digest lab-jcs-v1:plan:e7bbf65598154444026694920613fb44feae8034af42ab7ae2df88bfbf40a91c -> 0
+plans validate 9e715089-faae-438b-affb-126bef7a1bb5 --revision 4 -> 0
+plans approve 9e715089-faae-438b-affb-126bef7a1bb5 --revision 4 --digest lab-jcs-v1:plan:6cf2b3d745f31c4f95cdb6a9db4a8efc81e114edad43bf88992e9ee22ca4f9e8 --actor desktop-scenario -> 0
+apply 9e715089-faae-438b-affb-126bef7a1bb5 --revision 4 --accept-schema-change --apply -> 5
+source edited after approval: apply refused before any effect
+vocab add --expression 話す --meaning meaning --sense-key speak --target-language ja --tag release -> 0
+plans bind 587b92df-1435-47f6-acfa-fd89baaaa2db --digest lab-jcs-v1:plan:0bc3ca3e85d4407810dfb8fb173e43d5ead54d6b7cf62c3a425bf2c1ae6e4c8a -> 0
+plans validate 587b92df-1435-47f6-acfa-fd89baaaa2db --revision 2 -> 0
+plans approve 587b92df-1435-47f6-acfa-fd89baaaa2db --revision 2 --digest lab-jcs-v1:plan:fc1a25388188f535858c3091100b8c49707a46582f2a99c9243030abea128967 --actor desktop-scenario -> 0
+apply 587b92df-1435-47f6-acfa-fd89baaaa2db --revision 2 --apply -> 2
+apply 587b92df-1435-47f6-acfa-fd89baaaa2db --revision 2 --apply -> 0
+profile switch: refused; back on the bound profile the write commits
+vocab add --expression 聞く --meaning meaning --sense-key listen --target-language ja --tag release -> 0
+plans bind 6faaab7b-c376-43e4-9d32-452b8eae07b8 --digest lab-jcs-v1:plan:eb5ccdb813bb9eb09c47b77f0ec79f70c44dc5d31f502043a75388646fa3b031 -> 0
+plans validate 6faaab7b-c376-43e4-9d32-452b8eae07b8 --revision 2 -> 0
+plans approve 6faaab7b-c376-43e4-9d32-452b8eae07b8 --revision 2 --digest lab-jcs-v1:plan:7db164a67c1a3fce1e0deb7d22b828be3987fe1566991a1c68436ddd787e99e5 --actor desktop-scenario -> 0
+apply 6faaab7b-c376-43e4-9d32-452b8eae07b8 --revision 2 --apply -> 2
+plans show 6faaab7b-c376-43e4-9d32-452b8eae07b8 -> 0
+plans bind 6faaab7b-c376-43e4-9d32-452b8eae07b8 --digest lab-jcs-v1:plan:7db164a67c1a3fce1e0deb7d22b828be3987fe1566991a1c68436ddd787e99e5 -> 0
+plans validate 6faaab7b-c376-43e4-9d32-452b8eae07b8 --revision 3 -> 0
+plans approve 6faaab7b-c376-43e4-9d32-452b8eae07b8 --revision 3 --digest lab-jcs-v1:plan:984c9478fe64e861cf3ba06e120d8eb6898187f3d5f82bd2c6faf3ad7c630d45 --actor desktop-scenario -> 0
+apply 6faaab7b-c376-43e4-9d32-452b8eae07b8 --revision 3 --apply -> 0
+lost sidecar lineage: refused until bound and approved again

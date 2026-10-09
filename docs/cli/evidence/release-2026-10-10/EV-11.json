@@ -1,0 +1,101 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-11",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "6264fce0cc30c94d60a1b1ab94cd04e813923d38",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.14.8",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.11.1",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,jpn,osd,vie",
+  "ollama": "0.40.1",
+  "kernel": "Linux 7.2.8-5-omarchy-bore",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "crates/linguist-application/tests/fixtures/semantic/corpus-v1.json": "c379e00ecb062cec2a83682ee1502c2a00699b5bd32bf797aa3b945e920c6e58"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-application",
+    "--test",
+    "semantic_corpus",
+    "--",
+    "--nocapture"
+   ],
+   "invocation_digest": "ee29b8629d31b57d6dfbdfd723a3867c746ea1693b5e3cf253b6ad2ddfd41167",
+   "exit_code": 0,
+   "output_digest": "373124311ab19f4a5f07f87640cc1c4c04bcc28077977ecde8bcd60017166cbe"
+  },
+  {
+   "redacted_argv": [
+    "python3",
+    "scripts/generate-semantic-corpus.py",
+    "--check"
+   ],
+   "invocation_digest": "477d3475e434f06560374771012a889c771a3958f8f2a2138ac7f5eb600b1d06",
+   "exit_code": 0,
+   "output_digest": "d8760763be63067f00789fcf42648cb7e89259b37690e733415676ec0b8b6596"
+  },
+  {
+   "redacted_argv": [
+    "python3",
+    "scripts/model-benchmark.py"
+   ],
+   "invocation_digest": "68a5aac8d41553bd435d92257614cbcb08013f60e46f9aecf4eaa0fb1a06d39d",
+   "exit_code": 0,
+   "output_digest": "6de3bad6c25ec46dc796e57961c5ee5e1cbb6585d004058efe1a0f116300a7ad"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "120 semantic fixtures pass with zero source loss, unsupported claims or leakage",
+   "passed": true,
+   "observed": "{\"grammar_add\": (30, 30), \"grammar_revamp\": (30, 30), \"vocab_add\": (30, 30), \"vocab_revamp\": (30, 30)}"
+  },
+  {
+   "name": "local model schema compliance >= 95%",
+   "passed": true,
+   "observed": "54/55 with gemma4:12b"
+  },
+  {
+   "name": "OCR packs for jpn and vie installed",
+   "passed": true,
+   "observed": "installed: eng,jpn,osd,vie"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-10/logs/corpus_current.txt",
+  "docs/cli/evidence/release-2026-10-10/logs/model_benchmark.txt",
+  "docs/cli/evidence/release-2026-10-10/logs/semantic_corpus.txt",
+  "docs/cli/evidence/release-2026-10-10/model-benchmark.json"
+ ],
+ "failure_code": null
+}

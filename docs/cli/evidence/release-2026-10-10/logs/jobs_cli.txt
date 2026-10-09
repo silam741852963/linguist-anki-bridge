@@ -1,0 +1,36 @@
+$ cargo test --locked -p linguist-cli --test jobs_commands --test apply_commands --test restore_commands
+exit 0
+
+
+running 4 tests
+test apply_preview_lists_blockers_and_exits_nonzero ... ok
+test apply_preview_reports_ready_items_without_any_effect ... ok
+test apply_flag_and_wrong_digest_fail_before_lease_or_journal ... ok
+test reconcile_proposal_is_local_and_writes_stay_unavailable ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+running 4 tests
+test apply_jobs_need_a_checkpoint_and_the_current_apply_flag ... ok
+test simulate_jobs_are_created_inspected_and_never_write ... ok
+test prepare_jobs_refuse_apply_and_classify_retries_without_running ... ok
+test idle_controls_are_confirmed_and_terminal_jobs_are_tombstoned ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+
+running 4 tests
+test split_group_preview_rejects_unknown_groups ... ok
+test unresolved_apply_must_be_reconciled_before_restore ... ok
+test rollback_preview_covers_the_group_and_writes_stay_unavailable ... ok
+test restore_preview_is_local_and_restore_writes_stay_unavailable ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running tests/apply_commands.rs (target/debug/deps/apply_commands-6cb7f037a51b6f5e)
+     Running tests/jobs_commands.rs (target/debug/deps/jobs_commands-1231b7a77ea6721a)
+     Running tests/restore_commands.rs (target/debug/deps/restore_commands-1e1be9b30b40b56e)

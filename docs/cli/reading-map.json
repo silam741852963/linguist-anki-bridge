@@ -323,7 +323,7 @@
       "path": "implementation/wp-22.md",
       "heading": "## WP-22 \u2014 grammar add and revamp, end to end on the user's data",
       "title": "WP-22 \u2014 grammar add and revamp, end to end on the user's data",
-      "words": 1142,
+      "words": 2109,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
