@@ -2032,3 +2032,100 @@ fn a_kana_sibling_leaves_out_the_spelling_task() {
         "VOCAB_SPLIT_UNIT_INVALID"
     );
 }
+
+/// WP-20 (味をつける, 迷惑がかかる): a unit whose word already has a note in
+/// the target deck merges into that note instead of becoming a duplicate, and
+/// the anchor moves to a unit that has no note yet.
+#[test]
+fn a_split_unit_that_already_has_a_note_merges_into_it() {
+    use linguist_application::{duplicate_candidates::CandidateReader, vocab_split};
+    struct Collection;
+    impl CandidateReader for Collection {
+        fn find_notes(&self, query: &str) -> std::result::Result<Vec<String>, String> {
+            assert!(query.starts_with("deck:"), "{query}");
+            Ok(if query.contains("迷惑がかかる") {
+                vec!["777".into(), "778".into()]
+            } else {
+                vec![]
+            })
+        }
+        fn notes_info(
+            &self,
+            ids: &[String],
+        ) -> std::result::Result<Vec<serde_json::Value>, String> {
+            assert_eq!(ids, ["777", "778"]);
+            Ok(vec![
+                // A different word that only contains the text.
+                json!({"noteId": 778, "modelName": "Legacy",
+                       "fields": {"Word": {"value": "迷惑がかかる人"}}}),
+                json!({"noteId": 777, "modelName": "Legacy",
+                       "fields": {"Word": {"value": "<b>迷惑が かかる</b>"}}}),
+            ])
+        }
+    }
+    let (capture, mut settings) = setup(
+        "japanese_vocab",
+        &[(
+            "Word",
+            "迷惑がかかる<div>太陽に雲がかかる</div><div>エンジンがかかる</div>",
+        )],
+        &[("expression", "Word")],
+    );
+    let root = std::env::temp_dir().join(format!("lab-split-merge-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    settings.values.insert(
+        "purposes.japanese_vocab.target_deck".into(),
+        json!("森の言葉"),
+    );
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "japanese_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-split-merge".into())]),
+    )
+    .unwrap();
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let mut request = vocab_split::template(&plan, plan.documents[0].id).unwrap();
+    let mut selected = plan.clone();
+    if selected.selection.is_none() {
+        selected.selection = Some(linguist_core::records::SelectionReceipt {
+            schema_version: 1,
+            purpose: "japanese_vocab".into(),
+            selector: linguist_core::records::SelectionInput::NoteIds(vec!["1".into()]),
+            matched_note_ids: vec!["1".into()],
+            selected_note_ids: vec!["1".into()],
+            order: "note_id".into(),
+            max_notes: 1,
+            command_limit: None,
+        });
+    }
+    vocab_split::find_existing(&selected, &mut request, &Collection).unwrap();
+    assert_eq!(request.units[0].existing_note.as_deref(), Some("777"));
+    assert_eq!(request.units[1].existing_note, None);
+    assert_eq!(request.anchor_index, 1, "the anchor has no note yet");
+    request.actor = "reviewer".into();
+    // The anchor never merges.
+    let mut bad = request.clone();
+    bad.anchor_index = 0;
+    let raw = linguist_core::canonical::bytes(&bad).unwrap();
+    assert_eq!(
+        vocab_split::split(&mut store, &plan, &bad, &raw).unwrap_err(),
+        "VOCAB_SPLIT_UNIT_INVALID"
+    );
+    let raw = linguist_core::canonical::bytes(&request).unwrap();
+    let child = vocab_split::split(&mut store, &plan, &request, &raw).unwrap();
+    let words: Vec<_> = child
+        .documents
+        .iter()
+        .map(|d| match &d.content {
+            LearningContent::Vocabulary(v) => v.expression.clone(),
+            _ => panic!(),
+        })
+        .collect();
+    assert_eq!(words, ["太陽に雲がかかる", "エンジンがかかる"]);
+    assert_eq!(child.documents[0].id, plan.documents[0].id);
+    child.grammar_groups[0].validate(&child).unwrap();
+}

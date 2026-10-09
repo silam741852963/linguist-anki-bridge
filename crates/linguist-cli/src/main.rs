@@ -2480,7 +2480,15 @@ fn run(cli: Cli) -> Result<u8, String> {
                     if let Some(item) = template {
                         let latest = store.latest_revision(plan)?;
                         let base = store.revision(plan, latest)?;
-                        emit(&linguist_application::vocab_split::template(&base, item)?)?;
+                        let mut template =
+                            linguist_application::vocab_split::template(&base, item)?;
+                        // A word that already has a note merges into it (read-only check).
+                        linguist_application::vocab_split::find_existing(
+                            &base,
+                            &mut template,
+                            &anki_client(&settings)?,
+                        )?;
+                        emit(&template)?;
                         return Ok(0);
                     }
                     let request = request.ok_or("VOCAB_SPLIT_REQUEST_REQUIRED")?;
@@ -2495,8 +2503,18 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &request,
                         &raw,
                     )?;
+                    // Units merged into existing notes: revamp those notes next.
+                    let merged: Vec<_> = request
+                        .units
+                        .iter()
+                        .filter_map(|u| {
+                            u.existing_note.as_ref().map(
+                                |id| serde_json::json!({"expression":u.expression,"note_id":id}),
+                            )
+                        })
+                        .collect();
                     emit(
-                        &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":child.revision,"digest":child.approval_digest().map_err(|e| e.to_string())?,"split_groups":child.grammar_groups,"ready":false,"apply_eligible":false,"writes_enabled":false}),
+                        &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":child.revision,"digest":child.approval_digest().map_err(|e| e.to_string())?,"split_groups":child.grammar_groups,"merged_into_existing":merged,"ready":false,"apply_eligible":false,"writes_enabled":false}),
                     )?;
                     return Ok(4);
                 }

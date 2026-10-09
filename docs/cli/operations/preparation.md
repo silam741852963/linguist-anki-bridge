@@ -110,6 +110,18 @@ other unit is a new note. Run the dictionary stage (`plans enrich`) and
 group with `apply PLAN --split-group GROUP --apply` (children first, then the
 anchor).
 
+Merge into an existing note (WP-20): the template also searches the purpose's
+target deck (read-only) for a note that already holds each unit's word: the
+source model's word field or a revamped note's `Expression`, compared without
+markup or spaces. A unit with such a note gets `existing_note` (its note ID)
+and makes no new note; the anchor moves to the first unit without one and
+takes the source note's pictures. The split output lists those units under
+`merged_into_existing`; revamp each listed note on its own
+(`vocab revamp --note-id ID`), which keeps its history. The anchor never
+merges (`VOCAB_SPLIT_UNIT_INVALID`). When only one unit is left to make a note,
+the split is refused (`VOCAB_SPLIT_SINGLE_UNIT`) and the item's expression is
+edited instead.
+
 Current authored grammar split staging: `plans split-grammar PLAN --request FILE`
 loads the retained source draft and verifies the request's base revision/digest,
 document/input digest and actor. The request contains `schema_version=2`,

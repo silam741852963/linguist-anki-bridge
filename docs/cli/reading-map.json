@@ -1023,7 +1023,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-24 \u2014 `grammar revamp`",
       "title": "OP-24 \u2014 `grammar revamp`",
-      "words": 1519,
+      "words": 1639,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

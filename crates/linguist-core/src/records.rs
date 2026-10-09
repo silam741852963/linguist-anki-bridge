@@ -484,11 +484,21 @@ impl GrammarGroup {
                 .as_u64()
                 .and_then(|index| usize::try_from(index).ok())
                 .ok_or_else(fail)?;
+            // A vocabulary unit merged into an existing note makes no document.
+            let units = request["units"].as_array().ok_or_else(fail)?;
+            let created = |end: usize| {
+                units
+                    .iter()
+                    .take(end)
+                    .filter(|unit| unit.get("existing_note").is_none_or(|v| v.is_null()))
+                    .count()
+            };
             if request["actor"].as_str() != Some(self.actor.as_str())
                 || request["document_id"].as_str()
                     != Some(self.anchor_document.to_string().as_str())
-                || request["units"].as_array().map(Vec::len) != Some(self.units.len())
-                || self.units.get(index) != Some(&self.anchor_document)
+                || created(units.len()) != self.units.len()
+                || index >= units.len()
+                || self.units.get(created(index)) != Some(&self.anchor_document)
             {
                 return Err(fail());
             }

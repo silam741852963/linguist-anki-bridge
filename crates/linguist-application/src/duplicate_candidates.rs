@@ -42,7 +42,7 @@ pub struct Report {
     pub apply_eligible: bool,
 }
 
-fn search_value(value: &str) -> Result<String, String> {
+pub(crate) fn search_value(value: &str) -> Result<String, String> {
     if value.trim().is_empty() || value.chars().any(char::is_control) {
         return Err("DUPLICATE_QUERY_UNSUPPORTED_INPUT".into());
     }

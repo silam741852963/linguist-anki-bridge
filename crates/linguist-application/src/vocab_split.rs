@@ -2,6 +2,9 @@
 //! readings (脅かす: おどかす / おびやかす) becomes one note per unit. The
 //! anchor keeps the source note and its history; every other unit is a new
 //! note. Apply reuses the split-group path (children first, then the anchor).
+//! A unit whose word already has a note in the target deck (味をつける,
+//! 迷惑がかかる) makes no new note: it merges into that note, which is revamped
+//! on its own and keeps its history.
 use crate::grammar::{SplitKind, SplitUnit, publish_split};
 use linguist_core::{records::*, validation::vocabulary_units, *};
 use schemars::JsonSchema;
@@ -22,6 +25,11 @@ pub struct VocabularyUnit {
     /// keeps its note's cards, so it takes none.
     #[serde(default)]
     pub tasks: Vec<Task>,
+    /// The existing note (Anki note ID) that already holds this word. The
+    /// unit merges into it: no new note is made, and that note is revamped
+    /// on its own. Never the anchor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub existing_note: Option<String>,
 }
 
 fn kana_only(text: &str) -> bool {
@@ -31,7 +39,7 @@ fn kana_only(text: &str) -> bool {
             .all(|c| matches!(c, '\u{3041}'..='\u{309F}' | '\u{30A0}'..='\u{30FF}'))
 }
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SplitRequest {
     pub schema_version: u16,
@@ -159,6 +167,7 @@ pub fn template(plan: &PlanRevision, document_id: uuid::Uuid) -> Result<SplitReq
                 pronunciation,
                 media,
                 tasks,
+                existing_note: None,
             }
         })
         .collect();
@@ -172,6 +181,106 @@ pub fn template(plan: &PlanRevision, document_id: uuid::Uuid) -> Result<SplitReq
         anchor_index: 0,
         units,
     })
+}
+
+/// The word of a note field: markup, entities and spaces removed.
+fn field_word(value: &str) -> String {
+    let mut text = String::new();
+    let mut tag = false;
+    for c in value.replace("&nbsp;", " ").chars() {
+        match c {
+            '<' => tag = true,
+            '>' => tag = false,
+            c if !tag && !c.is_whitespace() && c != '\u{3000}' => text.push(c),
+            _ => {}
+        }
+    }
+    text
+}
+
+/// Mark every unit whose word already has a note in the purpose's target
+/// deck (the source model's word field, or a revamped note's Expression),
+/// and move the anchor to the first unit that has none. Read-only.
+pub fn find_existing(
+    plan: &PlanRevision,
+    request: &mut SplitRequest,
+    reader: &dyn crate::duplicate_candidates::CandidateReader,
+) -> Result<(), String> {
+    let purpose = &plan
+        .selection
+        .as_ref()
+        .ok_or("VOCAB_SPLIT_PURPOSE_UNRESOLVED")?
+        .purpose;
+    let setting = |key: &str| {
+        plan.settings
+            .values
+            .get(&format!("purposes.{purpose}.{key}"))
+            .cloned()
+            .unwrap_or_default()
+    };
+    let deck = setting("target_deck");
+    let deck = deck.as_str().ok_or("VOCAB_SPLIT_PURPOSE_UNRESOLVED")?;
+    let source_model = setting("source_model");
+    let source_field = setting("fields")["expression"]
+        .as_str()
+        .unwrap_or("Expression")
+        .to_owned();
+    let managed = linguist_core::model::vocabulary().name;
+    let original = plan
+        .documents
+        .iter()
+        .find(|document| document.id == request.document_id)
+        .ok_or("VOCAB_SPLIT_DOCUMENT_MISSING")?;
+    let own: BTreeSet<String> = original
+        .sources
+        .iter()
+        .filter_map(|source| source.location.strip_prefix("anki_note:"))
+        .map(str::to_owned)
+        .collect();
+    for unit in &mut request.units {
+        let word = field_word(&unit.expression);
+        let query = format!(
+            "{} \"{}\"",
+            linguist_anki::deck_query(deck)?,
+            crate::duplicate_candidates::search_value(&word)?
+        );
+        let ids: Vec<String> = reader
+            .find_notes(&query)?
+            .into_iter()
+            .filter(|id| !own.contains(id))
+            .collect();
+        if ids.is_empty() {
+            continue;
+        }
+        let notes = reader.notes_info(&ids)?;
+        unit.existing_note = notes.iter().find_map(|note| {
+            let model = note["modelName"].as_str()?;
+            let field = if model == managed {
+                "Expression"
+            } else if source_model.as_str() == Some(model) {
+                source_field.as_str()
+            } else {
+                return None;
+            };
+            (field_word(note["fields"][field]["value"].as_str()?) == word)
+                .then(|| note["noteId"].to_string().trim_matches('"').to_owned())
+        });
+    }
+    if request.units[request.anchor_index].existing_note.is_some()
+        && let Some(index) = request.units.iter().position(|u| u.existing_note.is_none())
+    {
+        // The new anchor keeps the source note's cards and pictures.
+        let media = std::mem::take(&mut request.units[request.anchor_index].media);
+        let anchor = &mut request.units[index];
+        anchor.tasks.clear();
+        for name in media {
+            if !anchor.media.contains(&name) {
+                anchor.media.insert(0, name);
+            }
+        }
+        request.anchor_index = index;
+    }
+    Ok(())
 }
 
 /// Publish the reviewed split: every unit is a fresh vocabulary item with only
@@ -214,6 +323,7 @@ pub fn split(
     let available: BTreeSet<String> = source_media(original).into_iter().map(|(n, _)| n).collect();
     let mut seen = BTreeSet::new();
     let mut units = Vec::new();
+    let mut anchor = request.anchor_index;
     for (index, unit) in request.units.iter().enumerate() {
         let expression = unit.expression.trim();
         let pronunciation = unit.pronunciation.trim();
@@ -223,6 +333,14 @@ pub fn split(
             || !seen.insert((expression, pronunciation))
             || unit.media.iter().any(|m| !available.contains(m))
             || index == request.anchor_index && !unit.tasks.is_empty()
+            || index == request.anchor_index && unit.existing_note.is_some()
+            || unit.existing_note.as_ref().is_some_and(|id| {
+                id.parse::<u64>().map_or(true, |n| n == 0)
+                    || original
+                        .sources
+                        .iter()
+                        .any(|s| s.location == format!("anki_note:{id}"))
+            })
             || !unit.tasks.is_empty() && !unit.tasks.contains(&Task::Comprehension)
             || unit
                 .tasks
@@ -230,6 +348,12 @@ pub fn split(
                 .any(|t| !matches!(t, Task::Comprehension | Task::Production | Task::Spelling))
         {
             return Err("VOCAB_SPLIT_UNIT_INVALID".into());
+        }
+        if unit.existing_note.is_some() {
+            if index < request.anchor_index {
+                anchor -= 1;
+            }
+            continue;
         }
         units.push(SplitUnit {
             content: LearningContent::Vocabulary(Vocabulary {
@@ -256,13 +380,17 @@ pub fn split(
             keep_media: Some(unit.media.iter().cloned().collect()),
         });
     }
+    // A group needs two notes; with one left, edit the item's word instead.
+    if units.len() < 2 {
+        return Err("VOCAB_SPLIT_SINGLE_UNIT: only one unit needs a note; edit the item's expression instead".into());
+    }
     publish_split(
         store,
         base,
         original,
         raw,
         &request.actor,
-        request.anchor_index,
+        anchor,
         SplitKind::Vocabulary,
         units,
     )
