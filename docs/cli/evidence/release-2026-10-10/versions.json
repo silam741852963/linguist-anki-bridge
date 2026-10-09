@@ -19,7 +19,7 @@
  "crate:yaml-rust2": "0.13.0",
  "crate:zip": "8.6.0",
  "crate:zstd": "0.14.0",
- "git_commit": "6264fce0cc30c94d60a1b1ab94cd04e813923d38",
+ "git_commit": "0beac81a472f24c81a7e52abfc9d0a6daeaf964d",
  "kernel": "Linux 7.2.8-5-omarchy-bore",
  "linguist-anki-bridge": "0.1.0",
  "node": "v26.11.1",

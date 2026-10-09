@@ -1,12 +1,17 @@
 $ cargo test --locked --workspace --no-fail-fast
 exit 0
 
-passes_and_truncation_or_corruption_fails ... ok
-test live_validation::tests::missing_saved_media_receipt_never_claims_recheck ... ok
+on::tests::field_model_card_and_deck_drift_each_block_live_match ... ok
+test live_validation::tests::missing_native_card_identity_details_never_match ... ok
+test live_validation::tests::scheduler_only_study_is_reported_without_content_drift ... ok
+test dictionary_entry::tests::a_written_entry_is_validated_and_shaped_like_a_dictionary_entry ... ok
+test audio::ogg::tests::valid_checksums_cannot_hide_bad_flags_sequences_or_serials ... ok
+test audio::ogg::tests::complete_external_fixture_passes_and_truncation_or_corruption_fails ... ok
 test live_validation::tests::archived_field_media_references_must_match_the_source_index ... ok
+test live_validation::tests::missing_saved_media_receipt_never_claims_recheck ... ok
 test live_validation::tests::archived_source_links_are_checked_before_live_comparison ... ok
-test plan_diff::tests::diff_reads_original_card_ids_from_bound_archive ... ok
 test live_validation::tests::archived_media_bytes_are_rechecked_and_drift_blocks_live_match ... ok
+test plan_diff::tests::diff_reads_original_card_ids_from_bound_archive ... ok
 
 test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
@@ -15,37 +20,37 @@ running 27 tests
 test precondition_digest_matches_the_companion_vector ... ok
 test second_writer_is_rejected_by_the_collection_lease ... ok
 test missing_apply_flag_and_preview_have_zero_effects ... ok
-test lost_request_without_ledger_row_resubmits_the_same_uuid_once ... ok
 test pending_native_operation_is_waited_on_not_resent ... ok
-test batch_stops_on_identity_fault_and_continues_after_item_failures ... ok
-test intent_records_and_binding_decisions_are_immutable ... ok
-test copied_marker_candidates_block_for_review ... ok
-test mapped_migration_retains_card_id_history_and_scheduling ... ok
-test media_collision_never_overwrites_and_identical_media_is_reused ... ok
-test profile_switch_or_session_change_stops_reconciliation_until_rebind ... ok
-test migration_requires_accepted_schema_change_and_complete_mapping ... ok
-test crash_after_receipt_before_commit_finalizes_with_the_stored_receipt ... ok
-test partial_native_migration_with_replaced_card_needs_recovery ... ok
-test rejected_create_fails_before_write_and_allows_a_new_attempt ... ok
+test lost_request_without_ledger_row_resubmits_the_same_uuid_once ... ok
 test source_edit_between_preparation_and_apply_conflicts_and_preserves_original ... ok
-test create_commits_with_marker_snapshot_receipt_and_owner_release ... ok
+test profile_switch_or_session_change_stops_reconciliation_until_rebind ... ok
+test crash_after_receipt_before_commit_finalizes_with_the_stored_receipt ... ok
+test copied_marker_candidates_block_for_review ... ok
 test an_archive_copy_of_the_same_bytes_never_shadows_the_rendered_media ... ok
+test intent_records_and_binding_decisions_are_immutable ... ok
+test partial_native_migration_with_replaced_card_needs_recovery ... ok
+test batch_stops_on_identity_fault_and_continues_after_item_failures ... ok
+test create_commits_with_marker_snapshot_receipt_and_owner_release ... ok
+test mapped_migration_retains_card_id_history_and_scheduling ... ok
+test migration_requires_accepted_schema_change_and_complete_mapping ... ok
+test media_collision_never_overwrites_and_identical_media_is_reused ... ok
 test rejection_after_verified_media_is_a_known_partial_that_can_be_superseded ... ok
-test unknown_status_without_candidates_never_resubmits ... ok
+test rejected_create_fails_before_write_and_allows_a_new_attempt ... ok
 test study_between_preparation_and_apply_is_captured_fresh_and_preserved ... ok
 test study_during_mutation_needs_recovery_without_success_claim ... ok
-test timeout_after_accepted_create_reconciles_to_one_note ... ok
+test unknown_status_without_candidates_never_resubmits ... ok
 test unknown_add_with_exact_marker_candidate_is_adopted ... ok
-test authority_identity_and_checkpoint_refusals_mutate_nothing ... ok
+test timeout_after_accepted_create_reconciles_to_one_note ... ok
 test weak_binding_stale_revision_and_remote_bridge_are_refused ... ok
+test authority_identity_and_checkpoint_refusals_mutate_nothing ... ok
 test disk_full_after_native_acceptance_stops_and_recovery_discovers_result ... ok
 
-test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.21s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.19s
 
 
 running 3 tests
-test mpeg_versions_and_variable_bitrate_decode_with_verified_frame_extents ... ok
 test wave_extent_and_decoded_budget_reject_corruption_without_success_receipts ... ok
+test mpeg_versions_and_variable_bitrate_decode_with_verified_frame_extents ... ok
 test decoded_audio_formats_report_scope_and_enforce_audio_policy ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
@@ -62,33 +67,33 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 running 5 tests
-test invalid_scratch_directory_fails_without_persistent_file ... ok
 test valid_sqlite_without_anki_tables_cannot_pass_as_collection ... ok
+test invalid_scratch_directory_fails_without_persistent_file ... ok
 test latest_container_checks_every_declared_media_byte_but_not_restore_eligibility ... ok
 test sqlite_corruption_fails_and_private_scratch_is_removed ... ok
 test missing_changed_or_unsafe_media_and_corrupt_packages_fail ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
 
 running 18 tests
 test coverage_always_escalates_to_collection_package ... ok
 test invalid_requests_fail_before_journal_or_export ... ok
-test rejected_and_unknown_exports_are_journaled_differently ... ok
 test false_api_success_without_file_is_not_a_checkpoint ... ok
 test truncated_package_fails_verification ... ok
-test content_only_checkpoint_cannot_authorize_schema_action ... ok
+test rejected_and_unknown_exports_are_journaled_differently ... ok
+test checkpoint_failure_guarantees_zero_model_mutation ... ok
+test claim_mismatch_and_foreign_path_fail ... ok
+test exact_model_is_reused_and_same_name_different_manifest_blocks ... ok
 test rejected_install_without_effect_fails_before_write ... ok
 test partial_model_needs_recovery_and_blocks_new_attempts ... ok
-test claim_mismatch_and_foreign_path_fail ... ok
-test lost_response_reconciles_only_with_operation_evidence ... ok
-test exact_model_is_reused_and_same_name_different_manifest_blocks ... ok
-test checkpoint_failure_guarantees_zero_model_mutation ... ok
-test lost_response_without_effect_closes_with_evidence_and_allows_retry ... ok
-test gate_checks_binding_scope_reuse_and_artifact_bytes ... ok
+test content_only_checkpoint_cannot_authorize_schema_action ... ok
 test created_model_is_journaled_before_call_and_verified ... ok
+test gate_checks_binding_scope_reuse_and_artifact_bytes ... ok
+test lost_response_reconciles_only_with_operation_evidence ... ok
 test verified_checkpoint_has_receipt_restoration_and_committed_journal ... ok
 test crash_after_request_started_reconciles_as_unknown ... ok
+test lost_response_without_effect_closes_with_evidence_and_allows_retry ... ok
 test missing_media_scheduling_or_card_fails_scope ... ok
 
 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
@@ -96,21 +101,21 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 running 18 tests
 test explicit_user_field_intents_are_not_offered_to_generation ... ok
-test request_separates_untrusted_data_preserves_facts_and_caps_supplements ... ok
 test output_cannot_override_core_facts_authored_fields_or_example_provenance ... ok
 test a_collocation_gloss_must_translate_the_phrase ... ok
-test v3_nuance_and_collocations_merge_with_evidence_and_respect_bounds ... ok
-test unresolved_dictionary_sense_missing_answer_and_custom_prompt_are_not_silently_bypassed ... ok
-test grammar_merge_marks_new_formation_as_generated_and_keeps_authored_meaning ... ok
+test request_separates_untrusted_data_preserves_facts_and_caps_supplements ... ok
 test output_examples_respect_budget_and_cross_language_translation ... ok
 test grammar_fields_are_preserved_and_disabled_generation_is_explicit ... ok
-test frozen_generation_settings_bind_the_exact_builtin_prompt_bytes ... ok
-test monolingual_echoed_translations_and_glosses_are_dropped ... ok
 test merge_archives_raw_output_preserves_parent_and_requires_generated_fact_review ... ok
+test monolingual_echoed_translations_and_glosses_are_dropped ... ok
+test frozen_generation_settings_bind_the_exact_builtin_prompt_bytes ... ok
+test grammar_merge_marks_new_formation_as_generated_and_keeps_authored_meaning ... ok
+test unresolved_dictionary_sense_missing_answer_and_custom_prompt_are_not_silently_bypassed ... ok
+test v3_nuance_and_collocations_merge_with_evidence_and_respect_bounds ... ok
 test merge_deduplicates_examples_and_rejects_forged_request_or_model_identity ... ok
+test structural_repairs_share_transport_budget_and_keep_original_contract ... ok
 test ollama_merge_binds_full_provider_envelope_and_rejects_invalid_content_or_finish ... ok
 test repair_limit_and_factual_failures_cannot_be_bypassed ... ok
-test structural_repairs_share_transport_budget_and_keep_original_contract ... ok
 test full_provider_archive_assets_survive_store_publication_and_restart ... ok
 test rejecting_a_generated_fact_removes_exactly_that_content ... ok
 
@@ -126,16 +131,16 @@ test five_pattern_screenshot_becomes_five_reviewed_units_with_fresh_siblings ...
 test single_unit_choice_fills_an_empty_pattern_verbatim ... ok
 test missing_low_confidence_and_failed_ocr_stay_reviewable ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
 
 
 running 4 tests
-test irasutoya_candidates_rank_title_matches_and_keep_the_site_terms ... ok
 test irasutoya_is_on_by_default_and_can_be_disabled ... ok
+test irasutoya_candidates_rank_title_matches_and_keep_the_site_terms ... ok
 test commons_candidates_keep_rights_metadata_and_reject_unsafe_downloads ... ok
 test provider_selection_is_explicit ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
 
 
 running 16 tests
@@ -146,28 +151,28 @@ test permanent_failures_need_a_new_revision_and_the_stop_policy_stops_the_group 
 test a_worker_lost_mid_item_is_reconciled_from_its_recorded_operation ... ok
 test simulate_never_writes_and_apply_jobs_need_the_current_flag ... ok
 test rollback_preview_and_group_rollback_use_the_job_as_group ... ok
-test delete_tombstones_only_terminal_jobs_and_keeps_every_record ... ok
-test cancel_during_sent_write_keeps_the_committed_item_and_is_terminal ... ok
 test an_identity_fault_halts_the_group_and_the_audit_reports_a_partial_batch ... ok
+test cancel_during_sent_write_keeps_the_committed_item_and_is_terminal ... ok
+test delete_tombstones_only_terminal_jobs_and_keeps_every_record ... ok
 test a_job_adopts_its_checkpoint_group_so_items_reuse_it_without_an_age_window ... ok
 test an_unknown_outcome_stops_dispatch_and_a_restart_reconciles_without_duplicates ... ok
 test commit_interval_paces_mutations_and_only_the_verified_native_adapter_is_accepted ... ok
-test pause_during_sent_write_finishes_the_item_then_resume_continues_without_duplicates ... ok
 test transient_failures_are_retried_only_by_explicit_envelopes_within_the_budget ... ok
+test pause_during_sent_write_finishes_the_item_then_resume_continues_without_duplicates ... ok
 test an_expired_lease_of_a_live_worker_is_never_reclaimed ... ok
 
-test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
 
 
 running 11 tests
 test non_legacy_databases_are_refused ... ok
-test pinned_local_pack_installs_once_with_a_verified_receipt ... ok
 test provider_cache_prunes_by_retention_and_budget_but_never_unmanaged_files ... ok
+test pinned_local_pack_installs_once_with_a_verified_receipt ... ok
 test offline_and_unlisted_hosts_block_downloads_before_any_request ... ok
 test legacy_jobs_translate_read_only_and_never_assume_commits_absent ... ok
-test checksum_license_type_and_destination_are_checked_before_install ... ok
-test lookup_filters_change_only_the_dictionary_query ... ok
 test cache_prune_rechecks_active_readers_and_store_reachability ... ok
+test lookup_filters_change_only_the_dictionary_query ... ok
+test checksum_license_type_and_destination_are_checked_before_install ... ok
 test unsafe_archives_are_refused_and_safe_ones_extract_without_exec_bits ... ok
 test loopback_download_is_streamed_hashed_and_redirects_are_policy_checked ... ok
 test ollama_models_are_pulled_explicitly_and_digest_verified ... ok
@@ -177,8 +182,8 @@ test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 running 5 tests
 test source_limits_include_unmapped_data_and_unicode_character_counts ... ok
-test absent_empty_and_wrong_kind_mappings_are_explicit ... ok
 test exact_mapping_preserves_shared_and_unmapped_original_fields_without_claiming_facts ... ok
+test absent_empty_and_wrong_kind_mappings_are_explicit ... ok
 test grammar_screenshot_and_vietnamese_explanation_remain_source_evidence ... ok
 test purpose_mapping_consumes_resolved_overrides_and_expected_source_model ... ok
 
@@ -190,7 +195,7 @@ test formats_are_decoded_and_allowlist_is_enforced ... ok
 test failures_are_typed_and_never_include_decoder_supplied_file_text ... ok
 test compressed_pixel_bombs_and_animation_totals_are_bounded ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
 
 
 running 4 tests
@@ -199,23 +204,23 @@ test a_transient_status_failure_is_retried_until_the_deadline ... ok
 test unverified_builds_and_missing_credentials_keep_writes_unavailable ... ok
 test mutations_poll_to_terminal_and_map_timeouts_and_refusals ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
 
 
 running 11 tests
 test recognition_keeps_regions_provenance_and_untrusted_text_verbatim ... ok
 test explicit_resource_path_is_passed_and_hashed ... ok
 test missing_packs_engines_and_executables_fail_before_recognition ... ok
-test nondefault_engine_mode_confidence_and_memory_limit_reach_the_child ... ok
 test dark_backgrounds_are_inverted_and_preprocessing_can_be_disabled ... ok
+test nondefault_engine_mode_confidence_and_memory_limit_reach_the_child ... ok
 test low_confidence_and_empty_output_require_review ... ok
 test decode_bombs_and_undecodable_bytes_are_rejected_before_spawn ... ok
 test cache_fingerprint_binds_source_settings_and_language_packs ... ok
-test upscale_stays_within_pixel_budget_and_pixel_limit_rejects_before_spawn ... ok
 test installed_tesseract_probe_when_available ... ok
+test upscale_stays_within_pixel_budget_and_pixel_limit_rejects_before_spawn ... ok
 test process_faults_are_typed_and_bounded ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.13s
 
 
 running 4 tests
@@ -224,25 +229,25 @@ test source_images_are_ocrd_before_publication_and_gate_generation_until_reviewe
 test unavailable_ocr_configuration_fails_before_state_creation ... ok
 test ocr_cache_policies_reuse_results_and_cache_only_misses_leave_no_state ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
 
 
 running 24 tests
 test complete_text_response_retains_exact_raw_bytes_without_claiming_input_fit ... ok
 test exact_local_model_metadata_is_bound_to_raw_archives_without_claiming_generation_readiness ... ok
 test malformed_payloads_digests_and_response_limits_fail_explicitly ... ok
-test completion_and_architecture_context_must_be_explicit_and_fit_requested_limits ... ok
 test missing_duplicate_changed_or_remote_models_cannot_be_substituted ... ok
+test completion_and_architecture_context_must_be_explicit_and_fit_requested_limits ... ok
 test truncated_tool_bearing_malformed_or_over_budget_completions_are_rejected ... ok
-test bearer_credentials_are_sent_by_reference_and_never_enter_metadata_receipts ... ok
 test http_probe_uses_only_inventory_and_selected_show_without_model_load_or_pull ... ok
+test bearer_credentials_are_sent_by_reference_and_never_enter_metadata_receipts ... ok
+test candidate_generation_rejects_model_change_after_inference ... ok
 test unsupported_endpoints_credentials_and_concurrency_fail_before_dispatch ... ok
 test candidate_generation_binds_inventory_and_separates_source_from_instructions ... ok
-test candidate_generation_rejects_model_change_after_inference ... ok
 test inference_draft_archives_wire_and_model_evidence_and_recovers_after_restart ... ok
 test separate_clients_share_server_cooldown_and_response_caps_are_enforced ... ok
-test candidate_publication_freezes_current_settings_and_keeps_engine_blocker ... ok
 test inference_draft_rejects_schema_invalid_and_protected_field_output ... ok
+test candidate_publication_freezes_current_settings_and_keeps_engine_blocker ... ok
 test pending_generation_runs_eligible_items_and_reports_the_rest ... ok
 test redirects_auth_schema_remote_forwarding_and_excessive_delays_do_not_dispatch_more_reads ... ok
 test generation_regeneration_replaces_generated_usage_and_keeps_authored_fields ... ok
@@ -259,48 +264,48 @@ test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 running 21 tests
 test grammar_csv_rejects_unpaired_examples_and_bad_later_row_before_state ... ok
 test dictionary_port_cannot_fabricate_facts_unrelated_to_archived_bytes ... ok
-test vocabulary_csv_rejects_header_shape_and_later_row_before_state ... ok
 test jsonl_framing_and_configured_bounds_fail_before_state_creation ... ok
+test vocabulary_csv_rejects_header_shape_and_later_row_before_state ... ok
 test jsonl_invalid_later_record_leaves_no_state ... ok
 test schema_kind_and_provider_failures_do_not_initialize_state ... ok
-test explicit_tasks_win_over_config_and_credentials_stay_references ... ok
 test invalid_content_is_persisted_for_review_without_a_render ... ok
 test vocabulary_csv_archives_original_file_and_decoded_record_evidence ... ok
 test grammar_csv_archives_bom_crlf_and_quoted_examples_in_one_plan ... ok
-test v3_vocabulary_tasks_need_no_text_cues_but_spelling_needs_a_spoken_front ... ok
 test homographs_and_multiline_expressions_keep_distinct_identities ... ok
-test inline_authored_input_is_recoverable_as_normalized_values ... ok
-test english_dictionary_preparation_resolves_sense_without_inventing_pronunciation ... ok
-test jsonl_batch_preserves_order_sources_and_reports_exact_duplicates ... ok
-test both_authored_workflows_preserve_raw_input_and_freeze_settings ... ok
+test explicit_tasks_win_over_config_and_credentials_stay_references ... ok
+test v3_vocabulary_tasks_need_no_text_cues_but_spelling_needs_a_spoken_front ... ok
 test export_controls_private_archive_disclosure_and_checksums_every_asset ... ok
+test jsonl_batch_preserves_order_sources_and_reports_exact_duplicates ... ok
+test inline_authored_input_is_recoverable_as_normalized_values ... ok
+test both_authored_workflows_preserve_raw_input_and_freeze_settings ... ok
+test japanese_sense_review_requires_a_reading_for_the_selected_written_form ... ok
+test english_dictionary_preparation_resolves_sense_without_inventing_pronunciation ... ok
 test dictionary_preparation_archives_all_senses_and_requires_explicit_selection ... ok
 test grammar_prompt_and_exercise_repairs_require_complete_nonleaking_answers ... ok
-test japanese_sense_review_requires_a_reading_for_the_selected_written_form ... ok
 test managed_duplicate_candidates_remain_review_evidence_even_when_fields_match ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
 
 
 running 19 tests
+test local_preview_reports_apply_changes_without_live_reads ... ok
 test unknown_apply_outcome_must_be_reconciled_before_restore ... ok
 test reverse_mapping_refuses_studied_new_task_cards ... ok
-test local_preview_reports_apply_changes_without_live_reads ... ok
-test missing_unarchived_media_needs_explicit_acceptance ... ok
 test retained_card_without_reverse_mapping_and_filtered_cards_block ... ok
-test media_is_restored_before_the_fields_that_reference_it ... ok
-test unknown_reverse_effect_without_evidence_stays_in_recovery ... ok
-test reverse_migration_keeps_history_and_removes_only_reviewed_unstudied_cards ... ok
-test group_rollback_previews_and_restores_each_journaled_item ... ok
-test snapshots_that_are_not_apply_operations_are_inspect_only ... ok
-test rejected_reverse_effect_fails_before_write_and_allows_a_new_restore ... ok
+test missing_unarchived_media_needs_explicit_acceptance ... ok
 test restore_requires_apply_flag_identity_variant_and_checkpoint ... ok
+test group_rollback_previews_and_restores_each_journaled_item ... ok
 test created_notes_are_kept_by_default_and_deleted_only_when_unchanged_and_unstudied ... ok
+test snapshots_that_are_not_apply_operations_are_inspect_only ... ok
 test colliding_original_media_uses_a_safe_alternate_name ... ok
-test crash_after_restore_receipt_or_commit_finalizes_without_new_effects ... ok
+test unknown_reverse_effect_without_evidence_stays_in_recovery ... ok
 test restore_after_later_study_restores_content_and_keeps_new_history ... ok
-test later_personal_edits_conflict_until_explicitly_merged ... ok
+test reverse_migration_keeps_history_and_removes_only_reviewed_unstudied_cards ... ok
+test rejected_reverse_effect_fails_before_write_and_allows_a_new_restore ... ok
+test media_is_restored_before_the_fields_that_reference_it ... ok
+test crash_after_restore_receipt_or_commit_finalizes_without_new_effects ... ok
 test known_partial_restore_with_verified_media_can_be_superseded ... ok
+test later_personal_edits_conflict_until_explicitly_merged ... ok
 test every_reverse_effect_crash_boundary_resumes_the_same_restore_journal ... ok
 
 test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.59s
@@ -308,9 +313,9 @@ test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 running 30 tests
 test a_remote_picture_reference_is_dropped_by_decision ... ok
-test explicit_example_pairs_preserve_order_repeats_and_application_assigned_source_evidence ... ok
 test grammar_defaults_and_combined_rich_examples_and_language_conflicts_stay_reviewable ... ok
 test one_word_with_two_readings_splits_by_reading ... ok
+test explicit_example_pairs_preserve_order_repeats_and_application_assigned_source_evidence ... ok
 test html_candidates_preserve_text_boundaries_and_entities_without_scripts_or_source_rewrites ... ok
 test invalid_capture_cannot_initialize_draft_state ... ok
 test plain_vocabulary_roles_become_source_candidates_with_complete_archive_and_review ... ok
@@ -321,36 +326,36 @@ test tampered_assets_fields_and_changed_model_constraints_are_rejected ... ok
 test malformed_or_unpaired_examples_remain_archived_without_partial_acceptance ... ok
 test invalid_query_and_purpose_fail_before_search_or_state_creation ... ok
 test batch_capture_publishes_one_revision_and_recovers_every_source_asset ... ok
+test native_history_evidence_resolves_review_and_maps_every_card ... ok
 test published_revamp_draft_recovers_full_sources_and_remains_unbound_and_unapproved ... ok
 test source_media_keep_the_order_the_fields_reference_them_in ... ok
-test unmapped_legacy_field_is_dropped_by_a_typed_decision_and_stays_archived ... ok
-test native_history_evidence_resolves_review_and_maps_every_card ... ok
 test a_kana_sibling_leaves_out_the_spelling_task ... ok
-test prepare_job_items_match_the_plan_level_revamp_stages ... ok
-test revamp_enrichment_child_preserves_source_tasks_cards_and_parent ... ok
 test decoded_source_image_has_digest_linked_evidence_but_remains_archive_only ... ok
-test source_content_review_is_evidence_exact_and_cannot_waive_native_history ... ok
+test prepare_job_items_match_the_plan_level_revamp_stages ... ok
 test text_beside_pictures_is_dropped_by_decision_and_the_files_keep_their_review ... ok
+test unmapped_legacy_field_is_dropped_by_a_typed_decision_and_stays_archived ... ok
 test dictionary_enrichment_retains_source_revision_and_requires_sense_review ... ok
-test source_audio_receipt_and_archive_role_survive_restart ... ok
+test revamp_enrichment_child_preserves_source_tasks_cards_and_parent ... ok
 test archive_disposition_resolves_format_review_without_rendering_invalid_bytes ... ok
 test a_note_holding_several_words_is_detected_and_split_one_note_per_word ... ok
-test grammar_split_records_one_anchor_and_fresh_siblings_with_recoverable_archives ... ok
+test source_content_review_is_evidence_exact_and_cannot_waive_native_history ... ok
 test a_split_unit_that_already_has_a_note_merges_into_it ... ok
+test grammar_split_records_one_anchor_and_fresh_siblings_with_recoverable_archives ... ok
+test source_audio_receipt_and_archive_role_survive_restart ... ok
 
 test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
 
 
 running 7 tests
 test snapshot_export_bundles_originals_without_claiming_a_backup ... ok
-test summaries_classify_status_and_workflow_without_payloads ... ok
 test generation_preview_only_clears_generated_content ... ok
+test summaries_classify_status_and_workflow_without_payloads ... ok
 test editor_drafts_are_typed_and_commands_split_without_a_shell ... ok
 test enrichment_regeneration_replaces_stage_output_but_protects_edits ... ok
 test dictionary_regeneration_replaces_entries_and_keeps_the_reviewed_meaning ... ok
 test resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
 
 
 running 1 test
@@ -363,7 +368,7 @@ running 2 tests
 test corpus_shape_is_balanced_and_covers_every_required_category ... ok
 test every_fixture_meets_its_annotation_and_the_corpus_policy ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.78s
 
 
 running 5 tests
@@ -377,33 +382,33 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 running 4 tests
-test voice_language_resources_and_provider_selection_are_checked_first ... ok
-test multi_speaker_voices_require_a_named_speaker ... ok
 test piper_receives_text_on_stdin_and_output_is_decoded_with_provenance ... ok
+test multi_speaker_voices_require_a_named_speaker ... ok
+test voice_language_resources_and_provider_selection_are_checked_first ... ok
 test process_faults_and_invalid_output_are_typed ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
 
 
 running 9 tests
 test native_split_review_accepts_only_the_recorded_anchor ... ok
 test a_split_unit_is_never_applied_alone ... ok
-test unprovable_child_outcome_stops_the_group_before_the_anchor ... ok
 test group_preflight_failure_writes_nothing ... ok
+test unprovable_child_outcome_stops_the_group_before_the_anchor ... ok
 test split_records_and_attempts_are_immutable ... ok
-test children_are_created_first_then_the_anchor_keeps_its_history ... ok
-test rollback_restores_the_anchor_and_protects_studied_children ... ok
 test child_accepted_and_anchor_failed_resumes_without_duplicates ... ok
+test rollback_restores_the_anchor_and_protects_studied_children ... ok
+test children_are_created_first_then_the_anchor_keeps_its_history ... ok
 test unknown_child_outcomes_are_reconciled_on_resume_never_recreated ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.35s
 
 
 running 10 tests
 test spelling_suggestions_cover_kana_words_english_pronunciation_and_leaks ... ok
-test optional_enrichment_failures_are_warnings_and_authored_cues_are_kept ... ok
-test disabled_enrichment_and_unavailable_adapters_are_explicit ... ok
 test a_kana_word_matches_its_reading_only_dictionary_entry ... ok
+test disabled_enrichment_and_unavailable_adapters_are_explicit ... ok
+test optional_enrichment_failures_are_warnings_and_authored_cues_are_kept ... ok
 test dictionary_sense_selection_unlocks_kana_spelling_suggestion_without_ollama ... ok
 test japanese_pictures_search_irasutoya_first_and_commons_by_the_selected_sense ... ok
 test collection_duplicate_candidates_become_a_recorded_decision ... ok
@@ -411,7 +416,7 @@ test japanese_add_enriches_kanji_and_stages_reviewed_cues_picture_and_audio ... 
 test dictionary_recordings_become_reviewed_audio_candidates ... ok
 test a_word_the_dictionary_lacks_gets_a_generated_entry_in_its_style ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
 
 
 running 1 test
@@ -422,8 +427,8 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 3 tests
 test diagnostics::tests::private_payloads_redact_url_credentials ... ok
-test remedy::tests::hints_follow_the_leading_code_only ... ok
 test diagnostics::tests::color_and_progress_follow_settings ... ok
+test remedy::tests::hints_follow_the_leading_code_only ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -448,52 +453,52 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 60 tests
 test config_validate_rejects_selected_provider_without_required_setting ... ok
-test backup_inspection_failure_does_not_create_state_or_contact_anki ... ok
-test document_tools_consume_registered_input_limits ... ok
-test config_reads_reject_symlinks_and_nonregular_paths ... ok
 test effective_purpose_and_typed_flags_are_visible_with_provenance ... ok
+test document_tools_consume_registered_input_limits ... ok
+test backup_inspection_failure_does_not_create_state_or_contact_anki ... ok
+test config_reads_reject_symlinks_and_nonregular_paths ... ok
 test config_describe_shows_cross_field_rules_and_nearest_names_without_loading_config ... ok
-test closed_stdout_pipe_does_not_emit_diagnostic ... ok
 test clap_syntax_errors_are_structured_and_do_not_echo_argument_values ... ok
 test help_and_defaults_do_not_read_bad_configuration_or_create_state ... ok
+test closed_stdout_pipe_does_not_emit_diagnostic ... ok
 test config_migrate_current_version_is_idempotent_and_unknown_version_is_rejected ... ok
 test config_validate_inspects_configured_helper_without_running_it ... ok
-test config_validate_reports_local_resource_gaps_separately_from_settings_errors ... ok
 test config_init_prevalidates_and_reports_purpose_setup_without_installing ... ok
+test config_validate_reports_local_resource_gaps_separately_from_settings_errors ... ok
 test missing_state_plan_listing_is_read_only ... ok
 test local_doctor_requires_tesseract_candidate_only_for_selected_engine ... ok
 test inline_add_rejects_mixed_modes_incomplete_pairs_and_wrong_kind_before_state ... ok
-test doctor_local_probes_selected_ocr_engine_without_services ... ok
 test maintenance_commands_reject_invalid_config_before_effects ... ok
+test doctor_local_probes_selected_ocr_engine_without_services ... ok
+test note_selector_conflicts_and_invalid_ids_fail_before_anki_requests ... ok
 test config_init_replace_saves_exact_prior_file_and_reports_backup ... ok
 test ollama_doctor_conflicting_modes_and_missing_model_fail_before_service_probes ... ok
-test note_selector_conflicts_and_invalid_ids_fail_before_anki_requests ... ok
+test ollama_doctor_probes_only_metadata_and_reports_unverified_generation_without_state ... ok
 test explicit_jsonl_add_publishes_one_ordered_plan_and_rejects_bad_second_line ... ok
 test output_modes_follow_setting_and_explicit_top_level_choice ... ok
-test ollama_doctor_probes_only_metadata_and_reports_unverified_generation_without_state ... ok
 test completions_are_generated_without_config_state_or_services ... ok
 test notes_show_media_reports_hashes_and_missing_files_without_writes ... ok
+test inline_vocabulary_and_grammar_add_create_recoverable_plans ... ok
 test duplicate_candidates_command_reads_managed_note_without_changing_plan ... ok
 test explicit_csv_prepares_vocabulary_and_grammar_plans ... ok
-test editor_mode_applies_a_typed_draft_and_abort_keeps_the_parent ... ok
 test live_plan_validation_reports_no_revamp_sources_without_claiming_apply ... ok
-test inline_vocabulary_and_grammar_add_create_recoverable_plans ... ok
+test editor_mode_applies_a_typed_draft_and_abort_keeps_the_parent ... ok
 test piped_add_archives_the_exact_single_json_record_without_an_input_file ... ok
 test recovery_inspection_never_initializes_state_or_connects_when_no_journals_exist ... ok
 test piped_grammar_add_preserves_explicit_explanation_language_and_raw_bytes ... ok
+test config_edit_commands_backup_and_reset_requires_execute ... ok
 test plan_diff_loads_exact_immutable_revisions_and_reports_unavailable_live_transport ... ok
 test plan_edit_cli_creates_child_and_rejects_stale_base ... ok
-test config_edit_commands_backup_and_reset_requires_execute ... ok
 test structured_errors_stay_on_stderr_and_config_errors_exit_two ... ok
 test unknown_settings_and_duplicate_flags_cannot_be_ignored ... ok
 test offline_vocab_add_degrades_optional_enrichment_to_warnings_with_next_commands ... ok
-test revamp_missing_wrong_purpose_and_unavailable_adapters_fail_before_state_creation ... ok
 test cue_resolution_cli_repairs_content_and_rejects_stale_replay ... ok
 test split_grammar_template_requires_a_reviewed_multi_unit_segmentation ... ok
+test revamp_missing_wrong_purpose_and_unavailable_adapters_fail_before_state_creation ... ok
 test stdin_limits_encoding_and_multiple_records_fail_before_state_creation ... ok
+test plan_generate_requires_explicit_settings_and_enabled_engine_before_inference ... ok
 test model_install_preview_distinguishes_create_and_name_collision_without_writes ... ok
 test revamp_duplicate_and_oversized_selections_fail_before_collection_reads ... ok
-test plan_generate_requires_explicit_settings_and_enabled_engine_before_inference ... ok
 test regenerate_previews_by_default_and_snapshot_export_requires_a_snapshot ... ok
 test preparation_jobs_queue_and_paginate_without_anki_or_worker_effects ... ok
 test authored_add_cli_creates_plan_without_anki_and_blocks_requested_generation ... ok
@@ -501,24 +506,24 @@ test vocabulary_and_grammar_adds_review_to_readiness_with_ordinary_commands ... 
 test preparation_query_and_deck_jobs_freeze_matches_without_content_reads ... ok
 test queued_job_controls_resume_cancel_and_explicit_migration_preserve_state ... ok
 test preparation_worker_freezes_settings_and_bounds_retries ... ok
-test preparation_concurrency_is_frozen_bounded_and_stop_drains_dispatched_items ... ok
 test vocab_add_with_generation_enabled_retains_plan_when_the_engine_is_unreachable ... ok
+test preparation_concurrency_is_frozen_bounded_and_stop_drains_dispatched_items ... ok
 test local_doctor_and_builtin_models_need_no_anki_service ... ok
 test global_offline_flag_resolves_before_any_service_request ... ok
 test revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads ... ok
 test local_doctor_distinguishes_optional_and_required_resource_gaps ... ok
 
-test result: ok. 60 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.38s
+test result: ok. 60 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.33s
 
 
 running 5 tests
 test unmap_without_default_config_is_no_op ... ok
-test filtered_source_deck_cannot_publish_mapping ... ok
 test deck_show_reports_mixed_models_and_stored_source_mapping ... ok
+test filtered_source_deck_cannot_publish_mapping ... ok
 test deck_pages_bind_cursor_to_exact_inventory ... ok
 test map_checks_live_manifest_then_unmap_edits_local_config_only ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
 
 
 running 10 tests
@@ -554,23 +559,23 @@ test legacy_jobs_migrate_previews_imports_and_lists_read_only_history ... ok
 test diagnostic_log_follows_logging_settings_and_never_creates_state ... ok
 test legacy_config_import_then_guarded_activation ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
 
 
 running 2 tests
 test an_unverified_companion_cannot_bind_or_write ... ok
 test plans_bind_records_the_verified_binding_in_a_new_revision ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
 
 
 running 4 tests
 test doctor_bridge_inspects_declaration_without_enabling_writes ... ok
 test foreign_bridge_is_reported_without_requesting_operation_status ... ok
-test native_status_with_changed_payload_is_not_treated_as_matching_intent ... ok
 test live_recovery_reads_step_identity_but_does_not_verify_native_effect ... ok
+test native_status_with_changed_payload_is_not_treated_as_matching_intent ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
 
 
 running 3 tests
@@ -578,7 +583,7 @@ test notes_count_reports_notes_and_cards_separately_and_read_only ... ok
 test models_list_and_inspect_compare_managed_manifests_read_only ... ok
 test config_unset_restores_inheritance_and_missing_override_is_a_no_op ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
 
 
 running 3 tests
@@ -590,19 +595,19 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 running 11 tests
-test closed_stdout_pipe_exits_quietly ... ok
 test offline_dictionary_lookup_explains_the_authored_alternative ... ok
 test free_space_reserve_refuses_state_writes_but_not_reads ... ok
+test closed_stdout_pipe_exits_quietly ... ok
 test jsonl_unicode_paths_and_piped_documents_round_trip ... ok
-test every_command_and_argument_has_help_text ... ok
 test versioned_command_examples_use_existing_commands_and_flags ... ok
+test every_command_and_argument_has_help_text ... ok
 test sigint_exits_130_and_sigterm_exits_143_without_damaging_state ... ok
 test ssh_no_terminal_and_dumb_terminal_output_is_plain ... ok
 test fresh_home_setup_and_offline_authored_preparation ... ok
 test dependency_and_capability_errors_name_the_next_step ... ok
 test large_batches_are_bounded_before_any_state_is_written ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.12s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.19s
 
 
 running 4 tests
@@ -617,37 +622,37 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test credential_values_never_leave_the_environment ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.16s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.85s
 
 
 running 1 test
 test snapshot_list_and_show_read_immutable_local_evidence_without_creating_state ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
 
 
 running 2 tests
-test resources::tests::free_space_check_uses_existing_ancestor_and_rejects_symlinks ... ok
 test legacy::tests::plain_scalars_follow_pyyaml_without_ambiguous_forms ... ok
+test resources::tests::free_space_check_uses_existing_ancestor_and_rejects_symlinks ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
 
 running 15 tests
-test config_init_is_private_atomic_and_never_replaces ... ok
 test path_expansion_is_explicit_and_never_shell_evaluated ... ok
+test config_init_is_private_atomic_and_never_replaces ... ok
 test xdg_explicit_and_environment_path_precedence ... ok
 test url_templates_accept_only_declared_path_or_query_placeholders ... ok
 test rejects_unknown_duplicate_coercion_and_illegal_scope ... ok
 test cross_field_settings_and_env_errors_are_not_ignored ... ok
+test endpoint_policy_rejects_credentials_remote_and_offline_opt_in ... ok
 test describe_rule_metadata_and_nearby_keys_track_the_resolver ... ok
 test only_section_key_environment_names_are_overrides ... ok
-test endpoint_policy_rejects_credentials_remote_and_offline_opt_in ... ok
+test selected_providers_require_their_declared_settings ... ok
 test purpose_presets_inherit_but_explicit_base_wins ... ok
 test every_registry_default_validates_and_example_resolves ... ok
-test selected_providers_require_their_declared_settings ... ok
-test execution_settings_change_only_execution_fingerprint ... ok
 test all_override_layers_follow_precedence ... ok
+test execution_settings_change_only_execution_fingerprint ... ok
 test custom_template_hosts_require_explicit_network_permission ... ok
 
 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
@@ -669,28 +674,28 @@ test lock_contention_fails_without_waiting_or_replacement ... ok
 test symlink_configuration_is_not_replaced ... ok
 test dormant_profile_constraints_are_validated ... ok
 test storage_move_with_existing_state_is_blocked ... ok
+test init_replace_preserves_exact_backup_and_publishes_minimal_private_file ... ok
 test set_publishes_private_file_and_byte_exact_backup ... ok
 test invalid_candidate_and_preview_leave_original_unchanged ... ok
-test init_replace_preserves_exact_backup_and_publishes_minimal_private_file ... ok
 test init_replace_recovers_malformed_config_and_blocks_known_state_relocation ... ok
 test reset_preview_lists_effective_replacement_without_writing ... ok
 test batch_mapping_is_atomic_and_unmap_is_idempotent ... ok
 test scoped_set_and_unset_preserve_other_scopes ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
 
 
 running 8 tests
 test activation_cannot_relocate_nonempty_state ... ok
-test credentials_and_remote_endpoints_are_not_carried ... ok
 test unknown_keys_block_and_unsafe_yaml_is_refused ... ok
+test credentials_and_remote_endpoints_are_not_carried ... ok
 test native_json_config_is_imported_with_the_same_accounting ... ok
 test conflicting_retry_and_endpoint_defaults_are_unresolved ... ok
 test every_legacy_key_is_accounted_and_the_candidate_validates ... ok
 test outputs_never_touch_source_or_live_config_and_activation_is_guarded ... ok
 test legacy_default_prompts_are_retired_and_custom_prompts_retained_unchanged ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
 
 
 running 3 tests
@@ -714,33 +719,33 @@ test canonical_objects_sort_but_arrays_keep_order ... ok
 test escaped_text_matches_the_html_text_serializer ... ok
 test canonical_bytes_and_domain_hash_match_ecmascript_vectors ... ok
 test model_comparison_retains_duplicate_fields_and_exposes_template_differences ... ok
-test model_comparison_reports_exact_content_without_claiming_task_ordinals ... ok
 test field_intents_preserve_set_and_clear_distinctly ... ok
 test grammar_forms_drop_slots_and_expand_optional_parts ... ok
+test model_comparison_reports_exact_content_without_claiming_task_ordinals ... ok
 test effective_html_empty_field_blocks_rendering ... ok
-test example_translation_is_required_only_across_languages ... ok
-test html_and_media_cannot_bypass_typed_controls ... ok
-test gate_and_capability_records_cannot_promote_declarations_to_tested ... ok
 test strict_json_rejects_duplicate_unsafe_and_trailing_input ... ok
-test native_receipt_requires_readback_for_verified_effects ... ok
+test example_translation_is_required_only_across_languages ... ok
+test gate_and_capability_records_cannot_promote_declarations_to_tested ... ok
+test html_and_media_cannot_bypass_typed_controls ... ok
 test resume_binding_decision_binds_one_operation_and_changed_epoch ... ok
-test review_is_bound_to_content_and_cannot_waive_errors ... ok
-test english_vocabulary_renders_exactly_the_english_model_fields ... ok
+test native_receipt_requires_readback_for_verified_effects ... ok
 test task_cues_reject_answer_leakage_and_invalid_task_kinds ... ok
-test declared_task_maps_bind_source_model_and_fixed_target_ordinals ... ok
-test only_an_exact_dictionary_entry_asks_for_a_sense ... ok
 test grammar_v3_renders_fields_cue_example_and_tags ... ok
-test new_approval_binding_excludes_execution_settings_but_legacy_binding_is_stable ... ok
-test v3_related_dictionary_words_render_on_the_back_only ... ok
+test review_is_bound_to_content_and_cannot_waive_errors ... ok
+test only_an_exact_dictionary_entry_asks_for_a_sense ... ok
+test english_vocabulary_renders_exactly_the_english_model_fields ... ok
 test legacy_archive_is_lossless_without_promoting_readiness ... ok
+test new_approval_binding_excludes_execution_settings_but_legacy_binding_is_stable ... ok
+test declared_task_maps_bind_source_model_and_fixed_target_ordinals ... ok
 test anki_ids_are_canonical_and_fit_the_wire_safe_integer_range ... ok
-test fixtures_render_fixed_models_and_roundtrip ... ok
 test rich_dictionary_roundtrip_keeps_all_senses_and_renders_inert_reference ... ok
+test v3_related_dictionary_words_render_on_the_back_only ... ok
 test evidence_targets_and_source_spans_reject_stale_or_split_references ... ok
+test fixtures_render_fixed_models_and_roundtrip ... ok
 test approval_binds_content_but_excludes_review_timestamp_and_epoch ... ok
+test v3_vocabulary_renders_fixed_sections_kanji_strokes_and_tags ... ok
 test generated_contract_versions_match_the_supported_wire_versions ... ok
 test source_media_requires_a_matching_source_archive_asset ... ok
-test v3_vocabulary_renders_fixed_sections_kanji_strokes_and_tags ... ok
 
 test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
@@ -751,7 +756,7 @@ test transport::tests::english_transport_encodes_titles_and_uses_english_parser 
 test transport::tests::offline_browser_and_unsupported_targets_fail_before_traffic ... ok
 test transport::tests::jisho_queries_retry_transient_faults_and_reject_bad_schema ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
 
 running 4 tests
@@ -760,7 +765,7 @@ test a_part_of_speech_missing_from_the_american_block_comes_from_another ... ok
 test several_parts_of_speech_and_dictionary_illustrations ... ok
 test meaning_shows_the_first_definition_of_each_part_of_speech ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
 
 
 running 4 tests
@@ -814,13 +819,13 @@ test exhausted_retries_return_last_transient_error ... ok
 test independently_constructed_readers_share_origin_rate_history ... ok
 test date_retry_after_is_honored_for_retries_and_redirects ... ok
 test exhausted_or_timed_out_reads_preserve_server_cooldown ... ok
-test settings_select_offline_cache_proxy_and_endpoint_policy ... ok
 test redirects_are_revalidated_and_bounded ... ok
-test transient_reads_retry_but_permanent_faults_do_not ... ok
+test settings_select_offline_cache_proxy_and_endpoint_policy ... ok
 test cache_policies_serve_only_intact_unexpired_entries ... ok
+test transient_reads_retry_but_permanent_faults_do_not ... ok
 test service_semaphore_bounds_inflight_reads_within_deadline ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
 
 
 running 0 tests
@@ -829,19 +834,19 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 running 3 tests
-test stop_acknowledgements_need_the_worker_lease_or_an_idle_job ... ok
 test tombstones_block_controls_events_and_runs_and_are_permanent ... ok
+test stop_acknowledgements_need_the_worker_lease_or_an_idle_job ... ok
 test schema_eleven_upgrade_adds_job_tables_and_keeps_existing_jobs ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
 
 running 3 tests
-test verifications_append_and_model_operations_index_by_name ... ok
 test unverified_or_unrestored_receipts_are_rejected ... ok
+test verifications_append_and_model_operations_index_by_name ... ok
 test receipts_are_create_new_immutable_and_listed_newest_first ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
 
 running 1 test
@@ -852,28 +857,28 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 6 tests
 test retention_and_grace_protect_recent_unreferenced_assets ... ok
-test reachable_and_transitively_referenced_assets_survive_and_orphans_are_tombstoned ... ok
 test active_readers_block_pruning ... ok
 test unresolved_recovery_blocks_pruning ... ok
-test interrupted_prune_is_finished_from_its_tombstones ... ok
+test reachable_and_transitively_referenced_assets_survive_and_orphans_are_tombstoned ... ok
 test schema_twelve_upgrades_to_thirteen_with_gc_and_import_tables ... ok
+test interrupted_prune_is_finished_from_its_tombstones ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
 
 running 13 tests
 test crash_boundary_request_started_survives_process_exit ... ok
-test observed_failure_may_fail_before_write_but_unknown_may_not ... ok
-test restored_requires_a_committed_restore_receipt_and_is_terminal ... ok
-test sent_effect_never_becomes_failed_before_write_or_unverified_commit ... ok
 test pending_step_blocks_starting_any_later_effect ... ok
-test started_request_survives_restart_and_is_pending_without_blind_rewind ... ok
-test stale_versions_and_forged_prior_objects_are_rejected ... ok
-test unknown_needs_recovery_and_cannot_be_redispatched ... ok
 test exact_verified_post_digest_is_required_and_intents_cannot_change ... ok
+test restored_requires_a_committed_restore_receipt_and_is_terminal ... ok
 test commit_requires_every_step_verified_and_is_terminal ... ok
+test sent_effect_never_becomes_failed_before_write_or_unverified_commit ... ok
+test observed_failure_may_fail_before_write_but_unknown_may_not ... ok
+test started_request_survives_restart_and_is_pending_without_blind_rewind ... ok
 test historical_events_cannot_be_updated_or_deleted ... ok
 test journal_read_rejects_state_index_that_disagrees_with_body ... ok
+test unknown_needs_recovery_and_cannot_be_redispatched ... ok
+test stale_versions_and_forged_prior_objects_are_rejected ... ok
 test schema_one_migration_has_verified_private_backup ... ok
 
 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
@@ -882,8 +887,8 @@ test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 running 4 tests
 test independent_job_and_writer_leases_do_not_contend ... ok
 test worker_identity_is_live_and_tokens_are_not_reentrant ... ok
-test expired_lease_cannot_be_reclaimed_while_owner_is_alive ... ok
 test expired_absent_worker_is_reclaimed_with_new_fencing_token ... ok
+test expired_lease_cannot_be_reclaimed_while_owner_is_alive ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
@@ -891,21 +896,21 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 15 tests
 test preparation_rejects_inconsistent_split_settings_fingerprints ... ok
 test equivalent_float_settings_are_idempotent_but_changed_settings_conflict ... ok
-test retries_are_explicit_classified_bounded_and_never_assume_a_worker_died ... ok
+test interrupted_read_reconciliation_requires_fencing_and_keeps_attempt_limits ... ok
 test worker_checkpoints_reject_wrong_expired_and_released_fencing_tokens ... ok
 test enriched_checkpoints_keep_the_capture_first_and_only_add_provider_sources ... ok
-test matching_approval_projection_cannot_hide_conflicting_published_capture_evidence ... ok
-test interrupted_read_reconciliation_requires_fencing_and_keeps_attempt_limits ... ok
+test retries_are_explicit_classified_bounded_and_never_assume_a_worker_died ... ok
+test definitions_events_and_original_assets_survive_reopen_with_cas_conflicts ... ok
 test schema_six_upgrade_preserves_queued_jobs_and_backs_up_before_controls ... ok
+test matching_approval_projection_cannot_hide_conflicting_published_capture_evidence ... ok
 test controls_are_immutable_idempotent_and_gate_dispatch_without_losing_results ... ok
 test captured_event_reads_reject_missing_asset_index_links ... ok
 test migration_from_schema_five_backs_up_and_preserves_old_state ... ok
 test audit_pages_verify_chain_anchors_and_reject_rehashed_broken_links ... ok
-test definitions_events_and_original_assets_survive_reopen_with_cas_conflicts ... ok
 test complete_capture_plan_reopens_idempotently_and_preserves_review_children ... ok
 test batch_archive_limit_retains_completed_checkpoints_without_publishing_a_plan ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
 
 
 running 9 tests
@@ -913,8 +918,8 @@ test snapshot_keyset_page_resumes_without_repeating_a_record ... ok
 test snapshot_requires_original_assets_and_contract_rejects_embedded_after_claim ... ok
 test snapshot_rejects_unlinked_or_duplicate_original_archives ... ok
 test restore_records_are_immutable_and_bound_to_their_snapshot ... ok
-test failed_index_insert_rolls_back_snapshot_body ... ok
 test asset_file_size_limit_failure_never_publishes_metadata ... ok
+test failed_index_insert_rolls_back_snapshot_body ... ok
 test schema_seven_upgrade_preserves_state_with_private_backup ... ok
 test originals_and_after_state_are_separate_immutable_records ... ok
 test crash_between_asset_file_and_metadata_leaves_recoverable_orphan ... ok
@@ -927,23 +932,23 @@ test review_rejects_stale_content_wrong_evidence_and_error_waivers ... ok
 test revision_diff_reports_task_and_field_changes_without_mutation ... ok
 test validation_blocks_empty_and_repeated_batch_items ... ok
 test corrupt_existing_asset_is_not_adopted_as_valid ... ok
-test missing_asset_prevents_revision_publication ... ok
 test future_schema_is_rejected_without_downgrade ... ok
+test missing_asset_prevents_revision_publication ... ok
 test sql_durability_settings_and_file_permissions_are_enforced ... ok
 test assets_survive_reopen_and_corruption_is_detected ... ok
-test validation_reports_missing_staged_render_without_rewriting_plan ... ok
 test read_only_store_does_not_initialize_missing_state ... ok
-test immutable_revisions_require_exact_parent_and_survive_reopen ... ok
+test validation_reports_missing_staged_render_without_rewriting_plan ... ok
+test revision_reads_reject_media_manifest_size_mismatch ... ok
 test invalid_edits_require_explicit_draft_and_typed_controls_cannot_be_patched ... ok
-test typed_plan_edits_preserve_parent_and_invalidate_content_reviews ... ok
+test resolving_generated_claim_creates_ready_child_and_preserves_parent ... ok
 test revision_read_rejects_missing_or_extra_asset_index_references ... ok
 test archive_only_assets_are_required_and_checked_after_reopen ... ok
-test revision_reads_reject_media_manifest_size_mismatch ... ok
-test resolving_generated_claim_creates_ready_child_and_preserves_parent ... ok
+test typed_plan_edits_preserve_parent_and_invalidate_content_reviews ... ok
 test approval_requires_exact_warning_acceptance_and_cannot_waive_errors ... ok
+test immutable_revisions_require_exact_parent_and_survive_reopen ... ok
 test validation_evidence_is_durable_append_only_and_revision_bound ... ok
-test schema_four_upgrade_retains_validation_receipts ... ok
 test schema_three_upgrade_preserves_revisions_and_leases_and_backs_up_first ... ok
+test schema_four_upgrade_retains_validation_receipts ... ok
 test content_approval_is_immutable_scoped_and_does_not_authorize_apply ... ok
 
 test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
@@ -985,15 +990,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
 --- stderr ---
-   Compiling linguist-config v0.1.0 (<repo>/crates/linguist-config)
-   Compiling linguist-core v0.1.0 (<repo>/crates/linguist-core)
-   Compiling linguist-store v0.1.0 (<repo>/crates/linguist-store)
-   Compiling linguist-provider v0.1.0 (<repo>/crates/linguist-provider)
-   Compiling linguist-anki v0.1.0 (<repo>/crates/linguist-anki)
-   Compiling linguist-dictionary v0.1.0 (<repo>/crates/linguist-dictionary)
-   Compiling linguist-application v0.1.0 (<repo>/crates/linguist-application)
    Compiling linguist-cli v0.1.0 (<repo>/crates/linguist-cli)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.38s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.90s
      Running unittests src/lib.rs (target/msrv/debug/deps/linguist_anki-3a8464de2a340262)
      Running tests/native_intent.rs (target/msrv/debug/deps/native_intent-1c4ba419022062c1)
      Running tests/read_port.rs (target/msrv/debug/deps/read_port-d651e2b34fae877e)

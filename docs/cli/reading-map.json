@@ -313,7 +313,7 @@
       "path": "implementation/wp-21.md",
       "heading": "## WP-21 \u2014 batch processing (prepare \u2192 review \u2192 apply jobs)",
       "title": "WP-21 \u2014 batch processing (prepare \u2192 review \u2192 apply jobs)",
-      "words": 2582,
+      "words": 2587,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -323,7 +323,7 @@
       "path": "implementation/wp-22.md",
       "heading": "## WP-22 \u2014 grammar add and revamp, end to end on the user's data",
       "title": "WP-22 \u2014 grammar add and revamp, end to end on the user's data",
-      "words": 2109,
+      "words": 2150,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"

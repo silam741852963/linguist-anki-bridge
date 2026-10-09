@@ -4,4 +4,4 @@ exit 0
 
 --- stderr ---
    Compiling linguist-cli v0.1.0 (<repo>/crates/linguist-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.64s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.95s
