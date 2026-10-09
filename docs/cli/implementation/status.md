@@ -8,11 +8,13 @@ Current state on 2026-10-06. Earlier progress notes were removed from this page 
 - **Read Anki.** Decks, models, notes, cards and media through AnkiConnect, profile-pinned.
 - **Write Anki.** Through the verified `lab-native-v1` companion add-on (`dist/linguist-bridge.ankiaddon`, installed next to AnkiConnect): `plans bind` records the collection binding before approval; `apply --apply` (items and split groups), `snapshots restore --apply`, `jobs rollback --apply`, `recover reconcile --apply [--rebind]`, `backup create --apply` and `models install --apply` run their journaled orchestration under the collection-writer lease after a verified native checkpoint. Without a verified companion, API key, loopback endpoint and open profile, every write stops with `CAPABILITY_UNAVAILABLE` before any lease, journal or Anki request.
 - **Recover.** Every uncertain native outcome is journaled and resolved by `recover reconcile OPERATION --apply`; nothing is re-sent blindly.
-- **Jobs.** Prepare jobs run with leases and controls; simulate/apply jobs are created and audited, but `jobs run` for them is still unavailable (see [WP-17 limits](wp-17.md#known-limits-revisit-after-all-packages)).
+- **Jobs.** Prepare jobs run with leases and controls; simulate/apply jobs run over the companion with one checkpoint per job, resume after a crash through reconcile and a follow-up job, and roll back as a group ([WP-21](wp-21.md)).
 
 ## Packages
 
 All work packages WP-01–WP-17 are complete; WP-03 was completed by [WP-17](wp-17.md). Statuses, audits and known limits: [consolidated record](packages.md).
+
+Later packages, each with its completion audit and known limits: [WP-18](wp-18.md), [WP-19](wp-19.md), [WP-20](wp-20.md) (flagged-card revamp, vocabulary split, companion 0.3.1), [WP-21](wp-21.md) (apply jobs over the companion; core complete) and [WP-22](wp-22.md) (planned).
 
 ## Evidence
 

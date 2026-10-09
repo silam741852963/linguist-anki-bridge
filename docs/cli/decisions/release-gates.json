@@ -3,7 +3,7 @@
   "gates": [
     {
       "id": "EV-01",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-01",
@@ -18,14 +18,11 @@
       "review_ids": [
         "RV-01",
         "RV-15"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-01.json"
       ]
     },
     {
       "id": "EV-02",
-      "status": "blocked",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-02",
@@ -42,15 +39,11 @@
       ],
       "review_ids": [
         "RV-13"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-02.json"
-      ],
-      "failure_code": "EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE"
+      ]
     },
     {
       "id": "EV-03",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-03"
@@ -63,14 +56,11 @@
       ],
       "review_ids": [
         "RV-01"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-03.json"
       ]
     },
     {
       "id": "EV-04",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-03",
@@ -84,14 +74,11 @@
       ],
       "review_ids": [
         "RV-03"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-04.json"
       ]
     },
     {
       "id": "EV-05",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-03",
@@ -107,14 +94,11 @@
       ],
       "review_ids": [
         "RV-02"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-05.json"
       ]
     },
     {
       "id": "EV-06",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-03",
@@ -132,14 +116,11 @@
         "RV-01",
         "RV-05",
         "RV-09"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-06.json"
       ]
     },
     {
       "id": "EV-07",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-04",
@@ -155,14 +136,11 @@
       "review_ids": [
         "RV-04",
         "RV-14"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-07.json"
       ]
     },
     {
       "id": "EV-08",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-05",
@@ -176,14 +154,11 @@
       "review_ids": [
         "RV-07",
         "RV-10"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-08.json"
       ]
     },
     {
       "id": "EV-09",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-08",
@@ -195,14 +170,11 @@
       "gap_ids": [],
       "review_ids": [
         "RV-06"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-09.json"
       ]
     },
     {
       "id": "EV-10",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-05",
@@ -219,14 +191,11 @@
       "review_ids": [
         "RV-05",
         "RV-15"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-10.json"
       ]
     },
     {
       "id": "EV-11",
-      "status": "blocked",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-06",
@@ -246,15 +215,11 @@
       "review_ids": [
         "RV-07",
         "RV-11"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-11.json"
-      ],
-      "failure_code": "OCR_BENCHMARK_LANGUAGE_PACKS_MISSING"
+      ]
     },
     {
       "id": "EV-12",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-04",
@@ -269,14 +234,11 @@
       ],
       "review_ids": [
         "RV-08"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-12.json"
       ]
     },
     {
       "id": "EV-13",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-06",
@@ -291,14 +253,11 @@
       ],
       "review_ids": [
         "RV-12"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-13.json"
       ]
     },
     {
       "id": "EV-14",
-      "status": "pass",
+      "status": "not_run",
       "design": "finalized",
       "owners": [
         "WP-01",
@@ -318,9 +277,6 @@
         "RV-01",
         "RV-02",
         "RV-09"
-      ],
-      "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-06/EV-14.json"
       ]
     }
   ]

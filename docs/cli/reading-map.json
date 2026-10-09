@@ -303,7 +303,7 @@
       "path": "implementation/wp-20.md",
       "heading": "## WP-20 \u2014 revamp the blue- and purple-flagged cards for the user's review",
       "title": "WP-20 \u2014 revamp the blue- and purple-flagged cards for the user's review",
-      "words": 1684,
+      "words": 2636,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -313,7 +313,7 @@
       "path": "implementation/wp-21.md",
       "heading": "## WP-21 \u2014 batch processing (prepare \u2192 review \u2192 apply jobs)",
       "title": "WP-21 \u2014 batch processing (prepare \u2192 review \u2192 apply jobs)",
-      "words": 1053,
+      "words": 1728,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"

@@ -1,0 +1,5 @@
+$ cargo fmt --all -- --check
+exit 0
+
+
+--- stderr ---
