@@ -1725,3 +1725,89 @@ fn source_media_keep_the_order_the_fields_reference_them_in() {
         .collect();
     assert_eq!(names, ["秘书.jpg", "book-box.jpg"]);
 }
+
+#[test]
+fn text_beside_pictures_is_dropped_by_decision_and_the_files_keep_their_review() {
+    use linguist_core::{records::ReviewChoice, review::ResolutionRequest};
+    let (mut capture, mut settings) = setup(
+        "japanese_vocab",
+        &[
+            ("Word", "既存"),
+            ("Picture", "<img src=\"shot.png\">Existing"),
+        ],
+        &[("expression", "Word"), ("picture", "Picture")],
+    );
+    let mut png = Vec::new();
+    image::RgbImage::from_pixel(2, 2, image::Rgb([9, 9, 9]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    linguist_application::source_archive::media::attach_original_media(
+        &mut capture.captured,
+        BTreeMap::from([("shot.png".into(), Some(png))]),
+        10 * 1024 * 1024,
+        10 * 1024 * 1024,
+    )
+    .unwrap();
+    let root = std::env::temp_dir().join(format!("lab-structured-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "japanese_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-structured".into())]),
+    )
+    .unwrap();
+    let store = linguist_store::Store::open(&root).unwrap();
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let doc = &plan.documents[0];
+    let issue = doc
+        .issues
+        .iter()
+        .find(|i| i.code == "SOURCE_STRUCTURED_ROLE_REVIEW")
+        .unwrap();
+    let source = doc.sources[0].id;
+    assert_eq!(issue.source_refs, [source.to_string(), "Picture".into()]);
+    let choices = linguist_core::review::decision_templates(doc, issue);
+    let dropped = ReviewChoice::SourceFieldDropped {
+        source_id: source,
+        field: "Picture".into(),
+    };
+    assert!(choices.contains(&dropped), "{choices:?}");
+    let request = |choice| ResolutionRequest {
+        schema_version: 2,
+        base_revision: plan.revision,
+        base_digest: plan.approval_digest().unwrap(),
+        document_id: doc.id,
+        issue_id: issue.id.clone(),
+        input_digest: doc.semantic_digest().unwrap(),
+        actor: "reviewer".into(),
+        choice,
+    };
+    // Another field name is refused; the named one resolves the issue.
+    let wrong = ReviewChoice::SourceFieldDropped {
+        source_id: source,
+        field: "Word".into(),
+    };
+    assert!(
+        linguist_application::review::resolve(&store, &plan, &request(wrong), "now".into())
+            .is_err()
+    );
+    let resolved =
+        linguist_application::review::resolve(&store, &plan, &request(dropped), "now".into())
+            .unwrap();
+    let left: Vec<_> = linguist_core::validation::validate(&resolved.revision.documents[0])
+        .into_iter()
+        .filter(|i| i.severity == linguist_core::validation::Severity::Review)
+        .map(|i| i.code)
+        .collect();
+    assert!(
+        !left.contains(&"SOURCE_STRUCTURED_ROLE_REVIEW".to_owned()),
+        "{left:?}"
+    );
+    assert!(
+        left.contains(&"SOURCE_MEDIA_CONTENT_REVIEW".to_owned()),
+        "{left:?}"
+    );
+}

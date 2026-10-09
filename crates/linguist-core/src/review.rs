@@ -172,8 +172,12 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
             });
         }
     }
-    if issue.code == "SOURCE_UNMAPPED_FIELD_REVIEW"
-        && let (Some(field), [source]) = (&issue.field, issue.source_refs.as_slice())
+    let dropped_field = match (issue.code.as_str(), issue.source_refs.as_slice()) {
+        ("SOURCE_UNMAPPED_FIELD_REVIEW", [source]) => issue.field.as_ref().map(|f| (source, f)),
+        ("SOURCE_STRUCTURED_ROLE_REVIEW", [source, field]) => Some((source, field)),
+        _ => None,
+    };
+    if let Some((source, field)) = dropped_field
         && let Ok(source_id) = uuid::Uuid::parse_str(source)
         && source_field_dropped(document, issue, source_id, field)
     {
@@ -310,7 +314,10 @@ pub fn resolve(
             }
         }
         ReviewChoice::SourceFieldDropped { source_id, field }
-            if issue.code == "SOURCE_UNMAPPED_FIELD_REVIEW" =>
+            if matches!(
+                issue.code.as_str(),
+                "SOURCE_UNMAPPED_FIELD_REVIEW" | "SOURCE_STRUCTURED_ROLE_REVIEW"
+            ) =>
         {
             if !source_field_dropped(document, issue, *source_id, field) {
                 return Err(ContractError("REVIEW_SOURCE_FIELD_MISMATCH".into()));
@@ -922,18 +929,27 @@ fn reject_generated(
     Ok(())
 }
 
-/// Dropping an unmapped source field is valid only for that exact capture
-/// issue and only while the field's original value is archived.
+/// Dropping a source field is valid only for that exact capture issue and only
+/// while the field's original value is archived: an unmapped field, or the
+/// text of a field mapped to picture/audio (its files keep their own reviews).
 pub(crate) fn source_field_dropped(
     document: &crate::LearningDocument,
     issue: &Issue,
     source_id: uuid::Uuid,
     field: &str,
 ) -> bool {
-    issue.code == "SOURCE_UNMAPPED_FIELD_REVIEW"
+    let named = match issue.code.as_str() {
+        "SOURCE_UNMAPPED_FIELD_REVIEW" => {
+            issue.field.as_deref() == Some(field)
+                && issue.source_refs == vec![source_id.to_string()]
+        }
+        "SOURCE_STRUCTURED_ROLE_REVIEW" => {
+            issue.source_refs == vec![source_id.to_string(), field.to_owned()]
+        }
+        _ => false,
+    };
+    named
         && issue.stage == "capture"
-        && issue.field.as_deref() == Some(field)
-        && issue.source_refs == vec![source_id.to_string()]
         && document.sources.iter().any(|source| {
             source.id == source_id
                 && source.fields.contains_key(field)

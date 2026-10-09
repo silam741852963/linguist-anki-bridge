@@ -278,11 +278,11 @@ pub fn stage_document(
                 });
             let text_only = visible_text(&strip_sound_markers(&field.raw_value));
             if !referenced || !text_only.trim().is_empty() {
-                issues.push(issue(
-                    "SOURCE_STRUCTURED_ROLE_REVIEW",
-                    Some(role),
-                    source_id,
-                ));
+                // The source field rides along so a reviewer can drop its
+                // text (archived) while each referenced file keeps its review.
+                let mut review = issue("SOURCE_STRUCTURED_ROLE_REVIEW", Some(role), source_id);
+                review.source_refs.push(field.source_field.clone());
+                issues.push(review);
             }
             continue;
         }
