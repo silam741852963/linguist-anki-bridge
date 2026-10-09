@@ -298,7 +298,7 @@ def main():
 
     expected_scenarios = {"vocab_add", "grammar_add", "vocab_revamp", "vocab_revamp_home_deck",
                           "grammar_split", "grammar_split_crash", "native_faults",
-                          "identity_preconditions"}
+                          "identity_preconditions", "batch_vocab_revamp", "vocab_split"}
     scenarios_ok = r.ok("scenarios") and set(scenario_names) == expected_scenarios
     addon_sha = sha256(addon.read_bytes()) if addon.exists() else "missing"
     faults = (out / "scenarios" / "native_faults.txt").read_text() \
@@ -369,6 +369,7 @@ def main():
                 assertion("duplicate UUID returns the stored state; changed payload refused", "duplicate UUID" in faults, "native_faults"),
                 assertion("ENOSPC at the ledger boundary: failed before write, retry commits", "disk full" in faults, "native_faults (injected ENOSPC, not a full filesystem)"),
                 assertion("removed marker: absence unproven, stays in recovery", "removed marker" in faults, "native_faults"),
+                assertion("apply job: crash mid-job reconciled, old-session checkpoint stops the job, follow-up job applies the rest, rollback per job", "batch_vocab_revamp" in scenario_names and r.ok("scenarios"), "batch_vocab_revamp scenario (WP-21)"),
             ], blocked=None),
         "EV-08": dict(
             keys=["semantic_corpus", "native_inspection", "scenarios"],
@@ -382,6 +383,7 @@ def main():
                       assertions=[
                           assertion("real-Anki split: sibling first, anchor keeps history, group rollback", "grammar_split" in scenario_names and r.ok("scenarios"), "grammar_split scenario"),
                           assertion("partial-group crash: unit reconciled, group resumed, sibling not re-created", "grammar_split_crash" in scenario_names and r.ok("scenarios"), "grammar_split_crash scenario"),
+                          assertion("real-Anki vocabulary split: anchor keeps history, new sibling note, group rollback deletes it", "vocab_split" in scenario_names and r.ok("scenarios"), "vocab_split scenario (WP-20)"),
                           assertion("partial-group recovery rules", r.ok("jobs_executor"), "fake native port"),
                       ], blocked=None),
         "EV-10": dict(
