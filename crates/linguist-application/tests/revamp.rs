@@ -1977,3 +1977,47 @@ fn one_word_with_two_readings_splits_by_reading() {
     let plan_units = linguist_core::validation::vocabulary_units("ふし／せつ");
     assert_eq!(plan_units, ["ふし", "せつ"]);
 }
+
+#[test]
+fn a_kana_sibling_leaves_out_the_spelling_task() {
+    use linguist_application::vocab_split;
+    let (capture, mut settings) = setup(
+        "japanese_vocab",
+        &[
+            ("Word", "私<div>あたし</div>"),
+            ("Pronunciation", "わたし<div>あたし</div>"),
+        ],
+        &[("expression", "Word"), ("pronunciation", "Pronunciation")],
+    );
+    let root = std::env::temp_dir().join(format!("lab-kana-sibling-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "japanese_vocab",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-kana-sibling".into())]),
+    )
+    .unwrap();
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let mut plan = store.revision(prepared.plan_id, 1).unwrap();
+    plan.documents[0].requested_tasks = vec![Task::Comprehension, Task::Spelling];
+    let mut request = vocab_split::template(&plan, plan.documents[0].id).unwrap();
+    assert!(
+        request.units[0].tasks.is_empty(),
+        "the anchor keeps its cards"
+    );
+    assert_eq!(request.units[1].tasks, [Task::Comprehension]);
+    // The anchor never takes tasks.
+    request.actor = "reviewer".into();
+    request.units[0].tasks = vec![Task::Comprehension];
+    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    request.base_digest = plan.approval_digest().unwrap();
+    request.input_digest = plan.documents[0].semantic_digest().unwrap();
+    let raw = linguist_core::canonical::bytes(&request).unwrap();
+    assert_eq!(
+        vocab_split::split(&mut store, &plan, &request, &raw).unwrap_err(),
+        "VOCAB_SPLIT_UNIT_INVALID"
+    );
+}

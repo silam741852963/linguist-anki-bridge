@@ -18,6 +18,17 @@ pub struct VocabularyUnit {
     /// stay archived on it.
     #[serde(default)]
     pub media: Vec<String>,
+    /// Tasks of a new sibling note; empty keeps the original's. The anchor
+    /// keeps its note's cards, so it takes none.
+    #[serde(default)]
+    pub tasks: Vec<Task>,
+}
+
+fn kana_only(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .chars()
+            .all(|c| matches!(c, '\u{3041}'..='\u{309F}' | '\u{30A0}'..='\u{30FF}'))
 }
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -127,10 +138,23 @@ pub fn template(plan: &PlanRevision, document_id: uuid::Uuid) -> Result<SplitReq
             if per_unit_sound {
                 media.push(sounds[i].clone());
             }
+            // A word written in kana cannot be a Spelling card (its reading is
+            // the answer); a new sibling simply leaves that task out.
+            let tasks = if i > 0 && kana_only(&expression) {
+                document
+                    .requested_tasks
+                    .iter()
+                    .copied()
+                    .filter(|t| *t != Task::Spelling)
+                    .collect()
+            } else {
+                vec![]
+            };
             VocabularyUnit {
                 expression,
                 pronunciation,
                 media,
+                tasks,
             }
         })
         .collect();
@@ -186,7 +210,7 @@ pub fn split(
     let available: BTreeSet<String> = source_media(original).into_iter().map(|(n, _)| n).collect();
     let mut seen = BTreeSet::new();
     let mut units = Vec::new();
-    for unit in &request.units {
+    for (index, unit) in request.units.iter().enumerate() {
         let expression = unit.expression.trim();
         let pronunciation = unit.pronunciation.trim();
         if expression.is_empty()
@@ -194,6 +218,12 @@ pub fn split(
             || vocabulary_units(pronunciation).len() > 1
             || !seen.insert((expression, pronunciation))
             || unit.media.iter().any(|m| !available.contains(m))
+            || index == request.anchor_index && !unit.tasks.is_empty()
+            || !unit.tasks.is_empty() && !unit.tasks.contains(&Task::Comprehension)
+            || unit
+                .tasks
+                .iter()
+                .any(|t| !matches!(t, Task::Comprehension | Task::Production | Task::Spelling))
         {
             return Err("VOCAB_SPLIT_UNIT_INVALID".into());
         }
@@ -214,7 +244,11 @@ pub fn split(
                 collocations: vec![],
                 kanji_details: vec![],
             }),
-            sibling_tasks: original.requested_tasks.clone(),
+            sibling_tasks: if unit.tasks.is_empty() {
+                original.requested_tasks.clone()
+            } else {
+                unit.tasks.clone()
+            },
             keep_media: Some(unit.media.iter().cloned().collect()),
         });
     }
