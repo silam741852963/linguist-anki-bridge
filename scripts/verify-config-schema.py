@@ -22,7 +22,7 @@ def main():
     )
     defaults = json.loads(result.stdout)["values"]
     assert validator.is_valid(defaults), list(validator.iter_errors(defaults))
-    assert len(schema["properties"]) + len(schema["patternProperties"]) == 158
+    assert len(schema["properties"]) + len(schema["patternProperties"]) == 159
 
     positive = copy.deepcopy(defaults)
     positive["purposes.japanese_vocab.card_tasks"] = {
@@ -45,7 +45,7 @@ def main():
         candidate = copy.deepcopy(defaults)
         candidate[key] = value
         assert not validator.is_valid(candidate), f"accepted {label}"
-    print("PASS: normalized config schema covers 158 registry entries, defaults and closed mappings")
+    print("PASS: normalized config schema covers 159 registry entries, defaults and closed mappings")
 
 
 if __name__ == "__main__":

@@ -383,6 +383,22 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "images.search_terms": {
+          "default": [],
+          "description": "Reviewer-chosen いらすとや search terms tried after the word itself (e.g. イライラ for 気に障る); pass per item with plans regenerate --stage enrichment.",
+          "items": {
+            "maxLength": 1048576,
+            "pattern": "\\S",
+            "type": "string",
+            "x-runtime-format": "nonempty"
+          },
+          "maxItems": 4096,
+          "type": "array",
+          "uniqueItems": true,
+          "x-consumer": "image adapter",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "images.search_when_missing": {
           "default": true,
           "description": "Search candidates; rights/relevance review before acceptance.",
@@ -1532,6 +1548,22 @@
           "type": "string",
           "x-consumer": "image adapter",
           "x-runtime-format": "text",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "images.search_terms": {
+          "default": [],
+          "description": "Reviewer-chosen いらすとや search terms tried after the word itself (e.g. イライラ for 気に障る); pass per item with plans regenerate --stage enrichment.",
+          "items": {
+            "maxLength": 1048576,
+            "pattern": "\\S",
+            "type": "string",
+            "x-runtime-format": "nonempty"
+          },
+          "maxItems": 4096,
+          "type": "array",
+          "uniqueItems": true,
+          "x-consumer": "image adapter",
           "x-scope": "purpose",
           "x-sensitive": false
         },
@@ -2761,6 +2793,22 @@
       "type": "string",
       "x-consumer": "image adapter",
       "x-runtime-format": "text",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "images.search_terms": {
+      "default": [],
+      "description": "Reviewer-chosen いらすとや search terms tried after the word itself (e.g. イライラ for 気に障る); pass per item with plans regenerate --stage enrichment.",
+      "items": {
+        "maxLength": 1048576,
+        "pattern": "\\S",
+        "type": "string",
+        "x-runtime-format": "nonempty"
+      },
+      "maxItems": 4096,
+      "type": "array",
+      "uniqueItems": true,
+      "x-consumer": "image adapter",
       "x-scope": "purpose",
       "x-sensitive": false
     },

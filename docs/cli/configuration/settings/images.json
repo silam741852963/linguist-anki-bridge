@@ -60,6 +60,19 @@
       "sensitive": false
     },
     {
+      "key": "images.search_terms",
+      "type": "string[]",
+      "default": [],
+      "constraints": {
+        "items_format": "nonempty",
+        "unique": true
+      },
+      "scope": "purpose",
+      "consumer": "image adapter",
+      "description": "Reviewer-chosen いらすとや search terms tried after the word itself (e.g. イライラ for 気に障る); pass per item with plans regenerate --stage enrichment.",
+      "sensitive": false
+    },
+    {
       "key": "images.custom_endpoint",
       "type": "string|null",
       "default": null,

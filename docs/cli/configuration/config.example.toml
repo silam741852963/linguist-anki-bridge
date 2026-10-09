@@ -143,6 +143,9 @@ images.provider = "wikimedia"
 # Japanese words also search いらすとや illustrations by the expression; candidates are reviewed like any other.
 images.illustrations = "irasutoya"
 
+# Reviewer-chosen いらすとや search terms tried after the word itself (e.g. イライラ for 気に障る); pass per item with plans regenerate --stage enrichment.
+images.search_terms = []
+
 # Required for custom provider.
 # images.custom_endpoint = "<explicit value when needed>"
 

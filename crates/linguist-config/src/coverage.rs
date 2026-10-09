@@ -280,6 +280,7 @@ pub const ROWS: &[Row] = &[
         "custom image search adapter",
     ),
     c("images.illustrations", ILLUSTRATIONS),
+    c("images.search_terms", VOCAB),
     c("images.query_suffix", IMAGES),
     c("images.candidate_limit", IMAGES),
     c("input.max_file_mb", CLI),

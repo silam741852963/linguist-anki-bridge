@@ -549,7 +549,20 @@ fn stage_images(
                 }
             }
         };
-        let queries = std::iter::once(japanese_expression).chain(collocation_nouns);
+        // `images.search_terms`: reviewer-chosen terms after the word itself.
+        let terms: Vec<String> = settings
+            .values
+            .get("images.search_terms")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let queries = std::iter::once(japanese_expression)
+            .chain(terms)
+            .chain(collocation_nouns);
         if let Some(client) = client {
             for query in queries {
                 match client.search(&query) {
