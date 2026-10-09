@@ -17,13 +17,70 @@ pub use linguist_core::document::GENERATED_DICTIONARY_PROVIDER as PROVIDER;
 const PROMPT: &str = "You write one dictionary entry in the style of Jisho.org (JMdict) for a Japanese word or phrase that the dictionary does not list. \
 Give its reading(s) in hiragana or katakana (the whole phrase, no spaces), then 1 to 5 senses, most common first. \
 Each sense has 1 to 6 short English definitions, as JMdict writes them (\"to make a crease\", \"vice-chairperson\"; no full sentences), \
-and its parts of speech with JMdict's English labels (for example \"Noun\", \"Expressions (phrases, clauses, etc.)\", \"Godan verb with 'ru' ending\", \"Intransitive verb\", \"Na-adjective (keiyodoshi)\"). \
-Use the reading hint and the learner's own note text when they are given; never invent rare meanings.";
+and its parts of speech, chosen exactly from the allowed labels, as Jisho lists them: a phrase gets \"Expressions (phrases, clauses, etc.)\" \
+followed by the conjugation class and transitivity of its final verb (for example \"Godan verb with 'ru' ending\", \"Intransitive verb\"); \
+a compound noun gets \"Noun\". Use the reading hint and the learner's own note text when they are given; never invent rare meanings.";
+
+/// The part-of-speech labels Jisho.org shows (JMdict entities), so a generated
+/// entry renders like a dictionary one.
+pub const PARTS_OF_SPEECH: &[&str] = &[
+    "Noun",
+    "Pronoun",
+    "Noun which may take the genitive case particle 'no'",
+    "Noun, used as a suffix",
+    "Noun, used as a prefix",
+    "Temporal noun",
+    "Adverbial noun (fukushitekimeishi)",
+    "Suru verb",
+    "Suru verb - included",
+    "Suru verb - special class",
+    "Ichidan verb",
+    "Godan verb with 'u' ending",
+    "Godan verb with 'ku' ending",
+    "Godan verb with 'gu' ending",
+    "Godan verb with 'su' ending",
+    "Godan verb with 'tsu' ending",
+    "Godan verb with 'nu' ending",
+    "Godan verb with 'bu' ending",
+    "Godan verb with 'mu' ending",
+    "Godan verb with 'ru' ending",
+    "Godan verb - Iku/Yuku special class",
+    "Kuru verb - special class",
+    "Transitive verb",
+    "Intransitive verb",
+    "I-adjective (keiyoushi)",
+    "I-Adjective (keiyoushi) - yoi/ii class",
+    "Na-adjective (keiyodoshi)",
+    "Pre-noun adjectival (rentaishi)",
+    "Noun or verb acting prenominally",
+    "Adverb (fukushi)",
+    "Adverb taking the 'to' particle",
+    "Auxiliary verb",
+    "Auxiliary adjective",
+    "Expressions (phrases, clauses, etc.)",
+    "Conjunction",
+    "Interjection (kandoushi)",
+    "Particle",
+    "Counter",
+    "Prefix",
+    "Suffix",
+    "Numeric",
+];
+
+fn parts_of_speech_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "items": {"type": "string", "enum": PARTS_OF_SPEECH},
+    })
+}
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GeneratedSense {
     pub definitions: Vec<String>,
+    #[schemars(schema_with = "parts_of_speech_schema")]
     pub parts_of_speech: Vec<String>,
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -73,8 +130,10 @@ pub fn entry_from(
         || written.senses.iter().any(|s| {
             !(1..=6).contains(&s.definitions.len())
                 || s.definitions.iter().any(|d| !line(d, 120))
-                || s.parts_of_speech.len() > 4
-                || s.parts_of_speech.iter().any(|p| !line(p, 60))
+                || !(1..=4).contains(&s.parts_of_speech.len())
+                || s.parts_of_speech
+                    .iter()
+                    .any(|p| !PARTS_OF_SPEECH.contains(&p.trim()))
         })
     {
         return Err(invalid());
@@ -223,10 +282,11 @@ mod tests {
         assert_eq!(entry.senses[0].labels, ["Noun"]);
         assert_eq!(entry.metadata["generated_by"], ["claude_code"]);
         for bad in [
-            r#"{"readings":["fuku"],"senses":[{"definitions":["x"],"parts_of_speech":[]}]}"#,
+            r#"{"readings":["fuku"],"senses":[{"definitions":["x"],"parts_of_speech":["Noun"]}]}"#,
+            r#"{"readings":["ふく"],"senses":[{"definitions":["x"],"parts_of_speech":["Verb"]}]}"#,
             r#"{"readings":["ふく"],"senses":[]}"#,
-            r#"{"readings":["ふく"],"senses":[{"definitions":["two\nlines"],"parts_of_speech":[]}]}"#,
-            r#"{"readings":["ふく"],"senses":[{"definitions":["x"],"parts_of_speech":[]}],"extra":1}"#,
+            r#"{"readings":["ふく"],"senses":[{"definitions":["two\nlines"],"parts_of_speech":["Noun"]}]}"#,
+            r#"{"readings":["ふく"],"senses":[{"definitions":["x"],"parts_of_speech":["Noun"]}],"extra":1}"#,
         ] {
             assert!(entry_from("副", &ja, bad, "x").is_err(), "{bad}");
         }
