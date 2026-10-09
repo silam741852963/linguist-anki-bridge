@@ -990,6 +990,19 @@ fn v3_vocabulary_renders_fixed_sections_kanji_strokes_and_tags() {
         let fields = render::render(&spaced, &BTreeMap::new()).unwrap().fields;
         assert_eq!(fields["Pronunciation"], shown);
     }
+    // The same name with the same bytes is one file; other bytes collide.
+    let mut twice = doc.clone();
+    let mut copy = twice.media.last().unwrap().clone();
+    copy.filename = copy.filename.to_uppercase().replace(".GIF", ".gif");
+    twice.media.push(copy.clone());
+    let collides = |d: &LearningDocument| {
+        validation::validate(d)
+            .iter()
+            .any(|i| i.code == "MEDIA_NAME_COLLISION")
+    };
+    assert!(!collides(&twice));
+    twice.media.last_mut().unwrap().digest = "0".repeat(64);
+    assert!(collides(&twice));
     assert_eq!(rendered.fields["EnableSpelling"], "1");
     let usage = &rendered.fields["UsageExamples"];
     for text in [

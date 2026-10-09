@@ -6,7 +6,7 @@ use crate::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -298,7 +298,9 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             )
         }
     }
-    let mut filenames = BTreeSet::new();
+    // One name with the same bytes is one file: re-revamping a managed note
+    // archives its stroke GIF under the name enrichment renders again.
+    let mut filenames = BTreeMap::new();
     for asset in &doc.media {
         if !safe_media_name(&asset.filename) {
             add(
@@ -308,7 +310,10 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                 "Media name is unsafe for local Anki references.",
             )
         }
-        if !filenames.insert(asset.filename.to_lowercase()) {
+        if filenames
+            .insert(asset.filename.to_lowercase(), &asset.digest)
+            .is_some_and(|digest| *digest != asset.digest)
+        {
             add(
                 "MEDIA_NAME_COLLISION",
                 Severity::Error,

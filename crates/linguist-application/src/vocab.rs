@@ -29,6 +29,11 @@ pub trait KanjiPort {
 pub trait ImagePort {
     fn search(&self, expression: &str) -> Result<ImageSearch, String>;
 }
+impl ImagePort for crate::illustrations::IllustrationClient {
+    fn search(&self, expression: &str) -> Result<ImageSearch, String> {
+        self.search(expression).map_err(|e| e.to_string())
+    }
+}
 /// Native-speaker recordings (`audio.provider=dictionary`); `Ok(None)` is "none published".
 pub trait RecordingPort {
     fn japanese(
@@ -491,6 +496,7 @@ fn stage_images(
         .cloned()
         .collect();
     let japanese_expression = vocab.expression.clone();
+    let collocation_nouns = collocation_nouns(vocab);
     let mut digests = Vec::new();
     if !illustrations.is_empty() {
         let mut live = None;
@@ -518,31 +524,55 @@ fn stage_images(
         }
     }
     // いらすとや illustrations are searched by the Japanese word itself and
-    // come before Commons photographs.
+    // come before Commons photographs. When no post title names the word, the
+    // nouns of its generated collocations are tried (費用を賄う: 費用).
     if japanese {
-        let result = match (providers.illustrations, port) {
-            (Some(port), _) => Some(port.search(&japanese_expression)),
+        let live;
+        let client: Option<&dyn ImagePort> = match (providers.illustrations, port) {
+            (Some(port), _) => Some(port),
             (None, Some(_)) => None,
             (None, None) => {
                 match crate::illustrations::IllustrationClient::from_settings(settings, environment)
                 {
                     Ok(Some(client)) => {
-                        Some(client.search(&japanese_expression).map_err(|e| e.to_string()))
+                        live = client;
+                        Some(&live)
                     }
                     Ok(None) => None,
-                    Err(error) => Some(Err(error.to_string())),
+                    Err(error) => {
+                        warning(
+                            document,
+                            "IMAGE_SEARCH_FAILED",
+                            "picture",
+                            format!("{error}; no illustration candidate was staged."),
+                        );
+                        None
+                    }
                 }
             }
         };
-        match result {
-            Some(Ok(search)) => stage_search(document, search, &mut digests, assets)?,
-            Some(Err(error)) => warning(
-                document,
-                "IMAGE_SEARCH_FAILED",
-                "picture",
-                format!("{error}; no illustration candidate was staged."),
-            ),
-            None => {}
+        let queries = std::iter::once(japanese_expression).chain(collocation_nouns);
+        if let Some(client) = client {
+            for query in queries {
+                match client.search(&query) {
+                    Ok(search) => {
+                        let named = search.candidates.iter().any(|c| c.title.contains(&query));
+                        stage_search(document, search, &mut digests, assets)?;
+                        if named {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        warning(
+                            document,
+                            "IMAGE_SEARCH_FAILED",
+                            "picture",
+                            format!("{error}; no illustration candidate was staged."),
+                        );
+                        break;
+                    }
+                }
+            }
         }
     }
     let result = match port {
@@ -571,6 +601,32 @@ fn stage_images(
     };
     stage_search(document, search, &mut digests, assets)?;
     candidate_review(document, digests)
+}
+
+/// The noun before the first particle of each collocation that uses the
+/// word (`生活費を賄う` gives `生活費`), at most two.
+fn collocation_nouns(vocab: &linguist_core::Vocabulary) -> Vec<String> {
+    let mut nouns: Vec<String> = Vec::new();
+    for collocation in &vocab.collocations {
+        let phrase = collocation.phrase.trim();
+        let Some(at) = phrase.find(['を', 'が', 'に', 'で', 'と', 'の', 'へ', 'も']) else {
+            continue;
+        };
+        let noun = &phrase[..at];
+        if !phrase.contains(&vocab.expression)
+            || noun.is_empty()
+            || noun.chars().count() > 8
+            || noun.contains(&vocab.expression)
+            || nouns.iter().any(|n| n == noun)
+        {
+            continue;
+        }
+        nouns.push(noun.to_owned());
+        if nouns.len() == 2 {
+            break;
+        }
+    }
+    nouns
 }
 
 /// Stage every candidate of one search as a reviewable archive asset.
