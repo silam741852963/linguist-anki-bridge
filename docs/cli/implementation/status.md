@@ -14,7 +14,7 @@ Current state on 2026-10-06. Earlier progress notes were removed from this page 
 
 All work packages WP-01–WP-17 are complete; WP-03 was completed by [WP-17](wp-17.md). Statuses, audits and known limits: [consolidated record](packages.md).
 
-Later packages, each with its completion audit and known limits: [WP-18](wp-18.md), [WP-19](wp-19.md), [WP-20](wp-20.md) (flagged-card revamp, vocabulary split, companion 0.3.1), [WP-21](wp-21.md) (apply jobs over the companion, full-pipeline prepare jobs, `plans resolve-batch`) and [WP-22](wp-22.md) (Linguist Grammar v3; grammar add and revamp on the user's notes; companion 0.3.3).
+Later packages, each with its completion audit and known limits: [WP-18](wp-18.md), [WP-19](wp-19.md), [WP-20](wp-20.md) (flagged-card revamp, vocabulary split, companion 0.3.1), [WP-21](wp-21.md) (apply jobs over the companion, full-pipeline prepare jobs, `plans resolve-batch`) [WP-22](wp-22.md) (Linguist Grammar v3; grammar add and revamp on the user's notes; companion 0.3.3) and [WP-23](wp-23.md) (Linguist Grammar v4 with per-example audio; split units keep the source card's schedule; companion 0.4.0).
 
 ## Evidence
 
