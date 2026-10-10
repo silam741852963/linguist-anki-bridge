@@ -504,6 +504,8 @@ pub struct Anki {
     pub media_bytes: BTreeMap<String, Vec<u8>>,
     /// Main mutation variants in dispatch order.
     pub dispatched: Vec<String>,
+    /// Wall time each mutation takes (a slow native write).
+    pub mutate_delay: Option<std::time::Duration>,
 }
 
 pub fn observed_model(model: &ManagedModel, id: i64) -> ObservedModel {
@@ -611,6 +613,7 @@ impl Anki {
             skip: 0,
             media_bytes: BTreeMap::new(),
             dispatched: vec![],
+            mutate_delay: None,
         }
     }
     pub fn model_digest(id: i64) -> String {
@@ -919,6 +922,9 @@ impl ApplyPort for Anki {
         Ok(self.media_bytes.get(filename).cloned())
     }
     fn mutate(&mut self, request: &MutationRequest) -> Result<NativeStatus, PortFailure> {
+        if let Some(delay) = self.mutate_delay {
+            std::thread::sleep(delay);
+        }
         assert_eq!(
             request.payload_digest,
             request.effect.payload_digest().unwrap()

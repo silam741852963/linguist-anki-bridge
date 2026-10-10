@@ -243,6 +243,8 @@ fn drive_group(
         .chain(std::iter::once((record.anchor_document, Role::SplitAnchor)))
         .collect();
     'units: for (unit, role) in order {
+        // One checkpoint plus many units can outlast a lease period (WP-23).
+        crate::backup::keep_writer_lease(store, lease)?;
         loop {
             let attempt = latest(&store.split_attempts(record.execution_id)?, unit)?;
             match unit_state(store, attempt.operation)? {

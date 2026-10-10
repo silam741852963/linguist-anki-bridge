@@ -33,7 +33,7 @@ use crate::{emit, now_ms, package_limits, state_root};
 
 /// Writer lease for one invocation (the store's maximum), renewed after the
 /// checkpoint and before each item; released on every exit path.
-const LEASE_SECONDS: u64 = 600;
+const LEASE_SECONDS: u64 = linguist_application::backup::WRITER_LEASE_SECONDS;
 
 fn setting_u64(settings: &linguist_config::Effective, key: &str) -> u64 {
     settings.values[key].as_u64().unwrap_or(0)

@@ -660,3 +660,15 @@ fn native_split_review_accepts_only_the_recorded_anchor() {
     .unwrap_err();
     assert_eq!(error.0, "REVIEW_SPLIT_ANCHOR_MISMATCH");
 }
+
+#[test]
+fn a_lease_that_lapses_during_a_long_group_is_renewed_between_units() {
+    // WP-23: a checkpoint plus many units outlasted one lease period and the
+    // group stopped with LEASE_STALE_OR_EXPIRED; each unit now renews it.
+    let mut g = group();
+    // Each write outlasts the whole lease period.
+    g.s.store.renew_lease(&g.s.token, 1).unwrap();
+    g.anki.mutate_delay = Some(std::time::Duration::from_millis(1100));
+    let outcome = g.run();
+    assert_eq!(outcome.state, "complete", "{outcome:?}");
+}

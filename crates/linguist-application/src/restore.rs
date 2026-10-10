@@ -1566,6 +1566,7 @@ pub fn rollback_group(
         let Some(request) = requests.iter().find(|r| r.snapshot_id == item.snapshot_id) else {
             continue;
         };
+        crate::backup::keep_writer_lease(store, lease)?;
         let result = restore(store, lease, port, request).map_err(|e| (item.snapshot_id, e));
         let stop = matches!(&result, Err((_, code)) if [
             "RESTORE_IDENTITY_MISMATCH",

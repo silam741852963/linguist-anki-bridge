@@ -2247,6 +2247,8 @@ pub fn apply_items(
 ) -> Vec<std::result::Result<ApplyItemOutcome, (Uuid, String)>> {
     let mut out = Vec::new();
     for request in requests {
+        // A failed renewal surfaces as the item's own lease check.
+        let _ = crate::backup::keep_writer_lease(store, lease);
         let result = apply_item(store, lease, port, request).map_err(|e| (request.item_id, e));
         let stop = match &result {
             Err((_, code)) => [

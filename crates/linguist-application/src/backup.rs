@@ -728,3 +728,14 @@ pub fn abandon_checkpoint(
     })?;
     Ok(journal.version.journal)
 }
+
+/// Seconds a collection-writer lease is held or renewed for.
+pub const WRITER_LEASE_SECONDS: u64 = 600;
+
+/// Renew the collection-writer lease before the next unit of a long group
+/// (a split apply, a group rollback): one checkpoint plus many units can
+/// outlast one lease period (WP-23, `LEASE_STALE_OR_EXPIRED` mid-group).
+/// Renewal fails if another writer took the lease; the group then stops.
+pub fn keep_writer_lease(store: &mut Store, lease: &LeaseToken) -> Result<()> {
+    store.renew_lease(lease, WRITER_LEASE_SECONDS)
+}
