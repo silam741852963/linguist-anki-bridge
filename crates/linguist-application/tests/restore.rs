@@ -877,13 +877,13 @@ fn group_rollback_previews_and_restores_each_journaled_item() {
         results[0].as_ref().unwrap().target_state,
         OperationState::Restored
     );
-    // The restore journal carries the group but is not itself rolled back.
+    // The restore journal carries the group but is not itself rolled back,
+    // and a restored item has nothing left to reverse (WP-23): a fully
+    // rolled-back group is empty.
     assert!(
-        plan_group_rollback(&s.store, &mut anki, group).unwrap()[0]
-            .error
-            .as_deref()
-            .unwrap()
-            .starts_with("RESTORE_ALREADY_RESTORED")
+        plan_group_rollback(&s.store, &mut anki, group)
+            .unwrap_err()
+            .starts_with("ROLLBACK_GROUP_EMPTY")
     );
     assert!(plan_group_rollback(&s.store, &mut anki, Uuid::new_v4()).is_err());
 }
