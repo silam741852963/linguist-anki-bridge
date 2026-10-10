@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from linguist_bridge import manifest  # noqa: E402
 from linguist_bridge.payloads import (  # noqa: E402
-    GRAMMAR_V3_FIELDS,
+    GRAMMAR_V3_FIELDS, GRAMMAR_V4_FIELDS, SCHEDULER_KEYS,
     PayloadError, VOCAB_FIELDS, VOCAB_V3_FIELDS, validate_body)
 
 PLAN = "lab-jcs-v1:plan:" + "a" * 64
@@ -84,6 +84,28 @@ class PayloadTest(unittest.TestCase):
         for edit in ({"Formation": " "}, {"Example": ""}, {"Pattern": ""},
                      {"EnableApplication": "y"}, {"UseKey": "k"}):
             self.assertInvalid("create_note", dict(body, fields=dict(fields, **edit)))
+
+    def test_v4_grammar_create_body_and_inherited_schedule(self):
+        marker = "lab_op_" + OPERATION.replace("-", "")
+        fields = {name: "" for name in GRAMMAR_V4_FIELDS}
+        fields.update(Pattern="〜だらけ", Meaning="full of", Formation="<p>N + だらけ</p>",
+                      Example="<ul><li>[sound:a.wav]部屋はほこり<b>だらけ</b>だ。</li></ul>")
+        body = {"model_name": "Linguist Grammar v4", "model_manifest_digest": "b" * 64,
+                "deck_id": "123", "fields": fields, "tags": [marker, "lab::kind::grammar"],
+                "marker_tag": marker, "source_plan_digest": PLAN, "checkpoint_digest": "c" * 64,
+                "binding": {"profile_fingerprint": "d" * 64, "path_fingerprint": "e" * 64},
+                "expected_absent": True}
+        check("create_note", body)
+        for edit in ({"Example": ""}, {"EnableApplication": "1"}):
+            self.assertInvalid("create_note", dict(body, fields=dict(fields, **edit)))
+        scheduler = {key: "0" for key in SCHEDULER_KEYS}
+        entry = {"card_ordinal": 0, "source_card_id": 11, "scheduler": scheduler}
+        check("create_note", dict(body, inherit_schedule=[entry]))
+        for bad in ([], [entry, entry], [dict(entry, source_card_id=0)],
+                    [dict(entry, scheduler=dict(scheduler, extra="1"))],
+                    [dict(entry, scheduler=dict(scheduler, due=""))],
+                    [dict(entry, card_ordinal=-1)]):
+            self.assertInvalid("create_note", dict(body, inherit_schedule=bad))
 
     def test_media_model_and_export_bodies(self):
         media = {"filename": "eat.ogg", "sha256": "c" * 64, "size_bytes": 10,

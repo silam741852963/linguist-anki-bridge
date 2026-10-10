@@ -1122,3 +1122,86 @@ fn a_word_the_dictionary_lacks_gets_a_generated_entry_in_its_style() {
     assert!(v.meaning.is_empty() && v.sense_key.is_empty());
     let _ = std::fs::remove_dir_all(&bin);
 }
+
+#[test]
+fn grammar_reads_every_example_with_its_own_reviewed_audio() {
+    // WP-23: one synthesized reading per example, each reviewed on its own
+    // and rendered next to the example it reads.
+    struct Reader;
+    impl SpeechPort for Reader {
+        fn synthesize(&self, text: &str, target: &Language) -> Result<Synthesis, String> {
+            assert_eq!(target.as_str(), "ja");
+            // Distinct bytes per sentence: the trailing samples carry the text.
+            let mut bytes = wav();
+            let tail = bytes.len() - text.len();
+            bytes[tail..].copy_from_slice(text.as_bytes());
+            Ok(Synthesis {
+                provider: "voicevox",
+                engine_version: "0.24.1".into(),
+                executable_sha256: String::new(),
+                voice_sha256: String::new(),
+                voice_config_sha256: String::new(),
+                voice_language: "ja".into(),
+                voice_dataset: Some("VOICEVOX:春日部つむぎ".into()),
+                speaker: Some("8".into()),
+                length_scale: 1.0,
+                text_sha256: String::new(),
+                mime: "audio/wav".into(),
+                sample_rate: 16000,
+                sha256: linguist_provider::sha256_hex(&bytes),
+                size_bytes: bytes.len() as u64,
+                review_required: true,
+                bytes,
+            })
+        }
+    }
+    let f = Fixture::new();
+    let mut settings = f.settings.clone();
+    settings
+        .values
+        .insert("audio.provider".into(), json!("voicevox"));
+    let input = serde_json::to_vec(&json!({"schema_version":2,"kind":"grammar","target_language":"ja","explanation_language":"en",
+        "requested_tasks":["recognition"],
+        "body":{"pattern":"〜ても","use_key":"concession","meaning":"even if","formation":"V-te + も","recognition_prompt":"",
+            "examples":[
+                {"sentence":"雨が降っても行きます。","translation":"I will go even if it rains.","provenance":"user"},
+                {"sentence":"高くても買います。","translation":"I will buy it even if it is expensive.","provenance":"user"}]}}))
+    .unwrap();
+    let result = prepare_with_providers(
+        &input,
+        Kind::Grammar,
+        &settings,
+        &f.environment,
+        Providers {
+            speech: Some(&Reader),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(!result.ready);
+    let mut plan = f.store().revision(result.plan_id, 1).unwrap();
+    let issues: Vec<_> = validation::validate(&plan.documents[0])
+        .into_iter()
+        .filter(|i| i.code == "AUDIO_CANDIDATE_REVIEW")
+        .collect();
+    assert_eq!(issues.len(), 2, "{issues:?}");
+    assert_ne!(issues[0].id, issues[1].id);
+    for issue in issues {
+        let digest = issue.source_refs[0].clone();
+        plan = decide(&plan, &issue.id, ReviewChoice::Media(digest));
+    }
+    assert!(
+        validation::ready(&plan.documents[0]),
+        "{:?}",
+        validation::validate(&plan.documents[0])
+    );
+    let example = &plan.rendered[0].fields["Example"];
+    assert_eq!(example.matches("[sound:").count(), 2, "{example}");
+    for sentence in ["行きます。", "買います。"] {
+        let at = example.find(sentence).unwrap();
+        let sound = example[..at].rfind("[sound:").unwrap();
+        // Each button sits in the same list item as its sentence.
+        assert!(!example[sound..at].contains("<li"), "{example}");
+    }
+    assert!(!plan.rendered[0].fields.contains_key("Audio"));
+}

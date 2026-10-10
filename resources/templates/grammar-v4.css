@@ -1,0 +1,5 @@
+.lab-pattern { font-size: 2.1em; }
+.lab-formation p { font-size: 1.05em; }
+.lab-example-line { display: flex; align-items: center; gap: .45em; }
+.lab-example-line .replay-button svg { width: 30px; height: 30px; filter: none; }
+.lab-voiced .lab-tr { padding-left: calc(30px + .45em); }

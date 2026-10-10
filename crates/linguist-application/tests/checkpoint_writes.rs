@@ -776,8 +776,9 @@ fn exact_model_is_reused_and_same_name_different_manifest_blocks() {
     let error = install(&mut s.store, &s.token, &mut port, request(s.checkpoint)).unwrap_err();
     assert!(error.starts_with("MODEL_NAME_COLLISION"), "{error}");
     assert!(error.contains("fields") && error.contains("css"));
+    // Grammar v4 has one template: a changed front is the template difference.
     let mut reordered = observed(&target, 44);
-    reordered.templates.reverse();
+    reordered.templates[0].front.push_str("<!-- user -->");
     let mut port2 = models(vec![reordered], Install::Exact);
     assert!(
         install(&mut s.store, &s.token, &mut port2, request(s.checkpoint))

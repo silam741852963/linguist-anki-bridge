@@ -578,7 +578,7 @@ fn grammar_add_apply_study_restore_keeps_history() {
     ]);
     let (note_id, snapshot) = applied(&outcome);
     let note = s.desktop.note(note_id);
-    assert_eq!(note["model_name"], "Linguist Grammar v3");
+    assert_eq!(note["model_name"], "Linguist Grammar v4");
     assert!(
         note["fields"]["Meaning"]
             .as_str()
@@ -939,6 +939,12 @@ fn grammar_revamp_multi_unit_split_apply_study_rollback() {
             .contains("〜てもいい")
     );
     assert_eq!(sibling_note["cards"][0]["review_count"], 0);
+    // WP-23: the sibling's card carries the source card's schedule.
+    assert_eq!(
+        sibling_note["cards"][0]["scheduler"],
+        inherited(&before["cards"][0]["scheduler"]),
+        "{sibling_note}"
+    );
     // Later study of the anchor, then a group rollback through the CLI.
     s.desktop.study(note_id);
     let studied = s.desktop.note(note_id);
@@ -964,6 +970,16 @@ fn grammar_revamp_multi_unit_split_apply_study_rollback() {
     );
     assert!(s.desktop.note(sibling).is_null());
     s.report("grammar_split");
+}
+
+/// WP-23: the scheduler a new split unit's card copies from its source card;
+/// it keeps no reviews, lapses, flag or `odue` of its own.
+fn inherited(source: &Value) -> Value {
+    let mut scheduler = source.clone();
+    for key in ["reps", "lapses", "flags", "odue"] {
+        scheduler[key] = json!("0");
+    }
+    scheduler
 }
 
 /// Prepare, bind and approve one vocabulary item; returns (plan, revision).
@@ -2034,6 +2050,19 @@ fn vocab_split_apply_study_rollback() {
         .desktop
         .call("findNotes", json!({"query": "Expression:僕"}));
     assert_eq!(sibling.as_array().unwrap().len(), 1, "one new note for 僕");
+    // WP-23: the sibling's Comprehension card carries the source card's schedule.
+    let sibling_note = s.desktop.note(sibling[0].as_i64().unwrap());
+    let card = sibling_note["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|card| card["ordinal"] == 0)
+        .unwrap();
+    assert_eq!(
+        card["scheduler"],
+        inherited(&before["cards"][0]["scheduler"]),
+        "{sibling_note}"
+    );
     let execution = applied["split"]["execution_id"]
         .as_str()
         .unwrap()

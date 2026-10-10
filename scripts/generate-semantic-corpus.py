@@ -222,25 +222,26 @@ add("GA-JA-06", W, L, ["homograph", "kana"], "ように (resemblance) is a separ
      "formation": "N + の + ように", "recognition_prompt": RP,
      "examples": [ex("雪のように白い。", "White like snow.")]},
     ready(rendered_contains={"Meaning": "like; as"}), explanation="en")
-add("GA-JA-07", W, L, ["task_leakage", "kanji"], "Application exercise whose answer is not in the prompt.",
+add("GA-JA-07", W, L, ["task_leakage", "kanji"], "Grammar v4 has no Application card.",
     {"pattern": "〜ながら", "use_key": "simultaneous", "meaning": "while doing",
      "formation": "V-ます語幹 + ながら", "recognition_prompt": RP,
      "exercise_prompt": "コーヒーを（のむ）＿＿＿＿新聞を読みます。", "exercise_answer": "飲みながら",
      "examples": [ex("歩きながら話す。", "Talk while walking.")]},
-    ready(rendered_contains={"ExerciseAnswer": "飲みながら"}), explanation="en",
-    tasks=["recognition", "application"])
-add("GA-JA-08", W, L, ["task_leakage"], "Application without an answer blocks.",
+    blocked("GRAMMAR_APPLICATION_RETIRED"), explanation="en", tasks=["recognition", "application"])
+add("GA-JA-08", W, L, ["task_leakage"], "Every example renders in Example; no exercise field.",
     {"pattern": "〜ながら", "use_key": "simultaneous", "meaning": "while doing",
      "formation": "V-ます語幹 + ながら", "recognition_prompt": RP,
      "exercise_prompt": "テレビを見＿＿＿＿ご飯を食べる。",
-     "examples": [ex("歩きながら話す。", "Talk while walking.")]},
-    blocked("MISSING_EXERCISE"), explanation="en", tasks=["recognition", "application"])
-add("GA-JA-09", W, L, ["task_leakage"], "Application prompt that contains its answer is rejected.",
+     "examples": [ex("歩きながら話す。", "Talk while walking."),
+                  ex("音楽を聞きながら勉強する。", "Study while listening to music.")]},
+    ready(rendered_contains={"Example": "聞き<b class=\"lab-hl\">ながら</b>"},
+          rendered_excludes={"Pattern": "テレビ"}), explanation="en")
+add("GA-JA-09", W, L, ["task_leakage"], "Nuance has its own field.",
     {"pattern": "〜ながら", "use_key": "simultaneous", "meaning": "while doing",
      "formation": "V-ます語幹 + ながら", "recognition_prompt": RP,
-     "exercise_prompt": "テレビを見ながらご飯を食べる。（見ながら）", "exercise_answer": "見ながら",
+     "nuance": [{"expression": "〜つつ", "difference": "Written register."}],
      "examples": [ex("歩きながら話す。", "Talk while walking.")]},
-    blocked("ANSWER_LEAK"), explanation="en", tasks=["recognition", "application"])
+    ready(rendered_contains={"Nuance": "<dt>〜つつ</dt>"}), explanation="en")
 add("GA-JA-10", W, L, ["kanji"], "Grammar needs at least one validated use example.",
     {"pattern": "〜すぎる", "use_key": "excess", "meaning": "too much", "formation": "V-ます語幹/A語幹 + すぎる",
      "recognition_prompt": RP, "examples": []},
@@ -262,12 +263,12 @@ add("GA-JA-14", W, L, ["kana", "baseline"], "Kana-only pattern with two examples
     {"pattern": "〜けど", "use_key": "contrast", "meaning": "but; although", "formation": "普通形 + けど",
      "recognition_prompt": RP, "examples": [ex("高いけど、買います。", "It's expensive, but I'll buy it."),
                                             ex("行きたいけど、時間がない。", "I want to go, but I have no time.")]},
-    ready(rendered_contains={"UsageExamples": "行きたい<b class=\"lab-hl\">けど</b>"}), explanation="en")
+    ready(rendered_contains={"Example": "行きたい<b class=\"lab-hl\">けど</b>"}), explanation="en")
 add("GA-JA-15", W, L, ["vietnamese_explanation", "kanji"], "Vietnamese preset with usage note.",
     {"pattern": "〜はずだ", "use_key": "expectation", "meaning": "chắc là; lẽ ra",
      "formation": "普通形 + はずだ", "usage": "Dựa trên căn cứ khách quan.", "recognition_prompt": RP,
      "examples": [ex("彼はもう着いたはずだ。", "Chắc là anh ấy đã đến rồi.")]},
-    ready(rendered_contains={"UsageExamples": "Dựa trên căn cứ khách quan."}))
+    ready(rendered_contains={"Usage": "Dựa trên căn cứ khách quan."}))
 
 # ---------------------------------------------------------------- grammar_add / en
 L = "en"
@@ -307,24 +308,24 @@ add("GA-EN-07", W, L, ["homograph"], "would (conditional) has its own use key.",
      "formation": "if + past, would + base verb", "recognition_prompt": RP,
      "examples": [ex("If I had time, I would help.", "I lack time, so I can't help.")]},
     ready(rendered_contains={"Meaning": "result of an unreal condition"}))
-add("GA-EN-08", W, L, ["task_leakage"], "Application exercise with a hidden answer.",
+add("GA-EN-08", W, L, ["task_leakage"], "Grammar v4 has no Application card.",
     {"pattern": "used to + V", "use_key": "past-habit", "meaning": "a past habit",
      "formation": "used to + base verb", "recognition_prompt": RP,
      "exercise_prompt": "I ___ play tennis as a child. (habit)", "exercise_answer": "used to",
      "examples": [ex("I used to live in Hanoi.", "I lived in Hanoi in the past.")]},
-    ready(rendered_contains={"ExercisePrompt": "I ___ play tennis"}), tasks=["recognition", "application"])
-add("GA-EN-09", W, L, ["task_leakage"], "Application exercise without an answer blocks.",
+    blocked("GRAMMAR_APPLICATION_RETIRED"), tasks=["recognition", "application"])
+add("GA-EN-09", W, L, ["task_leakage"], "Usage has its own field.",
     {"pattern": "used to + V", "use_key": "past-habit", "meaning": "a past habit",
      "formation": "used to + base verb", "recognition_prompt": RP,
-     "exercise_prompt": "I ___ play tennis as a child.",
+     "usage": "Only for the past; no present form.",
      "examples": [ex("I used to live in Hanoi.", "I lived in Hanoi in the past.")]},
-    blocked("MISSING_EXERCISE"), tasks=["recognition", "application"])
-add("GA-EN-10", W, L, ["task_leakage"], "Exercise prompt that states the answer is rejected.",
+    ready(rendered_contains={"Usage": "Only for the past"}))
+add("GA-EN-10", W, L, ["task_leakage"], "The source's own meaning line is not rendered.",
     {"pattern": "used to + V", "use_key": "past-habit", "meaning": "a past habit",
      "formation": "used to + base verb", "recognition_prompt": RP,
-     "exercise_prompt": "I used to play tennis. Fill: I ___ play tennis.", "exercise_answer": "used to",
+     "source_meaning": "thói quen trong quá khứ",
      "examples": [ex("I used to live in Hanoi.", "I lived in Hanoi in the past.")]},
-    blocked("ANSWER_LEAK"), tasks=["recognition", "application"])
+    ready(rendered_excludes={"Meaning": "thói quen"}))
 add("GA-EN-11", W, L, ["adversarial"], "Event-handler markup in the meaning is escaped.",
     {"pattern": "so ... that", "use_key": "result", "meaning": "<a href=javascript:alert(1)>so much that</a>",
      "formation": "so + adj + that + clause", "recognition_prompt": RP,

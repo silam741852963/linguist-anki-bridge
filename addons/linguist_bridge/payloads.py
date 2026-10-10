@@ -31,12 +31,17 @@ GRAMMAR_V3_FIELDS = frozenset({
     "Pattern", "Meaning", "Formation", "Example", "UsageExamples",
     "ExercisePrompt", "ExerciseAnswer", "Audio", "EnableApplication",
 })
+# WP-23 grammar model: every example in Example, no exercise.
+GRAMMAR_V4_FIELDS = frozenset({
+    "Pattern", "Meaning", "Formation", "Example", "Usage", "Nuance",
+})
 FIELDS = {
     "Linguist Vocabulary v2": VOCAB_FIELDS,
     "Linguist Vocabulary v3": VOCAB_V3_FIELDS,
     "Linguist English Vocabulary v1": ENGLISH_VOCAB_FIELDS,
     "Linguist Grammar v2": GRAMMAR_FIELDS,
     "Linguist Grammar v3": GRAMMAR_V3_FIELDS,
+    "Linguist Grammar v4": GRAMMAR_V4_FIELDS,
 }
 VOCAB_MODELS = frozenset({"Linguist Vocabulary v2", "Linguist Vocabulary v3",
                           "Linguist English Vocabulary v1"})
@@ -45,6 +50,10 @@ BODY_KEYS = frozenset({
     "marker_tag", "source_plan_digest", "checkpoint_digest", "binding",
     "expected_absent",
 })
+# WP-23: optional cards of a new split unit that copy a source card's schedule.
+INHERIT_KEY = "inherit_schedule"
+SCHEDULER_KEYS = frozenset({"queue", "type", "due", "ivl", "factor", "reps", "lapses",
+                            "left", "odue", "flags", "memory_state"})
 MAX_ID = 9_007_199_254_740_991
 MAX_FIELD_BYTES = 262_144
 MAX_MEDIA_BYTES = 256 * 1024 * 1024
@@ -192,8 +201,30 @@ def _migration(value):
     return value
 
 
+def _inherit_schedule(entries):
+    if type(entries) is not list or not 1 <= len(entries) <= 16:
+        raise _invalid()
+    ordinals = set()
+    for entry in entries:
+        _exact(entry, {"card_ordinal", "source_card_id", "scheduler"})
+        ordinals.add(_ordinal(entry["card_ordinal"]))
+        _int_id(entry["source_card_id"])
+        scheduler = entry["scheduler"]
+        _exact(scheduler, SCHEDULER_KEYS)
+        for value in scheduler.values():
+            if type(value) is not str or not value:
+                raise _invalid()
+            _text(value, 200)
+    if len(ordinals) != len(entries):
+        raise _invalid()
+
+
 def _create_note(body, operation_id, approved_digest):
-    _exact(body, BODY_KEYS)
+    if type(body) is dict and INHERIT_KEY in body:
+        _inherit_schedule(body[INHERIT_KEY])
+        _exact(body, BODY_KEYS | {INHERIT_KEY})
+    else:
+        _exact(body, BODY_KEYS)
     model = body["model_name"]
     if type(model) is not str or model not in FIELDS:
         raise _invalid()
@@ -220,12 +251,11 @@ def _create_note(body, operation_id, approved_digest):
             or (model == "Linguist Grammar v2" and
                 (not fields["UseKey"].strip() or not fields["Formation"].strip()
                  or not fields["Examples"].strip()))
-            or (model == "Linguist Grammar v3" and
+            or (model in ("Linguist Grammar v3", "Linguist Grammar v4") and
                 (not fields["Formation"].strip() or not fields["Example"].strip()))):
         raise _invalid()
-    switches = (("EnableProduction", "EnableSpelling") if model in VOCAB_MODELS
-                else ("EnableApplication",))
-    if any(fields[key] not in ("", "1") for key in switches):
+    switches = ("EnableProduction", "EnableSpelling", "EnableApplication")
+    if any(fields.get(key, "") not in ("", "1") for key in switches):
         raise _invalid()
     tags = body["tags"]
     if type(tags) is not list or not 1 <= len(tags) <= 100:

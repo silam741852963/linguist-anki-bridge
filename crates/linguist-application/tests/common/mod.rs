@@ -524,10 +524,23 @@ pub fn studied_card() -> ObservedCard {
         ordinal: 0,
         deck_id: HOME_DECK,
         original_deck_id: 0,
-        scheduler: [("due", "5"), ("ivl", "3"), ("reps", "1")]
-            .into_iter()
-            .map(|(k, v)| (k.into(), v.into()))
-            .collect(),
+        // Every key the companion observes (`effects.SCHEDULER_KEYS` + memory state).
+        scheduler: [
+            ("queue", "2"),
+            ("type", "2"),
+            ("due", "5"),
+            ("ivl", "3"),
+            ("factor", "2500"),
+            ("reps", "1"),
+            ("lapses", "0"),
+            ("left", "0"),
+            ("odue", "0"),
+            ("flags", "4"),
+            ("memory_state", "None"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect(),
         history_digest: "1".repeat(64),
         review_count: 1,
     }
@@ -691,6 +704,28 @@ impl Anki {
                     .find(|m| m.name == body["model_name"].as_str().unwrap())
                     .cloned()
                     .unwrap();
+                // WP-23: a split unit's card copies its source card's
+                // schedule, except reviews, lapses, flags and odue.
+                let mut inherited = BTreeMap::new();
+                for entry in body["inherit_schedule"].as_array().into_iter().flatten() {
+                    let source_id = entry["source_card_id"].as_i64().unwrap();
+                    let source = self
+                        .notes
+                        .values()
+                        .flat_map(|n| &n.cards)
+                        .find(|c| c.id == source_id)
+                        .cloned()?;
+                    let expected: BTreeMap<String, String> =
+                        serde_json::from_value(entry["scheduler"].clone()).unwrap();
+                    if source.scheduler != expected {
+                        return Some("precondition_mismatch".into());
+                    }
+                    let mut copied = source.scheduler.clone();
+                    for key in ["reps", "lapses", "flags", "odue"] {
+                        copied.insert(key.into(), "0".into());
+                    }
+                    inherited.insert(entry["card_ordinal"].as_u64().unwrap() as u16, copied);
+                }
                 let id = self.id();
                 let cards = Self::card_ordinals(&fields)
                     .into_iter()
@@ -699,7 +734,7 @@ impl Anki {
                         ordinal,
                         deck_id: deck,
                         original_deck_id: 0,
-                        scheduler: BTreeMap::new(),
+                        scheduler: inherited.get(&ordinal).cloned().unwrap_or_default(),
                         history_digest: "0".repeat(64),
                         review_count: 0,
                     })

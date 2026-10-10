@@ -497,7 +497,7 @@ fn recognition_and_application_suggestions_are_focused_and_leak_free() {
 }
 
 #[test]
-fn exercise_and_recognition_templates_resolve_through_typed_decisions() {
+fn grammar_application_task_is_retired() {
     let f = AuthoredFixture::new();
     let bytes = serde_json::to_vec(&json!({"schema_version":2,"kind":"grammar","target_language":"en","explanation_language":"en",
         "requested_tasks":["recognition","application"],
@@ -511,33 +511,21 @@ fn exercise_and_recognition_templates_resolve_through_typed_decisions() {
         &f.environment,
     )
     .unwrap();
+    // Grammar v4 (WP-23) has no Application card.
     assert!(!result.ready);
     let store = linguist_store::Store::read_only(&f.state()).unwrap();
-    let mut plan = store.revision(result.plan_id, 1).unwrap();
-    // v3 has no recognition text cue; only the exercise needs a decision.
+    let plan = store.revision(result.plan_id, 1).unwrap();
+    let issues = validation::validate(&plan.documents[0]);
     assert!(
-        !validation::validate(&plan.documents[0])
+        issues
             .iter()
-            .any(|i| i.field.as_deref() == Some("recognition_prompt"))
+            .any(|i| i.code == "GRAMMAR_APPLICATION_RETIRED"),
+        "{issues:?}"
     );
-    let expected = ReviewChoice::Exercise {
-        prompt: "I ___ swim every day.".into(),
-        answer: "used to — past habit".into(),
-    };
-    let issue = validation::validate(&plan.documents[0])
-        .into_iter()
-        .find(|i| i.field.as_deref() == Some("exercise_prompt"))
-        .unwrap();
-    assert_eq!(
-        decision_templates(&plan.documents[0], &issue),
-        vec![expected.clone()]
-    );
-    plan = decide(&plan, &issue.id, expected);
-    // Acknowledged alternatives are accepted by the typed exercise decision too.
     assert!(
-        validation::ready(&plan.documents[0]),
-        "{:?}",
-        validation::validate(&plan.documents[0])
+        !issues
+            .iter()
+            .any(|i| i.field.as_deref() == Some("exercise_prompt"))
     );
 }
 

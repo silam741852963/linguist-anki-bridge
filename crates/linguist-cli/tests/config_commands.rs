@@ -4028,7 +4028,7 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     let root = std::env::temp_dir().join(format!("lab-cue-cli-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
     let input = root.join("input.json");
-    std::fs::write(&input, r#"{"schema_version":2,"kind":"grammar","target_language":"ja","explanation_language":"en","requested_tasks":["recognition","application"],"body":{"pattern":"〜ても","meaning":"even if","formation":"Verb te-form + も","use_key":"concession","recognition_prompt":"","exercise_prompt":"","exercise_answer":"","examples":[{"sentence":"雨が降っても行きます。","translation":"I will go even if it rains.","provenance":"user"}]}}"#).unwrap();
+    std::fs::write(&input, r#"{"schema_version":2,"kind":"grammar","target_language":"ja","explanation_language":"en","requested_tasks":["recognition"],"body":{"pattern":"〜ても","meaning":"even if","formation":"Verb te-form + も","use_key":"concession","recognition_prompt":"Does it mean even if?","exercise_prompt":"","exercise_answer":"","examples":[{"sentence":"雨が降っても行きます。","translation":"I will go even if it rains.","provenance":"user"}]}}"#).unwrap();
     let state = format!("storage.state_dir={}/state", root.display());
     let out = cli()
         .args([
@@ -4056,7 +4056,7 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     let issue = doc
         .issues
         .iter()
-        .find(|issue| issue.code == "MISSING_EXERCISE")
+        .find(|issue| issue.code == "ANSWER_LEAK")
         .unwrap();
     let request = linguist_core::review::ResolutionRequest {
         schema_version: 2,
@@ -4066,9 +4066,9 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
         issue_id: issue.id.clone(),
         input_digest: doc.semantic_digest().unwrap(),
         actor: "author".into(),
-        choice: linguist_core::records::ReviewChoice::Exercise {
-            prompt: "雨が降っ＿＿行きます。".into(),
-            answer: "ても — I will go even if it rains.".into(),
+        choice: linguist_core::records::ReviewChoice::Cue {
+            task: linguist_core::document::Task::Recognition,
+            text: "Which relation does this pattern express?".into(),
         },
     };
     let compact = cli()
@@ -4099,7 +4099,7 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
     );
     assert_eq!(
         page["issues"][0]["templates"][0]["choice"]["decision"],
-        "exercise"
+        "cue"
     );
     assert_eq!(page["issues"][0]["actor_required"], true);
     assert_eq!(page["archives_included"], false);
@@ -4189,10 +4189,10 @@ fn cue_resolution_cli_repairs_content_and_rejects_stale_replay() {
         child.documents[0].requested_tasks,
         base.documents[0].requested_tasks
     );
-    assert_eq!(
-        child.rendered[0].fields["ExercisePrompt"],
-        "雨が降っ＿＿行きます。"
-    );
+    // Grammar v4 renders no text cue; the repaired cue stays in the document.
+    assert!(matches!(&child.documents[0].content,
+        linguist_core::LearningContent::Grammar(g)
+            if g.recognition_prompt == "Which relation does this pattern express?"));
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -4537,8 +4537,6 @@ fn vocabulary_and_grammar_adds_review_to_readiness_with_ordinary_commands() {
         "learning.vocabulary.production=true",
         "--set",
         "learning.vocabulary.spelling=true",
-        "--set",
-        "learning.grammar.application=true",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -4598,7 +4596,8 @@ fn vocabulary_and_grammar_adds_review_to_readiness_with_ordinary_commands() {
         ])
         .output()
         .unwrap();
-    assert_eq!(grammar.status.code(), Some(4), "{grammar:?}");
+    // Grammar v4 has no exercise to review: the authored add is ready.
+    assert_eq!(grammar.status.code(), Some(0), "{grammar:?}");
     let value: serde_json::Value = serde_json::from_slice(&grammar.stdout).unwrap();
     let plan = value["plan_id"].as_str().unwrap().to_owned();
     review_to_ready(&base, &plan);

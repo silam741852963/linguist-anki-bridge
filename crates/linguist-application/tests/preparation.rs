@@ -448,7 +448,7 @@ fn managed_duplicate_candidates_remain_review_evidence_even_when_fields_match() 
             .collect::<serde_json::Map<_, _>>();
         let (name, term) = match kind {
             Kind::Vocabulary => ("Linguist Vocabulary v3", "食べる"),
-            Kind::Grammar => ("Linguist Grammar v3", "〜ても"),
+            Kind::Grammar => ("Linguist Grammar v4", "〜ても"),
         };
         let reader = Reader {
             query: format!("\"{term}\""),
@@ -1070,76 +1070,4 @@ fn v3_vocabulary_tasks_need_no_text_cues_but_spelling_needs_a_spoken_front() {
     )
     .unwrap();
     assert!(prepared.ready, "{:?}", prepared.issues);
-}
-
-#[test]
-fn grammar_prompt_and_exercise_repairs_require_complete_nonleaking_answers() {
-    use linguist_core::{records::ReviewChoice, review::ResolutionRequest};
-    let f = Fixture::new();
-    let mut authored = input(Kind::Grammar);
-    authored["requested_tasks"] = serde_json::json!(["recognition", "application"]);
-    authored["body"]["recognition_prompt"] = serde_json::json!("");
-    let prepared = prepare_authored(
-        &serde_json::to_vec(&authored).unwrap(),
-        Kind::Grammar,
-        &f.settings,
-        &f.environment,
-    )
-    .unwrap();
-    let mut store = linguist_store::Store::open(&f.state()).unwrap();
-    let base = store.revision(prepared.plan_id, 1).unwrap();
-    // Grammar v3 has no recognition text cue: an empty prompt is not an issue.
-    assert!(!base.documents[0].issues.iter().any(|issue| {
-        issue.code == "REQUIRED_CONTENT" && issue.field.as_deref() == Some("recognition_prompt")
-    }));
-    let child = base.clone();
-    let doc = &child.documents[0];
-    let issue = doc
-        .issues
-        .iter()
-        .find(|issue| issue.code == "MISSING_EXERCISE")
-        .unwrap();
-    let mut request = ResolutionRequest {
-        schema_version: 2,
-        base_revision: 1,
-        base_digest: child.approval_digest().unwrap(),
-        document_id: doc.id,
-        issue_id: issue.id.clone(),
-        input_digest: doc.semantic_digest().unwrap(),
-        actor: "author".into(),
-        choice: ReviewChoice::Exercise {
-            prompt: "雨が降っても行きます。".into(),
-            answer: "行きます".into(),
-        },
-    };
-    assert!(
-        linguist_application::review::resolve(&store, &child, &request, "now".into())
-            .unwrap_err()
-            .contains("CUE_CONTENT_INVALID")
-    );
-    request.choice = ReviewChoice::Exercise {
-        prompt: "雨が降っても___。".into(),
-        answer: "".into(),
-    };
-    assert!(linguist_application::review::resolve(&store, &child, &request, "now".into()).is_err());
-    request.choice = ReviewChoice::Exercise {
-        prompt: "雨が降っても___。".into(),
-        answer: "行きます".into(),
-    };
-    let result =
-        linguist_application::review::resolve(&store, &child, &request, "now".into()).unwrap();
-    assert!(result.ready, "{:?}", result.revision.documents[0].issues);
-    assert_eq!(
-        result.revision.documents[0].requested_tasks,
-        base.documents[0].requested_tasks
-    );
-    store.publish_revision(&result.revision).unwrap();
-    assert!(
-        !store
-            .validate_revision(base.id, 2)
-            .unwrap()
-            .evidence
-            .apply_eligible
-    );
-    assert_eq!(store.revision(base.id, 1).unwrap(), base);
 }

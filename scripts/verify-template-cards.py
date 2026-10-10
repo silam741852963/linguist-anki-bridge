@@ -54,7 +54,7 @@ def main():
     assert [model["name"] for model in manifests] == [
         "Linguist Vocabulary v3",
         "Linguist English Vocabulary v1",
-        "Linguist Grammar v3",
+        "Linguist Grammar v4",
     ]
     with tempfile.TemporaryDirectory(prefix="lab-template-cards-") as directory:
         col = Collection(str(Path(directory) / "disposable.anki2"))
@@ -81,31 +81,30 @@ def main():
             assert "supernova" not in english_cards[1].question()
             assert "supernova" not in english_cards[2].question() and "/ˌsupɚˈnoʊvə/" in english_cards[2].question()
 
-            # Grammar v3: Recognition shows the pattern and one example; the
-            # meaning is never on a front; Application needs prompt and answer.
+            # Grammar v4: Recognition shows the pattern only (an example would
+            # bring its sound to the front); the back lists every example with
+            # its own play button, then Usage and Nuance. No Application card.
             gbase = {
                 "Pattern": "〜ても",
-                "Meaning": "even if",
+                "Meaning": '<div class="lab-gloss">even if</div>',
                 "Formation": "V-て + も",
-                "Example": '雨が降っ<b class="lab-hl">ても</b>行きます。',
+                "Example": '<ul class="lab-examples"><li class="lab-voiced">'
+                           '<div class="lab-example-line">[sound:a.wav]<span class="lab-target">'
+                           '雨が降っ<b class="lab-hl">ても</b>行きます。</span></div></li>'
+                           '<li class="lab-voiced"><div class="lab-example-line">[sound:b.wav]'
+                           '<span class="lab-target">高く<b class="lab-hl">ても</b>買います。</span>'
+                           '</div></li></ul>',
+                "Usage": "<p>Concession.</p>",
+                "Nuance": "<dl class=\"lab-nuance\"><div><dt>〜のに</dt><dd>Regret.</dd></div></dl>",
             }
             recognition = check(col, grammar, deck_id, gbase, [0])
             question = recognition[0].question()
-            assert "〜ても" in question and "雨が降っ" in question and "even if" not in question
-            assert "even if" in recognition[0].answer()
-            application = {
-                **gbase,
-                "EnableApplication": "1",
-                "ExercisePrompt": "雨が降っ＿＿行きます。",
-                "ExerciseAnswer": "ても",
-            }
-            application_cards = check(col, grammar, deck_id, application, [0, 1])
-            question = application_cards[1].question()
-            assert "雨が降っ＿＿行きます。" in question and "even if" not in question
-            assert "ても" in application_cards[1].answer()
-            check(col, grammar, deck_id, {**gbase, "EnableApplication": "1"}, [0])
-            check(col, grammar, deck_id, {**gbase, "EnableApplication": "1", "ExercisePrompt": "Cue"}, [0])
-            check(col, grammar, deck_id, {**gbase, "ExercisePrompt": "Cue", "ExerciseAnswer": "Answer"}, [0])
+            assert "〜ても" in question and "雨が降っ" not in question and "even if" not in question
+            assert "[anki:play" not in question
+            answer = recognition[0].answer()
+            assert "even if" in answer and "Concession." in answer and "〜のに" in answer
+            assert answer.count("[anki:play:a:") == 2, answer
+            assert len(grammar["tmpls"]) == 1
         finally:
             col.close()
     print("PASS: disposable Anki model/template card ordinals and optional front gates")

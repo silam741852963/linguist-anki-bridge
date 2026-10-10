@@ -520,6 +520,17 @@ pub fn project(
     retained: &BTreeSet<i64>,
     exact_model: Option<(i64, &str)>,
 ) -> NoteProjection {
+    project_inherited(note, retained, exact_model, &BTreeSet::new())
+}
+
+/// `project`, also reporting the scheduler of new cards at `inherited`
+/// ordinals, which copied a source card's schedule (WP-23).
+pub fn project_inherited(
+    note: &ObservedNote,
+    retained: &BTreeSet<i64>,
+    exact_model: Option<(i64, &str)>,
+    inherited: &BTreeSet<u16>,
+) -> NoteProjection {
     let model_manifest_digest = match exact_model {
         Some((id, digest)) if id == note.model_id => digest.to_owned(),
         _ => format!("unverified:{}", note.model_manifest_digest),
@@ -533,7 +544,8 @@ pub fn project(
                 ordinal: card.ordinal,
                 deck_id: card.deck_id,
                 id: kept.then_some(card.id),
-                scheduler: kept.then(|| card.scheduler.clone()),
+                scheduler: (kept || inherited.contains(&card.ordinal))
+                    .then(|| card.scheduler.clone()),
                 history_digest: kept.then(|| card.history_digest.clone()),
                 review_count: card.review_count,
             }
@@ -759,6 +771,105 @@ struct Preflight {
     migration: Option<Migration>,
     media_steps: Vec<(MediaProjection, String)>,
     reused_media: Vec<MediaProjection>,
+    /// Split units: cards that copy their source card's schedule (WP-23).
+    inherit: Vec<InheritedCard>,
+}
+
+/// One card of a new split unit and the source card whose schedule it copies.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct InheritedCard {
+    card_ordinal: u16,
+    source_card_id: i64,
+    /// The source card's scheduler as observed now: the native precondition.
+    source_scheduler: BTreeMap<String, String>,
+}
+
+/// Scheduler keys a split unit's card does not copy: it has no reviews,
+/// lapses or flag of its own, and is never in a filtered deck.
+const NOT_INHERITED: [&str; 4] = ["reps", "lapses", "flags", "odue"];
+
+/// The scheduler a card has after copying `source` (WP-23).
+fn inherited_scheduler(source: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut out = source.clone();
+    for key in NOT_INHERITED {
+        if let Some(value) = out.get_mut(key) {
+            *value = "0".into();
+        }
+    }
+    out
+}
+
+/// Card ordinals of a created note that copied a source card's schedule.
+fn inherited_ordinals(effect: &Effect) -> BTreeSet<u16> {
+    let Effect::CreateNote { envelope } = effect else {
+        return BTreeSet::new();
+    };
+    envelope["body"]["inherit_schedule"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry["card_ordinal"].as_u64())
+        .filter_map(|ordinal| u16::try_from(ordinal).ok())
+        .collect()
+}
+
+/// For a new split unit, the source card each requested task copies its
+/// schedule from: the anchor's reviewed task map gives the source ordinal of
+/// each task (or the same ordinal when the source is already on the target
+/// model). A task with no source card stays a new card.
+fn split_inheritance(
+    item: &AuthorizedItem,
+    port: &mut dyn ApplyPort,
+    target: &ManagedModel,
+) -> Result<Vec<InheritedCard>> {
+    let Some((source, note_id)) = source_note(&item.document)? else {
+        return Ok(vec![]);
+    };
+    let group = item
+        .plan
+        .grammar_groups
+        .iter()
+        .find(|group| group.units.contains(&item.document.id))
+        .ok_or("SPLIT_GROUP_NOT_FOUND")?;
+    let anchor = item
+        .plan
+        .documents
+        .iter()
+        .find(|doc| doc.id == group.anchor_document)
+        .ok_or("SPLIT_ANCHOR_SOURCE_MISSING")?;
+    let note = port.note(note_id)?.ok_or("APPLY_SOURCE_MISSING")?;
+    let map = anchor.task_maps.iter().find(|map| {
+        map.source_id == source.id && map.source_model_digest == note.model_manifest_digest
+    });
+    let mut out = Vec::new();
+    for task in &item.rendered.tasks {
+        let Some(target_ordinal) = task_ordinal(target, *task) else {
+            continue;
+        };
+        let source_ordinal = if note.model_name == target.name {
+            Some(target_ordinal)
+        } else {
+            map.and_then(|map| map.entries.iter().find(|e| e.target_task == *task))
+                .map(|entry| entry.source_ordinal)
+        };
+        let Some(card) = source_ordinal
+            .and_then(|ordinal| note.cards.iter().find(|card| card.ordinal == ordinal))
+        else {
+            continue;
+        };
+        if card.original_deck_id != 0 {
+            return Err(
+                "APPLY_FILTERED_DECK_BLOCKS: return the source cards to their home deck first"
+                    .into(),
+            );
+        }
+        out.push(InheritedCard {
+            card_ordinal: target_ordinal,
+            source_card_id: card.id,
+            source_scheduler: card.scheduler.clone(),
+        });
+    }
+    Ok(out)
 }
 
 fn media_filename_safe(name: &str) -> bool {
@@ -990,6 +1101,12 @@ fn preflight(
             }
         }
     }
+    // New split units copy the schedule of the source card for each task.
+    let inherit = if role == Role::SplitChild {
+        split_inheritance(item, port, target)?
+    } else {
+        vec![]
+    };
     let mut variants: BTreeSet<&str> = BTreeSet::new();
     variants.insert(if action == ItemAction::Create {
         "create_note"
@@ -1017,6 +1134,7 @@ fn preflight(
         migration,
         media_steps,
         reused_media,
+        inherit,
     })
 }
 
@@ -1046,7 +1164,11 @@ fn desired_projection(
                     ordinal: *ordinal,
                     deck_id: pre.deck_id,
                     id: None,
-                    scheduler: None,
+                    scheduler: pre
+                        .inherit
+                        .iter()
+                        .find(|card| card.card_ordinal == *ordinal)
+                        .map(|card| inherited_scheduler(&card.source_scheduler)),
                     history_digest: None,
                     review_count: 0,
                 });
@@ -1113,8 +1235,9 @@ fn create_envelope(
     deck_id: i64,
     checkpoint_digest: &str,
     binding: &CollectionBinding,
+    inherit: &[InheritedCard],
 ) -> Result<serde_json::Value> {
-    let envelope = serde_json::json!({
+    let mut envelope = serde_json::json!({
         "schema_version": 1,
         "variant": "create_note",
         "body": {
@@ -1133,6 +1256,19 @@ fn create_envelope(
             "expected_absent": true,
         }
     });
+    // Older companions accept no such key, so it is sent only when used.
+    if !inherit.is_empty() {
+        envelope["body"]["inherit_schedule"] = inherit
+            .iter()
+            .map(|card| {
+                serde_json::json!({
+                    "card_ordinal": card.card_ordinal,
+                    "source_card_id": card.source_card_id,
+                    "scheduler": card.source_scheduler,
+                })
+            })
+            .collect();
+    }
     let bytes = canonical::bytes(&envelope).map_err(|e| e.to_string())?;
     linguist_anki::native::validate_create_note_intent(&bytes, step_id, &item.approval_digest)?;
     Ok(envelope)
@@ -1512,6 +1648,7 @@ pub(crate) fn apply_item_with(
                     pre.deck_id,
                     &checkpoint_digest,
                     &current,
+                    &pre.inherit,
                 )?,
             },
             canonical::digest(
@@ -1750,7 +1887,12 @@ pub(crate) fn read_step(
             match candidates.as_slice() {
                 [] => Ok(Readback::Unchanged),
                 [note] => {
-                    let projection = project(note, &BTreeSet::new(), Some(context.target_model));
+                    let projection = project_inherited(
+                        note,
+                        &BTreeSet::new(),
+                        Some(context.target_model),
+                        &inherited_ordinals(&step.effect),
+                    );
                     let digest = digest_of(&projection)?;
                     Ok(if digest == step.expected_digest {
                         Readback::Expected(digest)
@@ -1989,10 +2131,11 @@ fn commit(
     } else {
         context.retained()
     };
-    let projection = project(
+    let projection = project_inherited(
         &note,
         &retained,
         Some((intent.target_model_id, &intent.target_manifest_digest)),
+        &inherited_ordinals(&last.effect),
     );
     let projection_bytes = canonical::bytes(&projection).map_err(|e| e.to_string())?;
     if canonical::asset_digest(&projection_bytes) != last.expected_digest {

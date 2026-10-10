@@ -186,9 +186,14 @@ fn template(name: &str, ordinal: u16, front: &str, back: &str) -> Template {
 }
 const VOCABULARY_STYLE: &str = include_str!("../../../resources/templates/vocabulary-v3.css");
 /// Grammar v3 shares the vocabulary v3 visual system plus a few pattern rules.
-const GRAMMAR_STYLE: &str = concat!(
+const GRAMMAR_V3_STYLE: &str = concat!(
     include_str!("../../../resources/templates/vocabulary-v3.css"),
     include_str!("../../../resources/templates/grammar-v3.css")
+);
+/// Grammar v4: the same system plus per-example play buttons.
+const GRAMMAR_STYLE: &str = concat!(
+    include_str!("../../../resources/templates/vocabulary-v3.css"),
+    include_str!("../../../resources/templates/grammar-v4.css")
 );
 /// WP-19 vocabulary model: fields only, no text cues and no provenance fields.
 /// Language and explanation language are note tags (`lab::lang::*`).
@@ -284,10 +289,37 @@ pub fn managed() -> Vec<ManagedModel> {
 pub fn by_name(name: &str) -> Option<ManagedModel> {
     managed().into_iter().find(|model| model.name == name)
 }
-/// WP-22 grammar model: fields only, by analogy with vocabulary v3.
+/// WP-23 grammar model. Example lists every example with its own play
+/// button, and Usage and Nuance have their own fields. The Recognition front
+/// shows the pattern only: an example there would bring its sound with it.
+/// There is no Application card.
+pub fn grammar() -> ManagedModel {
+    ManagedModel {
+        name: "Linguist Grammar v4".into(),
+        version: 4,
+        fields: [
+            "Pattern",
+            "Meaning",
+            "Formation",
+            "Example",
+            "Usage",
+            "Nuance",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+        templates: vec![template(
+            "Recognition",
+            0,
+            include_str!("../../../resources/templates/grammar-v4-recognition-front.html"),
+            include_str!("../../../resources/templates/grammar-v4-back.html"),
+        )],
+        css: GRAMMAR_STYLE.into(),
+    }
+}
+/// The WP-22 grammar model, kept so its notes can be read as revamp sources.
 /// Languages, JLPT level and lesson travel as tags; the Recognition front
 /// shows the pattern and one example with the pattern highlighted.
-pub fn grammar() -> ManagedModel {
+pub fn grammar_v3() -> ManagedModel {
     ManagedModel {
         name: "Linguist Grammar v3".into(),
         version: 3,
@@ -318,7 +350,7 @@ pub fn grammar() -> ManagedModel {
                 include_str!("../../../resources/templates/grammar-v3-application-back.html"),
             ),
         ],
-        css: GRAMMAR_STYLE.into(),
+        css: GRAMMAR_V3_STYLE.into(),
     }
 }
 /// The WP-17 grammar model, kept so its notes can be read as revamp sources.

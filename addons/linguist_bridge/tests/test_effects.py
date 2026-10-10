@@ -126,6 +126,36 @@ class EffectTests(unittest.TestCase):
         with self.assertRaisesRegex(effects.EffectError, "BRIDGE_REMOVAL_REQUIRES_MAPPING"):
             effects.restore_note(col, without, digest)
 
+    def test_split_unit_copies_the_source_schedule_but_no_reviews(self):
+        col = FakeNoteCollection(reviews=0)
+        source = col.cards[11]
+        source.queue, source.type, source.due, source.ivl = 2, 2, 5001, 2899
+        source.factor, source.reps, source.lapses, source.flags = 2500, 10, 1, 4
+        new = FakeCard(13, 0, 0)
+        col.cards = {11: source, 13: new}
+        col.card_ids_of_note = lambda _note_id: [13]
+        col.updated = []
+        col.update_card = col.updated.append
+        model = {"tmpls": [{}]}
+        entry = {"card_ordinal": 0, "source_card_id": 11,
+                 "scheduler": effects._scheduler(source)}
+        sources = effects._inherit_sources(col, {"inherit_schedule": [entry]}, model)
+        effects._inherit(col, 99, sources)
+        self.assertEqual((new.queue, new.type, new.due, new.ivl, new.factor),
+                         (2, 2, 5001, 2899, 2500))
+        self.assertEqual((new.reps, new.lapses, new.flags, new.reviews), (0, 0, 0, 0))
+        self.assertEqual(col.updated, [new])
+        # The source was studied since the intent was built: refused before any write.
+        stale = dict(entry, scheduler=dict(entry["scheduler"], due="5000"))
+        with self.assertRaisesRegex(effects.EffectError, "BRIDGE_PRECONDITION_FAILED"):
+            effects._inherit_sources(col, {"inherit_schedule": [stale]}, model)
+        with self.assertRaisesRegex(effects.EffectError, "BRIDGE_INHERIT_ORDINAL_INVALID"):
+            effects._inherit_sources(
+                col, {"inherit_schedule": [dict(entry, card_ordinal=1)]}, model)
+        source.odid = 5
+        with self.assertRaisesRegex(effects.EffectError, "BRIDGE_FILTERED_DECK"):
+            effects._inherit_sources(col, {"inherit_schedule": [entry]}, model)
+
     def test_precondition_digest_matches_rust_vector(self):
         observed = {
             "model_name": "Linguist Vocabulary v2",

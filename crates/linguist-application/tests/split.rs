@@ -273,6 +273,18 @@ fn children_are_created_first_then_the_anchor_keeps_its_history() {
             .iter()
             .all(|c| c.review_count == 0 && c.deck_id == GRAMMAR_DECK && c.id != 20)
     }));
+    // WP-23: each child card copies the source card's schedule but none of
+    // its reviews, lapses or flag.
+    let mut inherited = before.scheduler.clone();
+    for key in ["reps", "lapses", "flags", "odue"] {
+        inherited.insert(key.into(), "0".into());
+    }
+    assert!(
+        created
+            .iter()
+            .all(|n| n.cards.iter().all(|c| c.scheduler == inherited)),
+        "{created:?}"
+    );
     // The anchor keeps its card ID, scheduling and history.
     let card = &g.anki.notes[&10].cards[0];
     assert_eq!(

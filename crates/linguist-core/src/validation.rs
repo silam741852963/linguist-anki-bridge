@@ -211,23 +211,14 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                     "Recognition cue exposes the meaning it asks for.",
                 )
             }
+            // Grammar v4 (WP-23) has no Application card.
             if tasks.contains(&Task::Application) {
-                if g.exercise_prompt.trim().is_empty() || g.exercise_answer.trim().is_empty() {
-                    add(
-                        "MISSING_EXERCISE",
-                        Severity::Error,
-                        Some("exercise_prompt"),
-                        "Application requires both prompt and answer.",
-                    )
-                }
-                if answer_leaks(&g.exercise_prompt, &g.exercise_answer, &doc.target_language) {
-                    add(
-                        "ANSWER_LEAK",
-                        Severity::Error,
-                        Some("exercise_prompt"),
-                        "Exercise cue exposes its answer.",
-                    )
-                }
+                add(
+                    "GRAMMAR_APPLICATION_RETIRED",
+                    Severity::Error,
+                    Some("requested_tasks"),
+                    "Grammar cards have no Application task; request Recognition only.",
+                )
             }
             (
                 vec![

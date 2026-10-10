@@ -333,20 +333,31 @@ fn kanji(v: &Vocabulary, media: &[crate::records::MediaAsset]) -> String {
     html.push_str("</div>");
     html
 }
-/// Grammar v3 Meaning: the meaning in the explanation language, then the
-/// source's own meaning line when one was captured.
+/// Grammar Meaning: the gloss in the explanation language only (WP-23).
+/// The source's own meaning line stays in the document and its archive.
 fn grammar_meaning(g: &crate::document::Grammar) -> String {
-    let mut html = format!(
+    format!(
         "<div class=\"lab-gloss\">{}</div>",
         escape(g.meaning.trim())
-    );
-    if !g.source_meaning.trim().is_empty() {
-        html.push_str(&format!(
-            "<div class=\"lab-source-meaning\">{}</div>",
-            escape(g.source_meaning.trim())
-        ));
-    }
-    html
+    )
+}
+/// The sentence a synthesized audio asset reads, from its enrichment evidence.
+pub fn spoken_text(doc: &LearningDocument, digest: &str) -> Option<String> {
+    doc.evidence.iter().find_map(|evidence| {
+        if evidence.field != "audio"
+            || evidence.target
+                != Some(crate::records::EvidenceTarget::MediaAsset {
+                    digest: digest.into(),
+                })
+        {
+            return None;
+        }
+        serde_json::from_str::<serde_json::Value>(&evidence.claim)
+            .ok()?
+            .get("text")?
+            .as_str()
+            .map(|text| text.trim().to_owned())
+    })
 }
 /// The forms a grammar pattern takes in a sentence, longest first: reviewed
 /// `forms` plus forms derived from the pattern by dropping the 〜
@@ -422,28 +433,37 @@ fn highlighted_forms(text: &str, forms: &[String]) -> String {
         None => escape(text),
     }
 }
-/// v3 grammar UsageExamples: usage, nuance against similar patterns and examples.
-fn grammar_usage_examples(g: &crate::document::Grammar, forms: &[String]) -> String {
+/// Grammar Example (WP-23): every example with the pattern highlighted, its
+/// translation and the play button of each selected audio that reads it.
+fn grammar_examples(
+    doc: &LearningDocument,
+    g: &crate::document::Grammar,
+    forms: &[String],
+) -> String {
+    let mut placed: Vec<String> = Vec::new();
+    let audio: Vec<_> = doc
+        .media
+        .iter()
+        .filter(|m| m.role == MediaRole::Audio)
+        .map(|m| (m, spoken_text(doc, &m.digest)))
+        .collect();
     let mut html = String::new();
-    if !g.usage.trim().is_empty() {
-        html.push_str(&format!("<h4>Usage</h4><p>{}</p>", escape(g.usage.trim())));
-    }
-    if !g.nuance.is_empty() {
-        html.push_str("<h4>Nuance</h4><dl class=\"lab-nuance\">");
-        for contrast in &g.nuance {
-            html.push_str(&format!(
-                "<div><dt>{}</dt><dd>{}</dd></div>",
-                escape(&contrast.expression),
-                escape(&contrast.difference)
-            ));
-        }
-        html.push_str("</dl>");
-    }
     if !g.examples.is_empty() {
-        html.push_str("<h4>Examples</h4><ul class=\"lab-examples\">");
+        html.push_str("<ul class=\"lab-examples\">");
         for example in &g.examples {
+            let mut sounds = String::new();
+            for (asset, text) in &audio {
+                if text.as_deref() == Some(example.sentence.trim())
+                    && !placed.contains(&asset.digest)
+                {
+                    placed.push(asset.digest.clone());
+                    sounds.push_str(&format!("[sound:{}]", asset.filename));
+                }
+            }
             html.push_str(&format!(
-                "<li><div class=\"lab-target\">{}</div>{}</li>",
+                "<li{}><div class=\"lab-example-line\">{}<span class=\"lab-target\">{}</span></div>{}</li>",
+                if sounds.is_empty() { "" } else { " class=\"lab-voiced\"" },
+                sounds,
                 highlighted_forms(&example.sentence, forms),
                 if example.translation.trim().is_empty() {
                     String::new()
@@ -457,6 +477,47 @@ fn grammar_usage_examples(g: &crate::document::Grammar, forms: &[String]) -> Str
         }
         html.push_str("</ul>");
     }
+    // Audio of unknown text (a source recording) follows the list; a reading
+    // of a sentence no longer among the examples is not rendered.
+    let rest: String = audio
+        .iter()
+        .filter(|(asset, text)| text.is_none() && !placed.contains(&asset.digest))
+        .map(|(asset, _)| format!("[sound:{}]", asset.filename))
+        .collect();
+    if !rest.is_empty() {
+        html.push_str(&format!("<div class=\"lab-audio\">{rest}</div>"));
+    }
+    html
+}
+/// Selected grammar readings of sentences that are no longer examples.
+fn stale_grammar_audio(doc: &LearningDocument) -> Vec<String> {
+    let LearningContent::Grammar(g) = &doc.content else {
+        return vec![];
+    };
+    doc.media
+        .iter()
+        .filter(|m| m.role == MediaRole::Audio)
+        .filter(|m| {
+            spoken_text(doc, &m.digest)
+                .is_some_and(|text| !g.examples.iter().any(|e| e.sentence.trim() == text))
+        })
+        .map(|m| m.digest.clone())
+        .collect()
+}
+/// Grammar Nuance: contrasts with similar patterns.
+fn grammar_nuance(g: &crate::document::Grammar) -> String {
+    if g.nuance.is_empty() {
+        return String::new();
+    }
+    let mut html = String::from("<dl class=\"lab-nuance\">");
+    for contrast in &g.nuance {
+        html.push_str(&format!(
+            "<div><dt>{}</dt><dd>{}</dd></div>",
+            escape(&contrast.expression),
+            escape(&contrast.difference)
+        ));
+    }
+    html.push_str("</dl>");
     html
 }
 fn slug(value: &str) -> String {
@@ -600,25 +661,16 @@ pub fn render(
             fields.insert("Pattern".into(), escape(&g.pattern));
             fields.insert("Meaning".into(), grammar_meaning(g));
             fields.insert("Formation".into(), block(&g.formation));
+            fields.insert("Example".into(), grammar_examples(doc, g, &forms));
             fields.insert(
-                "Example".into(),
-                g.examples
-                    .first()
-                    .map(|e| highlighted_forms(&e.sentence, &forms))
-                    .unwrap_or_default(),
-            );
-            fields.insert("UsageExamples".into(), grammar_usage_examples(g, &forms));
-            fields.insert("ExercisePrompt".into(), escape(&g.exercise_prompt));
-            fields.insert("ExerciseAnswer".into(), escape(&g.exercise_answer));
-            fields.insert(
-                "EnableApplication".into(),
-                if doc.requested_tasks.contains(&Task::Application) {
-                    "1"
+                "Usage".into(),
+                if g.usage.trim().is_empty() {
+                    String::new()
                 } else {
-                    ""
-                }
-                .into(),
+                    format!("<p>{}</p>", escape(g.usage.trim()))
+                },
             );
+            fields.insert("Nuance".into(), grammar_nuance(g));
         }
     }
     for asset in &doc.media {
@@ -628,10 +680,12 @@ pub fn render(
                     p.push_str(&format!("<img src=\"{}\">", url_filename(&asset.filename)))
                 }
             }
-            MediaRole::Audio => fields
-                .get_mut("Audio")
-                .unwrap()
-                .push_str(&format!("[sound:{}]", asset.filename)),
+            // Grammar has no Audio field: its audio renders inside Example.
+            MediaRole::Audio => {
+                if let Some(field) = fields.get_mut("Audio") {
+                    field.push_str(&format!("[sound:{}]", asset.filename))
+                }
+            }
             MediaRole::Archive | MediaRole::KanjiStroke => {}
         }
     }
@@ -658,10 +712,11 @@ pub fn render(
             )));
         }
     }
+    let stale = stale_grammar_audio(doc);
     let media_digests: Vec<_> = doc
         .media
         .iter()
-        .filter(|m| m.role != MediaRole::Archive)
+        .filter(|m| m.role != MediaRole::Archive && !stale.contains(&m.digest))
         .map(|m| m.digest.clone())
         .collect();
     let digest = crate::canonical::digest(

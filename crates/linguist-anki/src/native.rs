@@ -97,7 +97,33 @@ pub struct NativeCreateNoteBody {
     pub checkpoint_digest: String,
     pub binding: NativeCreateNoteBinding,
     pub expected_absent: bool,
+    /// WP-23: cards of a new split unit that copy a source card's schedule.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inherit_schedule: Vec<NativeInheritedSchedule>,
 }
+/// One new card and the source card whose current scheduler (the native
+/// precondition) it copies, except reviews, lapses, flags and `odue`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeInheritedSchedule {
+    pub card_ordinal: u16,
+    pub source_card_id: i64,
+    pub scheduler: BTreeMap<String, String>,
+}
+/// Scheduler keys the companion observes for every card.
+pub const SCHEDULER_KEYS: [&str; 11] = [
+    "queue",
+    "type",
+    "due",
+    "ivl",
+    "factor",
+    "reps",
+    "lapses",
+    "left",
+    "odue",
+    "flags",
+    "memory_state",
+];
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeCreateNoteBinding {
@@ -203,14 +229,11 @@ pub fn validate_create_note_intent(
     {
         return Err(invalid());
     }
-    let switches: &[&str] = if vocabulary {
-        &["EnableProduction", "EnableSpelling"]
-    } else {
-        &["EnableApplication"]
-    };
-    if switches
+    // Grammar v4 has no switch field.
+    if ["EnableProduction", "EnableSpelling", "EnableApplication"]
         .iter()
-        .any(|field| !matches!(body.fields[*field].as_str(), "" | "1"))
+        .filter_map(|field| body.fields.get(*field))
+        .any(|value| !matches!(value.as_str(), "" | "1"))
         || !(1..=100).contains(&body.tags.len())
         || body.tags.iter().any(|tag| {
             tag.is_empty()
@@ -231,6 +254,24 @@ pub fn validate_create_note_intent(
             .filter(|tag| **tag == body.marker_tag)
             .count()
             != 1
+    {
+        return Err(invalid());
+    }
+    let mut ordinals = std::collections::BTreeSet::new();
+    if body.inherit_schedule.len() > 16
+        || body.inherit_schedule.iter().any(|entry| {
+            !ordinals.insert(entry.card_ordinal)
+                || entry.card_ordinal >= 1000
+                || !(1..=9_007_199_254_740_991).contains(&entry.source_card_id)
+                || entry.scheduler.len() != SCHEDULER_KEYS.len()
+                || SCHEDULER_KEYS
+                    .iter()
+                    .any(|key| !entry.scheduler.contains_key(*key))
+                || entry
+                    .scheduler
+                    .values()
+                    .any(|value| value.is_empty() || value.len() > 200 || value.contains('\0'))
+        })
     {
         return Err(invalid());
     }
@@ -418,6 +459,11 @@ pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[
     ),
     (
         "0.3.3",
+        "25.09.2",
+        "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
+    ),
+    (
+        "0.4.0",
         "25.09.2",
         "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
     ),

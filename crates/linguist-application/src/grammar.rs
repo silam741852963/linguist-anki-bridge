@@ -63,15 +63,10 @@ pub fn split(
         {
             return Err("GRAMMAR_SPLIT_UNIT_INVALID".into());
         }
-        // Siblings are new notes: recognition, plus application when the
-        // original asked for it.
-        let mut tasks = vec![Task::Recognition];
-        if original.requested_tasks.contains(&Task::Application) {
-            tasks.push(Task::Application);
-        }
+        // Siblings are new notes with the one grammar task (WP-23).
         units.push(SplitUnit {
             content: LearningContent::Grammar(grammar.clone()),
-            sibling_tasks: tasks,
+            sibling_tasks: vec![Task::Recognition],
             keep_media: None,
         });
     }

@@ -1337,7 +1337,7 @@
     "task_leakage",
     "kanji"
    ],
-   "rationale": "Application exercise whose answer is not in the prompt.",
+   "rationale": "Grammar v4 has no Application card.",
    "input": {
     "schema_version": 2,
     "kind": "grammar",
@@ -1368,11 +1368,10 @@
    "dictionary": null,
    "settings": {},
    "expect": {
-    "ready": true,
-    "issues": [],
-    "rendered_contains": {
-     "ExerciseAnswer": "飲みながら"
-    }
+    "ready": false,
+    "issues": [
+     "GRAMMAR_APPLICATION_RETIRED"
+    ]
    }
   },
   {
@@ -1384,7 +1383,7 @@
    "categories": [
     "task_leakage"
    ],
-   "rationale": "Application without an answer blocks.",
+   "rationale": "Every example renders in Example; no exercise field.",
    "input": {
     "schema_version": 2,
     "kind": "grammar",
@@ -1402,22 +1401,28 @@
        "translation": "Talk while walking.",
        "provenance": "user",
        "evidence_ids": []
+      },
+      {
+       "sentence": "音楽を聞きながら勉強する。",
+       "translation": "Study while listening to music.",
+       "provenance": "user",
+       "evidence_ids": []
       }
      ]
     },
-    "explanation_language": "en",
-    "requested_tasks": [
-     "recognition",
-     "application"
-    ]
+    "explanation_language": "en"
    },
    "dictionary": null,
    "settings": {},
    "expect": {
-    "ready": false,
-    "issues": [
-     "MISSING_EXERCISE"
-    ]
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Example": "聞き<b class=\"lab-hl\">ながら</b>"
+    },
+    "rendered_excludes": {
+     "Pattern": "テレビ"
+    }
    }
   },
   {
@@ -1429,7 +1434,7 @@
    "categories": [
     "task_leakage"
    ],
-   "rationale": "Application prompt that contains its answer is rejected.",
+   "rationale": "Nuance has its own field.",
    "input": {
     "schema_version": 2,
     "kind": "grammar",
@@ -1440,8 +1445,12 @@
      "meaning": "while doing",
      "formation": "V-ます語幹 + ながら",
      "recognition_prompt": "Which pattern fits this sentence?",
-     "exercise_prompt": "テレビを見ながらご飯を食べる。（見ながら）",
-     "exercise_answer": "見ながら",
+     "nuance": [
+      {
+       "expression": "〜つつ",
+       "difference": "Written register."
+      }
+     ],
      "examples": [
       {
        "sentence": "歩きながら話す。",
@@ -1451,19 +1460,16 @@
       }
      ]
     },
-    "explanation_language": "en",
-    "requested_tasks": [
-     "recognition",
-     "application"
-    ]
+    "explanation_language": "en"
    },
    "dictionary": null,
    "settings": {},
    "expect": {
-    "ready": false,
-    "issues": [
-     "ANSWER_LEAK"
-    ]
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Nuance": "<dt>〜つつ</dt>"
+    }
    }
   },
   {
@@ -1664,7 +1670,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "UsageExamples": "行きたい<b class=\"lab-hl\">けど</b>"
+     "Example": "行きたい<b class=\"lab-hl\">けど</b>"
     }
    }
   },
@@ -1706,7 +1712,7 @@
     "ready": true,
     "issues": [],
     "rendered_contains": {
-     "UsageExamples": "Dựa trên căn cứ khách quan."
+     "Usage": "Dựa trên căn cứ khách quan."
     }
    }
   },
@@ -1994,7 +2000,7 @@
    "categories": [
     "task_leakage"
    ],
-   "rationale": "Application exercise with a hidden answer.",
+   "rationale": "Grammar v4 has no Application card.",
    "input": {
     "schema_version": 2,
     "kind": "grammar",
@@ -2024,11 +2030,10 @@
    "dictionary": null,
    "settings": {},
    "expect": {
-    "ready": true,
-    "issues": [],
-    "rendered_contains": {
-     "ExercisePrompt": "I ___ play tennis"
-    }
+    "ready": false,
+    "issues": [
+     "GRAMMAR_APPLICATION_RETIRED"
+    ]
    }
   },
   {
@@ -2040,7 +2045,7 @@
    "categories": [
     "task_leakage"
    ],
-   "rationale": "Application exercise without an answer blocks.",
+   "rationale": "Usage has its own field.",
    "input": {
     "schema_version": 2,
     "kind": "grammar",
@@ -2051,7 +2056,7 @@
      "meaning": "a past habit",
      "formation": "used to + base verb",
      "recognition_prompt": "Which structure is used here?",
-     "exercise_prompt": "I ___ play tennis as a child.",
+     "usage": "Only for the past; no present form.",
      "examples": [
       {
        "sentence": "I used to live in Hanoi.",
@@ -2060,19 +2065,16 @@
        "evidence_ids": []
       }
      ]
-    },
-    "requested_tasks": [
-     "recognition",
-     "application"
-    ]
+    }
    },
    "dictionary": null,
    "settings": {},
    "expect": {
-    "ready": false,
-    "issues": [
-     "MISSING_EXERCISE"
-    ]
+    "ready": true,
+    "issues": [],
+    "rendered_contains": {
+     "Usage": "Only for the past"
+    }
    }
   },
   {
@@ -2084,7 +2086,7 @@
    "categories": [
     "task_leakage"
    ],
-   "rationale": "Exercise prompt that states the answer is rejected.",
+   "rationale": "The source's own meaning line is not rendered.",
    "input": {
     "schema_version": 2,
     "kind": "grammar",
@@ -2095,8 +2097,7 @@
      "meaning": "a past habit",
      "formation": "used to + base verb",
      "recognition_prompt": "Which structure is used here?",
-     "exercise_prompt": "I used to play tennis. Fill: I ___ play tennis.",
-     "exercise_answer": "used to",
+     "source_meaning": "thói quen trong quá khứ",
      "examples": [
       {
        "sentence": "I used to live in Hanoi.",
@@ -2105,19 +2106,16 @@
        "evidence_ids": []
       }
      ]
-    },
-    "requested_tasks": [
-     "recognition",
-     "application"
-    ]
+    }
    },
    "dictionary": null,
    "settings": {},
    "expect": {
-    "ready": false,
-    "issues": [
-     "ANSWER_LEAK"
-    ]
+    "ready": true,
+    "issues": [],
+    "rendered_excludes": {
+     "Meaning": "thói quen"
+    }
    }
   },
   {

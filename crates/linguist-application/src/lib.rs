@@ -603,13 +603,11 @@ fn build_authored_document(
             if expected_kind != Kind::Grammar {
                 return Err("INPUT_KIND_CONFLICT".into());
             }
-            let tasks = requested_tasks.unwrap_or_else(|| {
-                let mut tasks = vec![Task::Recognition];
-                if settings.values["learning.grammar.application"] == true {
-                    tasks.push(Task::Application);
-                }
-                tasks
-            });
+            // Grammar v4 (WP-23) has no Application card.
+            if settings.values["learning.grammar.application"] == true {
+                return Err("CAPABILITY_UNAVAILABLE: Linguist Grammar v4 has no Application card; set learning.grammar.application=false".into());
+            }
+            let tasks = requested_tasks.unwrap_or_else(|| vec![Task::Recognition]);
             (
                 schema_version,
                 target_language,

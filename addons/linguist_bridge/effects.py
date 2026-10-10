@@ -59,8 +59,7 @@ def observe_note(col, note_id, manifest_digest=None):
     for card_id in col.card_ids_of_note(note_id):
         card = col.get_card(card_id)
         history, count = _history_digest(col, card_id)
-        scheduler = {key: str(getattr(card, key)) for key in SCHEDULER_KEYS}
-        scheduler["memory_state"] = _memory_state(card)
+        scheduler = _scheduler(card)
         cards.append({
             "id": card.id, "ordinal": card.ord, "deck_id": card.did,
             "original_deck_id": card.odid, "scheduler": scheduler,
@@ -126,6 +125,49 @@ def notes_tagged(col, tag):
     return found
 
 
+def _scheduler(card):
+    scheduler = {key: str(getattr(card, key)) for key in SCHEDULER_KEYS}
+    scheduler["memory_state"] = _memory_state(card)
+    return scheduler
+
+
+def _inherit_sources(col, body, model):
+    """WP-23: each source card exists outside filtered decks, still has the
+    scheduler the intent was built from, and names a template of the model."""
+    sources = []
+    for entry in body.get("inherit_schedule", ()):
+        if entry["card_ordinal"] >= len(model["tmpls"]):
+            raise EffectError("BRIDGE_INHERIT_ORDINAL_INVALID")
+        try:
+            source = col.get_card(entry["source_card_id"])
+        except Exception as error:  # Anki raises NotFoundError for a missing card.
+            raise EffectError("BRIDGE_PRECONDITION_FAILED") from error
+        if source.odid:
+            raise EffectError("BRIDGE_FILTERED_DECK")
+        if _scheduler(source) != entry["scheduler"]:
+            raise EffectError("BRIDGE_PRECONDITION_FAILED")
+        sources.append((entry["card_ordinal"], source))
+    return sources
+
+
+def _inherit(col, note_id, sources):
+    """Copy each source card's schedule into the new card at the same task:
+    queue, type, due, interval, ease, learning steps and FSRS state. The new
+    card keeps no reviews, lapses or flag of its own, so it stays unstudied."""
+    cards = {col.get_card(card_id).ord: card_id for card_id in col.card_ids_of_note(note_id)}
+    for ordinal, source in sources:
+        if ordinal not in cards:
+            raise EffectError("BRIDGE_INHERIT_CARD_MISSING")
+        card = col.get_card(cards[ordinal])
+        for key in ("queue", "type", "due", "ivl", "factor", "left"):
+            setattr(card, key, getattr(source, key))
+        card.memory_state = getattr(source, "memory_state", None)
+        for key in ("desired_retention", "decay"):
+            if hasattr(source, key):
+                setattr(card, key, getattr(source, key))
+        col.update_card(card)
+
+
 def preflight_create_note(col, body, manifest_digest=None):
     manifest_digest = manifest_digest or canonical_manifest.model_digest
     marker = body["marker_tag"]
@@ -137,15 +179,17 @@ def preflight_create_note(col, body, manifest_digest=None):
     _deck(col, body["deck_id"])
     if {field["name"] for field in model["flds"]} != set(body["fields"]):
         raise EffectError("BRIDGE_FIELDS_MISMATCH")
-    return model
+    return model, _inherit_sources(col, body, model)
 
 
-def perform_create_note(col, body, model):
+def perform_create_note(col, body, prepared):
+    model, sources = prepared
     note = col.new_note(model)
     for name, value in body["fields"].items():
         note[name] = value
     note.tags = list(body["tags"])
     col.add_note(note, int(body["deck_id"]))
+    _inherit(col, note.id, sources)
     return note.id
 
 

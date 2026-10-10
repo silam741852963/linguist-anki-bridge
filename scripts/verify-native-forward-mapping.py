@@ -112,12 +112,12 @@ def verify_picture_words(col, vocab_manifest, deck_id):
     assert col.get_note(note.id).mid == target["id"]
 
 
-def verify_studied_child_reverse_risk(col, grammar, basic, deck_id):
-    note = col.new_note(grammar)
+def verify_studied_child_reverse_risk(col, vocab, basic, deck_id):
+    # Grammar v4 has one card; the vocabulary Production card is the child.
+    note = col.new_note(vocab)
     for name, value in {
-        "Pattern": "〜ても", "Meaning": "even if",
-        "Example": "雨が降っても行きます。", "EnableApplication": "1",
-        "ExercisePrompt": "Complete this", "ExerciseAnswer": "〜ても",
+        "Expression": "食べる", "Meaning": "to eat",
+        "EnableProduction": "1", "Picture": '<img src="x.png">',
     }.items():
         note[name] = value
     col.add_note(note, deck_id)
@@ -130,12 +130,12 @@ def verify_studied_child_reverse_risk(col, grammar, basic, deck_id):
     assert len(snapshot(col, child.id)["history"]) == 1
 
     info = col.models.change_notetype_info(
-        old_notetype_id=grammar["id"], new_notetype_id=basic["id"])
+        old_notetype_id=vocab["id"], new_notetype_id=basic["id"])
     request = info.input
     request.note_ids.append(note.id)
-    fields = {field["name"]: index for index, field in enumerate(grammar["flds"])}
+    fields = {field["name"]: index for index, field in enumerate(vocab["flds"])}
     del request.new_fields[:]
-    request.new_fields.extend([fields["Pattern"], fields["Meaning"]])
+    request.new_fields.extend([fields["Expression"], fields["Meaning"]])
     del request.new_templates[:]
     request.new_templates.extend([0])
     col.models.change_notetype_of_notes(request)
@@ -149,7 +149,7 @@ def main():
     assert (version, buildhash) == ("25.09.2", "3d813c83"), (version, buildhash)
     manifests = json.load(sys.stdin)
     grammar_manifest = next(item for item in manifests
-                            if item["name"] == "Linguist Grammar v3")
+                            if item["name"] == "Linguist Grammar v4")
     vocab_manifest = next(item for item in manifests
                           if item["name"] == "Linguist Vocabulary v3")
     with tempfile.TemporaryDirectory(prefix="lab-native-basic-migration-") as directory:
@@ -187,7 +187,7 @@ def main():
             request.new_fields.extend(field_map.get(field["name"], -1)
                                       for field in grammar["flds"])
             del request.new_templates[:]
-            request.new_templates.extend([0, -1])
+            request.new_templates.extend([0])
             col.models.change_notetype_of_notes(request)
 
             after = snapshot(col, card_id)
@@ -198,20 +198,6 @@ def main():
             assert mapped["Meaning"] == "even if"
             assert mapped["Example"] == "〜ても"
             assert col.card_ids_of_note(note.id) == [card_id]
-            mapped["EnableApplication"] = "1"
-            mapped["ExercisePrompt"] = "Finish the pattern"
-            mapped["ExerciseAnswer"] = "〜ても"
-            col.update_note(mapped)
-            cards_after_expansion = sorted(
-                (col.get_card(candidate) for candidate in col.card_ids_of_note(note.id)),
-                key=lambda candidate: candidate.ord)
-            assert [candidate.ord for candidate in cards_after_expansion] == [0, 1]
-            assert cards_after_expansion[0].id == card_id
-            assert cards_after_expansion[1].id != card_id
-            assert snapshot(col, card_id) == before
-            fresh = snapshot(col, cards_after_expansion[1].id)
-            assert fresh["history"] == [] and fresh["reps"] == 0
-
             studied = col.get_card(card_id)
             studied.start_timer()
             col.sched.answerCard(studied, 3)
@@ -234,14 +220,15 @@ def main():
             assert restored.mid == basic["id"]
             assert restored["Front"] == "〜ても" and restored["Back"] == "even if"
             verify_picture_words(col, vocab_manifest, deck_id)
+            vocab = col.models.by_name(vocab_manifest["name"])
             child_removed, history_retained = verify_studied_child_reverse_risk(
-                col, grammar, basic, deck_id)
-            assert child_removed, "unexpected retained studied Application card"
-            assert history_retained, "unexpected loss of studied Application review rows"
+                col, vocab, basic, deck_id)
+            assert child_removed, "unexpected retained studied Production card"
+            assert history_retained, "unexpected loss of studied Production review rows"
         finally:
             col.close()
     print("PASS: disposable Basic forward/reverse and Picture Words forward mappings retain history")
-    print(f"OBSERVED: reverse drops studied Application card; review rows retained={history_retained}")
+    print(f"OBSERVED: reverse drops studied Production card; review rows retained={history_retained}")
 
 
 if __name__ == "__main__":

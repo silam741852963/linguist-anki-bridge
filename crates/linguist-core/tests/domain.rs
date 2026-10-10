@@ -263,8 +263,12 @@ fn fixtures_render_fixed_models_and_roundtrip() {
         let doc = LearningDocument::from_json(bytes).unwrap();
         assert!(validation::ready(&doc), "{:?}", validation::validate(&doc));
         let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
-        // Vocabulary v3 and grammar v3 both have nine fields.
-        assert_eq!(rendered.fields.len(), 9);
+        // Vocabulary v3 has nine fields, grammar v4 six.
+        let expected = match doc.content {
+            LearningContent::Vocabulary(_) => 9,
+            LearningContent::Grammar(_) => 6,
+        };
+        assert_eq!(rendered.fields.len(), expected);
         assert_eq!(
             doc,
             LearningDocument::from_json(&canonical::bytes(&doc).unwrap()).unwrap()
@@ -1196,7 +1200,8 @@ fn grammar_forms_drop_slots_and_expand_optional_parts() {
 }
 
 #[test]
-fn grammar_v3_renders_fields_cue_example_and_tags() {
+fn grammar_v4_renders_every_example_with_its_own_audio() {
+    use linguist_core::records::{Evidence, EvidenceTarget, MediaAsset, MediaOwner, MediaRole};
     let mut doc = LearningDocument::from_json(include_bytes!(
         "../../../contracts/v2/fixtures/grammar.json"
     ))
@@ -1206,29 +1211,80 @@ fn grammar_v3_renders_fields_cue_example_and_tags() {
     };
     g.pattern = "〜ても".into();
     g.source_meaning = "Dù ~ cũng".into();
+    g.usage = "Concession.".into();
     g.jlpt = "n4".into();
     g.lesson = "Minna 25".into();
     g.nuance = vec![Contrast {
         expression: "〜のに".into(),
         difference: "Adds surprise or regret.".into(),
     }];
+    let mut second = g.examples[0].clone();
+    second.sentence = "高くても買います。".into();
+    g.examples.push(second);
+    // One reading of each example, plus one of a sentence no longer listed.
+    for (digest, text) in [
+        ("a".repeat(64), "雨が降っても行きます。"),
+        ("b".repeat(64), "高くても買います。"),
+        ("c".repeat(64), "消えた例文。"),
+    ] {
+        doc.media.push(MediaAsset {
+            digest: digest.clone(),
+            filename: format!("lab_{digest}.wav"),
+            original_filename: None,
+            size_bytes: 10,
+            mime: "audio/wav".into(),
+            owner: MediaOwner::App,
+            role: MediaRole::Audio,
+            source_id: None,
+            attribution: "test".into(),
+            license: None,
+        });
+        doc.evidence.push(Evidence {
+            id: uuid::Uuid::new_v4(),
+            field: "audio".into(),
+            provenance: Provenance::Provider,
+            source_id: None,
+            region_id: None,
+            target: Some(EvidenceTarget::MediaAsset { digest }),
+            source_span: None,
+            language: doc.target_language.clone(),
+            claim: serde_json::json!({ "text": text }).to_string(),
+            source_url: None,
+            ambiguous: true,
+        });
+    }
     let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
-    assert_eq!(rendered.model.name, "Linguist Grammar v3");
+    assert_eq!(rendered.model.name, "Linguist Grammar v4");
+    let example = &rendered.fields["Example"];
+    assert!(example.contains(&format!(
+        "[sound:lab_{}.wav]<span class=\"lab-target\">雨が降っ<b class=\"lab-hl\">ても</b>行きます。</span>",
+        "a".repeat(64)
+    )));
+    assert!(example.contains(&format!("[sound:lab_{}.wav]<span", "b".repeat(64))));
+    assert!(!example.contains(&"c".repeat(64)));
+    assert!(!rendered.media_digests.contains(&"c".repeat(64)));
     assert_eq!(
-        rendered.fields["Example"],
-        "雨が降っ<b class=\"lab-hl\">ても</b>行きます。"
+        rendered.fields["Meaning"],
+        "<div class=\"lab-gloss\">Ngay cả khi</div>"
     );
-    assert!(rendered.fields["Meaning"].contains("lab-source-meaning\">Dù ~ cũng"));
-    assert!(rendered.fields["UsageExamples"].contains("<dt>〜のに</dt>"));
+    assert_eq!(rendered.fields["Usage"], "<p>Concession.</p>");
+    assert!(rendered.fields["Nuance"].contains("<dt>〜のに</dt>"));
     for gone in [
-        "UseKey",
-        "RecognitionPrompt",
-        "Language",
-        "Source",
-        "PersonalNotes",
+        "UsageExamples",
+        "ExercisePrompt",
+        "ExerciseAnswer",
+        "EnableApplication",
+        "Audio",
     ] {
         assert!(!rendered.fields.contains_key(gone), "{gone}");
     }
+    doc.requested_tasks.push(Task::Application);
+    assert!(
+        validation::validate(&doc)
+            .iter()
+            .any(|i| i.code == "GRAMMAR_APPLICATION_RETIRED")
+    );
+    doc.requested_tasks.pop();
     let tags = render::tags(&doc);
     for tag in [
         "lab::jlpt::n4",

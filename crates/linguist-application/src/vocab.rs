@@ -154,24 +154,46 @@ fn images_requested(settings: &Effective, document: &LearningDocument) -> bool {
         && !document.media.iter().any(|m| m.role == MediaRole::Picture)
         && !document.issues.iter().any(|i| i.code == "IMAGE_CANDIDATE_REVIEW")
 }
-fn audio_requested(settings: &Effective, document: &LearningDocument) -> bool {
-    // Grammar speaks its first example, the Recognition cue (WP-22).
-    let speakable = match &document.content {
-        LearningContent::Vocabulary(_) => true,
-        LearningContent::Grammar(g) => g
-            .examples
-            .first()
-            .is_some_and(|e| !e.sentence.trim().is_empty()),
+/// Grammar example sentences that no synthesized audio reads yet: neither a
+/// selected reading nor a candidate (pending or declined) speaks them (WP-23).
+fn unvoiced_examples(document: &LearningDocument) -> Vec<String> {
+    let LearningContent::Grammar(g) = &document.content else {
+        return vec![];
     };
-    speakable
-        && matches!(
-            settings.values["audio.provider"].as_str(),
-            Some("piper" | "dictionary" | "voicevox")
-        )
-        // Only a chosen audio counts: a captured source recording waits for
-        // review and may be replaced by the dictionary's.
-        && !document.media.iter().any(|m| m.role == MediaRole::Audio)
-        && !document.issues.iter().any(|i| i.code == "AUDIO_CANDIDATE_REVIEW")
+    let spoken: BTreeSet<String> = document
+        .media
+        .iter()
+        .filter(|m| {
+            m.source_id.is_none() && matches!(m.role, MediaRole::Audio | MediaRole::Archive)
+        })
+        .filter_map(|m| linguist_core::render::spoken_text(document, &m.digest))
+        .collect();
+    let mut out: Vec<String> = Vec::new();
+    for example in &g.examples {
+        let sentence = example.sentence.trim();
+        if !sentence.is_empty() && !spoken.contains(sentence) && !out.iter().any(|s| s == sentence)
+        {
+            out.push(sentence.to_owned());
+        }
+    }
+    out
+}
+fn audio_requested(settings: &Effective, document: &LearningDocument) -> bool {
+    let provider = matches!(
+        settings.values["audio.provider"].as_str(),
+        Some("piper" | "dictionary" | "voicevox")
+    );
+    match &document.content {
+        // Grammar reads every example, each with its own candidate (WP-23).
+        LearningContent::Grammar(_) => provider && !unvoiced_examples(document).is_empty(),
+        LearningContent::Vocabulary(_) => {
+            provider
+                // Only a chosen audio counts: a captured source recording waits for
+                // review and may be replaced by the dictionary's.
+                && !document.media.iter().any(|m| m.role == MediaRole::Audio)
+                && !document.issues.iter().any(|i| i.code == "AUDIO_CANDIDATE_REVIEW")
+        }
+    }
 }
 
 /// Reject selected adapters this build cannot run, before any state exists.
@@ -789,34 +811,49 @@ fn stage_audio(
     assets: &mut Vec<Vec<u8>>,
 ) -> Result<(), String> {
     let japanese = document.target_language.as_str().split('-').next() == Some("ja");
-    let text = match &document.content {
+    let texts = match &document.content {
         LearningContent::Vocabulary(vocab) => {
             // Speak the kana when known: Piper may misread kanji.
             let spoken: String = vocab.pronunciation.split_whitespace().collect();
-            if japanese && !vocab.reading.trim().is_empty() {
+            vec![if japanese && !vocab.reading.trim().is_empty() {
                 vocab.reading.clone()
             } else if japanese && !spoken.is_empty() {
                 spoken
             } else {
                 vocab.expression.clone()
-            }
+            }]
         }
-        LearningContent::Grammar(g) => match g.examples.first() {
-            Some(example) => example.sentence.trim().to_owned(),
-            None => return Ok(()),
-        },
+        // One reading per example, each reviewed on its own (WP-23).
+        LearningContent::Grammar(_) => unvoiced_examples(document),
     };
+    for text in texts {
+        stage_reading(document, settings, environment, port, engine, &text, assets)?;
+    }
+    Ok(())
+}
+
+fn stage_reading(
+    document: &mut LearningDocument,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    port: Option<&dyn SpeechPort>,
+    engine: &str,
+    text: &str,
+    assets: &mut Vec<Vec<u8>>,
+) -> Result<(), String> {
+    let japanese = document.target_language.as_str().split('-').next() == Some("ja");
+    let grammar = matches!(document.content, LearningContent::Grammar(_));
     let target = document.target_language.clone();
     let result = match port {
-        Some(port) => port.synthesize(&text, &target),
+        Some(port) => port.synthesize(text, &target),
         None if engine == "voicevox" => {
             if japanese {
-                crate::voicevox::synthesize(&text, settings)
+                crate::voicevox::synthesize(text, settings)
             } else {
                 Err("VOICEVOX_LANGUAGE_UNSUPPORTED: VOICEVOX speaks Japanese only".into())
             }
         }
-        None => match crate::speech::synthesize(&text, &target, settings, environment) {
+        None => match crate::speech::synthesize(text, &target, settings, environment) {
             Ok(synthesis) => Ok(synthesis),
             // Configuration and resource gaps are not optional-media outages.
             Err(
@@ -904,7 +941,12 @@ fn stage_audio(
         Some("audio"),
         "Listen to the synthesized pronunciation; select it or decline it.",
     );
-    issue.id = format!("AUDIO_CANDIDATE_REVIEW:{}", document.id);
+    // Grammar has one reading per example, so one review per candidate.
+    issue.id = if grammar {
+        format!("AUDIO_CANDIDATE_REVIEW:{}:{digest}", document.id)
+    } else {
+        format!("AUDIO_CANDIDATE_REVIEW:{}", document.id)
+    };
     issue.stage = "enrichment".into();
     issue.source_refs = vec![digest];
     document.issues.push(issue);
