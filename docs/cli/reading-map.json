@@ -329,6 +329,16 @@
         "implementation/README.md"
       ]
     },
+    "WP-23": {
+      "path": "implementation/wp-23.md",
+      "heading": "## WP-23 \u2014 grammar v4 card and split units that keep the source's schedule",
+      "title": "WP-23 \u2014 grammar v4 card and split units that keep the source's schedule",
+      "words": 1651,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md"
+      ]
+    },
     "OP-34": {
       "path": "operations/apply.md",
       "heading": "## OP-34 \u2014 `apply PLAN`",
@@ -927,7 +937,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-29 \u2014 `plans resolve PLAN ISSUE`",
       "title": "OP-29 \u2014 `plans resolve PLAN ISSUE`",
-      "words": 556,
+      "words": 584,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -1047,7 +1057,7 @@
       "path": "pipelines/grammar.md",
       "heading": "## ALG-GRAMMAR \u2014 add or revamp grammar",
       "title": "ALG-GRAMMAR \u2014 add or revamp grammar",
-      "words": 300,
+      "words": 287,
       "requires": [
         "contracts/invariants.md",
         "decisions/learning-and-providers.md",
@@ -1223,7 +1233,7 @@
       "path": "recovery/split.md",
       "heading": "## ALG-SPLIT \u2014 grammar group",
       "title": "ALG-SPLIT \u2014 grammar group",
-      "words": 105,
+      "words": 137,
       "requires": [
         "contracts/invariants.md",
         "recovery/README.md",

@@ -89,7 +89,7 @@ CONTRACTS = {
     "D03": ("implemented", [A + "apply.rs::missing_apply_flag_and_preview_have_zero_effects"]),
     "D04": ("implemented", [A + "jobs_apply.rs::simulate_never_writes_and_apply_jobs_need_the_current_flag"]),
     "D05": ("implemented", [K + "::fixtures_render_fixed_models_and_roundtrip"]),
-    "D06": ("implemented", [A + "grammar.rs::exercise_and_recognition_templates_resolve_through_typed_decisions"]),
+    "D06": ("implemented", [A + "grammar.rs::grammar_application_task_is_retired"]),
     "D07": ("implemented", [A + "mapping.rs::exact_mapping_preserves_shared_and_unmapped_original_fields_without_claiming_facts"]),
     "D08": ("implemented; native adapter gated (EV-03)", [A + "checkpoint_writes.rs::false_api_success_without_file_is_not_a_checkpoint"]),
     "D09": ("partial: weak binding refused; native incarnation gated (EV-04)", [A + "apply.rs::weak_binding_stale_revision_and_remote_bridge_are_refused"]),
