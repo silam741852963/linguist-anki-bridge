@@ -1186,6 +1186,51 @@ fn grammar_reads_every_example_with_its_own_reviewed_audio() {
         .collect();
     assert_eq!(issues.len(), 2, "{issues:?}");
     assert_ne!(issues[0].id, issues[1].id);
+    // A second enrichment run after one reading is selected keeps that one
+    // and stages the other example again, with its review.
+    let first = decide(
+        &plan,
+        &issues[0].id,
+        ReviewChoice::Media(issues[0].source_refs[0].clone()),
+    );
+    let mut store = linguist_store::Store::open_existing(
+        &expand_path(
+            settings.values["storage.state_dir"].as_str().unwrap(),
+            &f.environment,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    store.publish_revision(&first).unwrap();
+    let (again, _) = linguist_application::regenerate::regenerate(
+        &mut store,
+        &first,
+        &first.approval_digest().unwrap(),
+        &[],
+        linguist_application::regenerate::Stage::Enrichment,
+        &Default::default(),
+        &settings,
+        &f.environment,
+        Providers {
+            speech: Some(&Reader),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    drop(store);
+    let pending: Vec<_> = validation::validate(&again.documents[0])
+        .into_iter()
+        .filter(|i| i.code == "AUDIO_CANDIDATE_REVIEW")
+        .collect();
+    assert_eq!(pending.len(), 1, "{pending:?}");
+    assert_eq!(
+        again.documents[0]
+            .media
+            .iter()
+            .filter(|m| m.role == MediaRole::Audio)
+            .count(),
+        1
+    );
     for issue in issues {
         let digest = issue.source_refs[0].clone();
         plan = decide(&plan, &issue.id, ReviewChoice::Media(digest));

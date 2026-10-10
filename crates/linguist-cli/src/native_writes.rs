@@ -750,14 +750,16 @@ pub(crate) fn bind_plan(
     settings: &linguist_config::Effective,
     root: &Path,
     base: &linguist_core::records::PlanRevision,
+    renew: bool,
 ) -> Result<serde_json::Value, String> {
     let client = crate::anki_client(settings)?;
     let mut port = connect(&client, settings)?;
     let binding = port.refresh()?;
-    if base
-        .binding
-        .as_ref()
-        .is_some_and(|bound| apply::same_collection(bound, &binding))
+    if !renew
+        && base
+            .binding
+            .as_ref()
+            .is_some_and(|bound| apply::same_collection(bound, &binding))
     {
         return Ok(json!({
             "schema_version": 2, "plan_id": base.id, "revision": base.revision,
@@ -769,6 +771,8 @@ pub(crate) fn bind_plan(
     child.revision = base.revision.checked_add(1).ok_or("REVISION_LIMIT")?;
     child.parent_digest = Some(base.approval_digest().map_err(|e| e.to_string())?);
     child.binding = Some(binding.clone());
+    // Items render with the current renderer; content and reviews are kept.
+    child.rendered = linguist_core::render::render_ready(&child.documents);
     let digest = Store::open(root)?.publish_revision(&child)?;
     Ok(json!({
         "schema_version": 2, "plan_id": child.id, "revision": child.revision,

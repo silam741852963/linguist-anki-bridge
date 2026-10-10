@@ -738,3 +738,21 @@ pub fn render(
         digest,
     })
 }
+
+/// Render every ready item of a plan with the current renderer, as a review
+/// or edit does. A new revision of a plan made before a renderer change
+/// (WP-23 grammar v4) then carries no stale render.
+pub fn render_ready(documents: &[LearningDocument]) -> Vec<RenderedNote> {
+    documents
+        .iter()
+        .filter_map(|document| {
+            let empty = BTreeMap::new();
+            let fields = document
+                .sources
+                .first()
+                .map(|source| &source.fields)
+                .unwrap_or(&empty);
+            render(document, fields).ok()
+        })
+        .collect()
+}

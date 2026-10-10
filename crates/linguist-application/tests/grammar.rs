@@ -527,6 +527,29 @@ fn grammar_application_task_is_retired() {
             .iter()
             .any(|i| i.field.as_deref() == Some("exercise_prompt"))
     );
+    drop(store);
+    // A regenerate drops the retired task from a plan made before WP-23.
+    let mut settings = f.settings.clone();
+    settings
+        .values
+        .insert("audio.provider".into(), json!("disabled"));
+    let mut store = linguist_store::Store::open_existing(&f.state()).unwrap();
+    let digest = plan.approval_digest().unwrap();
+    let (child, _) = linguist_application::regenerate::regenerate(
+        &mut store,
+        &plan,
+        &digest,
+        &[],
+        linguist_application::regenerate::Stage::Enrichment,
+        &Default::default(),
+        &settings,
+        &f.environment,
+        Default::default(),
+    )
+    .unwrap();
+    assert_eq!(child.documents[0].requested_tasks, [Task::Recognition]);
+    assert!(validation::ready(&child.documents[0]));
+    assert_eq!(child.rendered.len(), 1);
 }
 
 #[test]

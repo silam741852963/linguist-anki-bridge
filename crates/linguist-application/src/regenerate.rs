@@ -301,7 +301,12 @@ pub fn prepare_item(
                 if !removed.is_empty() {
                     preview.cleared.push(field.into());
                 }
-                if !(selected && !named) {
+                // Grammar reads every example (WP-23): a selected reading
+                // protects only itself, and unselected candidates are staged
+                // again with their reviews.
+                let per_example =
+                    field == "audio" && matches!(prepared.content, LearningContent::Grammar(_));
+                if !(selected && !named) || per_example {
                     prepared.media.retain(|m| !removed.contains(&m.digest));
                     prepared.evidence.retain(|e| {
                         !matches!(&e.target, Some(EvidenceTarget::MediaAsset { digest }) if removed.contains(digest))
@@ -472,7 +477,14 @@ pub fn regenerate(
     let mut assets = Vec::new();
     for id in selected(base, items)? {
         let index = child.documents.iter().position(|d| d.id == id).unwrap();
-        let (prepared, preview) = prepare_item(&child.documents[index], stage, overwrite)?;
+        let (mut prepared, preview) = prepare_item(&child.documents[index], stage, overwrite)?;
+        // Grammar v4 (WP-23) has no Application card: a plan made before it
+        // drops the retired task, and the reviewer approves the new revision.
+        if matches!(prepared.content, LearningContent::Grammar(_)) {
+            prepared
+                .requested_tasks
+                .retain(|task| *task != linguist_core::Task::Application);
+        }
         let (enriched, bytes) = match stage {
             Stage::Dictionary => {
                 if settings.values["dictionary.provider"] == "authored" {
@@ -498,9 +510,10 @@ pub fn regenerate(
             .collect();
         child.review_decisions.retain(|d| !removed.contains(&d.id));
         child.documents[index] = enriched;
-        child.rendered.retain(|r| r.document_id != id);
         previews.push(preview);
     }
+    // Every ready item is rendered again (WP-23).
+    child.rendered = linguist_core::render::render_ready(&child.documents);
     child.settings = frozen;
     child.revision = base
         .revision

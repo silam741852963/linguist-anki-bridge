@@ -1038,6 +1038,11 @@ enum PlanCommand {
         /// Digest of the latest revision being extended.
         #[arg(long)]
         digest: String,
+        /// Publish a new bound revision even when the plan is already bound
+        /// to this collection, with unchanged content: a rolled-back group
+        /// is approved and applied again only on a new revision (WP-23).
+        #[arg(long)]
+        renew: bool,
     },
     /// Resolve SOURCE_NATIVE_HISTORY_REVIEW from live companion evidence:
     /// map every source card's template ordinal to a target task.
@@ -2723,7 +2728,11 @@ fn run(cli: Cli) -> Result<u8, String> {
                         return Ok(4);
                     }
                 }
-                PlanCommand::Bind { plan, digest } => {
+                PlanCommand::Bind {
+                    plan,
+                    digest,
+                    renew,
+                } => {
                     let latest = store.latest_revision(plan)?;
                     let base = store.revision(plan, latest)?;
                     if base.approval_digest().map_err(|e| e.to_string())? != digest {
@@ -2733,7 +2742,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                         );
                     }
                     drop(store);
-                    let outcome = native_writes::bind_plan(&settings, &root, &base)?;
+                    let outcome = native_writes::bind_plan(&settings, &root, &base, renew)?;
                     emit(&outcome)?;
                 }
                 PlanCommand::Resolve {
