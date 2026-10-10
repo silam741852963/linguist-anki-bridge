@@ -571,6 +571,14 @@ fn rollback_restores_the_anchor_and_protects_studied_children() {
         refused.1
     );
     assert!(g.anki.notes.contains_key(&studied_child));
+    // Resuming the rollback lists only what is still unrestored: the
+    // protected child, never the restored anchor (WP-23).
+    let again = plan_group_rollback(&g.s.store, &mut g.anki, execution).unwrap();
+    assert_eq!(
+        again.iter().map(|i| i.snapshot_id).collect::<Vec<_>>(),
+        [snapshot_of(studied_child)]
+    );
+    assert!(again[0].error.is_none(), "{:?}", again[0].error);
     let deleted = results
         .iter()
         .filter_map(|r| r.as_ref().ok())

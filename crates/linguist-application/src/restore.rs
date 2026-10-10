@@ -1523,6 +1523,11 @@ pub fn plan_group_rollback(
         if store.apply_operation(journal.id).is_err() {
             continue;
         }
+        // A rollback that stopped partway resumes with the units it has not
+        // restored yet (WP-23); a restored unit has nothing left to reverse.
+        if journal.state == OperationState::Restored {
+            continue;
+        }
         let (plan, error) = match plan_restore(store, port, journal.snapshot_id, None) {
             Ok(plan) => (Some(plan), None),
             Err(code) => (None, Some(code)),
