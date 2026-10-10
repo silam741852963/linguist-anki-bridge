@@ -20,7 +20,7 @@
         "RV-15"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-01.json"
+        "docs/cli/evidence/release-2026-10-11/EV-01.json"
       ]
     },
     {
@@ -44,7 +44,7 @@
         "RV-13"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-02.json"
+        "docs/cli/evidence/release-2026-10-11/EV-02.json"
       ],
       "failure_code": "EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE"
     },
@@ -65,7 +65,7 @@
         "RV-01"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-03.json"
+        "docs/cli/evidence/release-2026-10-11/EV-03.json"
       ]
     },
     {
@@ -86,7 +86,7 @@
         "RV-03"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-04.json"
+        "docs/cli/evidence/release-2026-10-11/EV-04.json"
       ]
     },
     {
@@ -109,7 +109,7 @@
         "RV-02"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-05.json"
+        "docs/cli/evidence/release-2026-10-11/EV-05.json"
       ]
     },
     {
@@ -134,7 +134,7 @@
         "RV-09"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-06.json"
+        "docs/cli/evidence/release-2026-10-11/EV-06.json"
       ]
     },
     {
@@ -157,7 +157,7 @@
         "RV-14"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-07.json"
+        "docs/cli/evidence/release-2026-10-11/EV-07.json"
       ]
     },
     {
@@ -178,7 +178,7 @@
         "RV-10"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-08.json"
+        "docs/cli/evidence/release-2026-10-11/EV-08.json"
       ]
     },
     {
@@ -197,7 +197,7 @@
         "RV-06"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-09.json"
+        "docs/cli/evidence/release-2026-10-11/EV-09.json"
       ]
     },
     {
@@ -221,7 +221,7 @@
         "RV-15"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-10.json"
+        "docs/cli/evidence/release-2026-10-11/EV-10.json"
       ]
     },
     {
@@ -248,7 +248,7 @@
         "RV-11"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-11.json"
+        "docs/cli/evidence/release-2026-10-11/EV-11.json"
       ]
     },
     {
@@ -270,7 +270,7 @@
         "RV-08"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-12.json"
+        "docs/cli/evidence/release-2026-10-11/EV-12.json"
       ]
     },
     {
@@ -292,7 +292,7 @@
         "RV-12"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-13.json"
+        "docs/cli/evidence/release-2026-10-11/EV-13.json"
       ]
     },
     {
@@ -319,7 +319,7 @@
         "RV-09"
       ],
       "evidence_paths": [
-        "docs/cli/evidence/release-2026-10-10/EV-14.json"
+        "docs/cli/evidence/release-2026-10-11/EV-14.json"
       ]
     }
   ]

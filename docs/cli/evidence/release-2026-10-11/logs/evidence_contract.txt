@@ -1,0 +1,15 @@
+$ cargo test --locked -p linguist-cli --test release_evidence
+exit 0
+
+
+running 3 tests
+test gate_registry_and_evidence_records_agree ... ok
+test traceability_record_cites_existing_tests_for_every_algorithm ... ok
+test operation_coverage_lists_existing_tests_for_all_61_operations ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+--- stderr ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/release_evidence.rs (target/debug/deps/release_evidence-1ad3b4e938bbc445)

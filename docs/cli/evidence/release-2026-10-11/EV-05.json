@@ -1,0 +1,117 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-05",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.1.0",
+  "git_commit": "7827a770491238d6664ce933947f7561bb0091a0",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.15.0",
+  "anki_python": "Python 3.14.7",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.11.1",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,jpn,osd,vie",
+  "ollama": "0.40.1",
+  "kernel": "Linux 7.2.8-5-omarchy-bore",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "scripts/verify-native-checkpoint-scope.py": "b670e0ccc26c1660e100fca7e4e2982d2de8f5b3f10b44b52d2ab1fb9d8d672f",
+  "scripts/verify-native-package-restore.py": "64fcdb57ee037f3e8215cb98fc82384c77d6433484f512839b2e969e7632d493"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-native-checkpoint-scope.py",
+    "--cli",
+    "target/debug/linguist-anki-bridge"
+   ],
+   "invocation_digest": "5b4e0288cbc58c919a07e03c8afd03f11159910410250edc176c4993255c3ef2",
+   "exit_code": 0,
+   "output_digest": "9885c509df93264f07fa577a15f4ce342bee354b0d4fb13c08d90abcb1692341"
+  },
+  {
+   "redacted_argv": [
+    "/usr/bin/python3.14",
+    "scripts/verify-native-package-restore.py",
+    "--cli",
+    "target/debug/linguist-anki-bridge"
+   ],
+   "invocation_digest": "4e983e07f11982a65fe216e23e5a8d5db51bb63de9d0436c17f79b03540abaf6",
+   "exit_code": 0,
+   "output_digest": "9556a5a57eeb4758c7c2cdc446f1da5618cae0f92db94cd7aa803dd7f951c9f7"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "desktop_scenarios",
+    "--",
+    "--ignored",
+    "--test-threads",
+    "1",
+    "--nocapture"
+   ],
+   "invocation_digest": "20e337ed703325bbbeaa96024788d83947d339a8c7c750ec1d6b4d1c5b2de29c",
+   "exit_code": 0,
+   "output_digest": "d3fd7e8e6f388225bfe54dfa7215c0f57085f52b75caebfa34d330daaf3fcad0"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "Anki-exported .colpkg scope verified with decode restoration",
+   "passed": true,
+   "observed": "notes, cards, reviews, note types, media"
+  },
+  {
+   "name": "disposable package restore keeps scheduling, history and media",
+   "passed": true,
+   "observed": "Anki 25.09.2 3d813c83"
+  },
+  {
+   "name": "scenario checkpoints are real verified packages",
+   "passed": true,
+   "observed": "10 scenarios"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-11/logs/native_checkpoint_scope.txt",
+  "docs/cli/evidence/release-2026-10-11/logs/native_package_restore.txt",
+  "docs/cli/evidence/release-2026-10-11/logs/scenarios.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/batch_vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/grammar_add.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/grammar_split.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/grammar_split_crash.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/identity_preconditions.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/native_faults.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/vocab_add.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/vocab_revamp_home_deck.txt",
+  "docs/cli/evidence/release-2026-10-11/scenarios/vocab_split.txt"
+ ],
+ "failure_code": null
+}

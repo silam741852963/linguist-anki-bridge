@@ -1,0 +1,7 @@
+$ cargo clippy --locked --workspace --all-targets -- -D warnings
+exit 0
+
+
+--- stderr ---
+    Checking linguist-cli v0.1.0 (<repo>/crates/linguist-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.52s

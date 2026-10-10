@@ -1,0 +1,14 @@
+vocab_revamp
+scenario vocab_revamp
+models install japanese_vocab --apply -> 0
+vocab revamp --note-id 1791654285490 -> 4
+plans show 2e2dfc1e-6057-4c1c-884d-f79a6eab7903 --issues-only -> 0
+plans show 2e2dfc1e-6057-4c1c-884d-f79a6eab7903 -> 0
+plans edit 2e2dfc1e-6057-4c1c-884d-f79a6eab7903 --base-revision 1 --patch /tmp/lab-desk-107e7c09/review.patch.json --save-draft -> 4
+plans resolve-history 2e2dfc1e-6057-4c1c-884d-f79a6eab7903 --item d94a93e6-0b49-4e13-8e8a-12151169e1f1 --map 0=comprehension --actor desktop-scenario -> 0
+plans bind 2e2dfc1e-6057-4c1c-884d-f79a6eab7903 --digest lab-jcs-v1:plan:6729a091f90be9409a8fc065a892ac1c57f48991b494183f30161d99925a23e3 -> 0
+plans validate 2e2dfc1e-6057-4c1c-884d-f79a6eab7903 --revision 4 -> 0
+plans approve 2e2dfc1e-6057-4c1c-884d-f79a6eab7903 --revision 4 --digest lab-jcs-v1:plan:32c8bd54220d6ea3832f0b1e17b505c3c20aa104494df7be6ee3975f5c64d006 --actor desktop-scenario -> 0
+apply 2e2dfc1e-6057-4c1c-884d-f79a6eab7903 --revision 4 --accept-schema-change --apply -> 0
+snapshots restore 5e193fa1-9438-495f-8d16-3ba07979db9a -> 0
+snapshots restore 5e193fa1-9438-495f-8d16-3ba07979db9a --decision /tmp/lab-desk-107e7c09/decision-5e193fa1-9438-495f-8d16-3ba07979db9a.json --apply -> 0
