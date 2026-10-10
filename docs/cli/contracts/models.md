@@ -28,20 +28,21 @@ UsageExamples also lists the selected dictionary entry's neighbours: other spell
 
 `Linguist Vocabulary v2` (18 fields: Expression, Reading, Pronunciation, Meaning, Usage, Examples, Picture, Audio, Kanji, PersonalNotes, Source, Language, SenseKey, EnableProduction, EnableSpelling, ProductionPrompt, SpellingPrompt, ExplanationLanguage) is no longer installed. The companion still accepts it so existing v2 notes can be restored or revamped to v3.
 
-`Linguist Grammar v3` fields in order (WP-22; replaces v2 for new writes):
+`Linguist Grammar v4` fields in order (WP-23; replaces v3 for new writes):
 
 1. Pattern
 2. Meaning
 3. Formation
 4. Example
-5. UsageExamples
-6. ExercisePrompt
-7. ExerciseAnswer
-8. Audio
-9. EnableApplication
+5. Usage
+6. Nuance
 
-Templates: Recognition ordinal 0; Application ordinal 1, with the vocabulary v3 CSS plus `grammar-v3.css`. Fronts show fields, not text cues: Recognition shows Pattern and Example (the document's first example with the pattern highlighted); Application shows ExercisePrompt and needs ExerciseAnswer. Meaning is never on a front. Meaning holds the meaning in the explanation language and, under it, the source's own meaning line (`source_meaning`, verbatim, for example the Vietnamese gloss of a textbook page). UsageExamples holds usage, nuance against similar patterns (a source's `[Chú ý]` contrasts) and every example with the pattern highlighted. Highlighting uses the document's reviewed `forms` together with forms derived from the pattern (〜, word-class slots and `+` removed, alternatives split, optional parts in parentheses expanded); the longest match wins. Audio is a synthesized reading of the Example sentence (VOICEVOX for Japanese). Add defaults: Recognition only. Verified Basic grammar ordinal 0→Recognition 0. Application prerequisites: approved ExercisePrompt/ExerciseAnswer. A multi-pattern source explicitly selects the anchor carrying its old recognition history.
+Template: Recognition ordinal 0 only, with the vocabulary v3 CSS plus `grammar-v4.css`. There is no Application card and no exercise. The front shows the Pattern only: an example there would bring its sound, because Anki plays every sound of a side, even one hidden with CSS. Meaning holds the gloss in the explanation language only; the source's own meaning line (`source_meaning`) stays in the document and the source archive. Example lists every example: its sentence with the pattern highlighted, its translation, and the `[sound:]` play button of each selected reading of that sentence. Usage and Nuance (contrasts with similar patterns, a source's `[Chú ý]` notes) have their own fields. Highlighting uses the document's reviewed `forms` together with forms derived from the pattern (〜, word-class slots and `+` removed, alternatives split, optional parts in parentheses expanded); the longest match wins.
 
-Mapping from v2: Usage and Examples become UsageExamples (and the first example becomes Example). UseKey stays in the document as identity. RecognitionPrompt is no longer required or rendered. Language and ExplanationLanguage become tags; the JLPT level and lesson become `lab::jlpt::<level>` and `lab::lesson::<lesson>`. PersonalNotes and Source stay archived.
+Audio: enrichment synthesizes one reading per example (VOICEVOX for Japanese). Each reading is its own audio candidate with its own `AUDIO_CANDIDATE_REVIEW` (id `AUDIO_CANDIDATE_REVIEW:<document>:<digest>`); a selected reading renders next to the example whose sentence it reads (the `text` of its enrichment evidence). A reading of a sentence that is no longer an example is not rendered or sent. Anki plays the back's sounds in order unless the deck's options turn off automatic audio.
+
+Mapping from v3: UsageExamples splits into Example (all examples), Usage and Nuance; the Vietnamese meaning line is dropped from Meaning; ExercisePrompt, ExerciseAnswer, EnableApplication and Audio are gone (audio sits in Example). Recognition ordinal 0 maps to Recognition 0. A v3 note with an Application card cannot be migrated while that card exists (`APPLY_MIGRATION_DROPS_CARD`).
+
+`Linguist Grammar v3` (WP-22: Pattern, Meaning, Formation, Example, UsageExamples, ExercisePrompt, ExerciseAnswer, Audio, EnableApplication; Recognition and Application) is no longer installed for new notes. The companion still accepts it so existing v3 notes can be restored.
 
 `Linguist Grammar v2` (15 fields: Pattern, Meaning, Formation, Usage, Examples, ExercisePrompt, ExerciseAnswer, Audio, PersonalNotes, Source, Language, EnableApplication, UseKey, RecognitionPrompt, ExplanationLanguage) is no longer installed. The companion still accepts it so existing v2 notes can be restored or revamped to v3.

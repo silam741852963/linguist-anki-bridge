@@ -102,9 +102,11 @@ Inputs: Typed decision and current input digest.
 
 Typed content repairs use the same fingerprint-bound request. For a missing or
 leaking vocabulary cue, use `{"decision":"cue","value":{"task":"production","text":"Say the verb for consuming food."}}`
-(or `task=spelling`). Grammar v3 has no RecognitionPrompt; an authored one is
-still checked for leaks. A missing/leaking Application exercise accepts
-`{"decision":"exercise","value":{"prompt":"Complete the supplied context: ___","answer":"Expected completion"}}`.
+(or `task=spelling`). Grammar v4 has no RecognitionPrompt; an authored one is
+still checked for leaks and repaired with `{"decision":"cue","value":{"task":"recognition","text":"..."}}`.
+Grammar v4 has no Application card: a grammar document requesting it fails with
+`GRAMMAR_APPLICATION_RETIRED`, and `plans regenerate` drops the task from a plan
+made before WP-23. The `exercise` decision stays only for such older documents.
 The task must already be requested, the issue must target the corresponding field,
 and frozen character limits apply. Repair changes that content and removes its
 field override; it preserves tasks, sources and archives. Revalidation must remove
@@ -222,15 +224,19 @@ Binds the latest revision to the live collection before approval. Requires the
 verified `lab-native-v1` companion (`doctor --bridge`); otherwise it fails with
 `CAPABILITY_UNAVAILABLE` before any state change. It publishes a child
 revision whose `binding` records the endpoint, profile and path fingerprints,
-bridge installation and collection lineage of the current session; documents,
-renders and review decisions are unchanged. Validate and approve the new
+bridge installation and collection lineage of the current session; documents
+and review decisions are unchanged, and every ready item is rendered again with
+the current renderer (a plan made before a renderer change, such as grammar v4,
+carries no stale render). Validate and approve the new
 revision, then `apply --apply`. Apply compares this stable identity with the
 execution binding; a new session epoch on the same lineage is normal, while a
 changed profile, path, bridge or lineage needs a new `plans bind` and approval.
 An interrupted operation whose session changed resumes only through
 `recover reconcile OPERATION --rebind --apply`, which records a
 `ResumeBindingDecision` bound to the state observed at that moment. Binding the
-same collection again is a no-op.
+same collection again is a no-op, except with `--renew` (WP-23): it publishes a
+new bound revision with unchanged content, because a rolled-back split group is
+approved and applied again only on a new revision.
 
 ## `plans resolve-batch PLAN --decisions FILE` (OP-29 batch, WP-21)
 

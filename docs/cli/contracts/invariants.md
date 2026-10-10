@@ -12,7 +12,7 @@
 | INV-06 | Snapshot, intended effect and operation ID are durably stored before the first external mutation. |
 | INV-07 | Unknown outcome is reconciled before retry/compensation; absence of local receipt is not proof of no write. |
 | INV-08 | One app collection writer covers apply, model changes, backup checkpoint and restore; external Anki edits remain possible. |
-| INV-09 | Retained card tasks/IDs/history/scheduling preserved through supported native mappings; new cards do not inherit maturity. |
+| INV-09 | Retained card tasks/IDs/history/scheduling preserved through supported native mappings; newly enabled tasks are new cards. A split unit created as a new note copies its source card's schedule (queue, type, due, interval, ease, steps, FSRS state) per task, never its review log, reviews, lapses or flag (user decision, WP-23). |
 | INV-10 | Ordinary conversion never physically deletes source media or unrecognized shared models/templates. |
 | INV-11 | Completion requires read-back, matching intended state and durable receipt. |
 | INV-12 | Resume never regenerates a reviewed document or replaces its pre-write snapshot. |
