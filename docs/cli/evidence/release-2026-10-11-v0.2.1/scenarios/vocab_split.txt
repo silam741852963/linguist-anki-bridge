@@ -1,0 +1,31 @@
+vocab_split
+scenario vocab_split
+models install japanese_vocab --apply -> 0
+vocab revamp --note-id 1791688716893 -> 4
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --issues-only -> 0
+plans split-vocab b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --template 334d8215-6d2f-42aa-a780-0180523d3760 -> 0
+plans split-vocab b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --request /tmp/lab-desk-ae5bf848/vocab-split.json -> 4
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 -> 0
+plans edit b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --base-revision 2 --patch /tmp/lab-desk-ae5bf848/units.patch.json --save-draft -> 4
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --issues-only -> 0
+plans resolve-history b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --item 334d8215-6d2f-42aa-a780-0180523d3760 --map 0=comprehension --actor desktop-scenario -> 4
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --issues-only -> 0
+plans resolve b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 SOURCE_HTML_TEXT_REVIEW:expression --decision /tmp/lab-desk-ae5bf848/decision-20c0612b-e142-41e7-b8c1-1c256734a596.json -> 4
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --issues-only -> 0
+plans resolve b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 SOURCE_HTML_TEXT_REVIEW:pronunciation --decision /tmp/lab-desk-ae5bf848/decision-90b8ebcc-aa96-45a0-a6ec-9e96c4ddcc06.json -> 4
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --issues-only -> 0
+plans resolve b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-ae5bf848/decision-b4f473a8-11af-4ed2-a4f7-ab5a27b9a0a2.json -> 4
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --issues-only -> 0
+plans resolve b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 SOURCE_HTML_TEXT_REVIEW:expression --decision /tmp/lab-desk-ae5bf848/decision-0bf98d83-f129-49dc-984c-f0554b884669.json -> 4
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --issues-only -> 0
+plans resolve b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 SOURCE_HTML_TEXT_REVIEW:pronunciation --decision /tmp/lab-desk-ae5bf848/decision-aab17bcf-aeb2-4467-9a37-79263dade4a8.json -> 4
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --issues-only -> 0
+plans resolve b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-ae5bf848/decision-94672125-4827-40d5-84db-7e58f1cb4cb8.json -> 0
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --issues-only -> 0
+plans show b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 -> 0
+plans bind b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --digest lab-jcs-v1:plan:21d9baad5d946f46e785c80d799e3f3542b89e2c7ac2829b4207b2c2524c4ff7 -> 0
+plans validate b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --revision 11 -> 0
+plans approve b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --revision 11 --digest lab-jcs-v1:plan:681099db0ca5a6b1be7067757b207b0bfc8071b37b4a58d93d2904340b369bfd --actor desktop-scenario -> 0
+apply b8d290a6-2ad3-44eb-a6f6-ac53715c0ad8 --revision 11 --split-group d3c3ca44-1007-4eed-9a19-e116c588a727 --accept-schema-change --apply -> 0
+jobs rollback 2584f372-ecf6-4373-9e97-e16a163b6804 --accept-schema-change --delete-unstudied-created --apply -> 0
+rollback -> {"checkpoint_id":"3fbbfe63-5f57-47ca-8023-dc09d0e9438d","collection_writes_enabled":true,"group_id":"2584f372-ecf6-4373-9e97-e16a163b6804","items":[{"restore":{"issues":[],"kept_created_notes":[],"next_command":null,"receipt":{"deleted_note_ids":[],"evidence_digest":"c0245cfafd6647a3181a37af01640db3b6c4f5429f6f2b8c4e05ba63567694e7","history_digest":"c8d091f1dbe6d9730eb4306fa5cbee383abadcfeba6f2c692e2bf04e0d91db96","kept_card_ids":[1791688716893],"lineage_id":"1caba28a-b9bf-4faf-8faf-0110e5511459","note_id":1791688716893,"observed_state_digest":"3adfa45f6588ca5d32c45c7f537f3dfa0acd78d39fabad9093fe891b8795e17b","removed_card_ids":[],"restore_operation":"f33e3ed5-bf99-44d9-a457-f2e52b36cd97","restored_media":[],"schema_version":1,"session_epoch":"64bdb37d-f47a-4117-b427-3c5e6c3e3404","target_operation":"5b11056f-18be-4d54-af7b-4325f9906f61","target_snapshot":"c8f11b73-f8a1-4038-8418-d065b86dd505"},"restore_operation":"f33e3ed5-bf99-44d9-a457-f2e52b36cd97","resumed":false,"snapshot_id":"c8f11b73-f8a1-4038-8418-d065b86dd505","state":"committed","target_operation":"5b11056f-18be-4d54-af7b-4325f9906f61","target_state":"restored"}},{"restore":{"issues":[],"kept_created_notes":[],"next_command":null,"receipt":{"deleted_note_ids":[1791688721521],"evidence_digest":"0d9acdb7d1b93219a061ed5f1b4dc295ff8d2c2214561dfc6b4215e5d7d33dd9","history_digest":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945","kept_card_ids":[],"lineage_id":"1caba28a-b9bf-4faf-8faf-0110e5511459","note_id":null,"observed_state_digest":"9c57f122ae59247f5d410bd6a507b60086a0cf81a39f522fa102f544389f456c","removed_card_ids":[],"restore_operation":"03d98d71-ef6c-41ba-8db8-070e43754fe1","restored_media":[],"schema_version":1,"session_epoch":"64bdb37d-f47a-4117-b427-3c5e6c3e3404","target_operation":"e6a855a9-84b0-4f98-934c-49a6fa7ef769","target_snapshot":"9d21fad3-feca-4598-9728-2b72fc99c59f"},"restore_operation":"03d98d71-ef6c-41ba-8db8-070e43754fe1","resumed":false,"snapshot_id":"9d21fad3-feca-4598-9728-2b72fc99c59f","state":"committed","target_operation":"e6a855a9-84b0-4f98-934c-49a6fa7ef769","target_state":"restored"}}],"mode":"rollback","schema_version":2}

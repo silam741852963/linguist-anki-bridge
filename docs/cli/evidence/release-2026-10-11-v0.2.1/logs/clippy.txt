@@ -1,0 +1,14 @@
+$ cargo clippy --locked --workspace --all-targets -- -D warnings
+exit 0
+
+
+--- stderr ---
+   Compiling linguist-config v0.2.1 (<repo>/crates/linguist-config)
+    Checking linguist-core v0.2.1 (<repo>/crates/linguist-core)
+    Checking linguist-store v0.2.1 (<repo>/crates/linguist-store)
+    Checking linguist-provider v0.2.1 (<repo>/crates/linguist-provider)
+    Checking linguist-anki v0.2.1 (<repo>/crates/linguist-anki)
+    Checking linguist-dictionary v0.2.1 (<repo>/crates/linguist-dictionary)
+    Checking linguist-application v0.2.1 (<repo>/crates/linguist-application)
+    Checking linguist-cli v0.2.1 (<repo>/crates/linguist-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.30s

@@ -1,0 +1,5 @@
+$ python3 <repo>-dev/scripts/traceability.py --check --source <repo>
+exit 0
+
+
+--- stderr ---

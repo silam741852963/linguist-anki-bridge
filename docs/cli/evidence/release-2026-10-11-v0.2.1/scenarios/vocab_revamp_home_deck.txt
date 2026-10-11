@@ -1,0 +1,17 @@
+vocab_revamp_home_deck
+scenario vocab_revamp_home_deck
+models install english_vocab --apply -> 0
+vocab revamp --note-id 1791688635869 -> 4
+plans show 4aaaf29f-fcfb-47aa-8a44-29aaf77be0b1 --issues-only -> 0
+plans show 4aaaf29f-fcfb-47aa-8a44-29aaf77be0b1 -> 0
+plans edit 4aaaf29f-fcfb-47aa-8a44-29aaf77be0b1 --base-revision 1 --patch /tmp/lab-desk-4b1da2c6/review.patch.json --save-draft -> 4
+plans resolve-history 4aaaf29f-fcfb-47aa-8a44-29aaf77be0b1 --item be7eabcb-9ed9-4df4-a2bc-cbe2b9288f48 --map 0=comprehension --actor desktop-scenario -> 0
+plans bind 4aaaf29f-fcfb-47aa-8a44-29aaf77be0b1 --digest lab-jcs-v1:plan:f616dcc25d33afa47a74e6f5cac3b22819530e8e6fc7353d17132ad837166007 -> 0
+plans validate 4aaaf29f-fcfb-47aa-8a44-29aaf77be0b1 --revision 4 -> 0
+plans approve 4aaaf29f-fcfb-47aa-8a44-29aaf77be0b1 --revision 4 --digest lab-jcs-v1:plan:adc5586475f258b510b4f055aa37e0512198e454e1ccc0eedfd33cd6ec86fbb8 --actor desktop-scenario -> 0
+apply 4aaaf29f-fcfb-47aa-8a44-29aaf77be0b1 --revision 4 --accept-schema-change --apply -> 0
+snapshots restore 4da3653a-96fe-449a-8845-a4b555bc973a -> 0
+snapshots restore 4da3653a-96fe-449a-8845-a4b555bc973a --decision /tmp/lab-desk-4b1da2c6/decision-4da3653a-96fe-449a-8845-a4b555bc973a.json --apply -> 5
+restore without a field decision refused: Meaning
+snapshots restore 4da3653a-96fe-449a-8845-a4b555bc973a -> 0
+snapshots restore 4da3653a-96fe-449a-8845-a4b555bc973a --decision /tmp/lab-desk-4b1da2c6/decision-4da3653a-96fe-449a-8845-a4b555bc973a.json --apply -> 0

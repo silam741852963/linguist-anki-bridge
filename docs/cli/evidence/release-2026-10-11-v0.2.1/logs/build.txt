@@ -1,0 +1,7 @@
+$ cargo build --locked -p linguist-cli
+exit 0
+
+
+--- stderr ---
+   Compiling linguist-cli v0.2.1 (<repo>/crates/linguist-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.05s

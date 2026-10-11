@@ -1,0 +1,14 @@
+vocab_revamp
+scenario vocab_revamp
+models install japanese_vocab --apply -> 0
+vocab revamp --note-id 1791688677343 -> 4
+plans show b6102ac7-86a9-4eb6-b6e2-097cc3238bd5 --issues-only -> 0
+plans show b6102ac7-86a9-4eb6-b6e2-097cc3238bd5 -> 0
+plans edit b6102ac7-86a9-4eb6-b6e2-097cc3238bd5 --base-revision 1 --patch /tmp/lab-desk-0336ccb4/review.patch.json --save-draft -> 4
+plans resolve-history b6102ac7-86a9-4eb6-b6e2-097cc3238bd5 --item cdaf3042-c34b-4e52-925e-db24177c3c9c --map 0=comprehension --actor desktop-scenario -> 0
+plans bind b6102ac7-86a9-4eb6-b6e2-097cc3238bd5 --digest lab-jcs-v1:plan:8e0c04274f8b3337b1f783f8637b60337ba149db4344d1ba7ccea373f7ed7257 -> 0
+plans validate b6102ac7-86a9-4eb6-b6e2-097cc3238bd5 --revision 4 -> 0
+plans approve b6102ac7-86a9-4eb6-b6e2-097cc3238bd5 --revision 4 --digest lab-jcs-v1:plan:0d80ec031888b0d756094a880152df7cc895329aaea978f77b7c94f9440c6e99 --actor desktop-scenario -> 0
+apply b6102ac7-86a9-4eb6-b6e2-097cc3238bd5 --revision 4 --accept-schema-change --apply -> 0
+snapshots restore 25be08ee-a050-43a9-a2b0-0057c444d46b -> 0
+snapshots restore 25be08ee-a050-43a9-a2b0-0057c444d46b --decision /tmp/lab-desk-0336ccb4/decision-25be08ee-a050-43a9-a2b0-0057c444d46b.json --apply -> 0

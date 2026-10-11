@@ -1,0 +1,6 @@
+$ <stdin: target/debug/linguist-anki-bridge --output json models builtin> | /usr/bin/python3.14 scripts/verify-native-restore.py
+exit 0
+
+PASS: disposable native restore keeps retained card IDs, scheduling and later history through content restore and reverse mapping; studied cards and notes, stale preconditions, mapping mismatches and filtered decks are refused; shared note types and media survive
+
+--- stderr ---

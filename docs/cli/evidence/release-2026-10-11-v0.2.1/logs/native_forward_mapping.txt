@@ -1,0 +1,7 @@
+$ <stdin: target/debug/linguist-anki-bridge --output json models builtin> | /usr/bin/python3.14 scripts/verify-native-forward-mapping.py
+exit 0
+
+PASS: disposable Basic forward/reverse and Picture Words forward mappings retain history
+OBSERVED: reverse drops studied Production card; review rows retained=True
+
+--- stderr ---

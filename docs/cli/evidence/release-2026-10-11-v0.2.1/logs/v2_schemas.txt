@@ -1,0 +1,6 @@
+$ /usr/bin/python3.14 scripts/verify-v2-schemas.py
+exit 0
+
+PASS: 27 v2 schemas and 8 fixtures; version, UUID, ID and digest rejection
+
+--- stderr ---

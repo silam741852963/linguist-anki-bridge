@@ -1,0 +1,6 @@
+$ /usr/bin/python3.14 scripts/verify-native-inspection.py
+exit 0
+
+PASS: bounded native helper observes note/card/review and discovered media bytes
+
+--- stderr ---
