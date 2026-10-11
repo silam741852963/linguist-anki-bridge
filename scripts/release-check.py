@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Run the WP-15 release checks and write scoped gate evidence.
 
-    python3 scripts/release-check.py [--msrv] [--release-build] [--benchmark]
+    python3 scripts/release-check.py --source MAIN_CHECKOUT [--msrv] [--release-build] [--benchmark]
 
-Runs every check command, keeps redacted logs, and writes one GateEvidence
-record per release gate (EV-01..EV-14, `contracts/v2/gate-evidence.schema.json`)
-plus `versions.json` and a summary `README.md` into
-`docs/cli/evidence/release-DATE/`. It then records each gate's status and
-evidence path in `docs/cli/decisions/release-gates.json`.
+Runs on the `cli-dev` branch against a checkout of `main` (`--source`, or
+`LINGUIST_SOURCE`); every check command runs in that checkout. Keeps redacted
+logs and writes one GateEvidence record per release gate (EV-01..EV-14,
+`contracts/v2/gate-evidence.schema.json`) plus `versions.json` and a summary
+`README.md` into this branch's `docs/cli/evidence/release-DATE/`. It then
+records each gate's status and evidence path in this branch's
+`docs/cli/decisions/release-gates.json` and copies that registry to the
+source's `resources/release-gates.json`, which the binary embeds for `doctor`.
 
 A gate is `pass` only when every listed command exited 0 and every assertion
 held, and only when the gate's evidence requirement is fully covered by what
@@ -32,7 +35,9 @@ import subprocess
 import sys
 import time
 
-ROOT = Path(__file__).resolve().parents[1]
+DEV = Path(__file__).resolve().parents[1]
+# The main checkout under test; main() sets it from --source.
+ROOT = Path(os.environ.get("LINGUIST_SOURCE", DEV.parent / "linguist-anki-bridge")).resolve()
 HOME = str(Path.home())
 ANKI_PYTHON = os.environ.get("LAB_ANKI_PYTHON", "/usr/bin/python3.14")
 CLI = "target/debug/linguist-anki-bridge"
@@ -48,7 +53,7 @@ def sha256(data):
 
 
 def redact(text):
-    text = text.replace(str(ROOT), "<repo>").replace(HOME, "~")
+    text = text.replace(str(ROOT), "<repo>").replace(str(DEV), "<dev>").replace(HOME, "~")
     return re.sub(r"/tmp/[A-Za-z0-9._-]+", "/tmp/<disposable>", text)
 
 
@@ -84,7 +89,7 @@ class Runner:
             "redacted_argv": redacted, "exit_code": code,
             "invocation_digest": sha256(jcs({"argv": redacted, "stdin": stdin_from})),
             "output_digest": sha256(output), "seconds": round(time.monotonic() - started, 1),
-            "text": output.decode("utf-8", "replace"), "log": str(log.relative_to(ROOT)),
+            "text": output.decode("utf-8", "replace"), "log": str(log.relative_to(DEV)),
         }
         status = "ok" if code == 0 else f"exit {code}"
         print(f"[{status:>7}] {key} ({self.results[key]['seconds']}s)", file=sys.stderr)
@@ -171,6 +176,7 @@ def fixture_hashes(paths):
 
 
 def main():
+    global ROOT
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--date", default=datetime.date.today().isoformat())
     parser.add_argument("--msrv", action="store_true", help="also run the suite on Rust 1.98.1")
@@ -178,21 +184,29 @@ def main():
                         help="also run scripts/release-build.py --verify-reproducible")
     parser.add_argument("--benchmark", action="store_true",
                         help="also run the local-model benchmark (needs Ollama + gemma4:12b)")
+    parser.add_argument("--source", type=Path, default=ROOT,
+                        help="checkout of the main branch to check (default: LINGUIST_SOURCE "
+                             "or ../linguist-anki-bridge)")
     args = parser.parse_args()
-    out = ROOT / "docs/cli/evidence" / f"release-{args.date}"
+    ROOT = args.source.resolve()
+    if not (ROOT / "Cargo.toml").is_file() or not (ROOT / "resources/release-gates.json").is_file():
+        raise SystemExit(f"RELEASE_CHECK_SOURCE_INVALID: {ROOT} is not a main checkout")
+    out = DEV / "docs/cli/evidence" / f"release-{args.date}"
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
     # Earlier records in this directory are gone: mark every gate not_run
     # until this run writes its evidence (the registry must never point at
     # missing files, and an aborted run must not keep stale passes).
-    registry_path = ROOT / "docs/cli/decisions/release-gates.json"
+    registry_path = DEV / "docs/cli/decisions/release-gates.json"
+    source_registry_path = ROOT / "resources/release-gates.json"
     registry = json.loads(registry_path.read_text())
     for gate in registry["gates"]:
         gate["status"] = "not_run"
         gate.pop("evidence_paths", None)
         gate.pop("failure_code", None)
     registry_path.write_text(json.dumps(registry, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    shutil.copyfile(registry_path, source_registry_path)
     # Provisional summary so documentation links resolve while checks run.
     (out / "README.md").write_text(f"# Release check {args.date}\n\nIn progress.\n", encoding="utf-8")
     r = Runner(out)
@@ -247,7 +261,8 @@ def main():
                                     "addons/linguist_bridge/tests"])
     r.run("docs", ["python3", "docs/cli/validate.py"])
     r.run("op_coverage", ["python3", "scripts/op-coverage.py", "--check"])
-    r.run("traceability", ["python3", "scripts/traceability.py", "--check"])
+    r.run("traceability", ["python3", str(DEV / "scripts/traceability.py"), "--check",
+                           "--source", str(ROOT)])
     r.run("packages_record", ["python3", "scripts/consolidate-packages.py", "--check"])
     r.run("evidence_contract", cargo_test + ["-p", "linguist-cli", "--test", "release_evidence"])
     models = [CLI, "--output", "json", "models", "builtin"]
@@ -422,7 +437,6 @@ def main():
             ], blocked=None),
     }
     summary = []
-    registry_path = ROOT / "docs/cli/decisions/release-gates.json"
     registry = json.loads(registry_path.read_text())
     for gate_id, spec in gates.items():
         commands = command(*spec["keys"])
@@ -437,9 +451,9 @@ def main():
             status, failure = "fail", "RELEASE_CHECK_ASSERTION_FAILED"
         artifacts = sorted({r.results[k]["log"] for k in spec["keys"] if k in r.results})
         if gate_id in ("EV-03", "EV-04", "EV-05", "EV-06", "EV-07", "EV-08", "EV-09", "EV-10", "EV-14") and scenario_names:
-            artifacts += [str((out / "scenarios" / f"{n}.txt").relative_to(ROOT)) for n in scenario_names]
+            artifacts += [str((out / "scenarios" / f"{n}.txt").relative_to(DEV)) for n in scenario_names]
         if gate_id == "EV-11" and bench:
-            artifacts.append(str((out / "model-benchmark.json").relative_to(ROOT)))
+            artifacts.append(str((out / "model-benchmark.json").relative_to(DEV)))
         evidence = {
             "schema_version": 1, "gate_id": gate_id, "status": status,
             "version_matrix": matrix, "fixture_hashes": fixture_hashes(spec["fixtures"]),
@@ -451,7 +465,7 @@ def main():
         for gate in registry["gates"]:
             if gate["id"] == gate_id:
                 gate["status"] = status
-                gate["evidence_paths"] = [str(path.relative_to(ROOT))]
+                gate["evidence_paths"] = [str(path.relative_to(DEV))]
                 if failure:
                     gate["failure_code"] = failure
                 else:
@@ -459,6 +473,7 @@ def main():
         summary.append((gate_id, status, failure or "", "; ".join(
             f"{'✓' if a['passed'] else '✗'} {a['name']}" for a in spec["assertions"])))
     registry_path.write_text(json.dumps(registry, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    shutil.copyfile(registry_path, source_registry_path)
 
     lines = [
         f"# Release check {args.date}", "",
@@ -476,7 +491,7 @@ def main():
               for k, v in r.results.items()]
     (out / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     failures = [k for k, v in r.results.items() if v["exit_code"] != 0]
-    print(json.dumps({"evidence": str(out.relative_to(ROOT)), "failed_commands": failures,
+    print(json.dumps({"evidence": str(out.relative_to(DEV)), "failed_commands": failures,
                       "gates": {g: s for g, s, _, _ in summary}}, indent=1))
     sys.exit(1 if failures else 0)
 

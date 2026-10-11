@@ -1,49 +1,29 @@
-# Linguist Anki Bridge
+# Linguist Anki Bridge — development records (`cli-dev` branch)
 
-The new CLI design lives in **[docs/cli/](docs/cli/README.md)**. Start with its reading index, then load only the operation, algorithm, setting group or implementation package needed for the task.
+This branch holds the development records of the headless CLI. The source code, the companion add-on and the operational and implementation documentation live on [`main`](https://github.com/silam741852963/linguist-anki-bridge/tree/main). The archived Rust/Qt and Python applications live on [`legacy`](https://github.com/silam741852963/linguist-anki-bridge/tree/legacy).
 
-```sh
-python3 docs/cli/read.py OP-34
-python3 docs/cli/read.py ALG-RESTORE
-python3 docs/cli/read.py WP-11
-python3 docs/cli/read.py --setting llm.model
-python3 docs/cli/validate.py
-```
+| Path | Contents |
+| --- | --- |
+| [`docs/cli/decisions/`](docs/cli/decisions/README.md) | Final design decisions (R01–R34), finalized gaps (FG-01–FG-24) and the release-gate registry (EV-01–EV-14) |
+| [`docs/cli/evidence/`](docs/cli/evidence/) | Dated release checks (gate records, version matrices, redacted logs) and native-transport evidence |
+| [`docs/cli/review/`](docs/cli/review/) | Final review, implementation-pass review, reconciliation, safety review and the traceability record |
+| [`docs/cli/reference/`](docs/cli/reference/) | Application reference, dated research, the Anki inventory and the legacy relocation record |
+| `scripts/release-check.py` | Runs every release check against a `main` checkout and writes gate evidence here |
+| `scripts/traceability.py` | Regenerates `docs/cli/review/traceability.md` from a `main` checkout |
+| `scripts/check-dev.py` | Checks decisions, the gate registry, gate evidence, traceability and links |
 
-The existing Rust/Python application, tests, contracts, packaging, scripts and historical documentation are preserved in **[legacy/](legacy/README.md)**. Run its commands from that directory. Current implementation files retain their pre-move contents; the CLI specifications describe future behavior, not a completed replacement.
+## Working with a main checkout
 
-The new Rust workspace builds a CLI (`linguist-anki-bridge` 0.1.0) without Qt or Python. It prepares, reviews, validates, approves and exports vocabulary and grammar cards, reads Anki through AnkiConnect, and keeps durable local plans, jobs, snapshots and recovery records. **Collection writes are not available in 0.1.0**: `apply`, `snapshots restore`, `jobs rollback`, `recover reconcile`, `backup create` and `models install` preview only, and their `--apply` forms exit 3 with `CAPABILITY_UNAVAILABLE`. The native companion transport does not exist yet, so no claim of a safe revamp of a real collection is made. The [release check](docs/cli/evidence/release-2026-10-05/README.md) records which release gates pass (scoped to Anki 25.09.2 disposable collections) and which are blocked. [Command examples for 0.1.0](docs/cli/examples/commands-v0.1.0.md) list what works. The [consolidated package record](docs/cli/implementation/packages.md) collects every work package's specification, audit and known limits, and the [final review](docs/cli/review/final-review-2026-10-05.md) lists the open issues for the full implementation.
-
-Release build (locked, reproducible, with checksums; nothing is installed):
-
-```sh
-python3 scripts/release-build.py --verify-reproducible   # dist/release/
-python3 scripts/release-check.py --msrv --release-build --benchmark
-```
+The scripts run against a checkout of `main`, passed with `--source` (or `LINGUIST_SOURCE`; default `../linguist-anki-bridge`). A worktree keeps both side by side:
 
 ```sh
-cargo test --locked --workspace
-cargo run --locked -- --help
-cargo run --locked -- completions bash
-cargo run --locked -- doctor --local
-cargo run --locked -- doctor --ollama --offline
-cargo run --locked -- config show --defaults
-cargo run --locked -- --purpose japanese_grammar config show learning --provenance
-cargo run --locked -- document validate contracts/v2/fixtures/vocabulary.json
-cargo run --locked -- document render contracts/v2/fixtures/grammar.json
-cargo run --locked -- recover inspect --pending
-# Read-only Anki inspection (Anki + AnkiConnect must be running):
-cargo run --locked -- doctor
-cargo run --locked -- decks list --counts
-cargo run --locked -- models list
-cargo run --locked -- notes list --query '' --limit 10
-# Explicit media inspection: notes show NOTE_ID --media
-# Initial revamp source draft (requires configured purpose field mappings):
-cargo run --locked -- --purpose english_vocab --set llm.enabled=false \
-  --set dictionary.provider=authored --set images.search_when_missing=false \
-  vocab revamp --note-id NOTE_ID
+git worktree add ../linguist-anki-bridge-dev cli-dev   # from the main checkout
+cd ../linguist-anki-bridge-dev
+python3 scripts/check-dev.py --source ../linguist-anki-bridge
+python3 scripts/traceability.py --source ../linguist-anki-bridge
+python3 scripts/release-check.py --source ../linguist-anki-bridge --msrv --release-build --benchmark
 ```
 
-Structured input can be piped or redirected into `vocab add --document -` or `grammar add --document -`. Supply one v2 JSON record; both commands stage a local plan. Current authored preparation requires disabled generation/image search and `dictionary.provider=authored` as described in the implementation status. `document validate -` and `document digest -` also accept piped JSON.
+The release check needs Anki 25.09.2 with its Python, the AnkiConnect package (`LAB_ANKICONNECT_ZIP`) and, for `--benchmark`, Ollama with `gemma4:12b`. It runs real Anki only on disposable base folders. It writes `docs/cli/evidence/release-DATE/` and `docs/cli/decisions/release-gates.json` here, and copies the registry to the source's `resources/release-gates.json`, which the binary embeds for `doctor`; commit both.
 
-See [implementation status](docs/cli/implementation/status.md) for package progress and known limitations. Git history, repository metadata and the project license remain at root.
+Links into the handbook point at `main` on GitHub. Records dated before 2026-10-11 describe the single-branch layout, where these files lived beside the source.

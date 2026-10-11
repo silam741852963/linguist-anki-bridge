@@ -2,26 +2,26 @@
 
 > Update 2026-10-06: the write path, RI-01–RI-05 and RI-07 were closed by WP-17; see the [implementation pass review](implementation-pass-2026-10-06.md). This report is kept as the WP-16 record.
 
-Review date: 2026-10-05. Scope: the whole repository at the WP-16 commit, against the [reconciliation table](reconciliation.md), [safety review](safety.md), [failure matrix](../recovery/failure-matrix.md), [invariants](../contracts/invariants.md), the setting registry and the 61 operations. This is a fresh traceability and safety pass over code, tests and evidence. It is not a security certification. It does not replace the native evidence the blocked gates require.
+Review date: 2026-10-05. Scope: the whole repository at the WP-16 commit, against the [reconciliation table](reconciliation.md), [safety review](safety.md), [failure matrix](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/recovery/failure-matrix.md), [invariants](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/contracts/invariants.md), the setting registry and the 61 operations. This is a fresh traceability and safety pass over code, tests and evidence. It is not a security certification. It does not replace the native evidence the blocked gates require.
 
 **Outcome:**
 - The CLI safely prepares, reviews, validates, approves and exports vocabulary and grammar cards. It reads Anki and keeps durable, recoverable local records.
 - Every operation, algorithm, setting, invariant, failure-matrix row and unknown-outcome state maps to code and to tests that exist and pass.
 - Collection writes are not available: the native companion transport (WP-03) is incomplete. Seven of the fourteen release gates are blocked, so no full CLI release and no safe revamp of a real collection is claimed.
-- The [consolidated package record](../implementation/packages.md) collects every package's specification, audit and known limits in one document, for the later implementation pass.
+- The [consolidated package record](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/implementation/packages.md) collects every package's specification, audit and known limits in one document, for the later implementation pass.
 
 ## Package statuses
 
 | Package | Status | Evidence |
 | --- | --- | --- |
-| WP-01 domain and resources | complete | [audit 2026-10-01](../implementation/wp-01.md#completion-audit-2026-10-01) |
-| WP-02 CLI/config shell | complete (audited by this review) | no package audit existed; its done criterion holds: every unfinished operation reports `CAPABILITY_UNAVAILABLE` and cannot mutate. See the limits in the [consolidated record](../implementation/packages.md#package-wp-02-cliconfig-shell) |
+| WP-01 domain and resources | complete | [audit 2026-10-01](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/implementation/wp-01.md#completion-audit-2026-10-01) |
+| WP-02 CLI/config shell | complete (audited by this review) | no package audit existed; its done criterion holds: every unfinished operation reports `CAPABILITY_UNAVAILABLE` and cannot mutate. See the limits in the [consolidated record](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/implementation/packages.md#package-wp-02-cliconfig-shell) |
 | WP-03 native bridge and safety gate | **incomplete**: fallback state | read port, companion ledger/protocol helpers and disposable effect evidence exist. Registered actions, the Rust mutation transport, strong collection identity and native dedupe/CAS are missing, so per its own done criterion migration stays blocked and the full revamp release is not marked complete |
-| WP-04 durable store | complete | [audit 2026-10-03](../implementation/wp-04.md#completion-audit-2026-10-03) |
-| WP-05 selectors and capture | complete | [audit 2026-10-03](../implementation/wp-05.md#completion-audit-2026-10-03) |
+| WP-04 durable store | complete | [audit 2026-10-03](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/implementation/wp-04.md#completion-audit-2026-10-03) |
+| WP-05 selectors and capture | complete | [audit 2026-10-03](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/implementation/wp-05.md#completion-audit-2026-10-03) |
 | WP-06 – WP-14 | complete with known limits | audits and limits in each package file |
-| WP-15 release/UX | complete with known limits | [audit 2026-10-05](../implementation/wp-15.md#completion-audit-2026-10-05) |
-| WP-16 final review | complete | this report, [traceability record](traceability.md), [consolidated record](../implementation/packages.md) |
+| WP-15 release/UX | complete with known limits | [audit 2026-10-05](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/implementation/wp-15.md#completion-audit-2026-10-05) |
+| WP-16 final review | complete | this report, [traceability record](traceability.md), [consolidated record](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/implementation/packages.md) |
 
 ## Test commands and results (2026-10-05)
 
@@ -42,11 +42,11 @@ The release-check run predates this review's changes. Those changes are module-d
 
 | Item | Covered | Where |
 | --- | --- | --- |
-| Operations OP-01–OP-61 | 61/61 with command-level tests, plus library and real-Anki tests for write paths | [operation coverage](../implementation/op-coverage.md) |
+| Operations OP-01–OP-61 | 61/61 with command-level tests, plus library and real-Anki tests for write paths | [operation coverage](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/implementation/op-coverage.md) |
 | Algorithms (18) | 18/18 tagged in source (`ALG-*` module docs) with named proofs | [traceability](traceability.md#algorithms) |
 | Reconciliation contracts D01–D28 | 28/28 with status and proof; D08, D09, D11, D12 and D21 partly gated | [traceability](traceability.md#reconciliation-contracts) |
-| Settings (156 registry entries) | 156/156 with a consumer, resolver role or reported unavailable feature | [setting coverage](../configuration/setting-coverage.md) |
-| Invariants INV-01–INV-18 | 15 proven locally (6 of them also through real Anki via the harness); INV-15 and INV-16 partial; INV-17 pending native | [invariant ownership](../implementation/invariant-test-ownership.md) |
+| Settings (156 registry entries) | 156/156 with a consumer, resolver role or reported unavailable feature | [setting coverage](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/configuration/setting-coverage.md) |
+| Invariants INV-01–INV-18 | 15 proven locally (6 of them also through real Anki via the harness); INV-15 and INV-16 partial; INV-17 pending native | [invariant ownership](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/implementation/invariant-test-ownership.md) |
 | Failure matrix (14 rows) | 14/14 with fake-port proofs; real-Anki evidence for 6 | [traceability](traceability.md#failure-acceptance-matrix) |
 | Unknown outcomes | 9 states, each with a recovery route and a proof | [traceability](traceability.md#unknown-outcomes-and-recovery-routes) |
 | Review risks RV-01–RV-15 | 3 closed for the tested scope, 3 closed locally, 4 with partial evidence, 5 open | [traceability](traceability.md#review-risks) |
