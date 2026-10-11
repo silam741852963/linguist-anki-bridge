@@ -70,7 +70,7 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
-    /// Preview an approved plan's apply preflight; collection writes need the verified native adapter.
+    /// Preview an approved plan's apply preflight; --apply writes through the verified companion add-on.
     Apply {
         /// Plan ID printed by preparation or `plans list`.
         plan: uuid::Uuid,
@@ -89,11 +89,11 @@ enum Command {
         /// Preview one reviewed grammar split group (children first, then the anchor).
         #[arg(long = "split-group", conflicts_with = "item_ids")]
         split_group: Option<uuid::Uuid>,
-        /// Request the collection write; unavailable until the native adapter is verified.
+        /// Write to the collection through the verified companion add-on (refused without one).
         #[arg(long)]
         apply: bool,
     },
-    /// List, show, export and preview restoring local snapshots; restore writes need the verified native adapter.
+    /// List, show and export apply snapshots, and restore them through the verified companion add-on.
     Snapshots {
         #[command(subcommand)]
         command: SnapshotCommand,
@@ -108,7 +108,7 @@ enum Command {
         #[command(subcommand)]
         command: ResourceCommand,
     },
-    /// Queue preparation inputs and inspect durable local progress.
+    /// Create, run and inspect prepare, simulate and apply jobs with durable local progress.
     Jobs {
         #[command(subcommand)]
         command: JobCommand,
@@ -128,12 +128,12 @@ enum Command {
         #[command(subcommand)]
         command: PrepareCommand,
     },
-    /// Inspect durable local recovery evidence without retrying effects.
+    /// Inspect journaled operations and reconcile uncertain outcomes; never re-sends blindly.
     Recover {
         #[command(subcommand)]
         command: RecoveryCommand,
     },
-    /// Inspect immutable plan revisions in existing local state.
+    /// Review, edit, bind, validate, approve and export immutable plan revisions.
     Plans {
         #[command(subcommand)]
         command: PlanCommand,
@@ -143,7 +143,7 @@ enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Inspect the current implementation and collection safety status.
+    /// Check configuration, Anki, the companion add-on, Ollama and release gates.
     Doctor {
         /// Check only local configuration, state and resources; never contacts Anki or Ollama.
         #[arg(long, conflicts_with_all = ["ollama", "bridge"])]
@@ -175,7 +175,7 @@ enum Command {
         #[command(subcommand)]
         command: DocumentCommand,
     },
-    /// Print the fixed managed model manifests.
+    /// List, inspect and install the managed note types.
     Models {
         #[command(subcommand)]
         command: Option<ModelCommand>,
@@ -188,7 +188,7 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum BackupCommand {
-    /// Preview checkpoint coverage and path; --apply needs the verified native export.
+    /// Preview checkpoint coverage and path; --apply exports through the verified companion add-on.
     Create {
         /// affected or collection; schema actions always escalate to collection.
         #[arg(long)]
@@ -200,7 +200,7 @@ enum BackupCommand {
         /// JSON scope manifest (notes, cards, models, media) the package must cover.
         #[arg(long)]
         scope_manifest: Option<PathBuf>,
-        /// Request the native export; unavailable until the native adapter is verified.
+        /// Export the checkpoint through the verified companion add-on (refused without one).
         #[arg(long)]
         apply: bool,
     },
@@ -255,14 +255,14 @@ enum SnapshotCommand {
         /// Snapshot ID from `snapshots list`.
         snapshot: uuid::Uuid,
     },
-    /// Preview what restoring this apply snapshot would reverse.
+    /// Preview what restoring this apply snapshot would reverse; --apply restores it.
     Restore {
         /// Snapshot ID from `snapshots list`.
         snapshot: uuid::Uuid,
         /// Observed-state-bound restore decision (JSON) to validate.
         #[arg(long)]
         decision: Option<PathBuf>,
-        /// Request the restore write; unavailable until the native adapter is verified.
+        /// Restore through the verified companion add-on (refused without one).
         #[arg(long)]
         apply: bool,
     },
@@ -372,7 +372,7 @@ enum JobCommand {
         #[arg(long)]
         apply: bool,
     },
-    /// Preview restoring a job's committed items through their snapshots.
+    /// Preview restoring a job's committed items through their snapshots; --apply restores them.
     Rollback {
         /// Job ID from `jobs list`.
         job: uuid::Uuid,
@@ -830,11 +830,11 @@ enum ModelCommand {
         /// Exact note type name or ID.
         model: String,
     },
-    /// Preview a fixed v2 model for a purpose; native installation is gated.
+    /// Preview a managed model for a purpose; --apply installs it through the companion add-on.
     Install {
         /// Purpose whose managed model to preview.
         purpose: String,
-        /// Request the installation; unavailable until the native adapter is verified.
+        /// Install through the verified companion add-on (refused without one).
         #[arg(long)]
         apply: bool,
     },
@@ -883,11 +883,11 @@ enum NoteCommand {
 }
 #[derive(Subcommand)]
 enum RecoveryCommand {
-    /// Propose how to reconcile one uncertain apply operation.
+    /// Propose how to reconcile one uncertain apply operation; --apply carries it out.
     Reconcile {
         /// Apply operation ID from `recover inspect --pending`.
         operation: uuid::Uuid,
-        /// Continue proven-safe effects; unavailable until the native adapter is verified.
+        /// Continue proven-safe effects through the verified companion add-on (refused without one).
         #[arg(long)]
         apply: bool,
         /// With --apply: accept a recorded collection-session rebinding.
@@ -4573,7 +4573,7 @@ fn run_apply(
     Ok(if blocked == 0 { 0 } else { 4 })
 }
 
-/// OP-60 local proposal. Live evidence and recovery writes need the native adapter.
+/// OP-60 local proposal. Live evidence and recovery writes need the verified companion.
 fn run_reconcile(
     settings: &linguist_config::Effective,
     operation: uuid::Uuid,

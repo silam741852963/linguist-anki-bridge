@@ -2,7 +2,7 @@
 
 Status: finalized implementation sequence; evidence gates remain not run. No package is complete merely because these documents exist. Follow [handbook](../README.md), [operations](../operations/README.md) and referenced algorithms. Preserve unrelated working-tree changes. Do not implement against the user's live collection as a test target.
 
-Path rule: unprefixed `crates/`, `contracts/`, `scripts/` and workspace paths in packages mean the repository-root implementation on `main`. `legacy/` paths name the archived code, now at the root of the `legacy` branch. Packages written before 2026-10-11 cite `docs/cli/evidence`, `review`, `decisions`, `reference`, `scripts/release-check.py` and `scripts/traceability.py`; those moved to the `cli-dev` branch. The root Cargo workspace now contains the new CLI and core library; see [implementation status](status.md).
+Path rule: unprefixed `crates/`, `contracts/`, `scripts/` and workspace paths in packages mean the repository-root implementation on `main`. `legacy/` paths name the archived code, now at the root of the `legacy` branch. Packages written before 2026-10-11 cite `docs/cli/evidence`, `review`, `decisions` and `reference`; those moved to the `cli-dev` branch. `cli-dev:scripts/release-check.py` and `cli-dev:scripts/traceability.py` run from a `cli-dev` worktree against a `main` checkout passed with `--source` (see the `cli-dev` README). The root Cargo workspace now contains the new CLI and core library; see [implementation status](status.md).
 
 ## Architecture and boundaries
 

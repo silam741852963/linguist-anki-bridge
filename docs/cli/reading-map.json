@@ -240,7 +240,7 @@
       "path": "implementation/wp-17.md",
       "heading": "## WP-17 \u2014 native write transport and real-Anki release evidence",
       "title": "WP-17 \u2014 native write transport and real-Anki release evidence",
-      "words": 1818,
+      "words": 1822,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -260,7 +260,7 @@
       "path": "implementation/wp-19.md",
       "heading": "## WP-19 \u2014 vocabulary card redesign (Linguist Vocabulary v3) and certified generation",
       "title": "WP-19 \u2014 vocabulary card redesign (Linguist Vocabulary v3) and certified generation",
-      "words": 1624,
+      "words": 1626,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -270,7 +270,7 @@
       "path": "implementation/wp-20.md",
       "heading": "## WP-20 \u2014 revamp the blue- and purple-flagged cards for the user's review",
       "title": "WP-20 \u2014 revamp the blue- and purple-flagged cards for the user's review",
-      "words": 3580,
+      "words": 3582,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -280,7 +280,7 @@
       "path": "implementation/wp-21.md",
       "heading": "## WP-21 \u2014 batch processing (prepare \u2192 review \u2192 apply jobs)",
       "title": "WP-21 \u2014 batch processing (prepare \u2192 review \u2192 apply jobs)",
-      "words": 2587,
+      "words": 2591,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -290,7 +290,7 @@
       "path": "implementation/wp-22.md",
       "heading": "## WP-22 \u2014 grammar add and revamp, end to end on the user's data",
       "title": "WP-22 \u2014 grammar add and revamp, end to end on the user's data",
-      "words": 2150,
+      "words": 2154,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -300,7 +300,7 @@
       "path": "implementation/wp-23.md",
       "heading": "## WP-23 \u2014 grammar v4 card and split units that keep the source's schedule",
       "title": "WP-23 \u2014 grammar v4 card and split units that keep the source's schedule",
-      "words": 1675,
+      "words": 1677,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"

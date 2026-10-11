@@ -281,7 +281,7 @@ fn fresh_home_setup_and_offline_authored_preparation() {
             .starts_with("CAPABILITY_UNAVAILABLE"),
         "{error}"
     );
-    assert!(error["next"].as_str().unwrap().contains("native adapter"));
+    assert!(error["next"].as_str().unwrap().contains("companion add-on"));
     // Export works offline as the alternative to apply.
     let bundle = home.0.join("plan.bundle.json");
     let export = home
@@ -606,7 +606,7 @@ fn dependency_and_capability_errors_name_the_next_step() {
             ],
             3,
             "CAPABILITY_UNAVAILABLE",
-            "native adapter",
+            "companion add-on",
         ),
         (
             vec!["plans", "list", "--set", "anki.api_key_env=LAB_MISSING_KEY"],

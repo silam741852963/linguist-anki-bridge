@@ -2,7 +2,7 @@
 //! unavailable capability or local limits. The error code stays the contract;
 //! `next` is advice for people and never changes the exit code.
 
-const WRITES: &str = "Collection writes need the verified native adapter: install the Linguist companion add-on (dist/linguist-bridge.ankiaddon) next to AnkiConnect, set an AnkiConnect API key and name its environment variable in anki.api_key_env, use a loopback anki.endpoint, open the profile, then check `linguist-anki-bridge doctor --bridge`. Previews, review, approval and `plans export` work without it.";
+const WRITES: &str = "Collection writes need the verified companion add-on: install linguist-bridge-*.ankiaddon (published with each release, or built with addons/build_addon.py) next to AnkiConnect in Anki 25.09.2, set an AnkiConnect API key and name its environment variable in anki.api_key_env, use a loopback anki.endpoint, open the profile, then check `linguist-anki-bridge doctor --bridge`. Previews, review, approval and `plans export` work without it.";
 
 /// Guidance for the error's leading code, or `None` when the message itself
 /// already names the fix (validation, conflicts, missing IDs).

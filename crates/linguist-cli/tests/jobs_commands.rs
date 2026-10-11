@@ -1,6 +1,6 @@
-//! WP-13 job commands for simulate/apply jobs and job tombstones. Execution
-//! stays unavailable until a verified native adapter exists; these commands
-//! never contact Anki (the endpoint below is unreachable).
+//! WP-13 job commands for simulate/apply jobs and job tombstones. Without a
+//! verified companion add-on execution is refused; these commands never
+//! contact Anki (the endpoint below is unreachable).
 use linguist_core::{LearningDocument, approval::ApprovalRequest, records::*, render};
 use linguist_store::Store;
 use std::{collections::BTreeMap, path::PathBuf, process::Command};

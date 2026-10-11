@@ -642,7 +642,7 @@ Done when every OP handler has meaningful coverage, all fixed invariants and rec
 
 ### Completion audit — 2026-10-05
 
-WP-15 is implemented. Release evidence is in [release-2026-10-05](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-05/README.md), written by `python3 scripts/release-check.py --date 2026-10-05 --msrv --release-build --benchmark`. All 34 commands exited 0. Gates: EV-01, EV-05, EV-06, EV-08, EV-10, EV-12 and EV-13 **pass**; EV-02, EV-03, EV-04, EV-07, EV-09, EV-11 and EV-14 are **blocked**, each with a failure code and the partial checks that ran (see the limits below). Because EV-14 is blocked, no full CLI release is claimed. In particular, no claim is made that a revamp of a real collection is safe: the shipped CLI has no native write path.
+WP-15 is implemented. Release evidence is in [release-2026-10-05](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-05/README.md), written by `python3 scripts/release-check.py --source ../linguist-anki-bridge --date 2026-10-05 --msrv --release-build --benchmark`. All 34 commands exited 0. Gates: EV-01, EV-05, EV-06, EV-08, EV-10, EV-12 and EV-13 **pass**; EV-02, EV-03, EV-04, EV-07, EV-09, EV-11 and EV-14 are **blocked**, each with a failure code and the partial checks that ran (see the limits below). Because EV-14 is blocked, no full CLI release is claimed. In particular, no claim is made that a revamp of a real collection is safe: the shipped CLI has no native write path.
 
 Packaging and build:
 - `scripts/release-build.py --verify-reproducible --clean` builds `cargo build --locked --release -p linguist-cli` twice from empty target directories. It uses SOURCE_DATE_EPOCH (the HEAD commit time) and remapped paths, and compares the two binaries: the binaries were byte-equal (SHA-256 `a1de2354…f8c8fdf3`, 301 s for both builds).
@@ -664,7 +664,7 @@ UX:
 - The README describes what 0.1.0 does and does not do.
 
 Tests named by the package:
-- **Release gates:** `scripts/release-check.py` writes one GateEvidence record per gate. `release_evidence.rs` checks every record against the contract and against `release-gates.json`.
+- **Release gates:** `cli-dev:scripts/release-check.py` writes one GateEvidence record per gate. `cli-dev:scripts/check-dev.py` checks every record against the contract and against `release-gates.json` (until 2026-10-11 `release_evidence.rs` did).
 - **120 semantic fixtures:** `semantic_corpus.rs` and `scripts/generate-semantic-corpus.py`. There are 30 fixtures per workflow, 15 Japanese and 15 English each. They cover Vietnamese explanations, kana/kanji, homographs, mixed models, mixed images, multi-pattern sources, no dictionary match, shared media, task leakage and adversarial text. The run shows zero source loss, no unsupported generated claim or task leakage in ready content, no live markup, and recoverable provenance for every staged value.
 - **Model benchmark:** `scripts/model-benchmark.py` with gemma4:12b: 55 of 56 fixtures attempted inference (VA-JA-09 was refused first with `GENERATION_ACCEPTED_ANSWER_REQUIRED`). 52 replies passed the schema and field validation, a compliance of 94.55%, below the 95% target. The other three grammar replies (GA-JA-04, GA-JA-09, GA-EN-08) ended with `OLLAMA_COMPLETION_INCOMPLETE`, meaning `done_reason=length`. Median latency was 9.8 s and the maximum 98 s, with the model using 8.4 GB of VRAM.
 - **Final purpose presets:** `crates/linguist-config/tests/presets.rs`.
@@ -788,7 +788,7 @@ WP-16 is complete. The [final review](https://github.com/silam741852963/linguist
 - **Secrets and private data:** checked by the new `crates/linguist-cli/tests/review_privacy.rs`. A secret credential value never reaches outputs, logs, state, bundles or config, and plan listings omit personal notes.
 - **Backups, later-study preservation and source ownership:** checked against the existing tests and the real-Anki scenarios (see the review's explicit checks).
 - **Empirical gates stay visible.** `doctor`, `release-gates.json` and the release evidence show EV-02, EV-03, EV-04, EV-07, EV-09, EV-11 and EV-14 as blocked.
-- **Generated records:** `scripts/traceability.py` and `scripts/consolidate-packages.py` write the traceability record and the consolidated record and support `--check`. `crates/linguist-cli/tests/release_evidence.rs` re-checks every cited test.
+- **Generated records:** `cli-dev:scripts/traceability.py` and `scripts/consolidate-packages.py` write the traceability record and the consolidated record and support `--check`. `cli-dev:scripts/check-dev.py` re-checks every cited test (until 2026-10-11 `release_evidence.rs` did).
 
 Evidence:
 - `cargo test --locked --workspace --no-fail-fast`: 579 passed, 0 failed, 5 ignored real-Anki scenarios. Those scenarios passed in the release check.
@@ -799,7 +799,7 @@ Evidence:
 
 ### Known limits — revisit after all packages
 
-- **Release evidence predates the review.** The release-check evidence (2026-10-05) predates this review's changes: module-doc tags, three tests, documentation and generators. No product behaviour changed, but the gate records cite the earlier commit. Rerun `scripts/release-check.py` after the next code change.
+- **Release evidence predates the review.** The release-check evidence (2026-10-05) predates this review's changes: module-doc tags, three tests, documentation and generators. No product behaviour changed, but the gate records cite the earlier commit. Rerun `cli-dev:scripts/release-check.py` after the next code change.
 - **The traceability record is hand-curated.** It cites one to three representative proofs per item, not every relevant test. Algorithm locations come from `ALG-*` tags, so an untagged helper module is not listed.
 - **Coverage is matched heuristically.** Operation coverage matches command words in test bodies. Invariant and contract statuses are reviewer judgements checked against named tests, not computed from coverage data.
 - **Older records are stale.** `status.md` still contains earlier progress paragraphs, for example "WP-02 is in progress" and "WP-03 is in progress" (RI-07). The final review and the consolidated record give the current statuses. The [safety review](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/review/safety.md) and [reconciliation](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/review/reconciliation.md) keep their historical text; their current state is in the traceability record.
@@ -812,7 +812,7 @@ Evidence:
 
 Source: [wp-17.md](wp-17.md)
 
-Touch: `addons/linguist_bridge/`, `crates/linguist-anki/src/native.rs`, `crates/linguist-application/src/native_port.rs`, `crates/linguist-cli/src/native_writes.rs`, `scripts/disposable-anki-desktop.py`, `scripts/release-check.py`. Closes WP-03 and review issues RI-01–RI-05 and RI-07.
+Touch: `addons/linguist_bridge/`, `crates/linguist-anki/src/native.rs`, `crates/linguist-application/src/native_port.rs`, `crates/linguist-cli/src/native_writes.rs`, `scripts/disposable-anki-desktop.py`, `cli-dev:scripts/release-check.py`. Closes WP-03 and review issues RI-01–RI-05 and RI-07.
 
 Steps, in order:
 
@@ -823,7 +823,7 @@ Steps, in order:
 5. A resolution of `SOURCE_NATIVE_HISTORY_REVIEW` from native history evidence (RI-04).
 6. `LAB_*` environment handling (RI-01).
 
-Done when the four workflows run prepare → review → approve → `apply --apply` → later study → `snapshots restore --apply` through CLI commands only against real Anki in a disposable profile with the companion installed through Anki's add-on installer; native fault injection covers timeouts, crashes between effect and receipt, duplicate UUIDs, disk full and session change with recovery through `recover reconcile --apply`; and EV-03, EV-04, EV-06, EV-07, EV-09 and EV-14 pass in a fresh `scripts/release-check.py --msrv --release-build --benchmark` run.
+Done when the four workflows run prepare → review → approve → `apply --apply` → later study → `snapshots restore --apply` through CLI commands only against real Anki in a disposable profile with the companion installed through Anki's add-on installer; native fault injection covers timeouts, crashes between effect and receipt, duplicate UUIDs, disk full and session change with recovery through `recover reconcile --apply`; and EV-03, EV-04, EV-06, EV-07, EV-09 and EV-14 pass in a fresh `scripts/release-check.py --source ../linguist-anki-bridge --msrv --release-build --benchmark` run.
 
 #### Completion audit 2026-10-06
 
@@ -857,7 +857,7 @@ Done when the four workflows run prepare → review → approve → `apply --app
 
 Defects found and fixed against real Anki: the store's 600 s lease limit; restore scope missing created notes; restore approvals use the restore-decision digest; `findModelsByName` returns 64-bit template/field IDs and note evidence FSRS floats; Anki's `/usr/bin/anki` shebang picks the user's Python; `close_for_full_sync` alone cannot reopen.
 
-**Checks.** `cargo test --locked --workspace` (586 passed, 8 ignored desktop scenarios), the desktop scenarios (8 passed against Anki 25.09.2), `cargo clippy -D warnings`, `cargo fmt --check`, the companion tests under `python3` (69, 5 skipped without Anki) and Anki's Python (69 passed), `docs/cli/validate.py` and the `--check` records. `python3 scripts/release-check.py --msrv --release-build --benchmark` (2026-10-06, clean tree): all commands exit 0; EV-01 and EV-03–EV-10, EV-12–EV-14 pass; EV-02 (`EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE`) and EV-11 (`OCR_BENCHMARK_LANGUAGE_PACKS_MISSING`) stay blocked; MSRV 1.98.1 passes; two clean release builds are byte-equal; gemma4:12b schema compliance 53/55 (96.4%). Records: [release evidence](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-06/README.md).
+**Checks.** `cargo test --locked --workspace` (586 passed, 8 ignored desktop scenarios), the desktop scenarios (8 passed against Anki 25.09.2), `cargo clippy -D warnings`, `cargo fmt --check`, the companion tests under `python3` (69, 5 skipped without Anki) and Anki's Python (69 passed), `docs/cli/validate.py` and the `--check` records. `python3 scripts/release-check.py --source ../linguist-anki-bridge --msrv --release-build --benchmark` (2026-10-06, clean tree): all commands exit 0; EV-01 and EV-03–EV-10, EV-12–EV-14 pass; EV-02 (`EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE`) and EV-11 (`OCR_BENCHMARK_LANGUAGE_PACKS_MISSING`) stay blocked; MSRV 1.98.1 passes; two clean release builds are byte-equal; gemma4:12b schema compliance 53/55 (96.4%). Records: [release evidence](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-06/README.md).
 
 #### Known limits — revisit after all packages
 
@@ -875,5 +875,5 @@ Defects found and fixed against real Anki: the store's 600 s lease limit; restor
 - **Rollback.** `jobs rollback --apply` builds default decisions and refuses any group with conflicts or blockers; field and deck decisions need `snapshots restore --decision`. A restore journal whose session changed cannot be rebound (`RESTORE_SESSION_CHANGED`).
 - **Apply jobs.** `jobs run`/`jobs resume` for simulate and apply jobs still return `CAPABILITY_UNAVAILABLE`; the job executor is not wired to `NativePort`.
 - **Models.** `models install` creates the two fixed managed models only; managed model upgrades and other note types are not supported.
-- **Evidence environment.** The desktop scenarios need Anki's Python, `/usr/bin/anki`, Linux and the AnkiConnect package (`LAB_ANKICONNECT_ZIP`); they are `#[ignore]` in `cargo test` and run by `scripts/release-check.py`. No CI runs them (RI-08).
+- **Evidence environment.** The desktop scenarios need Anki's Python, `/usr/bin/anki`, Linux and the AnkiConnect package (`LAB_ANKICONNECT_ZIP`); they are `#[ignore]` in `cargo test` and run by `cli-dev:scripts/release-check.py`. No CI runs them (RI-08).
 - **Open gates and issues unchanged by this package.** EV-02 (nondefault consumer tests), EV-11 (model benchmark below target, OCR packs) and review issue RI-06 remain as recorded in the release evidence.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 — 2026-10-11
+
+- `--help` and error guidance describe companion writes as available: `apply`, `snapshots`, `jobs`, `recover`, `plans`, `doctor`, `models` and `backup` no longer say writes are "unavailable until the native adapter is verified". The `CAPABILITY_UNAVAILABLE` hint names the released `linguist-bridge-*.ankiaddon` and Anki 25.09.2.
+- Work-package records name the release-check, traceability and check-dev scripts on the `cli-dev` branch.
+- Full release check rerun on the split repository.
+
 ## 0.2.0 — 2026-10-11
 
 First release with collection writes. Companion add-on 0.4.0.

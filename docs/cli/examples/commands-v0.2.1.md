@@ -1,6 +1,6 @@
-# Command examples for linguist-anki-bridge 0.2.0
+# Command examples for linguist-anki-bridge 0.2.1
 
-These examples match release 0.2.0 (see the [release check](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-11/README.md) on the `cli-dev` branch). Every command path and flag below is checked against the built binary by `crates/linguist-cli/tests/release_ux.rs`. Replace uppercase placeholders with values printed by an earlier command. [Workflow examples](workflows.md) describe the target design. This page lists only what 0.2.0 does.
+These examples match release 0.2.1 (see the [release check](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-11/README.md) on the `cli-dev` branch). Every command path and flag below is checked against the built binary by `crates/linguist-cli/tests/release_ux.rs`. Replace uppercase placeholders with values printed by an earlier command. [Workflow examples](workflows.md) describe the target design. This page lists only what 0.2.1 does.
 
 ## Setup and diagnostics
 

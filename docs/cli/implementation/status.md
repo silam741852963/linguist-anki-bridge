@@ -1,6 +1,6 @@
 # Implementation status
 
-Current state on 2026-10-11 (release 0.2.0, companion 0.4.0). Earlier progress notes were removed from this page (review issue RI-07); every package's specification, completion audit and known limits are in the [consolidated package record](packages.md), and the history is in git.
+Current state on 2026-10-11 (release 0.2.1, companion 0.4.0). Earlier progress notes were removed from this page (review issue RI-07); every package's specification, completion audit and known limits are in the [consolidated package record](packages.md), and the history is in git.
 
 ## What the CLI does
 
