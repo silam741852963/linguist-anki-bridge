@@ -45,5 +45,3 @@ htmlcov/
 *.apkg
 
 
-# Local leftovers of the archived code base (now on the legacy branch)
-/legacy/
