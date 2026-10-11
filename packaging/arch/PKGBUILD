@@ -1,9 +1,9 @@
 # Arch package recipe for the headless CLI. Build it yourself with makepkg;
-# nothing in this repository installs it. Collection writes stay unavailable
-# in 0.1.0 (see docs/cli/implementation/wp-15.md).
+# nothing in this repository installs it. Collection writes also need the
+# companion Anki add-on (addons/linguist_bridge, released as an .ankiaddon).
 pkgname=linguist-anki-bridge-cli-git
 _pkgname=linguist-anki-bridge
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Headless CLI to prepare and review Anki vocabulary and grammar cards (no Qt)"
 arch=('x86_64')
@@ -26,7 +26,7 @@ sha256sums=('SKIP')
 
 pkgver() {
     cd "$srcdir/$_pkgname"
-    printf "0.1.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+    printf "0.2.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 prepare() {
@@ -49,7 +49,7 @@ package() {
     cd "$srcdir/$_pkgname"
     install -Dm755 target/release/linguist-anki-bridge "$pkgdir/usr/bin/linguist-anki-bridge"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-    install -Dm644 docs/cli/examples/commands-v0.1.0.md "$pkgdir/usr/share/doc/$pkgname/commands.md"
+    install -Dm644 docs/cli/examples/commands-v0.2.0.md "$pkgdir/usr/share/doc/$pkgname/commands.md"
     "$pkgdir/usr/bin/linguist-anki-bridge" completions bash \
         | install -Dm644 /dev/stdin "$pkgdir/usr/share/bash-completion/completions/linguist-anki-bridge"
     "$pkgdir/usr/bin/linguist-anki-bridge" completions zsh \

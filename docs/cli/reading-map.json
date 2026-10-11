@@ -7,8 +7,7 @@
       "title": "ALG-CONFIG \u2014 resolve and freeze",
       "words": 459,
       "requires": [
-        "contracts/invariants.md",
-        "decisions/ux-and-operations.md"
+        "contracts/invariants.md"
       ]
     },
     "ALG-RENDER": {
@@ -18,7 +17,6 @@
       "words": 583,
       "requires": [
         "contracts/invariants.md",
-        "decisions/storage-and-wire.md",
         "pipelines/validation.md"
       ]
     },
@@ -30,8 +28,6 @@
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "decisions/storage-and-wire.md",
-        "decisions/release-gates.md",
         "contracts/rendering.md",
         "pipelines/validation.md"
       ]
@@ -43,9 +39,7 @@
       "words": 92,
       "requires": [
         "contracts/invariants.md",
-        "implementation/README.md",
-        "decisions/ux-and-operations.md",
-        "decisions/learning-and-providers.md"
+        "implementation/README.md"
       ]
     },
     "WP-03": {
@@ -59,7 +53,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
         "recovery/backup.md",
         "recovery/identity.md",
         "recovery/migration.md",
@@ -74,7 +67,6 @@
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "decisions/storage-and-wire.md",
         "recovery/retention.md",
         "recovery/jobs.md"
       ]
@@ -87,8 +79,6 @@
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "decisions/learning-and-providers.md",
-        "decisions/ux-and-operations.md",
         "pipelines/capture.md",
         "pipelines/ocr.md"
       ]
@@ -101,8 +91,6 @@
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "decisions/learning-and-providers.md",
-        "decisions/release-gates.md",
         "pipelines/ocr.md",
         "pipelines/providers.md"
       ]
@@ -115,7 +103,6 @@
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "decisions/learning-and-providers.md",
         "pipelines/validation.md",
         "pipelines/vocabulary.md",
         "operations/preparation.md"
@@ -129,7 +116,6 @@
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "decisions/learning-and-providers.md",
         "pipelines/grammar.md",
         "recovery/split.md",
         "operations/preparation.md"
@@ -143,9 +129,6 @@
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "decisions/storage-and-wire.md",
-        "decisions/learning-and-providers.md",
-        "decisions/ux-and-operations.md",
         "operations/plans.md",
         "operations/history.md"
       ]
@@ -161,8 +144,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/backup.md",
         "recovery/models.md",
         "operations/collection.md",
@@ -180,8 +161,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/apply.md",
         "recovery/migration.md",
         "recovery/reconcile.md",
@@ -200,8 +179,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/storage-and-wire.md",
         "recovery/restore.md",
         "recovery/split.md",
         "operations/jobs.md",
@@ -219,9 +196,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/storage-and-wire.md",
-        "decisions/ux-and-operations.md",
         "recovery/jobs.md",
         "recovery/reconcile.md",
         "operations/jobs.md"
@@ -235,8 +209,6 @@
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "decisions/storage-and-wire.md",
-        "decisions/release-gates.md",
         "configuration/README.md",
         "recovery/retention.md",
         "operations/configuration.md",
@@ -251,9 +223,7 @@
       "words": 126,
       "requires": [
         "contracts/invariants.md",
-        "implementation/README.md",
-        "decisions/release-gates.md",
-        "decisions/learning-and-providers.md"
+        "implementation/README.md"
       ]
     },
     "WP-16": {
@@ -263,8 +233,7 @@
       "words": 94,
       "requires": [
         "contracts/invariants.md",
-        "implementation/README.md",
-        "decisions/release-gates.md"
+        "implementation/README.md"
       ]
     },
     "WP-17": {
@@ -274,9 +243,7 @@
       "words": 1818,
       "requires": [
         "contracts/invariants.md",
-        "implementation/README.md",
-        "decisions/native-bridge.md",
-        "decisions/release-gates.md"
+        "implementation/README.md"
       ]
     },
     "WP-18": {
@@ -333,7 +300,7 @@
       "path": "implementation/wp-23.md",
       "heading": "## WP-23 \u2014 grammar v4 card and split units that keep the source's schedule",
       "title": "WP-23 \u2014 grammar v4 card and split units that keep the source's schedule",
-      "words": 1651,
+      "words": 1675,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md"
@@ -350,8 +317,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/apply.md",
         "recovery/split.md"
       ]
@@ -427,8 +392,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/models.md"
       ]
     },
@@ -470,7 +433,6 @@
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
-        "decisions/ux-and-operations.md",
         "configuration/README.md"
       ]
     },
@@ -482,7 +444,6 @@
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
-        "decisions/ux-and-operations.md",
         "configuration/README.md"
       ]
     },
@@ -493,8 +454,7 @@
       "words": 92,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-05": {
@@ -505,7 +465,6 @@
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
-        "decisions/ux-and-operations.md",
         "configuration/README.md"
       ]
     },
@@ -516,8 +475,7 @@
       "words": 68,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-07": {
@@ -527,8 +485,7 @@
       "words": 62,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-08": {
@@ -538,8 +495,7 @@
       "words": 115,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-09": {
@@ -549,8 +505,7 @@
       "words": 266,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-10": {
@@ -560,8 +515,7 @@
       "words": 166,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-01": {
@@ -572,7 +526,6 @@
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
-        "decisions/ux-and-operations.md",
         "configuration/README.md"
       ]
     },
@@ -607,8 +560,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/restore.md"
       ]
     },
@@ -633,8 +584,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/backup.md"
       ]
     },
@@ -709,8 +658,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/jobs.md"
       ]
     },
@@ -735,8 +682,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/jobs.md"
       ]
     },
@@ -750,9 +695,7 @@
         "operations/README.md",
         "recovery/README.md",
         "recovery/journal.md",
-        "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md"
+        "contracts/identity.md"
       ]
     },
     "OP-43": {
@@ -776,8 +719,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/restore.md"
       ]
     },
@@ -849,8 +790,7 @@
       "words": 262,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/release-gates.md"
+        "operations/README.md"
       ]
     },
     "OP-59": {
@@ -874,8 +814,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
-        "decisions/ux-and-operations.md",
         "recovery/reconcile.md"
       ]
     },
@@ -896,8 +834,7 @@
       "words": 81,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-26": {
@@ -907,8 +844,7 @@
       "words": 225,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-27": {
@@ -918,8 +854,7 @@
       "words": 181,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-28": {
@@ -929,8 +864,7 @@
       "words": 194,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-29": {
@@ -940,8 +874,7 @@
       "words": 584,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-30": {
@@ -951,8 +884,7 @@
       "words": 570,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-31": {
@@ -963,7 +895,6 @@
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
-        "decisions/ux-and-operations.md",
         "contracts/rendering.md",
         "pipelines/validation.md"
       ]
@@ -975,8 +906,7 @@
       "words": 75,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-33": {
@@ -986,8 +916,7 @@
       "words": 61,
       "requires": [
         "contracts/invariants.md",
-        "operations/README.md",
-        "decisions/ux-and-operations.md"
+        "operations/README.md"
       ]
     },
     "OP-21": {
@@ -998,7 +927,6 @@
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
-        "decisions/learning-and-providers.md",
         "pipelines/capture.md",
         "pipelines/vocabulary.md"
       ]
@@ -1011,7 +939,6 @@
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
-        "decisions/learning-and-providers.md",
         "pipelines/capture.md",
         "pipelines/vocabulary.md"
       ]
@@ -1024,7 +951,6 @@
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
-        "decisions/learning-and-providers.md",
         "pipelines/capture.md",
         "pipelines/grammar.md"
       ]
@@ -1037,7 +963,6 @@
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
-        "decisions/learning-and-providers.md",
         "pipelines/capture.md",
         "pipelines/grammar.md"
       ]
@@ -1049,7 +974,6 @@
       "words": 243,
       "requires": [
         "contracts/invariants.md",
-        "decisions/learning-and-providers.md",
         "configuration/README.md"
       ]
     },
@@ -1060,7 +984,6 @@
       "words": 287,
       "requires": [
         "contracts/invariants.md",
-        "decisions/learning-and-providers.md",
         "recovery/split.md"
       ]
     },
@@ -1070,8 +993,7 @@
       "title": "ALG-OCR \u2014 extract before generation",
       "words": 159,
       "requires": [
-        "contracts/invariants.md",
-        "decisions/learning-and-providers.md"
+        "contracts/invariants.md"
       ]
     },
     "ALG-PROVIDER": {
@@ -1080,8 +1002,7 @@
       "title": "ALG-PROVIDER \u2014 external service boundary",
       "words": 134,
       "requires": [
-        "contracts/invariants.md",
-        "decisions/learning-and-providers.md"
+        "contracts/invariants.md"
       ]
     },
     "ALG-VALIDATE": {
@@ -1090,8 +1011,7 @@
       "title": "ALG-VALIDATE \u2014 readiness",
       "words": 373,
       "requires": [
-        "contracts/invariants.md",
-        "decisions/learning-and-providers.md"
+        "contracts/invariants.md"
       ]
     },
     "ALG-VOCAB": {
@@ -1101,7 +1021,6 @@
       "words": 318,
       "requires": [
         "contracts/invariants.md",
-        "decisions/learning-and-providers.md",
         "pipelines/capture.md",
         "pipelines/ocr.md",
         "contracts/rendering.md",
@@ -1118,7 +1037,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
         "recovery/backup.md",
         "recovery/migration.md",
         "recovery/reconcile.md"
@@ -1133,8 +1051,7 @@
         "contracts/invariants.md",
         "recovery/README.md",
         "recovery/journal.md",
-        "contracts/identity.md",
-        "decisions/native-bridge.md"
+        "contracts/identity.md"
       ]
     },
     "ALG-IDENTITY": {
@@ -1146,8 +1063,7 @@
         "contracts/invariants.md",
         "recovery/README.md",
         "recovery/journal.md",
-        "contracts/identity.md",
-        "decisions/native-bridge.md"
+        "contracts/identity.md"
       ]
     },
     "ALG-JOB": {
@@ -1159,8 +1075,7 @@
         "contracts/invariants.md",
         "recovery/README.md",
         "recovery/journal.md",
-        "contracts/identity.md",
-        "decisions/native-bridge.md"
+        "contracts/identity.md"
       ]
     },
     "ALG-MIGRATE": {
@@ -1172,8 +1087,7 @@
         "contracts/invariants.md",
         "recovery/README.md",
         "recovery/journal.md",
-        "contracts/identity.md",
-        "decisions/native-bridge.md"
+        "contracts/identity.md"
       ]
     },
     "ALG-MODEL": {
@@ -1186,7 +1100,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
         "operations/collection.md"
       ]
     },
@@ -1199,8 +1112,7 @@
         "contracts/invariants.md",
         "recovery/README.md",
         "recovery/journal.md",
-        "contracts/identity.md",
-        "decisions/native-bridge.md"
+        "contracts/identity.md"
       ]
     },
     "ALG-RESTORE": {
@@ -1212,8 +1124,7 @@
         "contracts/invariants.md",
         "recovery/README.md",
         "recovery/journal.md",
-        "contracts/identity.md",
-        "decisions/native-bridge.md"
+        "contracts/identity.md"
       ]
     },
     "ALG-GC": {
@@ -1225,8 +1136,7 @@
         "contracts/invariants.md",
         "recovery/README.md",
         "recovery/journal.md",
-        "contracts/identity.md",
-        "decisions/storage-and-wire.md"
+        "contracts/identity.md"
       ]
     },
     "ALG-SPLIT": {
@@ -1239,7 +1149,6 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md",
-        "decisions/native-bridge.md",
         "recovery/restore.md"
       ]
     }

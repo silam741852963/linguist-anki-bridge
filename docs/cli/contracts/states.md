@@ -8,4 +8,4 @@ Job status: `queued|running|pausing|paused|completed|failed|cancelled|rolling_ba
 
 Source/evidence versus rendered model data is deliberately separate. The five-field v1 contract remains readable; v2 projection to v1 is exported only if explicitly representable. Otherwise fail `CONTRACT_NOT_REPRESENTABLE`, never silently lose cues/grammar/evidence.
 
-Final mode-specific meanings and capability separation are in [storage/lifecycle decisions](../decisions/storage-and-wire.md). Control flags pause_requested/cancel_requested are distinct from durable confirmed status. Prepare completion persists plans; simulation persists preflight; apply completion requires verified receipt.
+Final mode-specific meanings and capability separation are in [storage/lifecycle decisions](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/decisions/storage-and-wire.md). Control flags pause_requested/cancel_requested are distinct from durable confirmed status. Prepare completion persists plans; simulation persists preflight; apply completion requires verified receipt.

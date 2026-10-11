@@ -1398,14 +1398,13 @@ fn render_human(value: &serde_json::Value) -> String {
     output.pop();
     output
 }
-/// Release-gate statuses recorded for this source tree (docs/cli/decisions/
-/// release-gates.json, written from WP-15 evidence). A gate pass is scoped to
+/// Release-gate statuses recorded for this source tree (resources/
+/// release-gates.json, copied from the cli-dev release check). A gate pass is scoped to
 /// its recorded versions; any non-pass gate means no full CLI release claim.
 fn release_gates() -> serde_json::Value {
-    let data: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../docs/cli/decisions/release-gates.json"
-    ))
-    .unwrap_or_default();
+    let data: serde_json::Value =
+        serde_json::from_str(include_str!("../../../resources/release-gates.json"))
+            .unwrap_or_default();
     let gates: serde_json::Map<String, serde_json::Value> = data["gates"]
         .as_array()
         .into_iter()

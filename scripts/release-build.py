@@ -73,10 +73,10 @@ def host_target():
 def git_state():
     commit = run(["git", "rev-parse", "HEAD"]).strip()
     epoch = run(["git", "log", "-1", "--format=%ct", "HEAD"]).strip()
-    # Release-check writes its evidence and the gate registry while it runs;
-    # they are outputs, not build inputs, so they do not make the tree dirty.
+    # The cli-dev release check rewrites the gate registry while it runs; it is
+    # an output of that run, so it does not make the tree dirty.
     dirty = bool(run(["git", "status", "--porcelain", "--untracked-files=no", "--", ".",
-                      ":(exclude)docs/cli/evidence", ":(exclude)docs/cli/decisions/release-gates.json"]).strip())
+                      ":(exclude)resources/release-gates.json"]).strip())
     return commit, int(epoch), dirty
 
 
@@ -151,11 +151,12 @@ Start with:
   {binary} config init
   {binary} doctor --local
 
-Collection writes are not available in this release: apply, restore, backup
-creation and model installation stop with CAPABILITY_UNAVAILABLE until the
-native Anki transport is verified. See docs/cli/implementation/status.md and
-docs/cli/implementation/wp-15.md in the source repository for the release
-evidence and its known limits.
+Collection writes go through the companion Anki add-on
+(linguist-bridge-*.ankiaddon, published next to this archive), installed beside
+AnkiConnect. Without a verified companion every --apply stops with
+CAPABILITY_UNAVAILABLE before touching Anki. See
+docs/cli/implementation/status.md in the source repository for what is
+implemented and its known limits.
 
 Verify the archive with SHA256SUMS before use.
 """

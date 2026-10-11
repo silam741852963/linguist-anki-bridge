@@ -1,6 +1,6 @@
 # Implementation status
 
-Current state on 2026-10-06. Earlier progress notes were removed from this page (review issue RI-07); every package's specification, completion audit and known limits are in the [consolidated package record](packages.md), and the history is in git.
+Current state on 2026-10-11 (release 0.2.0, companion 0.4.0). Earlier progress notes were removed from this page (review issue RI-07); every package's specification, completion audit and known limits are in the [consolidated package record](packages.md), and the history is in git.
 
 ## What the CLI does
 
@@ -18,6 +18,6 @@ Later packages, each with its completion audit and known limits: [WP-18](wp-18.m
 
 ## Evidence
 
-- [Release check 2026-10-06](../evidence/release-2026-10-06/README.md) and the gate registry [release-gates.json](../decisions/release-gates.json).
-- [Implementation pass review](../review/implementation-pass-2026-10-06.md): review issues RI-01–RI-08 and what is proven against real Anki.
-- [Invariant ownership](invariant-test-ownership.md), [operation coverage](op-coverage.md), [traceability](../review/traceability.md), [setting coverage](../configuration/setting-coverage.md).
+- [Release check 2026-10-11](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-11/README.md): 13 of 14 gates pass; EV-02 is blocked (`EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE`). The gate registry is [`resources/release-gates.json`](../../../resources/release-gates.json), embedded in the binary and reported by `doctor`.
+- [Implementation pass review](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/review/implementation-pass-2026-10-06.md): review issues RI-01–RI-08 and what is proven against real Anki.
+- [Invariant ownership](invariant-test-ownership.md), [operation coverage](op-coverage.md), [traceability](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/review/traceability.md), [setting coverage](../configuration/setting-coverage.md).

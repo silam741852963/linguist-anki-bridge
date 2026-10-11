@@ -1,6 +1,6 @@
 # Configuration contract
 
-Status: target TOML v2, not the current YAML/native JSON loader. [settings-registry.json](settings-registry.json) indexes the exhaustive machine-readable setting groups in `settings/`; [config.example.toml](config.example.toml) lists every concrete default. Every entry specifies type, default, constraints, scope and consuming algorithm. Null means an intentionally unconfigured optional value, not a pending architecture choice or random discovery. Final decisions: [baseline](../decisions/README.md).
+Status: target TOML v2, not the current YAML/native JSON loader. [settings-registry.json](settings-registry.json) indexes the exhaustive machine-readable setting groups in `settings/`; [config.example.toml](config.example.toml) lists every concrete default. Every entry specifies type, default, constraints, scope and consuming algorithm. Null means an intentionally unconfigured optional value, not a pending architecture choice or random discovery. Final decisions: [baseline](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/decisions/README.md).
 
 ## ALG-CONFIG — resolve and freeze
 

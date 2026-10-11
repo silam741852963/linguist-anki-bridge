@@ -383,17 +383,14 @@ fn html_and_media_cannot_bypass_typed_controls() {
 #[test]
 fn legacy_archive_is_lossless_without_promoting_readiness() {
     for bytes in [
-        include_bytes!("../../../legacy/contracts/fixtures/card-document.v1.json").as_slice(),
-        include_bytes!("../../../legacy/contracts/fixtures/dictionary-preserve-card.v1.json")
-            .as_slice(),
-        include_bytes!("../../../legacy/contracts/fixtures/grammar-card.v1.json").as_slice(),
-        include_bytes!("../../../legacy/contracts/fixtures/injection-card.v1.json").as_slice(),
-        include_bytes!("../../../legacy/contracts/fixtures/media-replacement-card.v1.json")
-            .as_slice(),
-        include_bytes!("../../../legacy/contracts/fixtures/modernization-card.v1.json").as_slice(),
-        include_bytes!("../../../legacy/contracts/fixtures/shared-fields-card.v1.json").as_slice(),
-        include_bytes!("../../../legacy/contracts/fixtures/validation-issues-card.v1.json")
-            .as_slice(),
+        include_bytes!("fixtures/legacy-v1/card-document.v1.json").as_slice(),
+        include_bytes!("fixtures/legacy-v1/dictionary-preserve-card.v1.json").as_slice(),
+        include_bytes!("fixtures/legacy-v1/grammar-card.v1.json").as_slice(),
+        include_bytes!("fixtures/legacy-v1/injection-card.v1.json").as_slice(),
+        include_bytes!("fixtures/legacy-v1/media-replacement-card.v1.json").as_slice(),
+        include_bytes!("fixtures/legacy-v1/modernization-card.v1.json").as_slice(),
+        include_bytes!("fixtures/legacy-v1/shared-fields-card.v1.json").as_slice(),
+        include_bytes!("fixtures/legacy-v1/validation-issues-card.v1.json").as_slice(),
     ] {
         let archive = legacy::LegacyArchive::from_json(bytes).unwrap();
         assert_eq!(archive.to_v1_json().unwrap(), bytes);

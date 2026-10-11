@@ -465,7 +465,7 @@ fn applied(value: &Value) -> (i64, String) {
 // ---------------------------------------------------------------- workflows
 
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn vocab_add_apply_study_restore() {
     let mut s = Scenario::new(
         "vocab-add",
@@ -542,7 +542,7 @@ fn vocab_add_apply_study_restore() {
 }
 
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn grammar_add_apply_study_restore_keeps_history() {
     let mut s = Scenario::new(
         "grammar-add",
@@ -789,7 +789,7 @@ fn revamp_workflow(
 }
 
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn vocab_revamp_migrate_study_restore() {
     revamp_workflow(
         "vocab_revamp",
@@ -807,7 +807,7 @@ fn vocab_revamp_migrate_study_restore() {
 }
 
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn vocab_revamp_home_deck_edit_conflict_restore() {
     revamp_workflow(
         "vocab_revamp_home_deck",
@@ -884,7 +884,7 @@ fn review_all(s: &mut Scenario, plan: &str, anchor: Option<&str>, history_task: 
 /// the CLI into an anchor and a fresh sibling, reviewed, applied (sibling
 /// first, anchor last), studied, and rolled back as a group.
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn grammar_revamp_multi_unit_split_apply_study_rollback() {
     let SplitReady {
         mut s,
@@ -1003,7 +1003,7 @@ fn notes_tagged(s: &Scenario, expression: &str) -> usize {
 /// EV-03 / EV-04 / EV-07: injected native faults in real Anki; every
 /// uncertain outcome is resolved with `recover reconcile --apply`.
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn native_faults_recover_through_reconcile() {
     let mut s = Scenario::new(
         "native-faults",
@@ -1247,7 +1247,7 @@ fn wait_for_profile(desktop: &Desktop, profile: &str) {
 /// source precondition. A profile switch, lost sidecar lineage or a source
 /// edit after approval each stop the write before any effect.
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn identity_and_preconditions_block_writes() {
     let mut s = Scenario::with(
         "identity",
@@ -1473,7 +1473,7 @@ fn split_ready(name: &str) -> SplitReady {
 /// After restart the unit is rebound and reconciled, and resuming the group
 /// finishes the anchor without re-creating the sibling.
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn grammar_split_crash_resume() {
     let SplitReady {
         mut s,
@@ -1733,7 +1733,7 @@ fn review_batch(s: &mut Scenario, plan: &str, anchor: Option<&str>) -> String {
 /// job before item 4, a follow-up job with a fresh checkpoint applies it,
 /// nothing is duplicated, and two rollbacks restore every item.
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn batch_vocab_revamp_apply_resume_rollback() {
     let mut s = Scenario::new(
         "batch_vocab_revamp",
@@ -1937,7 +1937,7 @@ fn batch_vocab_revamp_apply_resume_rollback() {
 /// `plans split-vocab` into an anchor (keeps the note and history) and a new
 /// sibling note, applied as one group, and rolled back as one group.
 #[test]
-#[ignore = "needs Anki desktop and the AnkiConnect zip; scripts/release-check.py runs it"]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
 fn vocab_split_apply_study_rollback() {
     let mut s = Scenario::new(
         "vocab_split",

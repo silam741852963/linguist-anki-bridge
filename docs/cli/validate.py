@@ -1,4 +1,4 @@
-"""Check handbook routes, grouped settings, links and archive layout; no Anki calls."""
+"""Check handbook routes, grouped settings, presets and links; no Anki calls."""
 from pathlib import Path
 import argparse
 import json
@@ -43,27 +43,7 @@ def build_routes(files):
                 requires += ['recovery/README.md','recovery/journal.md','contracts/identity.md']
             records[ident] = {'path':str(p.relative_to(ROOT)), 'heading':sec.splitlines()[0], 'title':sec.splitlines()[0][3:], 'words':len(sec.split()), 'requires':list(dict.fromkeys(requires))}
             bodies[ident] = sec
-    topics = {
-        'WP-01':['storage-and-wire','release-gates'], 'WP-02':['ux-and-operations','learning-and-providers'],
-        'WP-03':['native-bridge'], 'WP-04':['storage-and-wire'], 'WP-05':['learning-and-providers','ux-and-operations'],
-        'WP-06':['learning-and-providers','release-gates'], 'WP-07':['learning-and-providers'], 'WP-08':['learning-and-providers'],
-        'WP-09':['storage-and-wire','learning-and-providers','ux-and-operations'], 'WP-10':['native-bridge','ux-and-operations'],
-        'WP-11':['native-bridge','ux-and-operations'], 'WP-12':['native-bridge','storage-and-wire'],
-        'WP-13':['native-bridge','storage-and-wire','ux-and-operations'], 'WP-14':['storage-and-wire','release-gates'],
-        'WP-15':['release-gates','learning-and-providers'], 'WP-16':['release-gates'], 'WP-17':['native-bridge','release-gates']}
     for ident, rec in records.items():
-        selected = topics.get(ident, [])
-        if ident.startswith('ALG-'):
-            selected = ['native-bridge'] if rec['path'].startswith('recovery/') else ['learning-and-providers']
-            if ident in {'ALG-GC','ALG-RENDER'}: selected = ['storage-and-wire']
-            if ident == 'ALG-CONFIG': selected = ['ux-and-operations']
-        if ident.startswith('OP-'):
-            n = int(ident[3:])
-            if n <= 10 or 25 <= n <= 33: selected = ['ux-and-operations']
-            if 21 <= n <= 24: selected = ['learning-and-providers']
-            if n in {17,34,39,41,42,44,50,52,60}: selected = ['native-bridge','ux-and-operations']
-            if n == 58: selected = ['release-gates']
-        rec['requires'] += ['decisions/'+topic+'.md' for topic in selected]
         for referenced in sorted(set(re.findall(r'\b(?:ALG-[A-Z]+|OP-\d{2})\b', bodies[ident]))):
             if referenced in records and referenced != ident:
                 path = records[referenced]['path']
@@ -115,23 +95,6 @@ def main():
     check({i for i in ids if i.startswith('WP-')} == {f'WP-{i:02}' for i in range(1,24)}, 'Package coverage')
     algorithms = {i for i in ids if i.startswith('ALG-')}
     check(len(algorithms) == 18, 'Algorithm coverage')
-    register = json.loads((ROOT/'decisions/register.json').read_text())
-    check({r['id'] for r in register['decisions']} == {f'R{i:02}' for i in range(1,35)}, 'Final R decision coverage')
-    check(all(r['status'] == 'resolved' for r in register['decisions']), 'Unresolved design decisions')
-    gate_data = json.loads((ROOT/'decisions/release-gates.json').read_text())['gates']
-    gate_ids = {g['id'] for g in gate_data}
-    check(gate_ids == {f'EV-{i:02}' for i in range(1,15)}, 'Evidence gate coverage')
-    check({g['id'] for g in register['gaps']} == {f'FG-{i:02}' for i in range(1,25)}, 'Final gap coverage')
-    for r in register['decisions'] + register['gaps']:
-        check((ROOT/'decisions'/r['document']).is_file(), 'Missing decision document: '+r['id'])
-    for g in register['gaps']:
-        check(g['status'] == 'approach_finalized' and g['owner'] in ids and g['evidence_gate'] in gate_ids, 'Unowned/unfinalized gap: '+g['id'])
-    for g in gate_data:
-        check(g['owners'] and all(owner in ids for owner in g['owners']), 'Invalid gate owner: '+g['id'])
-        check(g['status'] in {'not_run','pass','fail','blocked'}, 'Invalid evidence status: '+g['id'])
-        if g['status'] == 'pass':
-            check(bool(g.get('evidence_paths')), 'Gate pass without evidence: '+g['id'])
-            for path in g.get('evidence_paths',[]): check((REPO/path).is_file(), 'Missing gate evidence: '+path)
     presets = json.loads((ROOT/'configuration/purpose-defaults.json').read_text())['presets']
     check(set(presets) == {'japanese_vocab','japanese_grammar','english_vocab','english_grammar'}, 'Purpose preset coverage')
     for name, preset in presets.items():
@@ -143,7 +106,7 @@ def main():
     check(refs <= algorithms, 'Unknown algorithm references: ' + str(sorted(refs - algorithms)))
     for rec in routes['records'].values():
         for path in rec['requires']: check((ROOT/path).is_file(), 'Missing prerequisite: ' + path)
-    for p in files + [REPO/'README.md', REPO/'legacy/README.md']:
+    for p in files + [REPO/'README.md']:
         s = p.read_text()
         check(s.count('```') % 2 == 0, str(p.relative_to(REPO)) + ': fences')
         for target in re.findall(r'\]\(([^)]+)\)', s):
@@ -156,9 +119,7 @@ def main():
                 check(fragment in headings, str(p.relative_to(REPO)) + ': missing anchor ' + target)
         for n,line in enumerate(s.splitlines(),1): check(line.rstrip() == line, f'{p.relative_to(REPO)}:{n}: whitespace')
     check(not any(p.name.startswith('cli-') for p in ROOT.parent.iterdir()), 'CLI documents outside docs/cli')
-    for path in ['Cargo.toml','Cargo.lock','src','crates','tests','contracts','scripts','pyproject.toml','PKGBUILD','PKGBUILD.native']:
-        check((REPO/'legacy'/path).exists(), 'Missing archived implementation: ' + path)
     if errors: raise SystemExit('\n'.join(errors))
-    print(f'PASS: {len(entries)} settings/{len(index["groups"])} groups; 61 operations, 18 algorithms, 17 packages; {len(files)} Markdown files; routes, final decisions/gates/presets, links, defaults and legacy layout valid.')
+    print(f'PASS: {len(entries)} settings/{len(index["groups"])} groups; 61 operations, 18 algorithms, 23 packages; {len(files)} Markdown files; routes, presets, links and defaults valid.')
 
 if __name__ == '__main__': main()
