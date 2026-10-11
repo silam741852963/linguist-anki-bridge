@@ -1,366 +1,791 @@
-//! Jisho kanji detail pages (`builtin:jisho-kanji-v2`) as rich, inert evidence.
-//!
-//! Page text is extracted with fixed selectors only; markup, links and scripts are
-//! never executed or rendered. A page without kanji details is "not found", never
-//! invented data.
-use linguist_config::Effective;
-use linguist_provider::{ReadError, Reader, Service, sha256_hex};
-use scraper::{ElementRef, Html, Selector};
-use serde::Serialize;
-use std::collections::BTreeMap;
+//! Provider-neutral Kanji summaries and an offline KANJIDIC2 fallback parser.
 
-pub const SCHEMA: &str = "builtin:jisho-kanji-v2";
-/// Bound the number of characters looked up for one expression.
-pub const MAX_CHARACTERS: usize = 32;
-const SETTINGS: [&str; 5] = [
-    "kanji.enabled",
-    "kanji.explanation_language",
-    "kanji.url_template",
-    "kanji.schema",
-    "kanji.stroke_order",
-];
-/// Stroke-order animations (KanjiVG-derived, CC BY-SA 3.0), one GIF per code point.
-pub const STROKE_ORDER_URL: &str =
-    "https://raw.githubusercontent.com/mistval/kanji_images/master/gifs/{codepoint}.gif";
-pub const STROKE_ORDER_HOST: &str = "raw.githubusercontent.com";
-pub const STROKE_ORDER_ATTRIBUTION: &str =
-    "Stroke order animation from mistval/kanji_images, based on KanjiVG by Ulrich Apel";
-pub const STROKE_ORDER_LICENSE: &str = "CC-BY-SA-3.0";
+use base64::Engine;
+use scraper::{Html, Selector};
+use serde::Deserialize;
+use std::{collections::HashSet, future::Future, pin::Pin, time::Duration};
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct KanjiEntry {
-    pub character: String,
-    pub meanings: Vec<String>,
-    pub kun_readings: Vec<String>,
-    pub on_readings: Vec<String>,
-    pub strokes: Option<u32>,
-    pub radical: Option<String>,
-    pub parts: Vec<String>,
-    pub grade: Option<String>,
-    pub jlpt: Option<String>,
-    pub frequency: Option<u32>,
-    pub schema: &'static str,
-    pub source_url: String,
-    pub raw_digest: String,
-    pub fetched_at: u64,
-    pub from_cache: bool,
-    /// Exact page bytes for archival; excluded from serialized summaries.
-    #[serde(skip)]
-    pub raw_bytes: Vec<u8>,
+pub type KanjiFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<KanjiSummary>, String>> + Send + 'a>>;
+
+pub trait KanjiLookupPort: Send + Sync {
+    fn lookup<'a>(&'a self, character: char) -> KanjiFuture<'a>;
 }
 
-/// GIF signature check; any other bytes are refused.
-pub fn is_gif(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")
+#[derive(Clone, Debug)]
+pub struct KanjiMediaFetcher {
+    client: reqwest::Client,
+    base: reqwest::Url,
 }
 
-/// Applicable characters: CJK unified ideographs, extensions and compatibility forms.
-pub fn is_kanji(c: char) -> bool {
-    matches!(c as u32,
-        0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x323AF)
+impl KanjiMediaFetcher {
+    pub fn new() -> Result<Self, String> {
+        Self::with_config(
+            "https://raw.githubusercontent.com/mistval/kanji_images/master/gifs/",
+            Duration::from_secs(10),
+        )
+    }
+
+    pub fn with_config(base: &str, timeout: Duration) -> Result<Self, String> {
+        let base = reqwest::Url::parse(base).map_err(|error| error.to_string())?;
+        if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
+            return Err("Kanji media URL must be http(s) with a host".into());
+        }
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .user_agent("LinguistAnkiBridge/0.1")
+            .build()
+            .map_err(|error| error.to_string())?;
+        Ok(Self { client, base })
+    }
+
+    pub async fn gif_data_uri(&self, character: char) -> Result<String, String> {
+        const MAX_GIF_BYTES: usize = 1024 * 1024;
+        let url = self
+            .base
+            .join(&format!("{:x}.gif", u32::from(character)))
+            .map_err(|error| error.to_string())?;
+        let mut response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "Kanji stroke-order media HTTP {}",
+                response.status().as_u16()
+            ));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_GIF_BYTES as u64)
+        {
+            return Err("Kanji stroke-order GIF exceeds 1 MiB".into());
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
+            if bytes.len() + chunk.len() > MAX_GIF_BYTES {
+                return Err("Kanji stroke-order GIF exceeds 1 MiB".into());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if !bytes.starts_with(b"GIF87a") && !bytes.starts_with(b"GIF89a") {
+            return Err("Kanji stroke-order asset is not a GIF".into());
+        }
+        Ok(format!(
+            "data:image/gif;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ))
+    }
 }
 
-/// Unique applicable characters in first-occurrence order.
-pub fn characters(expression: &str) -> Vec<char> {
-    let mut seen = Vec::new();
-    for c in expression.chars().filter(|c| is_kanji(*c)) {
-        if !seen.contains(&c) {
-            seen.push(c);
+#[derive(Clone, Debug)]
+pub struct JishoKanjiClient {
+    client: reqwest::Client,
+    base: reqwest::Url,
+    stroke_media_base: Option<String>,
+}
+
+impl JishoKanjiClient {
+    pub fn new() -> Result<Self, String> {
+        Self::with_config(
+            "https://jisho.org/search/",
+            Duration::from_secs(10),
+            Some("https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji"),
+        )
+    }
+
+    pub fn with_config(
+        base: &str,
+        timeout: Duration,
+        stroke_media_base: Option<&str>,
+    ) -> Result<Self, String> {
+        let base = reqwest::Url::parse(base).map_err(|error| error.to_string())?;
+        if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
+            return Err("Jisho Kanji URL must be http(s) with a host".into());
+        }
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .user_agent("LinguistAnkiBridge/0.1")
+            .build()
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            client,
+            base,
+            stroke_media_base: stroke_media_base.map(str::to_owned),
+        })
+    }
+}
+
+impl KanjiLookupPort for JishoKanjiClient {
+    fn lookup<'a>(&'a self, character: char) -> KanjiFuture<'a> {
+        Box::pin(async move {
+            let url = self
+                .base
+                .join(&format!("{character}%23kanji"))
+                .map_err(|error| error.to_string())?;
+            let response = self
+                .client
+                .get(url)
+                .send()
+                .await
+                .map_err(|error| error.to_string())?;
+            if response.status() == reqwest::StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            if !response.status().is_success() {
+                return Err(format!("Jisho Kanji HTTP {}", response.status().as_u16()));
+            }
+            let body = response.text().await.map_err(|error| error.to_string())?;
+            Ok(parse_jisho_kanji(
+                character,
+                &body,
+                self.stroke_media_base.as_deref(),
+            ))
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HvdicKanjiClient {
+    client: reqwest::Client,
+    base: reqwest::Url,
+    stroke_media_base: Option<String>,
+}
+
+impl HvdicKanjiClient {
+    pub fn new() -> Result<Self, String> {
+        Self::with_config(
+            "https://hvdic.thivien.net/whv/",
+            Duration::from_secs(10),
+            Some("https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji"),
+        )
+    }
+
+    pub fn with_config(
+        base: &str,
+        timeout: Duration,
+        stroke_media_base: Option<&str>,
+    ) -> Result<Self, String> {
+        let base = reqwest::Url::parse(base).map_err(|error| error.to_string())?;
+        if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
+            return Err("HVDic Kanji URL must be http(s) with a host".into());
+        }
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .user_agent("LinguistAnkiBridge/0.1")
+            .build()
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            client,
+            base,
+            stroke_media_base: stroke_media_base.map(str::to_owned),
+        })
+    }
+}
+
+impl KanjiLookupPort for HvdicKanjiClient {
+    fn lookup<'a>(&'a self, character: char) -> KanjiFuture<'a> {
+        Box::pin(async move {
+            let url = self
+                .base
+                .join(&character.to_string())
+                .map_err(|error| error.to_string())?;
+            let response = self
+                .client
+                .get(url)
+                .send()
+                .await
+                .map_err(|error| error.to_string())?;
+            if response.status() == reqwest::StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            if !response.status().is_success() {
+                return Err(format!("HVDic Kanji HTTP {}", response.status().as_u16()));
+            }
+            let body = response.text().await.map_err(|error| error.to_string())?;
+            Ok(parse_hvdic_kanji(
+                character,
+                &body,
+                self.stroke_media_base.as_deref(),
+            ))
+        })
+    }
+}
+
+pub fn parse_hvdic_kanji(
+    character: char,
+    body: &str,
+    media_base: Option<&str>,
+) -> Option<KanjiSummary> {
+    let document = Html::parse_document(body);
+    let results = Selector::parse("div.hvres[data-hvres-idx]").expect("static CSS selector");
+    let spell = Selector::parse(".hvres-spell").expect("static CSS selector");
+    let meaning = Selector::parse(".hvres-meaning").expect("static CSS selector");
+    let mut readings = Vec::new();
+    let mut meanings = Vec::new();
+    for result in document.select(&results).take(32) {
+        for node in result.select(&spell) {
+            let value = node
+                .text()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            if !value.is_empty() && !readings.contains(&value) {
+                readings.push(value);
+            }
+        }
+        for node in result.select(&meaning) {
+            let value = node
+                .text()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            if !value.is_empty() && !meanings.contains(&value) {
+                meanings.push(value);
+            }
         }
     }
-    seen
+    if meanings.is_empty() && readings.is_empty() {
+        return None;
+    }
+    Some(KanjiSummary {
+        character,
+        meanings,
+        readings,
+        strokes: None,
+        radical: None,
+        parts: None,
+        stroke_order_url: media_base.and_then(|base| stroke_order_url(base, character)),
+    })
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum ParseError {
-    Utf8,
-    CharacterMismatch,
-    Schema,
-}
-
-/// Parse one detail page. `Ok(None)` means the page has no kanji details.
-pub fn parse_page(character: char, bytes: &[u8]) -> Result<Option<KanjiFacts>, ParseError> {
-    let text = std::str::from_utf8(bytes).map_err(|_| ParseError::Utf8)?;
-    let document = Html::parse_document(text);
-    let select = |css: &str| Selector::parse(css).expect("static selector");
-    let Some(details) = document.select(&select(".kanji.details")).next() else {
-        return Ok(None);
-    };
-    let clean = visible_text;
-    let all = |css: &str| -> Vec<String> {
+pub fn parse_jisho_kanji(
+    character: char,
+    body: &str,
+    media_base: Option<&str>,
+) -> Option<KanjiSummary> {
+    let document = Html::parse_document(body);
+    let select = |css: &str| Selector::parse(css).expect("static CSS selector");
+    let details = document.select(&select(".kanji.details, .kanji")).next()?;
+    let text = |css: &str| -> Vec<String> {
         details
             .select(&select(css))
-            .map(clean)
-            .filter(|v| !v.is_empty())
+            .map(|node| {
+                node.text()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .filter(|value| !value.is_empty())
             .collect()
     };
-    let first = |css: &str| all(css).into_iter().next();
-    let heading = first("h1.character").ok_or(ParseError::Schema)?;
-    if heading != character.to_string() {
-        return Err(ParseError::CharacterMismatch);
+    let meanings = text(".kanji-details__main-meanings");
+    let readings = text(".kanji-details__main-readings dd");
+    let strokes = text(".kanji-details__stroke_count strong")
+        .first()
+        .and_then(|value| value.parse().ok());
+    let mut radical = None;
+    let mut parts = None;
+    for (label, value) in text(".radicals dt").into_iter().zip(text(".radicals dd")) {
+        if label.to_ascii_lowercase().contains("radical") {
+            radical = Some(value);
+        } else if label.to_ascii_lowercase().contains("parts") {
+            parts = Some(value);
+        }
     }
-    let meanings = first(".kanji-details__main-meanings")
-        .map(|m| {
-            m.split(',')
-                .map(|s| s.trim().to_owned())
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
-    let mut facts = KanjiFacts {
+    if meanings.is_empty()
+        && readings.is_empty()
+        && strokes.is_none()
+        && radical.is_none()
+        && parts.is_none()
+    {
+        return None;
+    }
+    Some(KanjiSummary {
+        character,
         meanings,
-        kun_readings: all(".kanji-details__main-readings .kun_yomi dd a"),
-        on_readings: all(".kanji-details__main-readings .on_yomi dd a"),
-        strokes: first(".kanji-details__stroke_count strong")
-            .map(|s| s.parse().map_err(|_| ParseError::Schema))
-            .transpose()?,
-        radical: None,
-        parts: Vec::new(),
-        grade: first(".kanji_stats .grade strong"),
-        jlpt: first(".kanji_stats .jlpt strong"),
-        frequency: first(".kanji_stats .frequency strong")
-            .map(|s| s.parse().map_err(|_| ParseError::Schema))
-            .transpose()?,
-    };
-    for section in details.select(&select(".radicals dl")) {
-        let label = section
-            .select(&select("dt"))
-            .next()
-            .map(clean)
-            .unwrap_or_default();
-        let Some(value) = section.select(&select("dd")).next() else {
-            continue;
-        };
-        match label.to_ascii_lowercase().trim_end_matches(':') {
-            "radical" => {
-                // Keep the radical form and its meaning as separate visible text.
-                let meaning = value
-                    .select(&select(".radical_meaning"))
-                    .next()
-                    .map(clean)
-                    .unwrap_or_default();
-                let whole = clean(value);
-                let form = whole
-                    .strip_prefix(&meaning)
-                    .unwrap_or(&whole)
-                    .trim()
-                    .to_owned();
-                facts.radical = Some(if meaning.is_empty() {
-                    form
-                } else {
-                    format!("{form} — {meaning}")
-                });
-            }
-            "parts" => facts.parts = value.select(&select("a")).map(clean).collect(),
-            _ => {}
-        }
+        readings,
+        strokes,
+        radical,
+        parts,
+        stroke_order_url: media_base.and_then(|base| stroke_order_url(base, character)),
+    })
+}
+
+#[derive(Clone, Debug)]
+pub struct KanjiApiClient {
+    client: reqwest::Client,
+    base: reqwest::Url,
+    stroke_media_base: Option<String>,
+}
+
+impl KanjiApiClient {
+    pub fn new() -> Result<Self, String> {
+        Self::with_config(
+            "https://kanjiapi.dev/v1/kanji/",
+            Duration::from_secs(10),
+            Some("https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji"),
+        )
     }
-    if facts.meanings.is_empty() && facts.kun_readings.is_empty() && facts.on_readings.is_empty() {
-        return Err(ParseError::Schema);
-    }
-    Ok(Some(facts))
-}
 
-/// Whitespace-normalized text, excluding script/style/template content.
-fn visible_text(node: ElementRef) -> String {
-    let mut parts = Vec::new();
-    for descendant in node.descendants() {
-        if let Some(text) = descendant.value().as_text() {
-            let hidden = descendant
-                .ancestors()
-                .take_while(|a| a.id() != node.id())
-                .any(|a| {
-                    a.value()
-                        .as_element()
-                        .is_some_and(|e| matches!(e.name(), "script" | "style" | "template"))
-                });
-            if !hidden {
-                parts.push(&**text);
-            }
+    pub fn with_config(
+        base: &str,
+        timeout: Duration,
+        stroke_media_base: Option<&str>,
+    ) -> Result<Self, String> {
+        let base = reqwest::Url::parse(base).map_err(|error| error.to_string())?;
+        if !matches!(base.scheme(), "http" | "https") || base.host_str().is_none() {
+            return Err("Kanji API URL must be http(s) with a host".into());
         }
-    }
-    parts
-        .join(" ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct KanjiFacts {
-    pub meanings: Vec<String>,
-    pub kun_readings: Vec<String>,
-    pub on_readings: Vec<String>,
-    pub strokes: Option<u32>,
-    pub radical: Option<String>,
-    pub parts: Vec<String>,
-    pub grade: Option<String>,
-    pub jlpt: Option<String>,
-    pub frequency: Option<u32>,
-}
-
-#[derive(Clone)]
-pub struct KanjiClient {
-    reader: Reader,
-    template: String,
-    stroke_order: bool,
-}
-
-impl KanjiClient {
-    /// Only the pinned Jisho schema and English explanations are available;
-    /// other schemas, hosts or languages are explicitly unavailable.
-    pub fn from_settings(
-        settings: &Effective,
-        environment: &BTreeMap<String, String>,
-    ) -> Result<Self, ReadError> {
-        let registry = linguist_config::Registry::builtin();
-        for key in SETTINGS {
-            registry
-                .validate_value(key, settings.values.get(key).ok_or(ReadError::Policy)?)
-                .map_err(|_| ReadError::Policy)?;
-        }
-        let v = &settings.values;
-        if v["kanji.enabled"] != true
-            || v["kanji.schema"] != SCHEMA
-            || v["kanji.explanation_language"]
-                .as_str()
-                .map(|l| l.split('-').next())
-                != Some(Some("en"))
-        {
-            return Err(ReadError::Unavailable);
-        }
-        let template = v["kanji.url_template"].as_str().unwrap().to_owned();
-        let probe =
-            url::Url::parse(&template.replacen("{char}", "x", 1)).map_err(|_| ReadError::Policy)?;
-        if template.matches("{char}").count() != 1
-            || probe.scheme() != "https"
-            || probe.host_str() != Some("jisho.org")
-        {
-            return Err(ReadError::Unavailable);
-        }
-        let stroke_order = v["kanji.stroke_order"] == true;
-        let hosts: &[&str] = if stroke_order {
-            &["jisho.org", STROKE_ORDER_HOST]
-        } else {
-            &["jisho.org"]
-        };
-        let reader = Reader::from_settings(settings, environment, Service::Kanji, hosts, &[])?;
+        let client = reqwest::Client::builder()
+            .timeout(timeout)
+            .user_agent("LinguistAnkiBridge/0.1")
+            .build()
+            .map_err(|error| error.to_string())?;
         Ok(Self {
-            reader,
-            template,
-            stroke_order,
+            client,
+            base,
+            stroke_media_base: stroke_media_base.map(str::to_owned),
         })
-    }
-
-    pub fn with_reader(reader: Reader, template: &str) -> Self {
-        Self {
-            reader,
-            template: template.into(),
-            stroke_order: false,
-        }
-    }
-
-    /// The stroke-order GIF for one kanji. `Ok(None)`: disabled or not published.
-    pub fn stroke_order(&self, character: char) -> Result<Option<Vec<u8>>, ReadError> {
-        if !self.stroke_order {
-            return Ok(None);
-        }
-        if !is_kanji(character) {
-            return Err(ReadError::Policy);
-        }
-        let url = url::Url::parse(
-            &STROKE_ORDER_URL.replace("{codepoint}", &format!("{:x}", character as u32)),
-        )
-        .map_err(|_| ReadError::Policy)?;
-        match self.reader.get(&url, &["image/gif"]) {
-            Ok(fetched) if is_gif(&fetched.bytes) => Ok(Some(fetched.bytes)),
-            Ok(_) => Err(ReadError::Schema),
-            Err(ReadError::Http(404)) => Ok(None),
-            Err(error) => Err(error),
-        }
-    }
-
-    pub fn url(&self, character: char) -> Result<url::Url, ReadError> {
-        let encoded = percent_encoding::utf8_percent_encode(
-            &character.to_string(),
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
-        url::Url::parse(&self.template.replacen("{char}", &encoded, 1))
-            .map_err(|_| ReadError::Policy)
-    }
-
-    /// Look up one character. `Ok(None)` is an ordinary not-found result.
-    pub fn lookup(&self, character: char) -> Result<Option<KanjiEntry>, ReadError> {
-        if !is_kanji(character) {
-            return Err(ReadError::Policy);
-        }
-        let url = self.url(character)?;
-        let fetched = self.reader.get(&url, &["text/html"])?;
-        let Some(facts) = parse_page(character, &fetched.bytes).map_err(|_| ReadError::Schema)?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(KanjiEntry {
-            character: character.to_string(),
-            meanings: facts.meanings,
-            kun_readings: facts.kun_readings,
-            on_readings: facts.on_readings,
-            strokes: facts.strokes,
-            radical: facts.radical,
-            parts: facts.parts,
-            grade: facts.grade,
-            jlpt: facts.jlpt,
-            frequency: facts.frequency,
-            schema: SCHEMA,
-            source_url: fetched.final_url.to_string(),
-            raw_digest: sha256_hex(&fetched.bytes),
-            fetched_at: fetched.fetched_at,
-            from_cache: fetched.from_cache,
-            raw_bytes: fetched.bytes,
-        }))
-    }
-
-    /// Look up every applicable character in order; any failure fails the item.
-    pub fn lookup_expression(
-        &self,
-        expression: &str,
-    ) -> Result<Vec<Option<KanjiEntry>>, ReadError> {
-        let characters = characters(expression);
-        if characters.len() > MAX_CHARACTERS {
-            return Err(ReadError::ResponseLimit);
-        }
-        characters.into_iter().map(|c| self.lookup(c)).collect()
     }
 }
 
-/// Plain-text reference for the Kanji field; rendering escapes it later.
-pub fn render_reference(entries: &[KanjiEntry]) -> String {
-    entries
-        .iter()
-        .map(|entry| {
-            let mut lines = vec![format!(
-                "{} — {}",
-                entry.character,
-                entry.meanings.join(", ")
-            )];
-            if !entry.on_readings.is_empty() {
-                lines.push(format!("On: {}", entry.on_readings.join("、")));
+impl KanjiLookupPort for KanjiApiClient {
+    fn lookup<'a>(&'a self, character: char) -> KanjiFuture<'a> {
+        Box::pin(async move {
+            let url = self
+                .base
+                .join(&character.to_string())
+                .map_err(|error| error.to_string())?;
+            let response = self
+                .client
+                .get(url)
+                .send()
+                .await
+                .map_err(|error| error.to_string())?;
+            if response.status() == reqwest::StatusCode::NOT_FOUND {
+                return Ok(None);
             }
-            if !entry.kun_readings.is_empty() {
-                lines.push(format!("Kun: {}", entry.kun_readings.join("、")));
+            if !response.status().is_success() {
+                return Err(format!("Kanji API HTTP {}", response.status().as_u16()));
             }
-            if let Some(strokes) = entry.strokes {
-                lines.push(format!("Strokes: {strokes}"));
-            }
-            if let Some(radical) = &entry.radical {
-                lines.push(format!("Radical: {radical}"));
-            }
-            if let Some(jlpt) = &entry.jlpt {
-                lines.push(format!("JLPT: {jlpt}"));
-            }
-            lines.join("\n")
+            let body = response.text().await.map_err(|error| error.to_string())?;
+            parse_kanji_api(character, &body, self.stroke_media_base.as_deref()).map(Some)
         })
-        .collect::<Vec<_>>()
-        .join("\n\n")
+    }
+}
+
+#[derive(Deserialize)]
+struct KanjiApiResponse {
+    kanji: String,
+    #[serde(default)]
+    meanings: Vec<String>,
+    #[serde(default)]
+    kun_readings: Vec<String>,
+    #[serde(default)]
+    on_readings: Vec<String>,
+    stroke_count: Option<u16>,
+}
+
+pub fn parse_kanji_api(
+    expected: char,
+    body: &str,
+    media_base: Option<&str>,
+) -> Result<KanjiSummary, String> {
+    let response: KanjiApiResponse =
+        serde_json::from_str(body).map_err(|error| format!("Kanji API JSON: {error}"))?;
+    let mut characters = response.kanji.chars();
+    if characters.next() != Some(expected) || characters.next().is_some() {
+        return Err(format!(
+            "Kanji API returned a mismatched character for {expected}"
+        ));
+    }
+    let readings = response
+        .kun_readings
+        .into_iter()
+        .chain(response.on_readings)
+        .collect();
+    Ok(KanjiSummary {
+        character: expected,
+        meanings: response.meanings,
+        readings,
+        strokes: response.stroke_count,
+        radical: None,
+        parts: None,
+        stroke_order_url: media_base.and_then(|base| stroke_order_url(base, expected)),
+    })
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct KanjiLookup {
+    pub summaries: Vec<KanjiSummary>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KanjiSummary {
+    pub character: char,
+    pub meanings: Vec<String>,
+    pub readings: Vec<String>,
+    pub strokes: Option<u16>,
+    pub radical: Option<String>,
+    pub parts: Option<String>,
+    pub stroke_order_url: Option<String>,
+}
+
+/// Select the first usable provider response for a character. This makes a
+/// network source optional: an offline KANJIDIC2 bundle can always be last.
+pub fn first_available(
+    character: char,
+    candidates: impl IntoIterator<Item = Option<KanjiSummary>>,
+) -> Option<KanjiSummary> {
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|summary| summary.character == character)
+}
+
+pub async fn lookup_word<P: KanjiLookupPort>(
+    provider: &P,
+    word: &str,
+    kanjidic2: &str,
+    media_base: Option<&str>,
+) -> KanjiLookup {
+    lookup_word_with_sources(&[provider], word, kanjidic2, media_base).await
+}
+
+pub async fn lookup_word_with_sources(
+    providers: &[&dyn KanjiLookupPort],
+    word: &str,
+    kanjidic2: &str,
+    media_base: Option<&str>,
+) -> KanjiLookup {
+    let characters = word
+        .chars()
+        .filter(|character| is_cjk(*character))
+        .collect::<Vec<_>>();
+    let mut result = KanjiLookup::default();
+    let mut seen = HashSet::new();
+    for character in characters {
+        if !seen.insert(character) {
+            continue;
+        }
+        let mut found = None;
+        for (index, provider) in providers.iter().enumerate() {
+            match provider.lookup(character).await {
+                Ok(Some(summary)) if summary.character == character => {
+                    found = Some(summary);
+                    break;
+                }
+                Ok(_) => {}
+                Err(error) => result.warnings.push(format!(
+                    "Kanji source {} for {character}: {error}",
+                    index + 1
+                )),
+            }
+        }
+        if let Some(summary) = found.or_else(|| parse_kanjidic2(character, kanjidic2, media_base)) {
+            result.summaries.push(summary);
+        } else {
+            result
+                .warnings
+                .push(format!("No Kanji data for {character}"));
+        }
+    }
+    result
+}
+
+fn is_cjk(character: char) -> bool {
+    matches!(u32::from(character), 0x3400..=0x4dbf | 0x4e00..=0x9fff | 0xf900..=0xfaff)
+}
+
+pub fn cache_key(word: &str, provider_revision: &str) -> String {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in provider_revision
+        .bytes()
+        .chain([0])
+        .chain(word.trim().bytes())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("kanji-v1-{hash:016x}")
+}
+pub fn stroke_order_url(base: &str, character: char) -> Option<String> {
+    let base = base.trim_end_matches('/');
+    (!base.is_empty()).then(|| format!("{base}/{:05x}.svg", u32::from(character)))
+}
+
+pub fn render_kanji_summaries(summaries: &[KanjiSummary]) -> String {
+    let mut html = String::new();
+    for summary in summaries {
+        html.push_str(&format!(
+            "<section data-kanji=\"{}\"><b>Kanji {}</b>",
+            escape_html(&summary.character.to_string()),
+            escape_html(&summary.character.to_string())
+        ));
+        if let Some(url) = &summary.stroke_order_url {
+            html.push_str(&format!("<div><b>Stroke order:</b><br/><img src=\"{}\" alt=\"Stroke order for {}\" style=\"max-width:220px\"/></div>", escape_html(url), escape_html(&summary.character.to_string())));
+        }
+        let fields = [
+            ("Meanings", summary.meanings.join(", ")),
+            ("Readings", summary.readings.join(" · ")),
+            (
+                "Stroke count",
+                summary
+                    .strokes
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+            ),
+            ("Radical", summary.radical.clone().unwrap_or_default()),
+            ("Parts", summary.parts.clone().unwrap_or_default()),
+        ];
+        for (label, value) in fields {
+            if !value.is_empty() {
+                html.push_str(&format!(
+                    "<div><b>{label}:</b> {}</div>",
+                    escape_html(&value)
+                ));
+            }
+        }
+        html.push_str("</section>");
+    }
+    html
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+/// Extract one matching `<character>` record without an XML runtime dependency.
+/// KANJIDIC2 is trusted bundled data; malformed or absent fields remain optional.
+pub fn parse_kanjidic2(
+    character: char,
+    xml: &str,
+    media_base: Option<&str>,
+) -> Option<KanjiSummary> {
+    let literal = format!("<literal>{character}</literal>");
+    let match_at = xml.find(&literal)?;
+    let before = &xml[..match_at];
+    let start = before.rfind("<character>")?;
+    let after = &xml[match_at..];
+    let end = after.find("</character>")? + match_at;
+    let record = &xml[start..end];
+    let meanings = tag_values(record, "meaning");
+    let readings = tag_values(record, "reading");
+    let strokes = tag_values(record, "stroke_count")
+        .into_iter()
+        .find_map(|value| value.parse().ok());
+    let radical = tag_values(record, "rad_value").into_iter().next();
+    Some(KanjiSummary {
+        character,
+        meanings,
+        readings,
+        strokes,
+        radical,
+        parts: None,
+        stroke_order_url: media_base.and_then(|base| stroke_order_url(base, character)),
+    })
+}
+fn tag_values(xml: &str, tag: &str) -> Vec<String> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut rest = xml;
+    let mut values = Vec::new();
+    while let Some(index) = rest.find(&open) {
+        rest = &rest[index + open.len()..];
+        let Some(open_end) = rest.find('>') else {
+            break;
+        };
+        rest = &rest[open_end + 1..];
+        let Some(end) = rest.find(&close) else { break };
+        let value = rest[..end].trim();
+        if !value.is_empty() {
+            values.push(value.into());
+        }
+        rest = &rest[end + close.len()..];
+    }
+    values
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct MissingProvider;
+    impl KanjiLookupPort for MissingProvider {
+        fn lookup<'a>(&'a self, character: char) -> KanjiFuture<'a> {
+            Box::pin(async move {
+                if character == '食' {
+                    Err("offline".into())
+                } else {
+                    Ok(None)
+                }
+            })
+        }
+    }
+    struct FallbackProvider;
+    impl KanjiLookupPort for FallbackProvider {
+        fn lookup<'a>(&'a self, character: char) -> KanjiFuture<'a> {
+            Box::pin(async move {
+                Ok(Some(KanjiSummary {
+                    character,
+                    meanings: vec!["fallback".into()],
+                    readings: Vec::new(),
+                    strokes: None,
+                    radical: None,
+                    parts: None,
+                    stroke_order_url: None,
+                }))
+            })
+        }
+    }
+    #[test]
+    fn extracts_offline_fallback() {
+        let summary=parse_kanjidic2('学',r#"<character><literal>学</literal><misc><stroke_count>8</stroke_count></misc><reading_meaning><rmgroup><reading r_type="ja_on">ガク</reading><meaning>study</meaning><meaning>learning</meaning></rmgroup></reading_meaning></character>"#,Some("https://assets.example/kanjivg/")).unwrap();
+        assert_eq!(summary.strokes, Some(8));
+        assert_eq!(summary.meanings, ["study", "learning"]);
+        assert_eq!(
+            summary.stroke_order_url.as_deref(),
+            Some("https://assets.example/kanjivg/05b66.svg")
+        );
+    }
+
+    #[test]
+    fn parses_typed_kanji_api_response_and_rejects_mismatch() {
+        let body = r#"{"kanji":"猫","meanings":["cat"],"kun_readings":["ねこ"],"on_readings":["ビョウ"],"stroke_count":11}"#;
+        let summary = parse_kanji_api('猫', body, Some("https://raw.example/kanji")).unwrap();
+        assert_eq!(summary.meanings, ["cat"]);
+        assert_eq!(summary.readings, ["ねこ", "ビョウ"]);
+        assert_eq!(summary.strokes, Some(11));
+        assert_eq!(
+            summary.stroke_order_url.as_deref(),
+            Some("https://raw.example/kanji/0732b.svg")
+        );
+        assert!(parse_kanji_api('犬', body, None).is_err());
+    }
+
+    #[tokio::test]
+    async fn falls_back_per_unique_character_and_keeps_warnings() {
+        let xml = r#"<character><literal>食</literal><misc><stroke_count>9</stroke_count></misc><reading_meaning><rmgroup><meaning>eat</meaning></rmgroup></reading_meaning></character><character><literal>学</literal><reading_meaning><rmgroup><meaning>study</meaning></rmgroup></reading_meaning></character>"#;
+        let result = lookup_word(
+            &MissingProvider,
+            "食学食abc",
+            xml,
+            Some("https://assets.test"),
+        )
+        .await;
+        assert_eq!(
+            result
+                .summaries
+                .iter()
+                .map(|summary| summary.character)
+                .collect::<Vec<_>>(),
+            ['食', '学']
+        );
+        assert_eq!(result.warnings.len(), 1);
+        assert!(
+            result
+                .summaries
+                .iter()
+                .all(|summary| summary.stroke_order_url.is_some())
+        );
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_second_provider_in_word_order() {
+        let result =
+            lookup_word_with_sources(&[&MissingProvider, &FallbackProvider], "食学食", "", None)
+                .await;
+        assert_eq!(
+            result
+                .summaries
+                .iter()
+                .map(|summary| summary.character)
+                .collect::<Vec<_>>(),
+            ['食', '学']
+        );
+        assert!(
+            result
+                .summaries
+                .iter()
+                .all(|summary| summary.meanings == ["fallback"])
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("offline"))
+        );
+    }
+
+    #[test]
+    fn cache_identity_includes_provider_revision() {
+        assert_ne!(cache_key("学", "primary-v1"), cache_key("学", "primary-v2"));
+    }
+
+    #[test]
+    fn parses_jisho_details_and_escapes_rendered_html() {
+        let body = r#"<div class="kanji details"><div class="kanji-details__main-meanings">study &amp; learn</div><div class="kanji-details__main-readings"><dl><dd>ガク</dd></dl></div><div class="kanji-details__stroke_count"><strong>8</strong></div><div class="radicals"><dl><dt>Radical</dt><dd>子</dd><dt>Parts</dt><dd>冖</dd></dl></div></div>"#;
+        let mut summary = parse_jisho_kanji('学', body, Some("https://assets.test/kanji")).unwrap();
+        assert_eq!(summary.meanings, ["study & learn"]);
+        assert_eq!(summary.readings, ["ガク"]);
+        assert_eq!(summary.strokes, Some(8));
+        assert_eq!(summary.radical.as_deref(), Some("子"));
+        assert_eq!(summary.parts.as_deref(), Some("冖"));
+        summary.meanings.push("<script>alert(1)</script>".into());
+        let rendered = render_kanji_summaries(&[summary]);
+        assert!(rendered.contains("&lt;script&gt;"));
+        assert!(!rendered.contains("<script>"));
+        assert!(rendered.contains("<img src=\"https://assets.test/kanji/05b66.svg\""));
+    }
+
+    #[test]
+    fn parses_hvdic_definition_blocks_without_unrelated_results() {
+        let body = r#"<div class="hvres" data-hvres-idx="1"><span class="hvres-spell">học</span><div class="hvres-meaning">học tập</div></div><div class="hvres"><div class="hvres-meaning">unrelated</div></div>"#;
+        let summary = parse_hvdic_kanji('学', body, None).unwrap();
+        assert_eq!(summary.readings, ["học"]);
+        assert_eq!(summary.meanings, ["học tập"]);
+        assert!(parse_hvdic_kanji('学', "<div class='hvres'>other</div>", None).is_none());
+    }
+
+    #[tokio::test]
+    async fn embeds_validated_stroke_order_gif() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let count = stream.read(&mut request).await.unwrap();
+            assert!(String::from_utf8_lossy(&request[..count]).starts_with("GET /gifs/5b66.gif "));
+            let body = b"GIF89aimage";
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(header.as_bytes()).await.unwrap();
+            stream.write_all(body).await.unwrap();
+        });
+        let fetcher = KanjiMediaFetcher::with_config(
+            &format!("http://{address}/gifs/"),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let uri = fetcher.gif_data_uri('学').await.unwrap();
+        assert!(uri.starts_with("data:image/gif;base64,R0lGODlh"));
+        server.await.unwrap();
+    }
 }

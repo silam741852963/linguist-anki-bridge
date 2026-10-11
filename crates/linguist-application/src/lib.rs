@@ -1,847 +1,1832 @@
-//! CLI use cases. Preparation stages local evidence and never writes to Anki.
-use linguist_core::{records::*, *};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-use std::collections::BTreeMap;
+//! Use-case boundaries for the native rewrite.
+//!
+//! Adapters for AnkiConnect, dictionaries, OCR, Ollama, media, and SQLite
+//! implement these ports. The Qt layer consumes application events and does
+//! not call providers directly.
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct VocabularyInput {
-    pub expression: String,
-    #[serde(default)]
-    pub meaning: String,
-    #[serde(default)]
-    pub sense_key: String,
-    #[serde(default)]
-    pub reading: String,
-    #[serde(default)]
-    pub pronunciation: String,
-    #[serde(default)]
-    pub usage: String,
-    #[serde(default)]
-    pub examples: Vec<Example>,
-    #[serde(default)]
-    pub dictionary: Vec<DictionaryEntry>,
-    #[serde(default)]
-    pub kanji: String,
-    #[serde(default)]
-    pub production_prompt: String,
-    #[serde(default)]
-    pub spelling_prompt: String,
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    pin::Pin,
+};
+
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use linguist_core::{
+    CardDocument, CardMode, FieldMapping, ManagedTemplatePlan, ModelTemplate, ObservedModel,
+    SnapshotDocument, SnapshotOriginalNote, normalize_expression,
+};
+use serde::{Deserialize, Serialize};
+
+mod ingestion;
+mod selector;
+pub use ingestion::{
+    CsvColumnMapping, CsvIngestRequest, CsvPreview, DuplicateDecision, IngestionPreview, InputRow,
+    ManualIngestRequest, RowIssue, canonical_language_key, duplicate_decision_options,
+    prepare_csv_input, prepare_manual_input, resolve_ingestion_preview,
+};
+pub use selector::{
+    BatchSelector, CompletionFilter, ImageFilter, SelectorMetadataPort, SelectorPreview,
+    selector_preview,
+};
+
+pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, PortError>> + Send + 'a>>;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PortError {
+    pub operation: &'static str,
+    pub message: String,
+    pub retryable: bool,
 }
-impl From<VocabularyInput> for Vocabulary {
-    fn from(input: VocabularyInput) -> Self {
-        Self {
-            expression: input.expression,
-            meaning: input.meaning,
-            sense_key: input.sense_key,
-            reading: input.reading,
-            pronunciation: input.pronunciation,
-            usage: input.usage,
-            examples: input.examples,
-            dictionary: input.dictionary,
-            kanji: input.kanji,
-            production_prompt: input.production_prompt,
-            spelling_prompt: input.spelling_prompt,
-            nuance: vec![],
-            collocations: vec![],
-            kanji_details: vec![],
-        }
+
+impl std::fmt::Display for PortError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}: {}", self.operation, self.message)
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum AddInput {
-    Vocabulary {
-        schema_version: u16,
-        target_language: Language,
-        #[serde(default)]
-        explanation_language: Option<Language>,
-        body: VocabularyInput,
-        #[serde(default)]
-        requested_tasks: Option<Vec<Task>>,
-        #[serde(default)]
-        context: String,
-        #[serde(default)]
-        personal_notes: String,
-        #[serde(default)]
-        source_summary: String,
-        #[serde(default)]
-        tags: Vec<String>,
-    },
-    Grammar {
-        schema_version: u16,
-        target_language: Language,
-        #[serde(default)]
-        explanation_language: Option<Language>,
-        body: Grammar,
-        #[serde(default)]
-        requested_tasks: Option<Vec<Task>>,
-        #[serde(default)]
-        context: String,
-        #[serde(default)]
-        personal_notes: String,
-        #[serde(default)]
-        source_summary: String,
-        #[serde(default)]
-        tags: Vec<String>,
-    },
+impl std::error::Error for PortError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteSummary {
+    pub note_id: i64,
+    pub expression: String,
+    pub deck_key: String,
+    pub model_name: String,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    Vocabulary,
-    Grammar,
+
+/// Read-only collection data exposed to use cases and eventually to the GUI.
+/// Adapter-specific wire shapes must not cross this boundary.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct DeckName(pub String);
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ModelName(pub String);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelFields {
+    pub model_name: ModelName,
+    pub fields: Vec<String>,
 }
-#[derive(Debug, Serialize)]
-pub struct Prepared {
-    pub document_id: uuid::Uuid,
-    pub input_digest: String,
-    pub schema_version: u16,
-    pub plan_id: uuid::Uuid,
-    pub revision: u32,
-    pub digest: String,
-    pub ready: bool,
-    pub issues: Vec<Issue>,
-    pub original_input_digest: String,
-    pub apply_eligible: bool,
-    pub duplicate_check_performed: bool,
-    /// Exact follow-up commands for unresolved issues; preparation never applies.
-    pub next_commands: Vec<String>,
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CardTemplate {
+    pub name: String,
+    pub front: String,
+    pub back: String,
 }
-impl Prepared {
-    /// Recompute follow-up commands from the item's current issues.
-    pub fn refresh_next_commands(&mut self, llm_enabled: bool) {
-        let plan = self.plan_id;
-        let revision = self.revision;
-        let digest = &self.digest;
-        let mut commands = Vec::new();
-        for issue in &self.issues {
-            match issue.severity {
-                Severity::Review => commands.push(format!(
-                    "linguist-anki-bridge plans resolve {plan} {} --decision FILE",
-                    issue.id
-                )),
-                Severity::Error if issue.code == "MISSING_CUE" && llm_enabled => commands.push(format!(
-                    "linguist-anki-bridge plans generate {plan} --item-id {} --base-revision {revision} --digest {digest} --use-current-settings",
-                    self.document_id
-                )),
-                Severity::Error => commands.push(format!(
-                    "linguist-anki-bridge plans edit {plan} --base-revision {revision} --patch FILE"
-                )),
-                Severity::Warning => {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelTemplates {
+    pub model_name: ModelName,
+    pub templates: Vec<CardTemplate>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelStyling {
+    pub model_name: ModelName,
+    pub css: String,
+}
+
+pub fn observe_model(
+    fields: &ModelFields,
+    templates: &ModelTemplates,
+    styling: &ModelStyling,
+) -> Result<ObservedModel, String> {
+    if fields.model_name != templates.model_name || fields.model_name != styling.model_name {
+        return Err("model fields, templates, and styling names differ".into());
+    }
+    Ok(ObservedModel {
+        model_name: fields.model_name.0.clone(),
+        fields: fields.fields.clone(),
+        templates: templates
+            .templates
+            .iter()
+            .map(|template| ModelTemplate {
+                name: template.name.clone(),
+                front: template.front.clone(),
+                back: template.back.clone(),
+            })
+            .collect(),
+        css: styling.css.clone(),
+    })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteInfo {
+    pub note_id: i64,
+    pub model_name: ModelName,
+    pub deck_names: Vec<DeckName>,
+    pub fields: BTreeMap<String, String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MediaFile {
+    pub filename: String,
+    pub data_base64: String,
+}
+
+pub trait MediaPort: Send + Sync {
+    fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>>;
+    fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()>;
+    fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MediaChange {
+    pub filename: String,
+    pub data_base64: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MediaPlan {
+    pub stage: Vec<MediaChange>,
+    pub remove_obsolete: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedMediaTransaction {
+    staged: Vec<MediaFile>,
+    obsolete: Vec<String>,
+    before: BTreeMap<String, Option<MediaFile>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MediaTransactionError {
+    pub phase: &'static str,
+    pub message: String,
+    pub rollback_errors: Vec<String>,
+}
+
+impl std::fmt::Display for MediaTransactionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "media {}: {}", self.phase, self.message)
+    }
+}
+
+impl std::error::Error for MediaTransactionError {}
+
+impl PreparedMediaTransaction {
+    pub async fn prepare<P: MediaPort + ?Sized>(
+        port: &P,
+        plan: MediaPlan,
+    ) -> Result<Self, MediaTransactionError> {
+        let mut staged = BTreeMap::<String, String>::new();
+        for change in plan.stage {
+            validate_media(&change)?;
+            match staged.get(&change.filename) {
+                Some(existing) if existing != &change.data_base64 => {
+                    return Err(transaction_error(
+                        "validate",
+                        format!("conflicting media {}", change.filename),
+                    ));
+                }
+                Some(_) => {}
+                None => {
+                    staged.insert(change.filename, change.data_base64);
+                }
             }
         }
-        commands.dedup();
-        commands.push(format!(
-            "linguist-anki-bridge plans show {plan} --revision {revision}"
-        ));
-        if self.ready {
-            commands.push(format!(
-                "linguist-anki-bridge plans approve {plan} --revision {revision} --digest {digest} --actor NAME"
+        let obsolete = plan
+            .remove_obsolete
+            .into_iter()
+            .filter(|filename| !filename.is_empty())
+            .collect::<BTreeSet<_>>();
+        if let Some(filename) = obsolete
+            .iter()
+            .find(|filename| staged.contains_key(*filename))
+        {
+            return Err(transaction_error(
+                "validate",
+                format!("media {filename} cannot be staged and removed"),
             ));
         }
-        self.next_commands = commands;
-    }
-}
-#[derive(Debug, Serialize)]
-pub struct PreparedBatch {
-    pub schema_version: u16,
-    pub plan_id: uuid::Uuid,
-    pub revision: u32,
-    pub digest: String,
-    pub ready: bool,
-    pub items: Vec<Prepared>,
-    pub apply_eligible: bool,
-    pub duplicate_check_performed: bool,
-}
-struct PreparedRecord<'a> {
-    structured: Cow<'a, [u8]>,
-    archive: &'a [u8],
-    source_kind: &'static str,
-    location: String,
-    model_manifest: &'static str,
-    fields: Option<BTreeMap<String, String>>,
-}
-impl<'a> PreparedRecord<'a> {
-    fn json(bytes: &'a [u8]) -> Self {
-        Self {
-            structured: Cow::Borrowed(bytes),
-            archive: bytes,
-            source_kind: "authored_json_v2",
-            location: "local_input".into(),
-            model_manifest: "authored-input-v2",
-            fields: None,
-        }
-    }
-}
-/// Requested adapters must never be silently skipped.
-pub(crate) fn authored_capabilities(settings: &linguist_config::Effective) -> Result<(), String> {
-    // Selected adapters without an implementation fail before any read or state.
-    vocab::preflight(settings)
-}
-/// Freeze filesystem values at preparation time. Credentials stay environment references.
-pub fn freeze_settings(
-    settings: &linguist_config::Effective,
-    environment: &BTreeMap<String, String>,
-) -> Result<ResolvedSettings, String> {
-    let registry = linguist_config::Registry::builtin();
-    let mut values = settings.values.clone();
-    let mut secret_refs = BTreeMap::new();
-    for (key, value) in &mut values {
-        let entry = registry.lookup(key)?;
-        if entry
-            .constraints
-            .get("format")
-            .and_then(serde_json::Value::as_str)
-            == Some("path")
-            && let Some(text) = value.as_str()
+        let staged = staged
+            .into_iter()
+            .map(|(filename, data_base64)| MediaFile {
+                filename,
+                data_base64,
+            })
+            .collect::<Vec<_>>();
+        let obsolete = obsolete.into_iter().collect::<Vec<_>>();
+        let mut before = BTreeMap::new();
+        for filename in staged
+            .iter()
+            .map(|media| media.filename.as_str())
+            .chain(obsolete.iter().map(String::as_str))
         {
-            let path = linguist_config::expand_path(text, environment)?;
-            if !path.is_absolute() {
-                return Err(format!("FROZEN_PATH_MUST_BE_ABSOLUTE:{key}"));
+            let existing = port
+                .retrieve_media(filename)
+                .await
+                .map_err(|error| transaction_error("snapshot", format!("{filename}: {error}")))?;
+            before.insert(filename.into(), existing);
+        }
+        Ok(Self {
+            staged,
+            obsolete,
+            before,
+        })
+    }
+
+    pub fn before(&self) -> &BTreeMap<String, Option<MediaFile>> {
+        &self.before
+    }
+
+    pub async fn commit<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+    ) -> Result<(), MediaTransactionError> {
+        let mut touched = Vec::new();
+        for media in &self.staged {
+            touched.push(media.filename.clone());
+            if let Err(error) = port.store_media(media).await {
+                return Err(self
+                    .rollback_after(port, touched, "stage", error.to_string())
+                    .await);
             }
-            *value = serde_json::json!(path.to_str().ok_or("FROZEN_PATH_ENCODING")?);
-        }
-        if key.ends_with(".api_key_env")
-            && let Some(name) = value.as_str()
-        {
-            secret_refs.insert(key.clone(), name.into());
-        }
-    }
-    let mut resource_hashes = BTreeMap::new();
-    if values["llm.enabled"] == true {
-        for (key, reference, prompt) in [
-            (
-                "llm.prompts.vocabulary",
-                "builtin:vocabulary-v3",
-                generation::VOCABULARY_PROMPT_V3,
-            ),
-            (
-                "llm.prompts.grammar",
-                "builtin:grammar-v3",
-                generation::GRAMMAR_PROMPT_V3,
-            ),
-        ] {
-            if values[key] == reference {
-                resource_hashes
-                    .insert(reference.into(), canonical::asset_digest(prompt.as_bytes()));
+            match port.retrieve_media(&media.filename).await {
+                Ok(Some(stored)) if same_media(&stored.data_base64, &media.data_base64) => {}
+                Ok(Some(_)) => {
+                    return Err(self
+                        .rollback_after(
+                            port,
+                            touched,
+                            "verify",
+                            format!("{} content differs", media.filename),
+                        )
+                        .await);
+                }
+                Ok(None) => {
+                    return Err(self
+                        .rollback_after(
+                            port,
+                            touched,
+                            "verify",
+                            format!("{} missing after store", media.filename),
+                        )
+                        .await);
+                }
+                Err(error) => {
+                    return Err(self
+                        .rollback_after(port, touched, "verify", error.to_string())
+                        .await);
+                }
             }
         }
+        for filename in &self.obsolete {
+            touched.push(filename.clone());
+            if let Err(error) = port.delete_media(filename).await {
+                return Err(self
+                    .rollback_after(port, touched, "remove", error.to_string())
+                    .await);
+            }
+        }
+        Ok(())
     }
-    let fingerprint = canonical::digest("resolved-settings", &values).map_err(|e| e.to_string())?;
-    let (semantic_fingerprint, execution_fingerprint) =
-        linguist_config::setting_fingerprints(&values)?;
-    Ok(ResolvedSettings {
-        version: 2,
-        values,
-        provenance: settings.provenance.clone(),
-        resource_hashes,
-        secret_refs,
-        fingerprint,
-        semantic_fingerprint,
-        execution_fingerprint,
+
+    /// Mutation phase for the card's new media. Caller owns rollback after
+    /// this succeeds, so note/model work can happen before obsolete removal.
+    pub async fn stage_and_verify<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+    ) -> Result<(), MediaTransactionError> {
+        for media in &self.staged {
+            port.store_media(media)
+                .await
+                .map_err(|error| transaction_error("stage", error.to_string()))?;
+            match port.retrieve_media(&media.filename).await {
+                Ok(Some(stored)) if same_media(&stored.data_base64, &media.data_base64) => {}
+                Ok(Some(_)) => {
+                    return Err(transaction_error(
+                        "verify",
+                        format!("{} content differs", media.filename),
+                    ));
+                }
+                Ok(None) => {
+                    return Err(transaction_error(
+                        "verify",
+                        format!("{} missing after store", media.filename),
+                    ));
+                }
+                Err(error) => return Err(transaction_error("verify", error.to_string())),
+            }
+        }
+        Ok(())
+    }
+
+    /// Final media phase. Call only after snapshot finalization succeeds.
+    pub async fn remove_obsolete<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+    ) -> Result<(), MediaTransactionError> {
+        for filename in &self.obsolete {
+            port.delete_media(filename)
+                .await
+                .map_err(|error| transaction_error("remove", error.to_string()))?;
+        }
+        Ok(())
+    }
+
+    pub async fn rollback<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+    ) -> Result<(), MediaTransactionError> {
+        let names = self.before.keys().cloned().collect();
+        let errors = self.restore(port, names).await;
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(MediaTransactionError {
+                phase: "rollback",
+                message: "could not restore all media".into(),
+                rollback_errors: errors,
+            })
+        }
+    }
+
+    async fn rollback_after<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+        touched: Vec<String>,
+        phase: &'static str,
+        message: String,
+    ) -> MediaTransactionError {
+        let errors = self.restore(port, touched).await;
+        MediaTransactionError {
+            phase,
+            message,
+            rollback_errors: errors,
+        }
+    }
+
+    async fn restore<P: MediaPort + ?Sized>(
+        &self,
+        port: &P,
+        mut names: Vec<String>,
+    ) -> Vec<String> {
+        names.reverse();
+        names.dedup();
+        let mut errors = Vec::new();
+        for filename in names {
+            let result = match self.before.get(&filename).cloned().flatten() {
+                Some(media) => port.store_media(&media).await,
+                None => port.delete_media(&filename).await,
+            };
+            if let Err(error) = result {
+                errors.push(format!("{filename}: {error}"));
+            }
+        }
+        errors
+    }
+}
+
+fn validate_media(change: &MediaChange) -> Result<(), MediaTransactionError> {
+    if change.filename.is_empty() || change.filename.contains('/') || change.filename.contains('\\')
+    {
+        return Err(transaction_error("validate", "unsafe media filename"));
+    }
+    if change.data_base64.is_empty() || STANDARD.decode(&change.data_base64).is_err() {
+        return Err(transaction_error(
+            "validate",
+            format!("invalid base64 for {}", change.filename),
+        ));
+    }
+    Ok(())
+}
+
+fn same_media(left: &str, right: &str) -> bool {
+    STANDARD.decode(left).ok() == STANDARD.decode(right).ok()
+}
+
+fn transaction_error(phase: &'static str, message: impl Into<String>) -> MediaTransactionError {
+    MediaTransactionError {
+        phase,
+        message: message.into(),
+        rollback_errors: vec![],
+    }
+}
+
+/// A caller-provided expression plus the fields that semantically represent it
+/// in a legacy note type. The application owns this policy so every importer
+/// reaches the same modernization/injection decision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExactExpressionRequest {
+    pub deck_key: String,
+    pub expression: String,
+    pub preferred_fields: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExpressionResolution {
+    Inject {
+        deck_key: String,
+        expression: String,
+    },
+    Modernize {
+        deck_key: String,
+        expression: String,
+        note: NoteInfo,
+    },
+    /// Never choose an arbitrary duplicate note. The caller can surface this
+    /// to the user or apply an explicit import policy later.
+    Ambiguous {
+        deck_key: String,
+        expression: String,
+        matches: Vec<NoteInfo>,
+    },
+}
+
+/// Resolve a local exact match after an adapter has performed its indexed
+/// candidate search. HTML markup and whitespace cannot create false matches.
+pub fn resolve_exact_expression(
+    request: &ExactExpressionRequest,
+    candidates: impl IntoIterator<Item = NoteInfo>,
+) -> ExpressionResolution {
+    let expression = normalize_expression(&request.expression);
+    let matches = if expression.is_empty() {
+        Vec::new()
+    } else {
+        candidates
+            .into_iter()
+            .filter(|note| note_matches_expression(note, &expression, &request.preferred_fields))
+            .collect::<Vec<_>>()
+    };
+    match matches.len() {
+        0 => ExpressionResolution::Inject {
+            deck_key: request.deck_key.clone(),
+            expression,
+        },
+        1 => ExpressionResolution::Modernize {
+            deck_key: request.deck_key.clone(),
+            expression,
+            note: matches.into_iter().next().expect("one checked match"),
+        },
+        _ => ExpressionResolution::Ambiguous {
+            deck_key: request.deck_key.clone(),
+            expression,
+            matches,
+        },
+    }
+}
+
+fn note_matches_expression(note: &NoteInfo, expression: &str, preferred_fields: &[String]) -> bool {
+    let mut names = preferred_fields
+        .iter()
+        .filter(|name| note.fields.contains_key(name.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    for name in note.fields.keys() {
+        let lower = name.to_lowercase();
+        if !names.contains(name)
+            && ["expression", "word", "front", "vocab"]
+                .iter()
+                .any(|token| lower.contains(token))
+        {
+            names.push(name.clone());
+        }
+    }
+    if names.is_empty() {
+        names.extend(note.fields.keys().cloned());
+    }
+    names.into_iter().any(|name| {
+        note.fields
+            .get(&name)
+            .is_some_and(|value| normalize_expression(value) == expression)
     })
 }
-pub fn prepare_authored(
-    bytes: &[u8],
-    expected_kind: Kind,
-    settings: &linguist_config::Effective,
-    environment: &BTreeMap<String, String>,
-) -> Result<Prepared, String> {
-    prepare_with_dictionary(bytes, expected_kind, settings, environment, None)
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceNote {
+    pub summary: NoteSummary,
+    pub fields: Vec<(String, String)>,
+    pub tags: Vec<String>,
 }
-/// Stage one explicitly authored CLI record. The canonical normalized values
-/// are the recoverable source asset; shell quoting/argv spelling is not claimed.
-pub fn prepare_authored_inline(
-    input: AddInput,
-    expected_kind: Kind,
-    settings: &linguist_config::Effective,
-    environment: &BTreeMap<String, String>,
-) -> Result<Prepared, String> {
-    let bytes = canonical::bytes(&input).map_err(|e| e.to_string())?;
-    let text = String::from_utf8(bytes.clone()).map_err(|_| "INPUT_ENCODING")?;
-    let record = PreparedRecord {
-        structured: Cow::Borrowed(&bytes),
-        archive: &bytes,
-        source_kind: "authored_inline_v1",
-        location: "cli:inline".into(),
-        model_manifest: "authored-inline-v1",
-        fields: Some(BTreeMap::from([("inline_input".into(), text)])),
-    };
-    let mut batch = publish_authored_records(
-        &[record],
-        expected_kind,
-        settings,
-        environment,
-        vocab::Providers::default(),
-        false,
-    )?;
-    Ok(batch.items.remove(0))
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommitReceipt {
+    pub note_id: i64,
+    pub snapshot_id: String,
 }
-pub trait DictionaryPort {
-    fn lookup(
-        &self,
-        query: &str,
-        target: &Language,
-    ) -> Result<linguist_dictionary::JishoPage, String>;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommitSource {
+    pub note_id: i64,
+    pub model_name: String,
+    pub fields: BTreeMap<String, String>,
+    pub tags: Vec<String>,
 }
-pub fn prepare_with_dictionary(
-    bytes: &[u8],
-    expected_kind: Kind,
-    settings: &linguist_config::Effective,
-    environment: &BTreeMap<String, String>,
-    dictionary: Option<&dyn DictionaryPort>,
-) -> Result<Prepared, String> {
-    prepare_with_providers(
-        bytes,
-        expected_kind,
-        settings,
-        environment,
-        vocab::Providers {
-            dictionary,
-            ..Default::default()
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommitRequest {
+    pub mode: CardMode,
+    pub dry_run: bool,
+    pub deck_key: String,
+    pub deck_name: String,
+    pub target_model: String,
+    pub source: Option<CommitSource>,
+    pub document: CardDocument,
+    pub field_mapping: FieldMapping,
+    pub template_plan: ManagedTemplatePlan,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotCapture {
+    pub word: String,
+    pub mode: CardMode,
+    pub deck_key: String,
+    pub source: Option<CommitSource>,
+    pub document: CardDocument,
+    pub media_before: BTreeMap<String, Option<MediaFile>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotHandle(pub String);
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TemplateMutation {
+    pub model_name: String,
+    pub created: bool,
+    pub previous_templates: Vec<ModelTemplate>,
+    pub previous_css: String,
+    pub added_templates: Vec<String>,
+    pub renamed_template: Option<(String, String)>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NoteMutation {
+    pub note_id: i64,
+    pub created: bool,
+}
+
+pub trait CommitPort: MediaPort {
+    fn backup_deck<'a>(&'a self, deck_name: &'a str) -> PortFuture<'a, ()>;
+    fn capture_snapshot<'a>(
+        &'a self,
+        capture: &'a SnapshotCapture,
+    ) -> PortFuture<'a, SnapshotHandle>;
+    fn finalize_snapshot<'a>(
+        &'a self,
+        snapshot: &'a SnapshotHandle,
+        post_write_state: &'a PostWriteState,
+    ) -> PortFuture<'a, ()>;
+    fn fail_snapshot<'a>(
+        &'a self,
+        snapshot: &'a SnapshotHandle,
+        error: &'a str,
+    ) -> PortFuture<'a, ()>;
+    fn apply_template<'a>(
+        &'a self,
+        plan: &'a ManagedTemplatePlan,
+    ) -> PortFuture<'a, TemplateMutation>;
+    fn rollback_template<'a>(&'a self, mutation: &'a TemplateMutation) -> PortFuture<'a, ()>;
+    fn update_note<'a>(
+        &'a self,
+        source: &'a CommitSource,
+        fields: &'a BTreeMap<String, String>,
+        target_model: &'a str,
+    ) -> PortFuture<'a, NoteMutation>;
+    fn create_note<'a>(
+        &'a self,
+        deck_name: &'a str,
+        model_name: &'a str,
+        fields: &'a BTreeMap<String, String>,
+        tags: &'a [String],
+    ) -> PortFuture<'a, NoteMutation>;
+    fn rollback_note<'a>(
+        &'a self,
+        mutation: &'a NoteMutation,
+        source: Option<&'a CommitSource>,
+    ) -> PortFuture<'a, ()>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CommitOutcome {
+    DryRun { fields: BTreeMap<String, String> },
+    Committed(CommitReceipt),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommitError {
+    pub phase: &'static str,
+    pub message: String,
+    pub rollback_errors: Vec<String>,
+}
+
+impl std::fmt::Display for CommitError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "commit {}: {}", self.phase, self.message)
+    }
+}
+
+impl std::error::Error for CommitError {}
+
+pub async fn commit_card<P: CommitPort + ?Sized>(
+    port: &P,
+    request: CommitRequest,
+) -> Result<CommitOutcome, CommitError> {
+    let fields = validate_commit(&request)?;
+    if request.dry_run {
+        return Ok(CommitOutcome::DryRun { fields });
+    }
+    port.backup_deck(&request.deck_name)
+        .await
+        .map_err(|error| commit_error("backup", error.to_string()))?;
+
+    let media = PreparedMediaTransaction::prepare(
+        port,
+        MediaPlan {
+            stage: request
+                .document
+                .media
+                .iter()
+                .map(|asset| MediaChange {
+                    filename: asset.filename.clone(),
+                    data_base64: asset.data_base64.clone(),
+                })
+                .collect(),
+            remove_obsolete: request.document.obsolete_media.clone(),
         },
     )
-}
-/// Authored JSON with injected provider ports (tests and alternative adapters).
-pub fn prepare_with_providers(
-    bytes: &[u8],
-    expected_kind: Kind,
-    settings: &linguist_config::Effective,
-    environment: &BTreeMap<String, String>,
-    providers: vocab::Providers<'_>,
-) -> Result<Prepared, String> {
-    let mut batch = publish_authored_records(
-        &[PreparedRecord::json(bytes)],
-        expected_kind,
-        settings,
-        environment,
-        providers,
-        false,
-    )?;
-    Ok(batch.items.remove(0))
-}
-
-/// JSONL is opt-in. Each physical line is one complete v2 record; whitespace-only
-/// lines fail with their one-based position instead of silently shifting items.
-pub fn prepare_authored_jsonl(
-    bytes: &[u8],
-    expected_kind: Kind,
-    settings: &linguist_config::Effective,
-    environment: &BTreeMap<String, String>,
-) -> Result<PreparedBatch, String> {
-    let max_bytes = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
-    if bytes.len() as u64 > max_bytes {
-        return Err("INPUT_TOO_LARGE".into());
-    }
-    let text = std::str::from_utf8(bytes).map_err(|_| "INPUT_ENCODING")?;
-    if text.is_empty() {
-        return Err("INPUT_EMPTY_BATCH".into());
-    }
-    let records: Vec<&[u8]> = text.split_inclusive('\n').map(str::as_bytes).collect();
-    if records.len() as u64 > settings.values["selection.max_notes"].as_u64().unwrap() {
-        return Err("INPUT_BATCH_TOO_LARGE: exceeds selection.max_notes".into());
-    }
-    for (index, record) in records.iter().enumerate() {
-        if record.iter().all(u8::is_ascii_whitespace) {
-            return Err(format!("INPUT_EMPTY_RECORD: line {}", index + 1));
-        }
-    }
-    let records: Vec<_> = records.into_iter().map(PreparedRecord::json).collect();
-    publish_authored_records(
-        &records,
-        expected_kind,
-        settings,
-        environment,
-        vocab::Providers::default(),
-        true,
-    )
-}
-
-/// Explicit simple authored-card CSV; the whole original file is retained as
-/// shared source evidence, while each record keeps decoded column evidence.
-pub fn prepare_authored_csv(
-    bytes: &[u8],
-    expected_kind: Kind,
-    settings: &linguist_config::Effective,
-    environment: &BTreeMap<String, String>,
-) -> Result<PreparedBatch, String> {
-    if bytes.len() as u64 > settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024 {
-        return Err("INPUT_TOO_LARGE".into());
-    }
-    std::str::from_utf8(bytes).map_err(|_| "INPUT_ENCODING")?;
-    let content = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .flexible(false)
-        .from_reader(content);
-    let headers = reader
-        .headers()
-        .map_err(|_| "INPUT_CSV_HEADER_INVALID")?
-        .clone();
-    let required: &[&str] = match expected_kind {
-        Kind::Vocabulary => &["expression", "meaning", "target_language", "sense_key"],
-        Kind::Grammar => &[
-            "pattern",
-            "meaning",
-            "formation",
-            "use_key",
-            "target_language",
-        ],
-    };
-    let optional: &[&str] = match expected_kind {
-        Kind::Vocabulary => &[
-            "reading",
-            "pronunciation",
-            "usage",
-            "context",
-            "personal_notes",
-            "source_summary",
-            "explanation_language",
-            "production_prompt",
-            "spelling_prompt",
-            "example_sentence",
-            "example_translation",
-        ],
-        Kind::Grammar => &[
-            "recognition_prompt",
-            "usage",
-            "exercise_prompt",
-            "exercise_answer",
-            "context",
-            "personal_notes",
-            "source_summary",
-            "explanation_language",
-            "example_sentence",
-            "example_translation",
-        ],
-    };
-    let names: std::collections::BTreeSet<_> = headers.iter().collect();
-    if headers.is_empty()
-        || names.len() != headers.len()
-        || required.iter().any(|name| !names.contains(name))
-        || names
-            .iter()
-            .any(|name| !required.contains(name) && !optional.contains(name))
-        || names.contains("example_sentence") != names.contains("example_translation")
-    {
-        return Err("INPUT_CSV_HEADER_INVALID: require unique known columns for the selected card kind and paired example columns".into());
-    }
-    let header_json =
-        serde_json::to_string(&headers.iter().collect::<Vec<_>>()).map_err(|e| e.to_string())?;
-    let mut records = Vec::new();
-    let max_notes = settings.values["selection.max_notes"].as_u64().unwrap() as usize;
-    for (index, row) in reader.records().enumerate() {
-        let row = row.map_err(|_| format!("INPUT_CSV_RECORD_INVALID: record {}", index + 1))?;
-        if records.len() >= max_notes {
-            return Err("INPUT_BATCH_TOO_LARGE: exceeds selection.max_notes".into());
-        }
-        let cells: BTreeMap<_, _> = headers.iter().zip(row.iter()).collect();
-        let value = |name: &str| cells.get(name).copied().unwrap_or_default();
-        let mut body = match expected_kind {
-            Kind::Vocabulary => {
-                serde_json::json!({"expression":value("expression"),"meaning":value("meaning"),"sense_key":value("sense_key")})
-            }
-            Kind::Grammar => {
-                serde_json::json!({"pattern":value("pattern"),"meaning":value("meaning"),"formation":value("formation"),"use_key":value("use_key"),"examples":[]})
-            }
-        };
-        let fields: &[&str] = match expected_kind {
-            Kind::Vocabulary => &[
-                "reading",
-                "pronunciation",
-                "usage",
-                "production_prompt",
-                "spelling_prompt",
-            ],
-            Kind::Grammar => &[
-                "recognition_prompt",
-                "usage",
-                "exercise_prompt",
-                "exercise_answer",
-            ],
-        };
-        for &field in fields {
-            if names.contains(field) {
-                body[field] = serde_json::json!(value(field));
-            }
-        }
-        if names.contains("example_sentence") {
-            let sentence = value("example_sentence");
-            let translation = value("example_translation");
-            if sentence.is_empty() != translation.is_empty() {
-                return Err(format!(
-                    "INPUT_CSV_EXAMPLE_PAIR_INVALID: record {}",
-                    index + 1
-                ));
-            }
-            if !sentence.is_empty() {
-                body["examples"] = serde_json::json!([{"sentence":sentence,"translation":translation,"provenance":"user"}]);
-            }
-        }
-        let kind = match expected_kind {
-            Kind::Vocabulary => "vocabulary",
-            Kind::Grammar => "grammar",
-        };
-        let mut input = serde_json::json!({"schema_version":2,"kind":kind,"target_language":value("target_language"),"body":body});
-        for field in [
-            "context",
-            "personal_notes",
-            "source_summary",
-            "explanation_language",
-        ] {
-            if names.contains(field) && !value(field).is_empty() {
-                input[field] = serde_json::json!(value(field));
-            }
-        }
-        let structured = serde_json::to_vec(&input).map_err(|e| e.to_string())?;
-        let fields = BTreeMap::from([
-            ("csv_header".into(), header_json.clone()),
-            (
-                "csv_record".into(),
-                serde_json::to_string(&row.iter().collect::<Vec<_>>())
-                    .map_err(|e| e.to_string())?,
-            ),
-            ("csv_record_index".into(), (index + 1).to_string()),
-        ]);
-        records.push(PreparedRecord {
-            structured: Cow::Owned(structured),
-            archive: bytes,
-            source_kind: "authored_csv_v1",
-            location: format!("local_input:csv-record:{}", index + 1),
-            model_manifest: "authored-csv-v1",
-            fields: Some(fields),
-        });
-    }
-    publish_authored_records(
-        &records,
-        expected_kind,
-        settings,
-        environment,
-        vocab::Providers::default(),
-        true,
-    )
-}
-
-fn build_authored_document(
-    record: &PreparedRecord<'_>,
-    expected_kind: Kind,
-    settings: &linguist_config::Effective,
-    environment: &BTreeMap<String, String>,
-    providers: vocab::Providers<'_>,
-) -> Result<(LearningDocument, Vec<Vec<u8>>), String> {
-    let bytes = record.structured.as_ref();
-    if bytes.len() as u64 > settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024 {
-        return Err("INPUT_TOO_LARGE".into());
-    }
-    let text = std::str::from_utf8(bytes).map_err(|_| "INPUT_ENCODING")?;
-    if text.chars().count() as u64 > settings.values["input.max_record_chars"].as_u64().unwrap() {
-        return Err("INPUT_RECORD_TOO_LARGE".into());
-    }
-    let input: AddInput = canonical::parse(bytes).map_err(|e| e.to_string())?;
-    authored_capabilities(settings)?;
-    let (
-        version,
-        target_language,
-        explanation_language,
-        content,
-        tasks,
-        context,
-        personal_notes,
-        source_summary,
-        tags,
-    ) = match input {
-        AddInput::Vocabulary {
-            schema_version,
-            target_language,
-            explanation_language,
-            body,
-            requested_tasks,
-            context,
-            personal_notes,
-            source_summary,
-            tags,
-        } => {
-            if expected_kind != Kind::Vocabulary {
-                return Err("INPUT_KIND_CONFLICT".into());
-            }
-            let tasks = requested_tasks.unwrap_or_else(|| {
-                let mut tasks = vec![Task::Comprehension];
-                if settings.values["learning.vocabulary.production"] == true {
-                    tasks.push(Task::Production);
-                }
-                if settings.values["learning.vocabulary.spelling"] == true {
-                    tasks.push(Task::Spelling);
-                }
-                tasks
-            });
-            (
-                schema_version,
-                target_language,
-                explanation_language,
-                LearningContent::Vocabulary(body.into()),
-                tasks,
-                context,
-                personal_notes,
-                source_summary,
-                tags,
-            )
-        }
-        AddInput::Grammar {
-            schema_version,
-            target_language,
-            explanation_language,
-            body,
-            requested_tasks,
-            context,
-            personal_notes,
-            source_summary,
-            tags,
-        } => {
-            if expected_kind != Kind::Grammar {
-                return Err("INPUT_KIND_CONFLICT".into());
-            }
-            // Grammar v4 (WP-23) has no Application card.
-            if settings.values["learning.grammar.application"] == true {
-                return Err("CAPABILITY_UNAVAILABLE: Linguist Grammar v4 has no Application card; set learning.grammar.application=false".into());
-            }
-            let tasks = requested_tasks.unwrap_or_else(|| vec![Task::Recognition]);
-            (
-                schema_version,
-                target_language,
-                explanation_language,
-                LearningContent::Grammar(body),
-                tasks,
-                context,
-                personal_notes,
-                source_summary,
-                tags,
-            )
-        }
-    };
-    if version != 2 {
-        return Err("UNSUPPORTED_ADD_INPUT_VERSION".into());
-    }
-    let explanation_language = explanation_language.unwrap_or(Language::try_from(
-        settings.values["learning.explanation_language"]
-            .as_str()
-            .unwrap()
-            .to_owned(),
-    )?);
-    let original_input_digest = canonical::asset_digest(record.archive);
-    let original_text = std::str::from_utf8(record.archive)
-        .map_err(|_| "INPUT_ENCODING")?
-        .to_owned();
-    let source_id = uuid::Uuid::new_v4();
-    let fields = record
-        .fields
-        .clone()
-        .unwrap_or_else(|| BTreeMap::from([("authored_input".into(), text.into())]));
-    let mut document = LearningDocument {
-        schema_version: 2,
-        id: uuid::Uuid::new_v4(),
-        target_language,
-        explanation_language,
-        content,
-        requested_tasks: tasks,
-        task_maps: vec![],
-        tags,
-        context,
-        personal_notes,
-        source_summary,
-        sources: vec![SourceRecord {
-            id: source_id,
-            kind: record.source_kind.into(),
-            location: record.location.clone(),
-            digest: original_input_digest.clone(),
-            text: Some(original_text.clone()),
-            fields: fields.clone(),
-            model_manifest: record.model_manifest.into(),
-            template_manifest: None,
-            captured_at_unix_seconds: None,
-            tags: vec![],
-            cards: vec![],
-            media_refs: vec![],
-        }],
-        archives: vec![SourceArchive {
-            id: uuid::Uuid::new_v4(),
-            source_id,
-            digest: original_input_digest.clone(),
-            original_text: Some(original_text),
-            original_fields: fields,
-            asset_digests: vec![original_input_digest.clone()],
-        }],
-        regions: vec![],
-        evidence: vec![],
-        media: vec![],
-        edits: BTreeMap::new(),
-        reviews: vec![],
-        issues: vec![],
-    };
-    let (enriched, mut provider_assets) =
-        dictionary::enrich_document(&document, settings, environment, providers.dictionary)?;
-    // Optional enrichment runs after dictionary lookup on the same staged item.
-    let (enriched, enrichment_assets) =
-        vocab::enrich_document(&enriched, settings, environment, providers)?;
-    provider_assets.extend(enrichment_assets);
-    document = enriched;
-    document.issues = validation::validate(&document);
-    Ok((document, provider_assets))
-}
-
-fn publish_authored_records(
-    records: &[PreparedRecord<'_>],
-    expected_kind: Kind,
-    settings: &linguist_config::Effective,
-    environment: &BTreeMap<String, String>,
-    providers: vocab::Providers<'_>,
-    line_numbered: bool,
-) -> Result<PreparedBatch, String> {
-    if records.is_empty() {
-        return Err("INPUT_EMPTY_BATCH".into());
-    }
-    let frozen = freeze_settings(settings, environment)?;
-    let mut documents = Vec::with_capacity(records.len());
-    let mut assets = Vec::new();
-    let mut rendered = Vec::new();
-    // Complete all parsing, enrichment and validation before opening state.
-    for (index, record) in records.iter().enumerate() {
-        let (document, provider_assets) =
-            build_authored_document(record, expected_kind, settings, environment, providers)
-                .map_err(|error| {
-                    if line_numbered {
-                        format!("INPUT_RECORD_{}: {error}", index + 1)
-                    } else {
-                        error
-                    }
-                })?;
-        if let Ok(card) = render::render(&document, &document.sources[0].fields) {
-            rendered.push(card);
-        }
-        assets.extend(provider_assets);
-        documents.push(document);
-    }
-    let plan = PlanRevision {
-        grammar_groups: vec![],
-        schema_version: 2,
-        id: uuid::Uuid::new_v4(),
-        revision: 1,
-        parent_digest: None,
-        settings: frozen,
-        binding: None,
-        source_digest: canonical::digest(
-            "source-capture",
-            &documents
-                .iter()
-                .flat_map(|document| document.sources.iter())
-                .collect::<Vec<_>>(),
-        )
-        .map_err(|e| e.to_string())?,
-        selection: None,
-        documents,
-        rendered,
-        review_decisions: vec![],
-    };
-    let validation = linguist_core::plan_validation::inspect(&plan).map_err(|e| e.to_string())?;
-    let ready = validation.content_ready;
-    let root = std::path::Path::new(plan.settings.values["storage.state_dir"].as_str().unwrap());
-    let mut store = linguist_store::Store::open(root)?;
-    let mut seen = std::collections::BTreeSet::new();
-    for record in records {
-        if seen.insert(canonical::asset_digest(record.archive)) {
-            store.publish_asset(
-                record.archive,
-                settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024,
-            )?;
-        }
-    }
-    let asset_cap = settings.values["network.max_response_mb"]
-        .as_u64()
-        .unwrap()
-        .max(settings.values["media.max_asset_mb"].as_u64().unwrap())
-        * 1024
-        * 1024;
-    for asset in assets {
-        store.publish_asset(&asset, asset_cap)?;
-    }
-    let digest = store.publish_revision(&plan)?;
-    let items = plan
-        .documents
-        .iter()
-        .zip(validation.items.iter())
-        .map(|(document, checked)| {
-            Ok(Prepared {
-                document_id: document.id,
-                input_digest: document.semantic_digest().map_err(|e| e.to_string())?,
-                schema_version: 2,
-                plan_id: plan.id,
-                revision: 1,
-                digest: digest.clone(),
-                ready: checked.content_ready,
-                issues: checked.issues.clone(),
-                original_input_digest: document.sources[0].digest.clone(),
-                apply_eligible: false,
-                duplicate_check_performed: false,
-                next_commands: vec![],
-            })
+    .await
+    .map_err(|error| commit_error(error.phase, error.message))?;
+    let snapshot = port
+        .capture_snapshot(&SnapshotCapture {
+            word: request.document.expression.clone(),
+            mode: request.mode,
+            deck_key: request.deck_key.clone(),
+            source: request.source.clone(),
+            document: request.document.clone(),
+            media_before: media.before().clone(),
         })
-        .collect::<Result<Vec<_>, String>>()?;
-    let llm = settings.values["llm.enabled"] == true;
-    let mut items = items;
-    for item in &mut items {
-        item.refresh_next_commands(llm);
+        .await
+        .map_err(|error| commit_error("snapshot", error.to_string()))?;
+
+    let mut template_mutation = None;
+    let mut note_mutation = None;
+    let result = async {
+        media
+            .stage_and_verify(port)
+            .await
+            .map_err(|error| commit_error(error.phase, error.message))?;
+        template_mutation = Some(
+            port.apply_template(&request.template_plan)
+                .await
+                .map_err(|error| commit_error("template", error.to_string()))?,
+        );
+        let mutation = match request.mode {
+            CardMode::Modernize => {
+                let source = request.source.as_ref().ok_or_else(|| {
+                    commit_error("validate", "modernization requires source note")
+                })?;
+                port.update_note(source, &fields, &request.target_model)
+                    .await
+                    .map_err(|error| commit_error("note", error.to_string()))?
+            }
+            CardMode::Inject => port
+                .create_note(
+                    &request.deck_name,
+                    &request.target_model,
+                    &fields,
+                    &request.document.tags,
+                )
+                .await
+                .map_err(|error| commit_error("note", error.to_string()))?,
+        };
+        note_mutation = Some(mutation.clone());
+        let post_write_state = PostWriteState {
+            note: PostWriteNote {
+                note_id: mutation.note_id,
+                model_name: request.target_model.clone(),
+                deck_name: request.deck_name.clone(),
+                fields: fields.clone(),
+                tags: match request.mode {
+                    CardMode::Modernize => request
+                        .source
+                        .as_ref()
+                        .map(|source| source.tags.clone())
+                        .unwrap_or_default(),
+                    CardMode::Inject => request.document.tags.clone(),
+                },
+            },
+            media: request
+                .document
+                .media
+                .iter()
+                .map(|asset| (asset.filename.clone(), Some(asset.data_base64.clone())))
+                .chain(
+                    request
+                        .document
+                        .obsolete_media
+                        .iter()
+                        .cloned()
+                        .map(|filename| (filename, None)),
+                )
+                .collect(),
+        };
+        port.finalize_snapshot(&snapshot, &post_write_state)
+            .await
+            .map_err(|error| commit_error("finalize snapshot", error.to_string()))?;
+        media
+            .remove_obsolete(port)
+            .await
+            .map_err(|error| commit_error(error.phase, error.message))?;
+        Ok::<CommitOutcome, CommitError>(CommitOutcome::Committed(CommitReceipt {
+            note_id: mutation.note_id,
+            snapshot_id: snapshot.0.clone(),
+        }))
     }
-    Ok(PreparedBatch {
-        schema_version: 2,
-        plan_id: plan.id,
-        revision: 1,
-        digest,
-        ready,
-        items,
-        apply_eligible: false,
-        duplicate_check_performed: false,
+    .await;
+    match result {
+        Ok(outcome) => Ok(outcome),
+        Err(mut error) => {
+            if let Some(mutation) = note_mutation.as_ref() {
+                if let Err(rollback) = port.rollback_note(mutation, request.source.as_ref()).await {
+                    error.rollback_errors.push(format!("note: {rollback}"));
+                }
+            }
+            if let Some(mutation) = template_mutation.as_ref() {
+                if let Err(rollback) = port.rollback_template(mutation).await {
+                    error.rollback_errors.push(format!("template: {rollback}"));
+                }
+            }
+            if let Err(rollback) = media.rollback(port).await {
+                error.rollback_errors.extend(rollback.rollback_errors);
+            }
+            if let Err(rollback) = port.fail_snapshot(&snapshot, &error.message).await {
+                error.rollback_errors.push(format!("snapshot: {rollback}"));
+            }
+            Err(error)
+        }
+    }
+}
+
+fn validate_commit(request: &CommitRequest) -> Result<BTreeMap<String, String>, CommitError> {
+    if !request.document.ready() {
+        return Err(commit_error("validate", "card document is not ready"));
+    }
+    if request.mode == CardMode::Modernize && request.source.is_none() {
+        return Err(commit_error(
+            "validate",
+            "modernization requires source note",
+        ));
+    }
+    request
+        .document
+        .map_fields(&request.field_mapping)
+        .map_err(|error| commit_error("validate", error.to_string()))
+}
+
+fn commit_error(phase: &'static str, message: impl Into<String>) -> CommitError {
+    CommitError {
+        phase,
+        message: message.into(),
+        rollback_errors: vec![],
+    }
+}
+
+/// Snapshot extension populated by native commit adapters. It records the
+/// state produced by the commit, so restore never overwrites a later edit.
+pub const NATIVE_POST_WRITE_EXTENSION: &str = "native_post_write_v1";
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PostWriteNote {
+    pub note_id: i64,
+    pub model_name: String,
+    pub deck_name: String,
+    pub fields: BTreeMap<String, String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PostWriteState {
+    pub note: PostWriteNote,
+    /// Every file changed by the commit, after the successful write. `None`
+    /// represents obsolete media that was removed.
+    pub media: BTreeMap<String, Option<String>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RestoreOutcome {
+    DryRun,
+    AlreadyRestored,
+    Restored {
+        restored_note_id: Option<i64>,
+        removed_note_ids: Vec<i64>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RestoreError {
+    Invalid(String),
+    Conflict { note_id: i64, reason: String },
+    Port(PortError),
+}
+
+impl std::fmt::Display for RestoreError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Invalid(message) => write!(formatter, "invalid snapshot: {message}"),
+            Self::Conflict { note_id, reason } => {
+                write!(
+                    formatter,
+                    "newer write conflicts with note {note_id}: {reason}"
+                )
+            }
+            Self::Port(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for RestoreError {}
+
+impl From<PortError> for RestoreError {
+    fn from(error: PortError) -> Self {
+        Self::Port(error)
+    }
+}
+
+/// Collection mutations needed to restore a versioned snapshot. The adapter
+/// must make `restore_note` restore model, deck, fields, and tags as one
+/// collection-level operation.
+pub trait RestorePort: MediaPort {
+    fn snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, bool>;
+    fn note_info<'a>(&'a self, note_id: i64) -> PortFuture<'a, Option<NoteInfo>>;
+    fn delete_notes<'a>(&'a self, note_ids: &'a [i64]) -> PortFuture<'a, ()>;
+    fn restore_note<'a>(&'a self, original: &'a SnapshotOriginalNote) -> PortFuture<'a, ()>;
+    fn mark_snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, ()>;
+}
+
+/// Restore a Python or native snapshot without touching unrelated collection
+/// state. Native snapshots additionally reject a note that no longer equals
+/// the state recorded immediately after commit.
+pub async fn restore_snapshot<P: RestorePort + ?Sized>(
+    port: &P,
+    document: &SnapshotDocument,
+) -> Result<RestoreOutcome, RestoreError> {
+    let snapshot = &document.snapshot;
+    if document.schema_version != linguist_core::CONTRACT_VERSION {
+        return Err(RestoreError::Invalid("unsupported schema version".into()));
+    }
+    if snapshot.dry_run {
+        return Ok(RestoreOutcome::DryRun);
+    }
+    if snapshot.status == "reverted" || port.snapshot_restored(&snapshot.id).await? {
+        return Ok(RestoreOutcome::AlreadyRestored);
+    }
+
+    let original = snapshot.original_note.as_ref();
+    let original_note_id = original.and_then(|note| note.note_id);
+    let result_note_id = snapshot.result_note_id;
+    if original.is_some() && original_note_id.is_none() {
+        return Err(RestoreError::Invalid("original note has no note id".into()));
+    }
+    if original_note_id.is_none() && result_note_id.is_none() {
+        return Err(RestoreError::Invalid(
+            "no original or committed note id".into(),
+        ));
+    }
+
+    if let Some(expected) = post_write_state(document)? {
+        let current = port
+            .note_info(expected.note.note_id)
+            .await?
+            .ok_or_else(|| RestoreError::Conflict {
+                note_id: expected.note.note_id,
+                reason: "note no longer exists".into(),
+            })?;
+        ensure_post_write_matches(&current, &expected.note)?;
+        for (filename, expected_media) in &expected.media {
+            let current_media = port.retrieve_media(filename).await?;
+            let matches = match (expected_media, current_media) {
+                (Some(expected), Some(current)) => same_media(expected, &current.data_base64),
+                (None, None) => true,
+                _ => false,
+            };
+            if !matches {
+                return Err(RestoreError::Conflict {
+                    note_id: expected.note.note_id,
+                    reason: format!("media changed: {filename}"),
+                });
+            }
+        }
+    } else if let Some(note_id) = original_note_id {
+        if port.note_info(note_id).await?.is_none() {
+            return Err(RestoreError::Conflict {
+                note_id,
+                reason: "original note no longer exists".into(),
+            });
+        }
+    }
+
+    let mut deleted = BTreeSet::new();
+    if original.is_none() {
+        if let Some(note_id) = result_note_id {
+            deleted.insert(note_id);
+        }
+    }
+    deleted.extend(snapshot.created_note_ids.iter().copied());
+    let removed_note_ids: Vec<_> = deleted.into_iter().collect();
+    if !removed_note_ids.is_empty() {
+        port.delete_notes(&removed_note_ids).await?;
+    }
+
+    for (filename, previous) in &snapshot.media_before {
+        match previous {
+            Some(data_base64) => {
+                port.store_media(&MediaFile {
+                    filename: filename.clone(),
+                    data_base64: data_base64.clone(),
+                })
+                .await?;
+            }
+            None => port.delete_media(filename).await?,
+        }
+    }
+    if let Some(original) = original {
+        port.restore_note(original).await?;
+    }
+    port.mark_snapshot_restored(&snapshot.id).await?;
+    Ok(RestoreOutcome::Restored {
+        restored_note_id: original_note_id,
+        removed_note_ids,
     })
 }
 
-pub mod agents;
-pub mod apply;
-pub mod audio;
-pub mod backup;
-pub mod cache;
-pub mod capture;
-pub mod checkpoint;
-pub mod dictionary;
-pub mod dictionary_entry;
-pub mod duplicate_candidates;
-pub mod editor;
-pub mod export;
-pub mod generation;
-pub mod grammar;
-pub mod illustrations;
-pub mod images;
-pub mod job_executor;
-pub mod jobs;
-pub mod legacy_jobs;
-pub mod live_validation;
-pub mod mapping;
-pub mod media;
-pub mod model_install;
-pub mod native_port;
-pub mod ocr;
-pub mod ocr_inspection;
-pub mod ollama;
-pub mod plan_diff;
-pub mod regenerate;
-pub mod resources;
-pub mod restore;
-pub mod revamp;
-pub mod review;
-pub mod selector;
-pub mod source_archive;
-pub mod speech;
-pub mod split;
-pub mod vocab;
-pub mod vocab_split;
-pub mod voicevox;
+fn post_write_state(document: &SnapshotDocument) -> Result<Option<PostWriteState>, RestoreError> {
+    document
+        .snapshot
+        .extensions
+        .get(NATIVE_POST_WRITE_EXTENSION)
+        .map(|value| {
+            serde_json::from_value(value.clone()).map_err(|error| {
+                RestoreError::Invalid(format!("invalid native post-write state: {error}"))
+            })
+        })
+        .transpose()
+}
+
+fn ensure_post_write_matches(
+    current: &NoteInfo,
+    expected: &PostWriteNote,
+) -> Result<(), RestoreError> {
+    let same_deck = current
+        .deck_names
+        .iter()
+        .any(|deck| deck.0 == expected.deck_name);
+    let same_tags: BTreeSet<_> = current.tags.iter().collect();
+    let expected_tags: BTreeSet<_> = expected.tags.iter().collect();
+    let reason = if current.model_name.0 != expected.model_name {
+        Some("model changed")
+    } else if !same_deck {
+        Some("deck changed")
+    } else if current.fields != expected.fields {
+        Some("fields changed")
+    } else if same_tags != expected_tags {
+        Some("tags changed")
+    } else {
+        None
+    };
+    match reason {
+        Some(reason) => Err(RestoreError::Conflict {
+            note_id: expected.note_id,
+            reason: reason.into(),
+        }),
+        None => Ok(()),
+    }
+}
+
+pub trait AnkiPort: Send + Sync {
+    fn note<'a>(&'a self, note_id: i64) -> PortFuture<'a, SourceNote>;
+    fn find_exact<'a>(
+        &'a self,
+        deck_key: &'a str,
+        expression: &'a str,
+    ) -> PortFuture<'a, Option<SourceNote>>;
+    fn commit<'a>(
+        &'a self,
+        source: Option<&'a SourceNote>,
+        document: &'a CardDocument,
+    ) -> PortFuture<'a, CommitReceipt>;
+    fn restore<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, ()>;
+}
+
+pub trait EnrichmentPort: Send + Sync {
+    fn modernize<'a>(&'a self, note: &'a SourceNote) -> PortFuture<'a, CardDocument>;
+    fn inject<'a>(
+        &'a self,
+        deck_key: &'a str,
+        expression: &'a str,
+        context: &'a str,
+    ) -> PortFuture<'a, CardDocument>;
+}
+
+pub trait JobPort: Send + Sync {
+    fn pause<'a>(&'a self, job_id: &'a str) -> PortFuture<'a, ()>;
+    fn resume<'a>(&'a self, job_id: &'a str) -> PortFuture<'a, ()>;
+    fn retry_failures<'a>(&'a self, job_id: &'a str) -> PortFuture<'a, u64>;
+    fn rollback<'a>(&'a self, job_id: &'a str) -> PortFuture<'a, ()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    fn note(note_id: i64, fields: &[(&str, &str)]) -> NoteInfo {
+        NoteInfo {
+            note_id,
+            model_name: ModelName("Legacy".into()),
+            deck_names: vec![DeckName("Japanese".into())],
+            fields: fields
+                .iter()
+                .map(|(name, value)| ((*name).into(), (*value).into()))
+                .collect(),
+            tags: vec![],
+        }
+    }
+
+    fn request(expression: &str) -> ExactExpressionRequest {
+        ExactExpressionRequest {
+            deck_key: "japanese_vocab".into(),
+            expression: expression.into(),
+            preferred_fields: vec!["Expression".into(), "Word".into()],
+        }
+    }
+
+    #[test]
+    fn exact_matching_ignores_html_and_whitespace_without_substring_matches() {
+        let resolution = resolve_exact_expression(
+            &request("  食べる "),
+            [
+                note(1, &[("Expression", "<b>食べる</b>")]),
+                note(2, &[("Expression", "食べるもの")]),
+            ],
+        );
+        assert!(matches!(
+            resolution,
+            ExpressionResolution::Modernize { note, .. } if note.note_id == 1
+        ));
+    }
+
+    #[test]
+    fn missing_or_whitespace_expression_selects_injection() {
+        let missing = resolve_exact_expression(&request("新語"), [note(1, &[("Word", "旧語")])]);
+        assert!(matches!(missing, ExpressionResolution::Inject { .. }));
+        let whitespace =
+            resolve_exact_expression(&request(" \t\n "), [note(1, &[("Word", "旧語")])]);
+        assert_eq!(
+            whitespace,
+            ExpressionResolution::Inject {
+                deck_key: "japanese_vocab".into(),
+                expression: "".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn semantic_field_fallback_and_duplicates_are_explicit() {
+        let fallback = resolve_exact_expression(
+            &request("俳優"),
+            [note(1, &[("Vocabulary", "俳優"), ("Meaning", "actor")])],
+        );
+        assert!(matches!(fallback, ExpressionResolution::Modernize { .. }));
+
+        let duplicate = resolve_exact_expression(
+            &request("俳優"),
+            [note(1, &[("Word", "俳優")]), note(2, &[("Front", "俳優")])],
+        );
+        assert!(matches!(
+            duplicate,
+            ExpressionResolution::Ambiguous { matches, .. } if matches.len() == 2
+        ));
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum MediaOperation {
+        Retrieve,
+        Store,
+        Delete,
+    }
+
+    #[derive(Default)]
+    struct MockMediaPort {
+        media: Mutex<BTreeMap<String, String>>,
+        calls: Mutex<Vec<MediaOperation>>,
+        fail: Mutex<Option<(MediaOperation, usize)>>,
+        corrupt_once: Mutex<Option<String>>,
+    }
+
+    impl MockMediaPort {
+        fn with_media(media: &[(&str, &str)]) -> Self {
+            Self {
+                media: Mutex::new(
+                    media
+                        .iter()
+                        .map(|(name, data)| ((*name).into(), (*data).into()))
+                        .collect(),
+                ),
+                ..Self::default()
+            }
+        }
+
+        fn fail_at(&self, operation: MediaOperation, count: usize) {
+            *self.fail.lock().unwrap() = Some((operation, count));
+        }
+
+        fn check(&self, operation: MediaOperation) -> Result<(), PortError> {
+            let mut calls = self.calls.lock().unwrap();
+            calls.push(operation);
+            let occurrence = calls
+                .iter()
+                .filter(|current| **current == operation)
+                .count();
+            let mut failure = self.fail.lock().unwrap();
+            if *failure == Some((operation, occurrence)) {
+                *failure = None;
+                return Err(PortError {
+                    operation: "mock media",
+                    message: "injected failure".into(),
+                    retryable: false,
+                });
+            }
+            Ok(())
+        }
+
+        fn state(&self) -> BTreeMap<String, String> {
+            self.media.lock().unwrap().clone()
+        }
+    }
+
+    impl MediaPort for MockMediaPort {
+        fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
+            Box::pin(async move {
+                self.check(MediaOperation::Retrieve)?;
+                Ok(self
+                    .media
+                    .lock()
+                    .unwrap()
+                    .get(filename)
+                    .cloned()
+                    .map(|data_base64| MediaFile {
+                        filename: filename.into(),
+                        data_base64,
+                    }))
+            })
+        }
+
+        fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.check(MediaOperation::Store)?;
+                let corrupt = {
+                    let mut corrupt_once = self.corrupt_once.lock().unwrap();
+                    if corrupt_once.as_deref() == Some(&media.filename) {
+                        *corrupt_once = None;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                let data = if corrupt {
+                    "Y29ycnVwdA==".into()
+                } else {
+                    media.data_base64.clone()
+                };
+                self.media
+                    .lock()
+                    .unwrap()
+                    .insert(media.filename.clone(), data);
+                Ok(())
+            })
+        }
+
+        fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.check(MediaOperation::Delete)?;
+                self.media.lock().unwrap().remove(filename);
+                Ok(())
+            })
+        }
+    }
+
+    fn media_plan() -> MediaPlan {
+        MediaPlan {
+            stage: vec![
+                MediaChange {
+                    filename: "new-a.jpg".into(),
+                    data_base64: "bmV3LWE=".into(),
+                },
+                MediaChange {
+                    filename: "new-b.mp3".into(),
+                    data_base64: "bmV3LWI=".into(),
+                },
+            ],
+            remove_obsolete: vec!["old.jpg".into()],
+        }
+    }
+
+    #[tokio::test]
+    async fn media_transaction_stages_verifies_and_removes_obsolete_media() {
+        let port = MockMediaPort::with_media(&[("old.jpg", "b2xk")]);
+        let transaction = PreparedMediaTransaction::prepare(&port, media_plan())
+            .await
+            .unwrap();
+        assert_eq!(
+            transaction.before()["old.jpg"]
+                .as_ref()
+                .unwrap()
+                .data_base64,
+            "b2xk"
+        );
+        transaction.commit(&port).await.unwrap();
+        assert_eq!(
+            port.state(),
+            BTreeMap::from([
+                ("new-a.jpg".into(), "bmV3LWE=".into()),
+                ("new-b.mp3".into(), "bmV3LWI=".into()),
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn media_transaction_captures_before_every_mutation_and_rolls_back_each_boundary() {
+        for (operation, count, corrupt) in [
+            (MediaOperation::Store, 1, false),
+            (MediaOperation::Store, 2, false),
+            (MediaOperation::Delete, 1, false),
+            (MediaOperation::Store, 0, true),
+        ] {
+            let port = MockMediaPort::with_media(&[("old.jpg", "b2xk")]);
+            let before = port.state();
+            let transaction = PreparedMediaTransaction::prepare(&port, media_plan())
+                .await
+                .unwrap();
+            if corrupt {
+                *port.corrupt_once.lock().unwrap() = Some("new-a.jpg".into());
+            } else {
+                port.fail_at(operation, count);
+            }
+            let error = transaction.commit(&port).await.unwrap_err();
+            assert!(matches!(error.phase, "stage" | "verify" | "remove"));
+            assert!(error.rollback_errors.is_empty());
+            assert_eq!(port.state(), before);
+        }
+    }
+
+    #[tokio::test]
+    async fn media_preflight_failure_and_conflicts_never_mutate() {
+        let port = MockMediaPort::with_media(&[("old.jpg", "b2xk")]);
+        let before = port.state();
+        port.fail_at(MediaOperation::Retrieve, 1);
+        assert!(matches!(
+            PreparedMediaTransaction::prepare(&port, media_plan()).await,
+            Err(MediaTransactionError {
+                phase: "snapshot",
+                ..
+            })
+        ));
+        assert_eq!(port.state(), before);
+
+        let conflict = MediaPlan {
+            stage: vec![
+                MediaChange {
+                    filename: "same.jpg".into(),
+                    data_base64: "YQ==".into(),
+                },
+                MediaChange {
+                    filename: "same.jpg".into(),
+                    data_base64: "Yg==".into(),
+                },
+            ],
+            remove_obsolete: vec!["same.jpg".into()],
+        };
+        assert!(matches!(
+            PreparedMediaTransaction::prepare(&port, conflict).await,
+            Err(MediaTransactionError {
+                phase: "validate",
+                ..
+            })
+        ));
+        assert_eq!(port.state(), before);
+    }
+
+    #[derive(Default)]
+    struct MockCommitPort {
+        media: Mutex<BTreeMap<String, String>>,
+        events: Mutex<Vec<String>>,
+        fail: Mutex<Option<String>>,
+        note_fields: Mutex<BTreeMap<i64, BTreeMap<String, String>>>,
+        next_note: Mutex<i64>,
+    }
+
+    impl MockCommitPort {
+        fn new() -> Self {
+            Self {
+                media: Mutex::new(BTreeMap::from([("old.jpg".into(), "b2xk".into())])),
+                note_fields: Mutex::new(BTreeMap::from([(
+                    42,
+                    BTreeMap::from([("Expression".into(), "old".into())]),
+                )])),
+                next_note: Mutex::new(100),
+                ..Self::default()
+            }
+        }
+
+        fn fail(&self, phase: &str) {
+            *self.fail.lock().unwrap() = Some(phase.into());
+        }
+
+        fn event(&self, phase: &str) -> Result<(), PortError> {
+            self.events.lock().unwrap().push(phase.into());
+            let mut failure = self.fail.lock().unwrap();
+            if failure.as_deref() == Some(phase) {
+                *failure = None;
+                Err(PortError {
+                    operation: "mock commit",
+                    message: format!("{phase} failed"),
+                    retryable: false,
+                })
+            } else {
+                Ok(())
+            }
+        }
+
+        fn media_state(&self) -> BTreeMap<String, String> {
+            self.media.lock().unwrap().clone()
+        }
+    }
+
+    impl MediaPort for MockCommitPort {
+        fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
+            Box::pin(async move {
+                self.event("retrieve")?;
+                Ok(self
+                    .media
+                    .lock()
+                    .unwrap()
+                    .get(filename)
+                    .cloned()
+                    .map(|data_base64| MediaFile {
+                        filename: filename.into(),
+                        data_base64,
+                    }))
+            })
+        }
+
+        fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.event("store")?;
+                self.media
+                    .lock()
+                    .unwrap()
+                    .insert(media.filename.clone(), media.data_base64.clone());
+                Ok(())
+            })
+        }
+
+        fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.event("delete")?;
+                self.media.lock().unwrap().remove(filename);
+                Ok(())
+            })
+        }
+    }
+
+    impl CommitPort for MockCommitPort {
+        fn backup_deck<'a>(&'a self, _: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move { self.event("backup") })
+        }
+
+        fn capture_snapshot<'a>(
+            &'a self,
+            _: &'a SnapshotCapture,
+        ) -> PortFuture<'a, SnapshotHandle> {
+            Box::pin(async move {
+                self.event("capture")?;
+                Ok(SnapshotHandle("snapshot-1".into()))
+            })
+        }
+
+        fn finalize_snapshot<'a>(
+            &'a self,
+            _: &'a SnapshotHandle,
+            _: &'a PostWriteState,
+        ) -> PortFuture<'a, ()> {
+            Box::pin(async move { self.event("finalize") })
+        }
+
+        fn fail_snapshot<'a>(&'a self, _: &'a SnapshotHandle, _: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move { self.event("fail snapshot") })
+        }
+
+        fn apply_template<'a>(
+            &'a self,
+            _: &'a ManagedTemplatePlan,
+        ) -> PortFuture<'a, TemplateMutation> {
+            Box::pin(async move {
+                self.event("template")?;
+                Ok(TemplateMutation::default())
+            })
+        }
+
+        fn rollback_template<'a>(&'a self, _: &'a TemplateMutation) -> PortFuture<'a, ()> {
+            Box::pin(async move { self.event("rollback template") })
+        }
+
+        fn update_note<'a>(
+            &'a self,
+            source: &'a CommitSource,
+            fields: &'a BTreeMap<String, String>,
+            _: &'a str,
+        ) -> PortFuture<'a, NoteMutation> {
+            Box::pin(async move {
+                self.event("update")?;
+                self.note_fields
+                    .lock()
+                    .unwrap()
+                    .insert(source.note_id, fields.clone());
+                Ok(NoteMutation {
+                    note_id: source.note_id,
+                    created: false,
+                })
+            })
+        }
+
+        fn create_note<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+            fields: &'a BTreeMap<String, String>,
+            _: &'a [String],
+        ) -> PortFuture<'a, NoteMutation> {
+            Box::pin(async move {
+                self.event("create")?;
+                let mut next = self.next_note.lock().unwrap();
+                let note_id = *next;
+                *next += 1;
+                self.note_fields
+                    .lock()
+                    .unwrap()
+                    .insert(note_id, fields.clone());
+                Ok(NoteMutation {
+                    note_id,
+                    created: true,
+                })
+            })
+        }
+
+        fn rollback_note<'a>(
+            &'a self,
+            mutation: &'a NoteMutation,
+            source: Option<&'a CommitSource>,
+        ) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.event("rollback note")?;
+                if mutation.created {
+                    self.note_fields.lock().unwrap().remove(&mutation.note_id);
+                } else if let Some(source) = source {
+                    self.note_fields
+                        .lock()
+                        .unwrap()
+                        .insert(source.note_id, source.fields.clone());
+                }
+                Ok(())
+            })
+        }
+    }
+
+    fn commit_request(mode: CardMode, dry_run: bool) -> CommitRequest {
+        let source = (mode == CardMode::Modernize).then(|| CommitSource {
+            note_id: 42,
+            model_name: "Legacy".into(),
+            fields: BTreeMap::from([("Expression".into(), "old".into())]),
+            tags: vec!["old".into()],
+        });
+        CommitRequest {
+            mode,
+            dry_run,
+            deck_key: "japanese_vocab".into(),
+            deck_name: "Japanese".into(),
+            target_model: "Linguist Japanese Vocabulary".into(),
+            source,
+            document: CardDocument {
+                schema_version: linguist_core::CONTRACT_VERSION,
+                expression: "新語".into(),
+                values: linguist_core::LogicalFields {
+                    meaning_text: Some("new meaning".into()),
+                    ..Default::default()
+                },
+                media: vec![linguist_core::MediaAsset {
+                    filename: "new.jpg".into(),
+                    data_base64: "bmV3".into(),
+                }],
+                obsolete_media: vec!["old.jpg".into()],
+                issues: vec![],
+                tags: vec!["new".into()],
+                provenance: BTreeMap::new(),
+            },
+            field_mapping: linguist_core::FieldMapping {
+                expression: Some("Expression".into()),
+                meaning_text: Some("Meaning".into()),
+                ..Default::default()
+            },
+            template_plan: ManagedTemplatePlan::NoChange,
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_dry_run_performs_no_external_mutation() {
+        let port = MockCommitPort::new();
+        assert!(matches!(
+            commit_card(&port, commit_request(CardMode::Inject, true)).await,
+            Ok(CommitOutcome::DryRun { .. })
+        ));
+        assert!(port.events.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn commit_orders_backup_snapshot_note_and_obsolete_media_last() {
+        for mode in [CardMode::Modernize, CardMode::Inject] {
+            let port = MockCommitPort::new();
+            let outcome = commit_card(&port, commit_request(mode, false))
+                .await
+                .unwrap();
+            assert!(matches!(outcome, CommitOutcome::Committed(_)));
+            let events = port.events.lock().unwrap().clone();
+            let index = |name: &str| events.iter().position(|event| event == name).unwrap();
+            assert!(index("backup") < index("capture"));
+            assert!(index("capture") < index("store"));
+            assert!(index("store") < index("template"));
+            assert!(
+                index("template")
+                    < index(if mode == CardMode::Modernize {
+                        "update"
+                    } else {
+                        "create"
+                    })
+            );
+            assert!(index("finalize") < index("delete"));
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_rolls_back_modernize_and_inject_failures_at_every_mutation_step() {
+        for mode in [CardMode::Modernize, CardMode::Inject] {
+            for phase in [
+                "backup",
+                "capture",
+                "store",
+                "template",
+                if mode == CardMode::Modernize {
+                    "update"
+                } else {
+                    "create"
+                },
+                "finalize",
+                "delete",
+            ] {
+                let port = MockCommitPort::new();
+                let media_before = port.media_state();
+                let notes_before = port.note_fields.lock().unwrap().clone();
+                port.fail(phase);
+                assert!(
+                    commit_card(&port, commit_request(mode, false))
+                        .await
+                        .is_err(),
+                    "{mode:?} {phase}"
+                );
+                assert_eq!(port.media_state(), media_before, "{mode:?} {phase}");
+                assert_eq!(
+                    *port.note_fields.lock().unwrap(),
+                    notes_before,
+                    "{mode:?} {phase}"
+                );
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct MockRestorePort {
+        media: Mutex<BTreeMap<String, String>>,
+        notes: Mutex<BTreeMap<i64, NoteInfo>>,
+        restored: Mutex<BTreeSet<String>>,
+        events: Mutex<Vec<String>>,
+    }
+
+    impl MockRestorePort {
+        fn with_note(note: NoteInfo) -> Self {
+            Self {
+                notes: Mutex::new(BTreeMap::from([(note.note_id, note)])),
+                ..Self::default()
+            }
+        }
+    }
+
+    impl MediaPort for MockRestorePort {
+        fn retrieve_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, Option<MediaFile>> {
+            Box::pin(async move {
+                Ok(self
+                    .media
+                    .lock()
+                    .unwrap()
+                    .get(filename)
+                    .cloned()
+                    .map(|data_base64| MediaFile {
+                        filename: filename.into(),
+                        data_base64,
+                    }))
+            })
+        }
+
+        fn store_media<'a>(&'a self, media: &'a MediaFile) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("store:{}", media.filename));
+                self.media
+                    .lock()
+                    .unwrap()
+                    .insert(media.filename.clone(), media.data_base64.clone());
+                Ok(())
+            })
+        }
+
+        fn delete_media<'a>(&'a self, filename: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("delete media:{filename}"));
+                self.media.lock().unwrap().remove(filename);
+                Ok(())
+            })
+        }
+    }
+
+    impl RestorePort for MockRestorePort {
+        fn snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, bool> {
+            Box::pin(async move { Ok(self.restored.lock().unwrap().contains(snapshot_id)) })
+        }
+
+        fn note_info<'a>(&'a self, note_id: i64) -> PortFuture<'a, Option<NoteInfo>> {
+            Box::pin(async move { Ok(self.notes.lock().unwrap().get(&note_id).cloned()) })
+        }
+
+        fn delete_notes<'a>(&'a self, note_ids: &'a [i64]) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("delete notes:{note_ids:?}"));
+                let mut notes = self.notes.lock().unwrap();
+                for note_id in note_ids {
+                    notes.remove(note_id);
+                }
+                Ok(())
+            })
+        }
+
+        fn restore_note<'a>(&'a self, original: &'a SnapshotOriginalNote) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                let note_id = original.note_id.expect("validated original note id");
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("restore:{note_id}"));
+                self.notes.lock().unwrap().insert(
+                    note_id,
+                    NoteInfo {
+                        note_id,
+                        model_name: ModelName(original.model_name.clone()),
+                        deck_names: vec![DeckName(original.deck_name.clone())],
+                        fields: original.fields.clone(),
+                        tags: original.tags.clone(),
+                    },
+                );
+                Ok(())
+            })
+        }
+
+        fn mark_snapshot_restored<'a>(&'a self, snapshot_id: &'a str) -> PortFuture<'a, ()> {
+            Box::pin(async move {
+                self.events.lock().unwrap().push("mark restored".into());
+                self.restored.lock().unwrap().insert(snapshot_id.into());
+                Ok(())
+            })
+        }
+    }
+
+    fn python_snapshot() -> SnapshotDocument {
+        serde_json::from_str(include_str!("../../../contracts/fixtures/snapshot.v1.json")).unwrap()
+    }
+
+    #[tokio::test]
+    async fn restore_python_snapshot_restores_mock_collection_once() {
+        let snapshot = python_snapshot();
+        let port = MockRestorePort::with_note(NoteInfo {
+            note_id: 42,
+            model_name: ModelName("Linguist Japanese Vocabulary".into()),
+            deck_names: vec![DeckName("Japanese".into())],
+            fields: BTreeMap::from([("Expression".into(), "new".into())]),
+            tags: vec!["new".into()],
+        });
+        port.media.lock().unwrap().extend(BTreeMap::from([
+            ("image.jpg".into(), "new-base64".into()),
+            ("new.mp3".into(), "new-audio".into()),
+        ]));
+
+        assert!(matches!(
+            restore_snapshot(&port, &snapshot).await,
+            Ok(RestoreOutcome::Restored {
+                restored_note_id: Some(42),
+                ..
+            })
+        ));
+        let restored = port.notes.lock().unwrap().get(&42).cloned().unwrap();
+        assert_eq!(restored.model_name.0, "Legacy Japanese");
+        assert_eq!(restored.deck_names, vec![DeckName("Japanese".into())]);
+        assert_eq!(restored.fields["Word"], "俳優");
+        assert_eq!(restored.tags, vec!["legacy"]);
+        assert_eq!(
+            port.media.lock().unwrap().get("image.jpg"),
+            Some(&"old-base64".into())
+        );
+        assert!(!port.media.lock().unwrap().contains_key("new.mp3"));
+        let state = (
+            port.media.lock().unwrap().clone(),
+            port.notes.lock().unwrap().clone(),
+            port.events.lock().unwrap().clone(),
+        );
+
+        assert_eq!(
+            restore_snapshot(&port, &snapshot).await,
+            Ok(RestoreOutcome::AlreadyRestored)
+        );
+        assert_eq!(port.media.lock().unwrap().clone(), state.0);
+        assert_eq!(port.notes.lock().unwrap().clone(), state.1);
+        assert_eq!(port.events.lock().unwrap().clone(), state.2);
+    }
+
+    #[tokio::test]
+    async fn restore_injection_removes_created_notes_and_media() {
+        let mut snapshot = python_snapshot();
+        snapshot.snapshot.original_note = None;
+        snapshot.snapshot.result_note_id = Some(88);
+        snapshot.snapshot.created_note_ids = vec![89, 88];
+        let port = MockRestorePort::with_note(note(88, &[("Expression", "new")]));
+        port.notes
+            .lock()
+            .unwrap()
+            .insert(89, note(89, &[("Expression", "sibling")]));
+        port.media
+            .lock()
+            .unwrap()
+            .insert("new.mp3".into(), "new-audio".into());
+
+        assert_eq!(
+            restore_snapshot(&port, &snapshot).await,
+            Ok(RestoreOutcome::Restored {
+                restored_note_id: None,
+                removed_note_ids: vec![88, 89],
+            })
+        );
+        assert!(port.notes.lock().unwrap().is_empty());
+        assert!(!port.media.lock().unwrap().contains_key("new.mp3"));
+    }
+
+    #[tokio::test]
+    async fn restore_blocks_native_snapshot_when_note_has_newer_write() {
+        let mut snapshot = python_snapshot();
+        snapshot.snapshot.extensions.insert(
+            NATIVE_POST_WRITE_EXTENSION.into(),
+            serde_json::to_value(PostWriteState {
+                note: PostWriteNote {
+                    note_id: 42,
+                    model_name: "Linguist Japanese Vocabulary".into(),
+                    deck_name: "Japanese".into(),
+                    fields: BTreeMap::from([("Expression".into(), "expected".into())]),
+                    tags: vec!["new".into()],
+                },
+                media: BTreeMap::new(),
+            })
+            .unwrap(),
+        );
+        let port = MockRestorePort::with_note(NoteInfo {
+            note_id: 42,
+            model_name: ModelName("Linguist Japanese Vocabulary".into()),
+            deck_names: vec![DeckName("Japanese".into())],
+            fields: BTreeMap::from([("Expression".into(), "edited later".into())]),
+            tags: vec!["new".into()],
+        });
+        let before = port.notes.lock().unwrap().clone();
+
+        assert!(matches!(
+            restore_snapshot(&port, &snapshot).await,
+            Err(RestoreError::Conflict { note_id: 42, .. })
+        ));
+        assert_eq!(*port.notes.lock().unwrap(), before);
+        assert!(port.events.lock().unwrap().is_empty());
+    }
+}

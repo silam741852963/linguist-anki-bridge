@@ -2,17 +2,13 @@
 name = "linguist-dictionary"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-linguist-core.workspace = true
+base64.workspace = true
+reqwest.workspace = true
+scraper.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-url.workspace = true
-linguist-config.workspace = true
-ammonia.workspace = true
-html-escape.workspace = true
-linguist-provider.workspace = true
-scraper.workspace = true
-percent-encoding.workspace = true
+tokio.workspace = true

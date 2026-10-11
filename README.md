@@ -1,49 +1,119 @@
+# Archived implementation (`legacy` branch)
+
+This branch holds the previous Rust/Qt GUI and Python/TUI applications, with their tests, contracts, packaging and historical docs. They were archived under `legacy/` on 2026-09-26 and moved to this branch's root on 2026-10-11. Nothing here is maintained.
+
+The current headless CLI and its Anki companion add-on live on [`main`](https://github.com/silam741852963/linguist-anki-bridge/tree/main). Development records (evidence, reviews, decisions, research) live on [`cli-dev`](https://github.com/silam741852963/linguist-anki-bridge/tree/cli-dev).
+
+Run old build and test commands from the repository root, for example `cargo metadata --offline --no-deps` and `PYTHONPATH=src .venv/bin/python -m pytest`. The PKGBUILDs build from this branch (`#branch=legacy`).
+
+---
+
 # Linguist Anki Bridge
 
-The new CLI design lives in **[docs/cli/](docs/cli/README.md)**. Start with its reading index, then load only the operation, algorithm, setting group or implementation package needed for the task.
+Version **0.0.1**. See
+[`docs/repository-state.md`](docs/repository-state.md) for the implemented
+architecture, workflows, storage boundaries, and current limitations.
 
-```sh
-python3 docs/cli/read.py OP-34
-python3 docs/cli/read.py ALG-RESTORE
-python3 docs/cli/read.py WP-11
-python3 docs/cli/read.py --setting llm.model
-python3 docs/cli/validate.py
+The new command-only implementation is specified in
+[`docs/cli-application-specification.md`](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/reference/application/README.md).
+Read it before implementing the CLI; it separates current Rust/Python behavior,
+target requirements, recommendations, and open decisions for user review.
+The [research and implementation plan](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/reference/research/README.md)
+adds current technology choices, read-only collection findings, and proposed v2
+standards for revamping and adding both vocabulary and grammar notes.
+
+Open-source Python application to bridge local Anki Desktop and Ollama with Crawl4AI web scrapers.
+Automates legacy card modernization (screenshot OCR -> Ollama annotations) and new vocabulary injection (dictionary parsing -> Ollama examples -> TTS audio fallback).
+
+## Features
+- **TUI & CLI**: Beautiful terminal user interface themed with Omarchy system colors (optional).
+- **Legacy Card Modernization**: Run multi-language OCR on screenshot images inside Anki cards and generate context/meanings via local Ollama.
+- **New Vocab Ingestion**: Ingest words interactively or via CSV (`word,language,type,note`). Passes custom contextual notes to Ollama.
+- **Grammar Modernization**: Extracts grammar from textbook screenshots (OCR) or grammar web pages (Crawl4AI) and builds standardized cards.
+- **Safety First**: Dry-run mode and previews are enabled by default. In write mode, each affected deck must be backed up successfully before its batch is changed.
+
+## Installation
+Requires `tesseract` and optional language packs (e.g. `tesseract-data-jpn`, `tesseract-data-vie`, `tesseract-data-deu`, `tesseract-data-chi_tra`).
+
+```bash
+# PKGBUILD will be published to AUR
+makepkg -si
 ```
 
-The existing Rust/Python application, tests, contracts, packaging, scripts and historical documentation are preserved in **[legacy/](legacy/README.md)**. Run its commands from that directory. Current implementation files retain their pre-move contents; the CLI specifications describe future behavior, not a completed replacement.
+For development, create a Python 3.11+ virtual environment and install the
+project with its test extras:
 
-The new Rust workspace builds a CLI (`linguist-anki-bridge` 0.1.0) without Qt or Python. It prepares, reviews, validates, approves and exports vocabulary and grammar cards, reads Anki through AnkiConnect, and keeps durable local plans, jobs, snapshots and recovery records. **Collection writes are not available in 0.1.0**: `apply`, `snapshots restore`, `jobs rollback`, `recover reconcile`, `backup create` and `models install` preview only, and their `--apply` forms exit 3 with `CAPABILITY_UNAVAILABLE`. The native companion transport does not exist yet, so no claim of a safe revamp of a real collection is made. The [release check](docs/cli/evidence/release-2026-10-05/README.md) records which release gates pass (scoped to Anki 25.09.2 disposable collections) and which are blocked. [Command examples for 0.1.0](docs/cli/examples/commands-v0.1.0.md) list what works. The [consolidated package record](docs/cli/implementation/packages.md) collects every work package's specification, audit and known limits, and the [final review](docs/cli/review/final-review-2026-10-05.md) lists the open issues for the full implementation.
-
-Release build (locked, reproducible, with checksums; nothing is installed):
-
-```sh
-python3 scripts/release-build.py --verify-reproducible   # dist/release/
-python3 scripts/release-check.py --msrv --release-build --benchmark
+```bash
+python -m pip install -e '.[test]'
+pytest
+linguist-anki-bridge --debug
 ```
 
-```sh
-cargo test --locked --workspace
-cargo run --locked -- --help
-cargo run --locked -- completions bash
-cargo run --locked -- doctor --local
-cargo run --locked -- doctor --ollama --offline
-cargo run --locked -- config show --defaults
-cargo run --locked -- --purpose japanese_grammar config show learning --provenance
-cargo run --locked -- document validate contracts/v2/fixtures/vocabulary.json
-cargo run --locked -- document render contracts/v2/fixtures/grammar.json
-cargo run --locked -- recover inspect --pending
-# Read-only Anki inspection (Anki + AnkiConnect must be running):
-cargo run --locked -- doctor
-cargo run --locked -- decks list --counts
-cargo run --locked -- models list
-cargo run --locked -- notes list --query '' --limit 10
-# Explicit media inspection: notes show NOTE_ID --media
-# Initial revamp source draft (requires configured purpose field mappings):
-cargo run --locked -- --purpose english_vocab --set llm.enabled=false \
-  --set dictionary.provider=authored --set images.search_when_missing=false \
-  vocab revamp --note-id NOTE_ID
+The additive native GUI preview is packaged separately as
+`linguist-anki-bridge-native`; it never replaces the Python executable. See
+[the native preview release guide](docs/native-preview-release.md) for Arch
+packaging, backup locations, and rollback instructions.
+
+Python 3.14 requires Crawl4AI 0.9.2 or newer so that pip can use lxml 6.
+If an earlier failed install cached dependency metadata, rerun the install with
+`--upgrade`.
+
+## Configuration and workflow
+
+Configuration is stored at
+`$XDG_CONFIG_HOME/linguist-anki-bridge/config.yaml` (or `~/.config/...`).
+Generated preview media is stored below
+`$XDG_CACHE_HOME/linguist-anki-bridge/media` and is not part of the project.
+
+1. Start Anki with AnkiConnect and start Ollama with at least one installed model.
+2. Map one or more deck keys in the setup screen. Supported keys are
+   `japanese_vocab`, `japanese_grammar`, `english_vocab`, `english_grammar`,
+   `taiwanese_vocab`, `taiwanese_grammar`, `german_vocab`, and
+   `german_grammar`.
+3. Preview individual cards, keep dry-run enabled while checking output, then
+   disable dry-run when ready. A failed pre-write backup aborts writes for that
+   deck.
+
+Single-word and CSV injection check the mapped Anki deck before doing any
+enrichment. An exact existing expression is fetched and routed through the
+same preview/modernization pipeline as a scanned legacy card; only a genuinely
+new expression becomes an Inject item. The unified queue's Mode column makes
+that decision visible before processing or committing.
+
+The input screen uses NORMAL/INSERT navigation: `i` or `a` enters INSERT,
+`Esc` returns to NORMAL, `j`/`k` changes fields, `h`/`l` changes tabs, `:w`
+resolves and enqueues, and `:q` cancels.
+
+For large migrations press `b` to open the durable Batch Jobs screen. Jobs can
+be created from the visible Cards list or the entire active deck, paused,
+resumed after a crash, retried, cancelled, and reverted as one operation. See
+the [batch modernization operations manual](docs/batch-modernization.md).
+
+CSV injection requires a `word` header and accepts optional `language`, `type`,
+and `note` columns. Language aliases such as `japanese` select the corresponding
+vocabulary deck; explicit deck keys may also be used.
+
+If startup services are offline, verify the configured AnkiConnect and Ollama
+URLs. An empty mapped deck is valid and opens as an empty queue. Dictionary,
+image, and TTS failures are reported per card and do not imply that Anki itself
+is offline.
+
+## Japanese vocabulary card template
+
+The project includes a responsive Japanese-first Anki note type designed for
+the five values the bridge produces. With Anki and AnkiConnect running, install
+or safely refresh it with:
+
+```bash
+linguist-anki-bridge --install-japanese-template
 ```
 
-Structured input can be piped or redirected into `vocab add --document -` or `grammar add --document -`. Supply one v2 JSON record; both commands stage a local plan. Current authored preparation requires disabled generation/image search and `dictionary.provider=authored` as described in the implementation status. `document validate -` and `document digest -` also accept piped JSON.
+The command creates `Linguist Japanese Vocabulary` with **Comprehension**,
+**Spelling**, and **Production** cards; it will not overwrite an unrelated note
+type with different fields. Map Japanese Vocabulary in Settings
+to `Expression`, `Picture`, `Meaning`, `Kanji`, and `Audio` as printed by the
+installer. Existing notes are not converted automatically. See
+[`docs/japanese-card-template.md`](docs/japanese-card-template.md) for the
+layout and migration guidance.
 
-See [implementation status](docs/cli/implementation/status.md) for package progress and known limitations. Git history, repository metadata and the project license remain at root.
+The proposed CLI implementation is specified in the [implementation handbook](https://github.com/silam741852963/linguist-anki-bridge/blob/main/docs/cli/README.md), including all command logic, typed settings, write/recovery rules and delivery work packages. This documentation describes the target implementation; it does not claim the current application implements those guarantees.

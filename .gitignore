@@ -45,4 +45,4 @@ htmlcov/
 *.apkg
 
 # Personal deck names and schema mappings used during local GUI development
-/legacy/local-deck-mappings.json
+/local-deck-mappings.json

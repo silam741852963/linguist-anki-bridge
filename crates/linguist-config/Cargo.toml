@@ -2,20 +2,10 @@
 name = "linguist-config"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 license.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-linguist-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-toml.workspace = true
-yaml-rust2.workspace = true
-url.workspace = true
-uuid.workspace = true
-
-[build-dependencies]
-serde_json.workspace = true
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
+serde_yaml_ng.workspace = true
