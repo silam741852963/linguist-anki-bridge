@@ -4,7 +4,7 @@
 
 - `--help` and error guidance describe companion writes as available: `apply`, `snapshots`, `jobs`, `recover`, `plans`, `doctor`, `models` and `backup` no longer say writes are "unavailable until the native adapter is verified". The `CAPABILITY_UNAVAILABLE` hint names the released `linguist-bridge-*.ankiaddon` and Anki 25.09.2.
 - Work-package records name the release-check, traceability and check-dev scripts on the `cli-dev` branch.
-- Full release check rerun on the split repository.
+- Full release check rerun on the split repository ([evidence](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-11-v0.2.1/README.md)): every command passes, 633 workspace tests and all ten desktop scenarios; 13 of 14 gates pass, EV-02 stays blocked (`EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE`).
 
 ## 0.2.0 — 2026-10-11
 

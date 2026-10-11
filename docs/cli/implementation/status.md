@@ -18,6 +18,6 @@ Later packages, each with its completion audit and known limits: [WP-18](wp-18.m
 
 ## Evidence
 
-- [Release check 2026-10-11](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-11/README.md): 13 of 14 gates pass; EV-02 is blocked (`EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE`). The gate registry is [`resources/release-gates.json`](../../../resources/release-gates.json), embedded in the binary and reported by `doctor`.
+- [Release check 2026-10-11 (0.2.1)](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-11-v0.2.1/README.md): 13 of 14 gates pass; EV-02 is blocked (`EV02_NONDEFAULT_CONSUMER_TESTS_INCOMPLETE`). The gate registry is [`resources/release-gates.json`](../../../resources/release-gates.json), embedded in the binary and reported by `doctor`.
 - [Implementation pass review](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/review/implementation-pass-2026-10-06.md): review issues RI-01–RI-08 and what is proven against real Anki.
 - [Invariant ownership](invariant-test-ownership.md), [operation coverage](op-coverage.md), [traceability](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/review/traceability.md), [setting coverage](../configuration/setting-coverage.md).

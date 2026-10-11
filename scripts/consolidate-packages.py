@@ -91,7 +91,7 @@ def render():
         "full-implementation pass. The per-package files remain the source of truth; edit them and regenerate.", "",
         "Related records: [final review](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/review/final-review-2026-10-05.md), [implementation pass review](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/review/implementation-pass-2026-10-06.md), [traceability](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/review/traceability.md), "
         "[operation coverage](op-coverage.md), [invariant ownership](invariant-test-ownership.md), "
-        "[setting coverage](../configuration/setting-coverage.md), [release check](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-11/README.md), "
+        "[setting coverage](../configuration/setting-coverage.md), [release check](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-11-v0.2.1/README.md), "
         "[implementation status](status.md).", "",
         "## Current state", "",
         "The headless CLI prepares, reviews, validates, approves and exports vocabulary and grammar cards, reads Anki "
