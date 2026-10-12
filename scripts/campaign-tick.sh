@@ -21,12 +21,23 @@ KEY="$HOME/.config/linguist-anki-bridge/ankiconnect-api-key"
 [ -z "${ANKICONNECT_API_KEY:-}" ] && [ -r "$KEY" ] && export ANKICONNECT_API_KEY=$(cat "$KEY")
 
 # Local services the pipeline needs; a missing one only makes batches wait.
+# They run as their own transient user units: processes left in this
+# oneshot service would be stopped with it.
+launch() {
+  local name=$1; shift
+  if command -v systemd-run > /dev/null; then
+    systemctl --user reset-failed "$name.service" 2> /dev/null
+    systemd-run --user --unit="$name" --collect "$@" >> "$LOG" 2>&1
+  else
+    setsid nohup "$@" > "$STATE/$name.log" 2>&1 &
+  fi
+}
 if [ "${LAB_START_VOICEVOX:-0}" = 1 ] && ! curl -fs -m 2 http://127.0.0.1:50021/version > /dev/null; then
-  log "starting VOICEVOX"; setsid nohup /usr/lib/VOICEVOX/vv-engine/run > "$STATE/voicevox.log" 2>&1 &
+  log "starting VOICEVOX"; launch linguist-voicevox /usr/lib/VOICEVOX/vv-engine/run
   sleep 20
 fi
 if [ "${LAB_START_ANKI:-0}" = 1 ] && ! curl -fs -m 2 http://127.0.0.1:8765 > /dev/null; then
-  log "starting Anki"; setsid nohup /usr/bin/python3.14 /usr/bin/anki > "$STATE/anki.log" 2>&1 &
+  log "starting Anki"; launch linguist-anki /usr/bin/python3.14 /usr/bin/anki
   sleep 60
 fi
 

@@ -243,6 +243,91 @@ impl Context<'_> {
         }
     }
 
+    fn reenrich(
+        &self,
+        record: &BatchRecord,
+        data: &mut BatchData,
+        plan: &str,
+    ) -> Result<Result<Vec<String>, Step>, String> {
+        let shown = self.plan_show(data, false)?;
+        let mut exhausted = Vec::new();
+        let mut targets = Vec::new();
+        for document in shown["documents"].as_array().into_iter().flatten() {
+            let outage = document["issues"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|i| {
+                    i["code"] == "AUDIO_SYNTHESIS_FAILED"
+                        && i["message"]
+                            .as_str()
+                            .is_some_and(|m| m.contains("UNAVAILABLE"))
+                });
+            let has_audio = document["media"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|m| m["role"] == "audio");
+            let Some(id) = document["id"].as_str() else {
+                continue;
+            };
+            if outage && !has_audio {
+                targets.push(id.to_owned());
+            }
+        }
+        for id in targets {
+            let tries = data
+                .settled
+                .iter()
+                .filter(|s| *s == &format!("reenrich:{id}"))
+                .count();
+            if tries >= 3 {
+                if let Some(note) = self.note_of(data, &id) {
+                    exhausted.push(note);
+                }
+                continue;
+            }
+            let head = self.plan_show(data, true)?;
+            let rev = head["revision"].to_string();
+            let digest = head["digest"].as_str().unwrap_or_default().to_owned();
+            let out = self.cli(
+                data,
+                s(&[
+                    "plans",
+                    "regenerate",
+                    plan,
+                    "--stage",
+                    "enrichment",
+                    "--item-id",
+                    &id,
+                    "--base-revision",
+                    &rev,
+                    "--digest",
+                    &digest,
+                    "--use-current-settings",
+                ]),
+            )?;
+            if out.json.is_null() {
+                if out.unavailable() {
+                    return Ok(Err(Step::Waiting(out.error())));
+                }
+                return Err(out.error());
+            }
+            data.settled.push(format!("reenrich:{id}"));
+            self.save(
+                record,
+                &record.phase,
+                data,
+                json!("enrichment run again after a service outage"),
+            )?;
+            return Ok(Err(Step::Moved(format!(
+                "batch {}: item {id} enriched again after a service outage",
+                record.batch
+            ))));
+        }
+        Ok(Ok(exhausted))
+    }
+
     /// The batch's plan or archive is over the frozen size limits.
     fn too_big(out: &Output) -> bool {
         matches!(
@@ -359,6 +444,12 @@ impl Context<'_> {
             data.settled.push("merge:added".into());
             return self.moved(record, &record.phase, &data, "merged notes' content added");
         }
+        // Audio is required on every card (WP-20): enrichment that found a
+        // synthesis service down is run again, up to three times per item.
+        let exhausted = match self.reenrich(record, &mut data, &plan)? {
+            Ok(exhausted) => exhausted,
+            Err(step) => return Ok(step),
+        };
         let policy = {
             let source = self.source(&data)?;
             let path = super::source_policy_path(&self.definition.policy_path, &source.id);
@@ -452,6 +543,13 @@ impl Context<'_> {
                 "MERGE_CONFIRM: confirm that {} hold the same word as this survivor, then mark it settled; otherwise skip the batch",
                 data.merge.join(", ")
             ));
+        }
+        for note in exhausted {
+            if !data.deferred.contains_key(&note) {
+                data.needs.entry(note).or_default().push(
+                    "AUDIO_SYNTHESIS_UNAVAILABLE: start VOICEVOX, then `plans regenerate --stage enrichment` for this item, or defer it".into(),
+                );
+            }
         }
         for note in &data.split_candidates {
             if !data.settled.contains(note) && !data.deferred.contains_key(note) {

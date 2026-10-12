@@ -113,6 +113,10 @@ struct World {
     drafts: usize,
     /// A prepare job with more notes cannot publish its plan.
     max_notes: Option<usize>,
+    /// Notes whose audio synthesis found the service down, and how many
+    /// enrichment runs it takes until it is back.
+    outage: BTreeMap<String, u32>,
+    reenriched: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -159,6 +163,8 @@ impl FakeCli {
             let mut v = json!({"revision": p.revision, "digest": format!("d{}", p.revision), "issues": open, "grammar_groups": []});
             if !issues_only {
                 v["documents"] = p.notes.iter().map(|n| json!({"id": doc(n),
+                    "issues": if w.outage.get(n).is_some_and(|left| *left > 0) { json!([{"code": "AUDIO_SYNTHESIS_FAILED", "message": "VOICEVOX_UNAVAILABLE: engine down; no audio candidate was staged. Audio is optional."}]) } else { json!([]) },
+                    "media": [],
                     "sources": [{"location": format!("anki_note:{n}")}],
                     "reviews": if p.decided.contains(n) { json!([{"actor": if w.agent_decided.contains(n) { "claude-agent" } else { "campaign-policy" }}]) } else { json!([]) }})).collect();
             }
@@ -222,6 +228,29 @@ impl FakeCli {
                     json: json!({"ready": ready, "policy": {"decided": todo.len(), "undecided": undecided}}),
                     stderr: String::new(),
                 }
+            }
+            [
+                "plans",
+                "regenerate",
+                plan,
+                "--stage",
+                "enrichment",
+                "--item-id",
+                item,
+                ..,
+            ] => {
+                let note = w.plans[*plan]
+                    .notes
+                    .iter()
+                    .find(|n| doc(n) == *item)
+                    .cloned()
+                    .unwrap();
+                w.reenriched.push(note.clone());
+                if let Some(left) = w.outage.get_mut(&note) {
+                    *left = left.saturating_sub(1);
+                }
+                w.plans.get_mut(*plan).unwrap().revision += 1;
+                ok(json!({"revision": 0}))
             }
             ["plans", "generate", plan, ..] => {
                 let drafts = std::mem::take(&mut w.drafts);
@@ -804,4 +833,43 @@ fn a_batch_over_the_size_limit_is_split_until_it_fits() {
     let w = cli.world.lock().unwrap();
     assert_eq!(w.applied.len(), 4);
     assert!(w.applied.values().all(|n| *n == 1));
+}
+
+#[test]
+fn audio_lost_to_a_service_outage_is_enriched_again_then_left_to_the_agent() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-outage-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.outage.insert("101".into(), 1); // back after one more run
+        w.outage.insert("102".into(), 9); // stays down
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    assert_eq!(phases(&root, id), ["needs_agent"]);
+    let w = cli.world.lock().unwrap();
+    assert_eq!(w.reenriched.iter().filter(|n| *n == "101").count(), 1);
+    assert_eq!(
+        w.reenriched.iter().filter(|n| *n == "102").count(),
+        3,
+        "three runs, then the agent"
+    );
+    drop(w);
+    let status =
+        campaign::engine::status(&linguist_store::Store::read_only(&root).unwrap(), id, 0).unwrap();
+    assert!(
+        status["agent"][0]["needs"]["102"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("AUDIO_SYNTHESIS_UNAVAILABLE")
+    );
 }
