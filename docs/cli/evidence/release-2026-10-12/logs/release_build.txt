@@ -1,0 +1,6 @@
+$ python3 scripts/release-build.py --verify-reproducible --clean
+exit 0
+
+{"archive": "<repo>/dist/release/linguist-anki-bridge-0.3.0-x86_64-unknown-linux-gnu.tar.gz", "manifest": "<repo>/dist/release/build-manifest.json", "binary_sha256": "dc4773ea2fd7eb78e000433c3b19ca058e0cca9583c29aa3920b11e6b6fd4112", "reproducible": true}
+
+--- stderr ---

@@ -1,0 +1,31 @@
+vocab_split
+scenario vocab_split
+models install japanese_vocab --apply -> 0
+vocab revamp --note-id 1791785417518 -> 4
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --issues-only -> 0
+plans split-vocab aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --template ade2579a-de0a-48b9-95d1-8fa9d2d36604 -> 0
+plans split-vocab aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --request /tmp/lab-desk-6e4026e1/vocab-split.json -> 4
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f -> 0
+plans edit aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --base-revision 2 --patch /tmp/lab-desk-6e4026e1/units.patch.json --save-draft -> 4
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --issues-only -> 0
+plans resolve-history aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --item ade2579a-de0a-48b9-95d1-8fa9d2d36604 --map 0=comprehension --actor desktop-scenario -> 4
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --issues-only -> 0
+plans resolve aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f SOURCE_HTML_TEXT_REVIEW:expression --decision /tmp/lab-desk-6e4026e1/decision-acb17144-5624-4fe0-8d37-9441797c246f.json -> 4
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --issues-only -> 0
+plans resolve aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f SOURCE_HTML_TEXT_REVIEW:pronunciation --decision /tmp/lab-desk-6e4026e1/decision-25177541-3cd8-40fd-84c7-11a0027bb259.json -> 4
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --issues-only -> 0
+plans resolve aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-6e4026e1/decision-28774524-48b4-449b-82b5-f936549fe5f4.json -> 4
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --issues-only -> 0
+plans resolve aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f SOURCE_HTML_TEXT_REVIEW:expression --decision /tmp/lab-desk-6e4026e1/decision-3adc06a1-a329-48e7-b2d8-24c03537ef6e.json -> 4
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --issues-only -> 0
+plans resolve aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f SOURCE_HTML_TEXT_REVIEW:pronunciation --decision /tmp/lab-desk-6e4026e1/decision-cb31bff9-1b95-485d-aff3-18fa707cec7a.json -> 4
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --issues-only -> 0
+plans resolve aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f GRAMMAR_SPLIT_NATIVE_REVIEW:document --decision /tmp/lab-desk-6e4026e1/decision-8bd86a7b-1504-4fb2-95c9-1b5b13679706.json -> 0
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --issues-only -> 0
+plans show aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f -> 0
+plans bind aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --digest lab-jcs-v1:plan:784ddb26d95a4d270bdddc61c33f10b6d4e4cd4fd47db94b950e73f78d6d6c9d -> 0
+plans validate aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --revision 11 -> 0
+plans approve aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --revision 11 --digest lab-jcs-v1:plan:5fa84ec6c4749e921fd68ea91b3c181c18955cfe840f60aba69d495375ea64d5 --actor desktop-scenario -> 0
+apply aad1bebc-35b8-4fcd-8505-9f3cd1d21c3f --revision 11 --split-group 581507e3-155b-4b02-875e-54fd194e21b4 --accept-schema-change --apply -> 0
+jobs rollback f8fde426-a242-4921-a968-fa756388eced --accept-schema-change --delete-unstudied-created --apply -> 0
+rollback -> {"checkpoint_id":"17c18137-ca5b-4c4a-b44a-ad34107595ac","collection_writes_enabled":true,"group_id":"f8fde426-a242-4921-a968-fa756388eced","items":[{"restore":{"issues":[],"kept_created_notes":[],"next_command":null,"receipt":{"deleted_note_ids":[],"evidence_digest":"1af92dd1e01e53a2f18cd21309455d7a3191d6450a656c4eb56b6a92640c5dc9","history_digest":"9c9c898f6cc4bf22ec3126d28b7fd90700af28bfc69fe2de676ce0e78fcd82bd","kept_card_ids":[1791785417518],"lineage_id":"9986a1c8-42ab-4a76-8dfe-ee93de16010e","note_id":1791785417518,"observed_state_digest":"4231c1c6e2d65d4590fb99b1dd9fbdd24a4285c402049dc2194f9617f3100f60","removed_card_ids":[],"restore_operation":"e89572ea-21b5-451a-bbd3-80508e6e5ffa","restored_media":[],"schema_version":1,"session_epoch":"b30569e1-0ae8-4d66-8aa5-c2a3116f918f","target_operation":"fc457bbf-a963-40eb-95dd-38a60dd55c82","target_snapshot":"462018af-1d86-4ee9-86a7-1e2eac2bf302"},"restore_operation":"e89572ea-21b5-451a-bbd3-80508e6e5ffa","resumed":false,"snapshot_id":"462018af-1d86-4ee9-86a7-1e2eac2bf302","state":"committed","target_operation":"fc457bbf-a963-40eb-95dd-38a60dd55c82","target_state":"restored"}},{"restore":{"issues":[],"kept_created_notes":[],"next_command":null,"receipt":{"deleted_note_ids":[1791785422770],"evidence_digest":"08485f3aa5505d986421680ded8ae3ab3c164b1aa7e40aa9eda1eea624d47e13","history_digest":"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945","kept_card_ids":[],"lineage_id":"9986a1c8-42ab-4a76-8dfe-ee93de16010e","note_id":null,"observed_state_digest":"0c66b27fdf917a39e697341194b7c18314a9cb666745e4a1cbb8642b3bebd9da","removed_card_ids":[],"restore_operation":"196e1d67-17f1-4c94-b849-58d7a3b07d84","restored_media":[],"schema_version":1,"session_epoch":"b30569e1-0ae8-4d66-8aa5-c2a3116f918f","target_operation":"8aafbc39-7e87-44d0-a169-17e5593cb41d","target_snapshot":"f5366865-64dd-49d4-a31f-a0ae9a437885"},"restore_operation":"196e1d67-17f1-4c94-b849-58d7a3b07d84","resumed":false,"snapshot_id":"f5366865-64dd-49d4-a31f-a0ae9a437885","state":"committed","target_operation":"8aafbc39-7e87-44d0-a169-17e5593cb41d","target_state":"restored"}}],"mode":"rollback","schema_version":2}

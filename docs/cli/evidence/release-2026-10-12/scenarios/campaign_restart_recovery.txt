@@ -1,0 +1,47 @@
+campaign_restart_recovery
+scenario campaign
+models install japanese_vocab --apply -> 0
+campaign create --spec /tmp/lab-desk-47e7db52/campaign-spec.json -> 0
+campaign run 0a83302a-46bd-441f-b016-ff281583f6b5 --max-seconds 600 -> 0
+tick -> "idle"
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+plans show 9efec641-c709-4a88-ac70-72fad58cba2d -> 0
+plans edit 9efec641-c709-4a88-ac70-72fad58cba2d --base-revision 2 --patch /tmp/lab-desk-47e7db52/patch-d1a98089-d866-4eca-b14d-8d18582928a5.json --save-draft -> 4
+plans show cb698d94-df32-4ffa-989b-1d0522679920 -> 0
+plans edit cb698d94-df32-4ffa-989b-1d0522679920 --base-revision 2 --patch /tmp/lab-desk-47e7db52/patch-db4ea07e-1a7b-44b5-930b-e4afd1873225.json --save-draft -> 4
+campaign run 0a83302a-46bd-441f-b016-ff281583f6b5 --max-seconds 600 -> 0
+tick -> "idle"
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+campaign approve 0a83302a-46bd-441f-b016-ff281583f6b5 1 --actor scenario-agent -> 0
+campaign approve 0a83302a-46bd-441f-b016-ff281583f6b5 2 --actor scenario-agent -> 0
+campaign run 0a83302a-46bd-441f-b016-ff281583f6b5 --max-seconds 600 -> 5
+tick -> "CAMPAIGN_PILOT_REVIEW"
+campaign resume 0a83302a-46bd-441f-b016-ff281583f6b5 --by-user -> 0
+campaign run 0a83302a-46bd-441f-b016-ff281583f6b5 --max-seconds 600 -> 0
+tick -> "idle"
+campaign run 0a83302a-46bd-441f-b016-ff281583f6b5 --max-seconds 600 -> 0
+tick -> "idle"
+anki down -> {"campaign":"0a83302a-46bd-441f-b016-ff281583f6b5","pruned":[],"steps":[{"batch":2,"step":"Waiting(\"ANKI_DEPENDENCY_UNAVAILABLE\")"}],"stopped":"idle"}
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+plans show 0550bb21-9aaa-49b4-8640-c97a4caf72a4 -> 0
+plans edit 0550bb21-9aaa-49b4-8640-c97a4caf72a4 --base-revision 2 --patch /tmp/lab-desk-47e7db52/patch-890724b9-c211-48c1-bfb0-6b785e849c7d.json --save-draft -> 4
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+campaign run 0a83302a-46bd-441f-b016-ff281583f6b5 --max-seconds 600 -> 0
+tick -> "idle"
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+campaign approve 0a83302a-46bd-441f-b016-ff281583f6b5 3 --actor scenario-agent -> 0
+campaign item 0a83302a-46bd-441f-b016-ff281583f6b5 4 1791784951392 --settled -> 0
+plans show 92230979-89e5-49e2-a567-215e0750385e -> 0
+plans edit 92230979-89e5-49e2-a567-215e0750385e --base-revision 3 --patch /tmp/lab-desk-47e7db52/patch-06661adf-48f6-460f-9f03-f00f53fde692.json --save-draft -> 4
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+campaign run 0a83302a-46bd-441f-b016-ff281583f6b5 --max-seconds 600 -> 0
+tick -> "idle"
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+campaign approve 0a83302a-46bd-441f-b016-ff281583f6b5 4 --actor scenario-agent -> 0
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+campaign run 0a83302a-46bd-441f-b016-ff281583f6b5 --max-seconds 600 -> 0
+tick -> "idle"
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+campaign status 0a83302a-46bd-441f-b016-ff281583f6b5 -> 0
+notes restore-merged 1791784951318 --apply -> 0

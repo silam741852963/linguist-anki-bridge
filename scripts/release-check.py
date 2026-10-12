@@ -313,7 +313,8 @@ def main():
 
     expected_scenarios = {"vocab_add", "grammar_add", "vocab_revamp", "vocab_revamp_home_deck",
                           "grammar_split", "grammar_split_crash", "native_faults",
-                          "identity_preconditions", "batch_vocab_revamp", "vocab_split"}
+                          "identity_preconditions", "batch_vocab_revamp", "vocab_split",
+                          "campaign_restart_recovery"}
     scenarios_ok = r.ok("scenarios") and set(scenario_names) == expected_scenarios
     addon_sha = sha256(addon.read_bytes()) if addon.exists() else "missing"
     faults = (out / "scenarios" / "native_faults.txt").read_text() \
@@ -346,7 +347,7 @@ def main():
                 assertion("companion ledger, payload and protocol tests", r.ok("python_companion"), "Anki-free"),
                 assertion("controls, owner fences and serialized mutations over a real Anki collection", r.ok("python_companion_anki"), "Anki " + matrix["anki"]),
                 assertion("transport is fail-closed: unverified build, no key, no session", r.ok("native_transport"), "scripted endpoint"),
-                assertion("companion installed through Anki's add-on installer registers all 7 actions/variants in real AnkiConnect with API key", scenarios_ok, "dist/linguist-bridge.ankiaddon sha256 " + addon_sha),
+                assertion("companion installed through Anki's add-on installer registers all 7 actions and 9 variants in real AnkiConnect with API key", scenarios_ok, "dist/linguist-bridge.ankiaddon sha256 " + addon_sha),
             ], blocked=None),
         "EV-04": dict(
             keys=["python_companion_anki", "scenarios"],
@@ -385,6 +386,7 @@ def main():
                 assertion("ENOSPC at the ledger boundary: failed before write, retry commits", "disk full" in faults, "native_faults (injected ENOSPC, not a full filesystem)"),
                 assertion("removed marker: absence unproven, stays in recovery", "removed marker" in faults, "native_faults"),
                 assertion("apply job: crash mid-job reconciled, old-session checkpoint stops the job, follow-up job applies the rest, rollback per job", "batch_vocab_revamp" in scenario_names and r.ok("scenarios"), "batch_vocab_revamp scenario (WP-21)"),
+                assertion("campaign: pilot pause, Anki crash inside an apply job, restart, reconcile, follow-up job, verification, duplicate merge and restore", "campaign_restart_recovery" in scenario_names and r.ok("scenarios"), "campaign_restart_recovery scenario (WP-24)"),
             ], blocked=None),
         "EV-08": dict(
             keys=["semantic_corpus", "native_inspection", "scenarios"],

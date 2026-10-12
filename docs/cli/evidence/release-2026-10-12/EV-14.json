@@ -1,0 +1,164 @@
+{
+ "schema_version": 1,
+ "gate_id": "EV-14",
+ "status": "pass",
+ "version_matrix": {
+  "linguist-anki-bridge": "0.3.0",
+  "git_commit": "49d34f9324355232fea5d2af7c821bb8598fcbdf",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Arch Linux rust 1:1.99.0-1)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)",
+  "rust_msrv_declared": "1.98.1",
+  "python": "Python 3.15.0",
+  "anki_python": "Python 3.14.8",
+  "anki": "25.09.2 3d813c83",
+  "node": "v26.11.1",
+  "tesseract": "tesseract 5.5.3",
+  "tesseract_languages": "eng,jpn,osd,vie",
+  "ollama": "0.40.2",
+  "kernel": "Linux 7.2.8-5-omarchy-bore",
+  "crate:ammonia": "4.2.0",
+  "crate:clap": "4.6.7",
+  "crate:image": "0.25.10",
+  "crate:libsqlite3-sys": "0.38.2",
+  "crate:reqwest": "0.13.5",
+  "crate:rusqlite": "0.40.2",
+  "crate:rustls": "0.23.45",
+  "crate:schemars": "1.2.2",
+  "crate:serde": "1.0.229",
+  "crate:serde_jcs": "0.2.0",
+  "crate:serde_json": "1.0.151",
+  "crate:symphonia": "0.6.1",
+  "crate:toml": "0.9.12+spec-1.1.0",
+  "crate:uuid": "1.26.1",
+  "crate:yaml-rust2": "0.13.0",
+  "crate:zip": "8.6.0",
+  "crate:zstd": "0.14.0"
+ },
+ "fixture_hashes": {
+  "crates/linguist-cli/tests/desktop_scenarios.rs": "c971f3edfdd5f95832c9f9342ce7a5a9eaaad1bbe20c363f60d927d2bb91ea18",
+  "scripts/disposable-anki-desktop.py": "622dc4e88a32ed55c04b0633b4a85ced0e32c0b9d1d78b9adfd6f43221a4e132"
+ },
+ "commands": [
+  {
+   "redacted_argv": [
+    "cargo",
+    "build",
+    "--locked",
+    "-p",
+    "linguist-cli"
+   ],
+   "invocation_digest": "a0fa114f6102ca799a3397e7dd51a2a8b69db738aedb28338d4434313632678d",
+   "exit_code": 0,
+   "output_digest": "4f16124a683d4e58080460dcdee40b7b0478d2b3541db347b24f9afd4d3a023d"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "tree",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "-e",
+    "normal,build",
+    "--prefix",
+    "none",
+    "--format",
+    "{p}"
+   ],
+   "invocation_digest": "63f46152fef7ce228d8689ee24de8591e04e5316b6de5674d61dd29368670dc7",
+   "exit_code": 0,
+   "output_digest": "d7c24ed2b9cd274bb695cf9958895bba4da3dc7ccd6fbd990010936fdadddbaf"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "release_ux",
+    "--test",
+    "release_coverage"
+   ],
+   "invocation_digest": "43667525d575e37c30a3d497e167b00eb2ddf902aaafc836ff785fb4c5f67481",
+   "exit_code": 0,
+   "output_digest": "4824c055fd392a43b8bbdc35b0a60b9565e97e8fbda5c4f08c240a356719cab3"
+  },
+  {
+   "redacted_argv": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "linguist-cli",
+    "--test",
+    "desktop_scenarios",
+    "--",
+    "--ignored",
+    "--test-threads",
+    "1",
+    "--nocapture"
+   ],
+   "invocation_digest": "20e337ed703325bbbeaa96024788d83947d339a8c7c750ec1d6b4d1c5b2de29c",
+   "exit_code": 0,
+   "output_digest": "401eee0f678873465c5ac13f9b5398198212f4c898cbd5df884e283cb9484cf1"
+  },
+  {
+   "redacted_argv": [
+    "python3",
+    "scripts/op-coverage.py",
+    "--check"
+   ],
+   "invocation_digest": "bfafddb55b9cef0b4e49519011f5292c039e53129923e1368e022516f7157f05",
+   "exit_code": 0,
+   "output_digest": "d8760763be63067f00789fcf42648cb7e89259b37690e733415676ec0b8b6596"
+  }
+ ],
+ "assertions": [
+  {
+   "name": "headless build without Qt",
+   "passed": true,
+   "observed": "0 Qt crates"
+  },
+  {
+   "name": "fresh-home, pipes, Unicode, SSH, interrupts, limits",
+   "passed": true,
+   "observed": "release_ux + release_coverage"
+  },
+  {
+   "name": "all 61 operations have command-level tests",
+   "passed": true,
+   "observed": "docs/cli/implementation/op-coverage.md"
+  },
+  {
+   "name": "four workflows prepare->review->apply->restore in disposable Anki",
+   "passed": true,
+   "observed": "batch_vocab_revamp, campaign_restart_recovery, grammar_add, grammar_split, grammar_split_crash, identity_preconditions, native_faults, vocab_add, vocab_revamp, vocab_revamp_home_deck, vocab_split"
+  },
+  {
+   "name": "every step is a CLI command (plans bind, resolve-history, apply/restore/rollback --apply)",
+   "passed": true,
+   "observed": "desktop_scenarios; the test only creates source notes, studies and observes"
+  }
+ ],
+ "artifact_refs": [
+  "docs/cli/evidence/release-2026-10-12/logs/build.txt",
+  "docs/cli/evidence/release-2026-10-12/logs/op_coverage.txt",
+  "docs/cli/evidence/release-2026-10-12/logs/qt_tree.txt",
+  "docs/cli/evidence/release-2026-10-12/logs/scenarios.txt",
+  "docs/cli/evidence/release-2026-10-12/logs/ux.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/batch_vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/campaign_restart_recovery.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/grammar_add.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/grammar_split.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/grammar_split_crash.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/identity_preconditions.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/native_faults.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/vocab_add.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/vocab_revamp.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/vocab_revamp_home_deck.txt",
+  "docs/cli/evidence/release-2026-10-12/scenarios/vocab_split.txt"
+ ],
+ "failure_code": null
+}

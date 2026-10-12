@@ -1,0 +1,6 @@
+$ python3 docs/cli/validate.py
+exit 0
+
+PASS: 173 settings/29 groups; 82 operations, 19 algorithms, 24 packages; 73 Markdown files; routes, presets, links and defaults valid.
+
+--- stderr ---

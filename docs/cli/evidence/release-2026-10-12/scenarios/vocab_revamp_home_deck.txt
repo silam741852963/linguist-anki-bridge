@@ -1,0 +1,17 @@
+vocab_revamp_home_deck
+scenario vocab_revamp_home_deck
+models install english_vocab --apply -> 0
+vocab revamp --note-id 1791785335893 -> 4
+plans show 0bef16c8-0267-402c-8b17-441bd1c7bba3 --issues-only -> 0
+plans show 0bef16c8-0267-402c-8b17-441bd1c7bba3 -> 0
+plans edit 0bef16c8-0267-402c-8b17-441bd1c7bba3 --base-revision 1 --patch /tmp/lab-desk-03cb7243/review.patch.json --save-draft -> 4
+plans resolve-history 0bef16c8-0267-402c-8b17-441bd1c7bba3 --item 924958b2-062c-41c8-b388-dd92a947dc60 --map 0=comprehension --actor desktop-scenario -> 0
+plans bind 0bef16c8-0267-402c-8b17-441bd1c7bba3 --digest lab-jcs-v1:plan:67848d2c3583a0764f5d3ef0b4535308e81252f82574758e909aa0752d81f7c0 -> 0
+plans validate 0bef16c8-0267-402c-8b17-441bd1c7bba3 --revision 4 -> 0
+plans approve 0bef16c8-0267-402c-8b17-441bd1c7bba3 --revision 4 --digest lab-jcs-v1:plan:1295f27a9e7e7e430f4bdede17567e5c476b7495a114869d819de85cb9acdecd --actor desktop-scenario -> 0
+apply 0bef16c8-0267-402c-8b17-441bd1c7bba3 --revision 4 --accept-schema-change --apply -> 0
+snapshots restore 50d278b2-fedf-4168-9d13-e68d40d6da90 -> 0
+snapshots restore 50d278b2-fedf-4168-9d13-e68d40d6da90 --decision /tmp/lab-desk-03cb7243/decision-50d278b2-fedf-4168-9d13-e68d40d6da90.json --apply -> 5
+restore without a field decision refused: Meaning
+snapshots restore 50d278b2-fedf-4168-9d13-e68d40d6da90 -> 0
+snapshots restore 50d278b2-fedf-4168-9d13-e68d40d6da90 --decision /tmp/lab-desk-03cb7243/decision-50d278b2-fedf-4168-9d13-e68d40d6da90.json --apply -> 0
