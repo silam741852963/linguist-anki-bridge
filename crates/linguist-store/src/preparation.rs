@@ -200,6 +200,26 @@ impl Store {
         expected_head: Option<&str>,
         lease: &crate::lease::LeaseToken,
     ) -> Result<Option<crate::RevisionSummary>> {
+        self.publish_preparation_plan_inner(id, expected_head, lease, false)
+    }
+    /// WP-24: publish the captured items of a job whose other items failed
+    /// (the caller decided not to retry them), leaving the failed notes out
+    /// of the plan. Pending, started or interrupted items still block it.
+    pub fn publish_preparation_plan_skipping_failed(
+        &mut self,
+        id: Uuid,
+        expected_head: Option<&str>,
+        lease: &crate::lease::LeaseToken,
+    ) -> Result<Option<crate::RevisionSummary>> {
+        self.publish_preparation_plan_inner(id, expected_head, lease, true)
+    }
+    fn publish_preparation_plan_inner(
+        &mut self,
+        id: Uuid,
+        expected_head: Option<&str>,
+        lease: &crate::lease::LeaseToken,
+        skip_failed: bool,
+    ) -> Result<Option<crate::RevisionSummary>> {
         if !self.writable {
             return Err("STORE_READ_ONLY".into());
         }
@@ -255,8 +275,12 @@ impl Store {
                     }
                     documents.push(*document);
                 }
+                PreparationStage::Failed { .. } if skip_failed => {}
                 _ => return Ok(None),
             }
+        }
+        if documents.is_empty() {
+            return Ok(None);
         }
         self.verify_document_assets(&documents)?;
         // The batch archive limit covers what the sources and the dictionary

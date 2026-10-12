@@ -30,7 +30,7 @@ linguist-anki-bridge doctor --local
 linguist-anki-bridge doctor --bridge
 ```
 
-[Command examples for 0.2.1](docs/cli/examples/commands-v0.2.1.md) list what works; every command and flag there is checked against the binary by the test suite. [Implementation status](docs/cli/implementation/status.md) states what is implemented and links each package's known limits.
+[Command examples for 0.3.0](docs/cli/examples/commands-v0.3.0.md) list what works; every command and flag there is checked against the binary by the test suite. [Implementation status](docs/cli/implementation/status.md) states what is implemented and links each package's known limits.
 
 ## Documentation
 

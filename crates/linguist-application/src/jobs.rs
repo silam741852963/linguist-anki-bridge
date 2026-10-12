@@ -654,6 +654,44 @@ pub fn create_selected(
     )
 }
 
+/// WP-24 `jobs publish JOB --skip-failed`: publish the plan of a prepare job
+/// whose remaining items failed and will not be retried. Holds the job lease
+/// like `jobs run`; never reads Anki or a provider.
+pub fn publish_skipping_failed(
+    root: &std::path::Path,
+    job: uuid::Uuid,
+) -> Result<serde_json::Value, String> {
+    let mut store = linguist_store::Store::open_existing(root)?;
+    let definition = store.preparation_job(job)?;
+    let seconds = definition.job.settings.values["jobs.lease_seconds"]
+        .as_u64()
+        .ok_or("JOB_SETTINGS_INVALID")?;
+    let lease = store.acquire_lease(&linguist_store::lease::Resource::JobWorker(job), seconds)?;
+    let result = (|| -> Result<serde_json::Value, String> {
+        let head = store.preparation_head(job)?.map(|receipt| receipt.digest);
+        let plan = store.publish_preparation_plan_skipping_failed(job, head.as_deref(), &lease)?;
+        let mut skipped = Vec::new();
+        for offset in (0..definition.job.item_ids.len()).step_by(1000) {
+            for item in store.preparation_items(job, offset as u32, 1000)? {
+                if item.state == "failed" {
+                    skipped.push(serde_json::json!({
+                        "note_id": definition.selection.selected_note_ids[item.index as usize],
+                        "error_code": item.error_code,
+                    }));
+                }
+            }
+        }
+        Ok(
+            serde_json::json!({"schema_version": 2, "job_id": job, "plan_published": plan.is_some(),
+            "plan": plan, "skipped": skipped, "writes_enabled": false}),
+        )
+    })();
+    let released = store.release_lease(&lease);
+    let value = result?;
+    released?;
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

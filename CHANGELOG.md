@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 — 2026-10-11
+
+Unattended collection revamp campaigns (WP-24). Companion add-on 0.5.0; local store schema 15.
+
+- **Campaigns**: `campaign create|list|status|batch|events|run|approve|item|skip|pause|resume|cancel|close|agent-slot|asset|install-timer`. A campaign freezes a selection into cohorts and batches and advances them one tick at a time through prepare jobs, policy review, generation, approval, apply jobs with their own checkpoint, verification of every card and review row, and checkpoint retention. All state is in the store; a killed tick, a restarted Anki or a new agent session continues where the last stopped. Only the user resumes a paused campaign.
+- **Decision policy**: `plans resolve-batch --policy FILE|builtin` decides what the user's standing preferences settle (native history map, sense by reading, pictures by the OCR image classification, own recordings, generated facts) and lists every issue it leaves open; `resources/policies/campaign-default.json`.
+- **One revision per pass**: `plans resolve-batch` publishes one revision per pass instead of one per decision.
+- **Resumable generation**: `plans generate --all-items --pending` skips items with nothing to generate.
+- **Partial preparation**: `jobs publish JOB --skip-failed` publishes a prepare job's plan without its failed notes.
+- **Duplicate merge**: `plans merge-notes` archives duplicates on their survivor's item; `notes delete-merged` deletes a duplicate after its survivor is applied (companion `delete_merged_note`); `notes restore-merged` recreates it with its note, card and review IDs (`recreate_deleted_note`).
+- **Native history**: a uniform history map drops entries for templates a note has no card of.
+- **Agent driver**: `scripts/campaign-tick.sh` (systemd user timer) and the `campaign-tick` project skill.
+
 ## 0.2.1 — 2026-10-11
 
 - `--help` and error guidance describe companion writes as available: `apply`, `snapshots`, `jobs`, `recover`, `plans`, `doctor`, `models` and `backup` no longer say writes are "unavailable until the native adapter is verified". The `CAPABILITY_UNAVAILABLE` hint names the released `linguist-bridge-*.ankiaddon` and Anki 25.09.2.

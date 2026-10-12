@@ -69,8 +69,116 @@ pub fn publish_candidate_from(
     environment: &BTreeMap<String, String>,
     client: &crate::ollama::transport::Client,
 ) -> Result<Value, String> {
+    if store.latest_revision(base.id)? != base.revision {
+        return Err("GENERATION_BASE_CONFLICT".into());
+    }
+    let (child, mut result) = candidate_from(
+        store,
+        base,
+        parent,
+        expected_digest,
+        settings,
+        environment,
+        client,
+    )?;
+    let digest = store.publish_revision(&child)?;
+    result["digest"] = json!(digest);
+    Ok(result)
+}
+
+/// WP-24 `plans generate --all-items --pending`: generate every pending item
+/// on an in-memory chain and publish one revision per `chunk` generated
+/// items (and at the end). A crash loses at most one chunk of drafts; their
+/// items are still pending and are generated again. Returns the per-item
+/// results and the newest published revision.
+pub fn generate_pending_chained(
+    store: &mut linguist_store::Store,
+    base: &linguist_core::records::PlanRevision,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    client: &crate::ollama::transport::Client,
+    chunk: usize,
+) -> Result<(Vec<Value>, u32), String> {
+    if store.latest_revision(base.id)? != base.revision {
+        return Err("GENERATION_BASE_CONFLICT".into());
+    }
+    let mut published = (
+        base.revision,
+        base.approval_digest().map_err(|e| e.to_string())?,
+    );
+    let mut current = base.clone();
+    let mut pending = 0usize;
+    let mut items = Vec::new();
+    let flush = |store: &mut linguist_store::Store,
+                 current: &mut linguist_core::records::PlanRevision,
+                 published: &mut (u32, String)|
+     -> Result<(), String> {
+        if current.revision == published.0 {
+            return Ok(());
+        }
+        current.revision = published.0 + 1;
+        current.parent_digest = Some(published.1.clone());
+        let digest = store.publish_revision(current)?;
+        *published = (current.revision, digest);
+        Ok(())
+    };
+    for id in base.documents.iter().map(|d| d.id).collect::<Vec<_>>() {
+        let parent = current
+            .documents
+            .iter()
+            .find(|d| d.id == id)
+            .ok_or("PLAN_ITEM_NOT_FOUND")?
+            .clone();
+        match build_request(&parent, settings) {
+            Err(reason) => {
+                items.push(json!({"document_id": id, "skipped": reason}));
+                continue;
+            }
+            Ok(request) if request.allowed_fields.is_empty() => {
+                items.push(json!({"document_id": id, "skipped": "GENERATION_NOTHING_TO_FILL"}));
+                continue;
+            }
+            Ok(_) => {}
+        }
+        let digest = current.approval_digest().map_err(|e| e.to_string())?;
+        match candidate_from(
+            store,
+            &current,
+            &parent,
+            &digest,
+            settings,
+            environment,
+            client,
+        ) {
+            Ok((child, result)) => {
+                current = child;
+                pending += 1;
+                items.push(json!({"document_id": id, "result": result}));
+            }
+            Err(error) => items.push(json!({"document_id": id, "error": error})),
+        }
+        if pending >= chunk.max(1) {
+            flush(store, &mut current, &mut published)?;
+            pending = 0;
+        }
+    }
+    flush(store, &mut current, &mut published)?;
+    Ok((items, published.0))
+}
+
+/// Generate one item's draft on `base` without publishing the revision (its
+/// assets are published). The caller checks `base` is the newest revision or
+/// the head of its own in-memory chain.
+fn candidate_from(
+    store: &mut linguist_store::Store,
+    base: &linguist_core::records::PlanRevision,
+    parent: &LearningDocument,
+    expected_digest: &str,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    client: &crate::ollama::transport::Client,
+) -> Result<(linguist_core::records::PlanRevision, Value), String> {
     if base.approval_digest().map_err(|e| e.to_string())? != expected_digest
-        || store.latest_revision(base.id)? != base.revision
         || !base
             .documents
             .iter()
@@ -216,10 +324,8 @@ pub fn publish_candidate_from(
             return Err("GENERATION_ASSET_DIGEST_CONFLICT".into());
         }
     }
-    let digest = store.publish_revision(&child)?;
-    Ok(
-        json!({"schema_version":2,"plan_id":child.id,"revision":child.revision,"digest":digest,"document_id":document_id,"ready":false,"generation_engine_verified":verified.is_some(),"engine_certification":verified.map(|c| c.id),"provider":provider.name(),"attempts":attempts,"apply_eligible":false,"issues":child.documents[index].issues,"assets_archived":true}),
-    )
+    let result = json!({"schema_version":2,"plan_id":child.id,"revision":child.revision,"document_id":document_id,"ready":false,"generation_engine_verified":verified.is_some(),"engine_certification":verified.map(|c| c.id),"provider":provider.name(),"attempts":attempts,"apply_eligible":false,"issues":child.documents[index].issues,"assets_archived":true});
+    Ok((child, result))
 }
 
 /// The passed certification covering the engine that produced this draft:

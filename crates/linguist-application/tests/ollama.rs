@@ -1372,3 +1372,87 @@ fn a_failed_local_generation_falls_back_to_an_agent() {
     let _ = std::fs::remove_dir_all(&root);
     let _ = std::fs::remove_dir_all(&bin);
 }
+#[test]
+fn chained_pending_generation_publishes_one_revision_per_chunk_and_resumes() {
+    use linguist_application::{freeze_settings, generation::generate_pending_chained};
+    use linguist_core::{LearningContent, records::PlanRevision};
+    let mut output = completion_response();
+    output["message"]["content"] = json!(
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
+    );
+    let mut replies = Vec::new();
+    for _ in 0..3 {
+        replies.extend([
+            reply(inventory()),
+            reply(show()),
+            reply(inventory()),
+            reply(output.clone()),
+            reply(inventory()),
+            reply(show()),
+            reply(inventory()),
+        ]);
+    }
+    let server = FixtureServer::new(replies);
+    let root =
+        std::env::temp_dir().join(format!("lab-chained-generation-{}", uuid::Uuid::new_v4()));
+    let environment =
+        std::collections::BTreeMap::from([("HOME".into(), root.to_str().unwrap().into())]);
+    let mut current = settings();
+    current
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    current
+        .values
+        .insert("llm.endpoint".into(), json!(server.endpoint));
+    current
+        .values
+        .insert("services.ollama.min_interval_seconds".into(), json!(0));
+    let mut documents = Vec::new();
+    for _ in 0..3 {
+        let mut doc = generation_document();
+        doc.id = uuid::Uuid::new_v4();
+        documents.push(doc);
+    }
+    let mut waiting = generation_document();
+    waiting.id = uuid::Uuid::new_v4();
+    if let LearningContent::Vocabulary(v) = &mut waiting.content {
+        v.meaning.clear();
+    }
+    documents.insert(1, waiting);
+    let sources: Vec<_> = documents.iter().flat_map(|d| d.sources.clone()).collect();
+    let plan = PlanRevision {
+        grammar_groups: vec![],
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: freeze_settings(&current, &environment).unwrap(),
+        binding: None,
+        source_digest: canonical::digest("source-capture", &sources).unwrap(),
+        selection: None,
+        documents,
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    store.publish_revision(&plan).unwrap();
+    let client = transport::Client::from_settings(&current, &environment).unwrap();
+    let (items, revision) =
+        generate_pending_chained(&mut store, &plan, &current, &environment, &client, 2).unwrap();
+    // Three drafts, chunks of two: one revision after two, one at the end.
+    assert_eq!(revision, 3, "{items:?}");
+    assert_eq!(
+        items.iter().filter(|i| i.get("result").is_some()).count(),
+        3
+    );
+    assert_eq!(items[1]["skipped"], "GENERATION_ACCEPTED_ANSWER_REQUIRED");
+    // A rerun finds nothing pending and publishes nothing.
+    let latest = store.revision(plan.id, 3).unwrap();
+    let (again, revision) =
+        generate_pending_chained(&mut store, &latest, &current, &environment, &client, 2).unwrap();
+    assert_eq!(revision, 3);
+    assert!(again.iter().all(|i| i.get("result").is_none()), "{again:?}");
+    drop(store);
+    server.worker.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}

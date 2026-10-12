@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "name": "fixture campaign",
+  "sources": [
+    {
+      "id": "ja",
+      "query": "deck:\"Japanese::Vocab\" note:\"Picture Words\"",
+      "purpose": "japanese_vocab",
+      "settings": ["audio.provider=dictionary", "images.existing_policy=inspect"],
+      "target_models": ["Linguist Vocabulary v3"],
+      "word_field": "Word",
+      "reading_field": "Pronunciation",
+      "picture_field": "Picture",
+      "audio_field": "Pronunciation",
+      "language": "ja",
+      "merge_duplicates": true
+    }
+  ],
+  "order": ["ja:plain", "ja:kana_only", "ja:missing_media", "ja:split_candidate", "ja:duplicate"],
+  "batch_size": 100,
+  "pilot": {"cohort": "ja:plain", "size": 20},
+  "limits": {"agent_share_max": 0.2, "agent_runs_per_day": 48}
+}

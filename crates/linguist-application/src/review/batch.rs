@@ -4,8 +4,9 @@
 //! its document's semantic digest at that revision. Decisions are applied in
 //! a fixed order (see `rank`). Between two decisions on the same document only
 //! this batch has changed it, so each decision is re-bound to the current
-//! digest and runs through the single-decision `resolve`; each result is
-//! published as its own revision.
+//! digest and runs through the single-decision `resolve`. Results chain in
+//! memory and each pass is published as one revision (WP-24: a decision per
+//! revision grew plan history by thousands of revisions per campaign batch).
 //!
 //! Some decisions change content and so invalidate earlier ones on the same
 //! document (a source media role clears every decision; a cue repair drops
@@ -152,13 +153,34 @@ struct Run<'a, 'h> {
     batch: &'a ResolutionBatch,
     created_at: &'a dyn Fn() -> Result<String, String>,
     history: &'a mut HistoryRequest<'h>,
+    /// In-memory head: the published revision plus this pass's decisions.
     current: PlanRevision,
     digest: String,
+    /// Newest published revision and its digest.
+    published: (u32, String),
     ready: bool,
 }
 impl Run<'_, '_> {
-    /// Resolve one entry against the current revision and publish the child.
-    fn apply(&mut self, index: usize) -> Result<(u32, String, uuid::Uuid), String> {
+    /// Publish the in-memory head as one child of the newest published
+    /// revision; a no-op when nothing changed since the last flush.
+    fn flush(&mut self) -> Result<(), String> {
+        if self.current.revision == self.published.0 {
+            return Ok(());
+        }
+        let mut revision = self.current.clone();
+        revision.revision = self.published.0 + 1;
+        revision.parent_digest = Some(self.published.1.clone());
+        let digest = self
+            .store
+            .publish_revision(&revision)
+            .map_err(|e| e.to_string())?;
+        self.published = (revision.revision, digest.clone());
+        self.current = revision;
+        self.digest = digest;
+        Ok(())
+    }
+    /// Resolve one entry against the in-memory head.
+    fn apply(&mut self, index: usize) -> Result<uuid::Uuid, String> {
         let decision = &self.batch.decisions[index];
         let document = self
             .current
@@ -192,14 +214,13 @@ impl Run<'_, '_> {
             _ => unreachable!(),
         };
         let result = super::resolve(self.store, &self.current, &request, (self.created_at)()?)?;
-        let published = self
-            .store
-            .publish_revision(&result.revision)
-            .map_err(|e| e.to_string())?;
         self.ready = result.ready;
+        self.digest = result
+            .revision
+            .approval_digest()
+            .map_err(|e| e.to_string())?;
         self.current = result.revision;
-        self.digest = published.clone();
-        Ok((self.current.revision, published, result.decision_id))
+        Ok(result.decision_id)
     }
 }
 
@@ -252,7 +273,8 @@ pub fn resolve_batch(
         created_at,
         history,
         current: base.clone(),
-        digest: base_digest,
+        digest: base_digest.clone(),
+        published: (base.revision, base_digest),
         ready: false,
     };
     let mut applied = Vec::new();
@@ -302,17 +324,24 @@ pub fn resolve_batch(
                     Err(error) => break 'run Some((index, passes, error)),
                 }
                 match run.apply(index) {
-                    Ok((revision, digest, decision_id)) => applied.push(AppliedDecision {
+                    Ok(decision_id) => applied.push(AppliedDecision {
                         index,
                         pass: passes,
                         document_id: decision.document_id,
                         issue_id: decision.issue_id.clone(),
-                        revision,
-                        digest,
+                        revision: 0,
+                        digest: String::new(),
                         decision_id,
                     }),
                     Err(error) => break 'run Some((index, passes, error)),
                 }
+            }
+            if let Err(error) = run.flush() {
+                break 'run Some((queue[0], passes, error));
+            }
+            for entry in applied.iter_mut().filter(|a| a.pass == passes) {
+                entry.revision = run.published.0;
+                entry.digest = run.published.1.clone();
             }
             // Decisions a later content change invalidated are re-applied.
             let mut reopened = Vec::new();
@@ -344,6 +373,12 @@ pub fn resolve_batch(
         }
         None
     };
+    // A conflict stops mid-pass: what applied before it is still published.
+    run.flush()?;
+    for entry in applied.iter_mut().filter(|a| a.revision == 0) {
+        entry.revision = run.published.0;
+        entry.digest = run.published.1.clone();
+    }
     Ok(BatchOutcome {
         schema_version: 2,
         plan_id: run.current.id,

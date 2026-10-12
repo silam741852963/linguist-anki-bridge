@@ -392,9 +392,11 @@ fn enrich_kanji(
     let mut fields = BTreeMap::new();
     let mut digests = Vec::new();
     for entry in &found {
-        let page = String::from_utf8(entry.raw_bytes.clone()).map_err(|_| "KANJI_PAGE_ENCODING")?;
-        fields.insert(entry.character.clone(), page);
-        digests.push(canonical::asset_digest(&entry.raw_bytes));
+        std::str::from_utf8(&entry.raw_bytes).map_err(|_| "KANJI_PAGE_ENCODING")?;
+        let digest = canonical::asset_digest(&entry.raw_bytes);
+        // The page is archived as an asset; the plan keeps its digest (WP-24).
+        fields.insert(entry.character.clone(), format!("sha256:{digest}"));
+        digests.push(digest);
         assets.push(entry.raw_bytes.clone());
     }
     let manifest = canonical::digest("kanji-pages", &digests).map_err(|e| e.to_string())?;

@@ -1,0 +1,129 @@
+# Campaign operations
+
+Read [shared command rules](README.md) and [ALG-CAMPAIGN](../recovery/jobs.md#alg-campaign-collection-revamp-campaign) first. A campaign (WP-24) revamps a frozen selection of existing notes batch by batch, unattended, through the existing crash-safe commands. Its state lives only in the local store; a tick, an agent run or a user command can stop at any point and the next one continues.
+
+## OP-62 — `campaign create --spec FILE [--dry-run]`
+
+Inputs: a JSON spec (`contracts/v2/campaign-spec.schema.json`): sources (Anki search, purpose, per-source `--set` overrides, target note types, the fields the cohort rules read, language, duplicate merge), cohort order (`SOURCE:CLASS`, classes `duplicate`, `split_candidate`, `kana_only`, `missing_media`, `plain`), batch sizes, an optional pilot, explicit `merge_extra` groups, limits and an optional decision policy.
+
+Effects: Anki reads only (`getActiveProfile`, `findNotes`, `notesInfo`, and `cardsInfo` for possible merge members); one immutable campaign definition, its frozen batches (phase `selected`) and the frozen policy file in local state. `--dry-run` stores nothing.
+
+1. Validate the spec. A key set both by the creating command (`--set`) and by a source is refused (`CAMPAIGN_SETTING_DUPLICATE`): every child command would fail.
+2. Read each source's notes; a note matched by an earlier source stays there.
+3. Classify each note (first matching class): duplicate (same visible word and reading in a merging source, or a `merge_extra` group), split candidate, kana-only, missing recording or picture, plain. Merge groups keep the note with the most repetitions (then the oldest) as survivor.
+4. Build batches in cohort order: the pilot first, then each cohort in batch-size chunks; one batch per merge group.
+5. Freeze the creating command's `--config`, `--profile`, `--set` and `--offline` as the child commands' global arguments.
+
+Result/failure: campaign ID, selection report (matched, per cohort, unordered, merge groups, batches), policy path. An empty selection is `CAMPAIGN_EMPTY`.
+
+## OP-63 — `campaign list`
+
+Inputs: none. Effects: local read. Result: campaigns, newest first, with status and pause code.
+
+## OP-64 — `campaign status [CAMPAIGN]`
+
+Inputs: campaign ID (default the newest). Effects: local read.
+
+Result: status and pause code/detail; batches per phase and notes per phase; applied and deferred notes; `agent_needed` with one entry per batch that needs the agent (`needs_agent` notes and their open issues, `ready` batches with the notes to spot-check, batches with repeated step errors) and the commands that settle them; `user_needed` (paused); today's agent runs against the limit; the sync reminder.
+
+## OP-65 — `campaign batch CAMPAIGN BATCH`
+
+Inputs: campaign and batch. Effects: local read. Result: the batch row (phase, version, working data: notes, merge members, jobs, plan, deferred notes with reasons, approval, before-apply card facts, committed notes, verification problems, last error).
+
+## OP-66 — `campaign events CAMPAIGN`
+
+Inputs: `--after N`, `--limit` (1–1000). Effects: local read. Result: events oldest first (created, phase changes with detail, pauses, resumes, agent runs, pruned checkpoints).
+
+## OP-67 — `campaign run [CAMPAIGN] [--max-seconds N]`
+
+Inputs: campaign (default newest), tick budget (default 3000 s).
+
+Effects: holds the campaign lease; runs this binary's own commands as child processes (prepare jobs, `plans resolve-batch --policy`, `plans generate --all-items --pending`, `plans merge-notes`, apply jobs with `--create-checkpoint`, `recover reconcile`, `apply --split-group`, `notes delete-merged`); reads companion note evidence; deletes checkpoint files only of checkpoints the campaign created (retention).
+
+1. Stop at once unless the campaign is `running`.
+2. Each round runs one step of the write lane (oldest batch in `approved`, `applying`, `verifying`, `merging`) and one of the prepare lane (oldest batch in `preparing`, `reviewing`, `needs_agent`; or the next `selected` batch while fewer than `prepare_ahead` batches are in flight) in parallel, and records each with compare-and-set.
+3. A step that finds Anki, the companion or a service unavailable waits; repeated step errors pause the campaign; guardrail pauses stop the tick.
+4. After the pilot batch is `done`, pause with `CAMPAIGN_PILOT_REVIEW` once.
+5. Stop when no lane moved, the budget is spent, or the campaign paused.
+
+Result/failure: steps taken, why the tick stopped, pruned checkpoints. Exit 5 when the tick paused the campaign. `LEASE_HELD_OR_OWNER_UNVERIFIED` when another tick is running.
+
+## OP-68 — `campaign approve CAMPAIGN BATCH --actor NAME`
+
+Inputs: a `ready` batch; approver. Refused while the campaign is not running.
+
+Effects: local plan revisions and approval; `plans bind` reads Anki.
+
+1. Count notes whose review decisions include an actor other than the policy's (deferred notes excluded). Above `agent_share_max` (not for the pilot), pause with `CAMPAIGN_PAUSED_AGENT_SHARE` and refuse.
+2. Bind, validate; a note with a validation error or open review is deferred.
+3. Approve every remaining item with the warnings it carries accepted; a split group is approved whole or not at all.
+4. Record the approval (items for the apply job, split groups, notes) and move the batch to `approved`.
+
+## OP-69 — `campaign item CAMPAIGN BATCH NOTE --settled|--defer REASON|--undefer`
+
+Inputs: a batch in `reviewing`, `needs_agent` or `ready`. Effects: local. `--settled` answers a split question; `--defer` leaves the note out of the batch (it stays unchanged in Anki; not allowed for merge members); `--undefer` puts it back. The batch returns to `needs_agent` so the next tick rechecks it.
+
+## OP-70 — `campaign skip CAMPAIGN BATCH --reason R`
+
+Inputs: a batch before approval. Effects: local; phase `deferred`. Nothing in Anki changes.
+
+## OP-71 — `campaign pause CAMPAIGN [--reason R]`
+
+Effects: local status `paused` with `CAMPAIGN_PAUSED_BY_REQUEST`. A running tick finishes its current step and stops.
+
+## OP-72 — `campaign resume CAMPAIGN [--by-user]`
+
+Effects: local status `running`. Refused without a terminal unless `--by-user` is given (`CAMPAIGN_RESUME_BY_USER_REQUIRED`): only the user resumes a paused campaign. The agent's allowlist excludes this command.
+
+## OP-73 — `campaign cancel CAMPAIGN`
+
+Effects: local status `cancelled` (terminal). Batches keep their state and history; applied notes stay applied.
+
+## OP-74 — `campaign close CAMPAIGN`
+
+Effects: local status `closed` (terminal); reminds the user to sync to AnkiWeb and choose **Upload**.
+
+## OP-75 — `campaign agent-slot CAMPAIGN`
+
+Effects: records one `agent_run` event when today's (UTC) count is below `agent_runs_per_day`; exit 5 and nothing recorded otherwise. Used by `scripts/campaign-tick.sh` before it starts an agent.
+
+## OP-76 — `campaign asset DIGEST --output FILE`
+
+Effects: local read of one stored asset into a create-new file (so the agent can look at a picture or screenshot). `ASSET_NOT_FOUND` for an unknown digest.
+
+## OP-77 — `campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--execute]`
+
+Effects: prints, or with `--execute` writes, `~/.config/systemd/user/linguist-campaign.{service,timer}`: a oneshot service running the tick script with `LAB_CAMPAIGN`, `LAB_BIN` and the working directory, and a persistent timer (`OnUnitInactiveSec`). Enabling the timer is the user's `systemctl --user` command.
+
+## OP-78 — `jobs publish JOB --skip-failed`
+
+Inputs: a prepare job whose pending items are all finished. Effects: holds the job lease; publishes the job's plan from its captured items only, leaving failed notes out. No Anki or provider read.
+
+Result/failure: `plan_published`, the plan, and every skipped note with its error code; exit 5 when no item was captured.
+
+## OP-79 — `plans merge-notes PLAN --item ITEM --note NOTE...`
+
+Inputs: the survivor's plan item; duplicate note IDs. Effects: companion reads (note evidence, media bytes up to the asset limit); one child revision.
+
+1. Read each duplicate's complete evidence (fields, tags, model, cards, review rows, media).
+2. Add a `merged_note` source (`merged_anki_note:ID`) and an archive (the evidence record and the media bytes) to the survivor's item. Nothing of it is rendered.
+3. Revalidate and publish the child revision; earlier decisions on the item reopen and are decided again.
+
+## OP-80 — `notes delete-merged NOTE --survivor S --plan P [--apply]`
+
+Inputs: a duplicate the plan merges into survivor S. Preview without `--apply`.
+
+Effects (with `--apply`): one companion `delete_merged_note` effect.
+
+1. Refuse unless the plan records the merge (`MERGE_NOT_RECORDED`), the duplicate still holds the archived fields (`MERGE_NOTE_CHANGED`), and the survivor is on the plan's rendered target note type (`MERGE_SURVIVOR_NOT_APPLIED`).
+2. Record the operation ID, the content precondition and the duplicate's complete evidence (stored asset) before sending.
+3. Send; the companion re-checks the precondition and the survivor's note type, deletes, and reads back that the note is gone.
+4. A lost response is settled from the companion ledger on the next call; a refusal returns the record to `intent`.
+
+## OP-81 — `notes restore-merged NOTE [--apply]`
+
+Inputs: a deleted duplicate. Effects (with `--apply`): one companion `recreate_deleted_note` effect that inserts the note, its cards (same IDs, decks and schedule) and any review rows Anki no longer has, then recomputes the sort field and checksum. Refused when the note, a card or the GUID exists. The agent's allowlist excludes it.
+
+## OP-82 — `campaign reopen CAMPAIGN BATCH --reason R`
+
+Inputs: an `approved` batch with no apply job and no recorded apply intent. Effects: local. The approval and the before-apply card facts are dropped, deferrals made by the approval (`VALIDATION:`) are cleared, and the batch returns to `reviewing`; the next tick reviews it again and a new `campaign approve` is needed. The plan's approval record stays in history; no apply job can be created from it by the campaign.

@@ -309,6 +309,8 @@ impl ApplyPort for NativePort<'_> {
             "update_note",
             "restore_note",
             "delete_unstudied_created_note",
+            "delete_merged_note",
+            "recreate_deleted_note",
         ]
         .map(str::to_owned)
         .to_vec())

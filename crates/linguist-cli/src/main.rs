@@ -7,9 +7,11 @@ use std::{
     process::ExitCode,
     sync::atomic::{AtomicU8, Ordering},
 };
+mod campaign;
 mod diagnostics;
 mod interrupt;
 mod maintenance;
+mod merge_cmd;
 mod native_writes;
 mod recovery_live;
 mod remedy;
@@ -184,6 +186,12 @@ enum Command {
     Backup {
         #[command(subcommand)]
         command: BackupCommand,
+    },
+    /// Collection revamp campaigns: frozen batches advanced one tick at a
+    /// time through prepare, review, approval, apply jobs and verification.
+    Campaign {
+        #[command(subcommand)]
+        command: campaign::CampaignCommand,
     },
 }
 #[derive(Subcommand)]
@@ -459,6 +467,15 @@ enum JobCommand {
         /// Required on every resume of an apply job.
         #[arg(long)]
         apply: bool,
+    },
+    /// Publish a prepare job's plan without its failed items (WP-24); the
+    /// failed notes stay out of the plan and are reported.
+    Publish {
+        /// Job ID from `jobs list`.
+        job: uuid::Uuid,
+        /// Required: leave every failed item out of the plan.
+        #[arg(long, required = true)]
+        skip_failed: bool,
     },
     /// Prevent future dispatch; retain all checkpoints and assets.
     Cancel {
@@ -880,6 +897,29 @@ enum NoteCommand {
         #[command(flatten)]
         selector: NoteSelector,
     },
+    /// Delete a duplicate merged into its applied survivor (WP-24); its full
+    /// evidence is stored first so `notes restore-merged` can recreate it.
+    DeleteMerged {
+        /// Anki note ID of the merged duplicate.
+        note_id: String,
+        /// Anki note ID of the survivor it was merged into.
+        #[arg(long)]
+        survivor: String,
+        /// Plan that records the merge.
+        #[arg(long)]
+        plan: uuid::Uuid,
+        /// Delete through the verified companion add-on; otherwise preview.
+        #[arg(long)]
+        apply: bool,
+    },
+    /// Recreate a deleted merged note with its note, card and review IDs.
+    RestoreMerged {
+        /// Anki note ID of the deleted duplicate.
+        note_id: String,
+        /// Recreate through the verified companion add-on; otherwise preview.
+        #[arg(long)]
+        apply: bool,
+    },
 }
 #[derive(Subcommand)]
 enum RecoveryCommand {
@@ -943,6 +983,11 @@ enum PlanCommand {
         /// an item that cannot be generated is reported and the rest continue.
         #[arg(long, conflicts_with = "item_id")]
         all_items: bool,
+        /// With --all-items: skip items with nothing to generate (already
+        /// generated, or waiting for a review), so a rerun after a crash
+        /// continues where it stopped (WP-24).
+        #[arg(long, requires = "all_items")]
+        pending: bool,
         /// Latest revision the generation extends.
         #[arg(long)]
         base_revision: u32,
@@ -984,6 +1029,18 @@ enum PlanCommand {
         /// Print an editable split request built from this item's reviewed OCR segmentation.
         #[arg(long)]
         template: Option<uuid::Uuid>,
+    },
+    /// Archive duplicate notes on their survivor's item before it is revamped
+    /// (WP-24); `notes delete-merged` removes them after the apply.
+    MergeNotes {
+        /// Plan ID.
+        plan: uuid::Uuid,
+        /// The survivor's plan item.
+        #[arg(long)]
+        item: uuid::Uuid,
+        /// Anki note ID of a duplicate merged into it (repeatable).
+        #[arg(long = "note", required = true)]
+        notes: Vec<String>,
     },
     /// Split a vocabulary item holding several words or readings into one item
     /// per unit; the anchor keeps the source note and its history.
@@ -1080,14 +1137,18 @@ enum PlanCommand {
         /// JSON decisions file bound to the latest revision.
         #[arg(
             long,
-            required_unless_present = "template",
-            conflicts_with = "template"
+            required_unless_present_any = ["template", "policy"],
+            conflicts_with_all = ["template", "policy"]
         )]
         decisions: Option<PathBuf>,
         /// Print a decisions file for every open review issue; each choice is
         /// left null for the reviewer to fill.
-        #[arg(long, requires = "actor")]
+        #[arg(long, requires = "actor", conflicts_with = "policy")]
         template: bool,
+        /// Decide what a campaign decision policy settles (a JSON policy
+        /// file, or `builtin`) and list every issue it leaves open (WP-24).
+        #[arg(long)]
+        policy: Option<String>,
         /// Reviewer recorded in the template.
         #[arg(long, requires = "template")]
         actor: Option<String>,
@@ -1501,6 +1562,21 @@ fn run(cli: Cli) -> Result<u8, String> {
     }
     let settings = load_effective(&cli)?;
     use_settings_output(&cli, &settings)?;
+    if let Some(code) = merge_cmd::handle(&settings, &cli.command)? {
+        return Ok(code);
+    }
+    if let Command::Campaign { .. } = &cli.command {
+        let globals = campaign::Globals {
+            config: cli.config.clone(),
+            profile: cli.profile.clone(),
+            settings: cli.settings.clone(),
+            offline: cli.offline,
+        };
+        let Command::Campaign { command } = cli.command else {
+            unreachable!()
+        };
+        return campaign::handle(&globals, &settings, command);
+    }
     let max_bytes = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
     let max_chars = settings.values["input.max_record_chars"].as_u64().unwrap() as usize;
     if let Command::Decks { command } = &cli.command {
@@ -1595,6 +1671,7 @@ fn run(cli: Cli) -> Result<u8, String> {
     match cli.command {
         Command::Config { .. }
         | Command::Completions { .. }
+        | Command::Campaign { .. }
         | Command::Cache { .. }
         | Command::Resources { .. } => unreachable!(),
         Command::Apply {
@@ -2175,6 +2252,12 @@ fn run(cli: Cli) -> Result<u8, String> {
                 )?;
                 return Ok(0);
             }
+            if let JobCommand::Publish { job, .. } = command {
+                let result = linguist_application::jobs::publish_skipping_failed(&root, job)?;
+                let published = result["plan_published"] == true;
+                emit(&result)?;
+                return Ok(if published { 4 } else { 5 });
+            }
             if let JobCommand::Run { job, apply } = command {
                 if apply {
                     return Err("JOB_MODE_NEVER_WRITES: prepare jobs capture sources only; create an apply job from an approved plan".into());
@@ -2272,6 +2355,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 | JobCommand::Delete { .. }
                 | JobCommand::Recover { .. }
                 | JobCommand::Run { .. }
+                | JobCommand::Publish { .. }
                 | JobCommand::Pause { .. }
                 | JobCommand::Resume { .. }
                 | JobCommand::Cancel { .. }
@@ -2303,6 +2387,7 @@ fn run(cli: Cli) -> Result<u8, String> {
             }
             let store = linguist_store::Store::read_only(&root)?;
             match command {
+                PlanCommand::MergeNotes { .. } => unreachable!("handled by merge_cmd"),
                 PlanCommand::Regenerate {
                     plan,
                     base_revision,
@@ -2379,6 +2464,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                     plan,
                     item_id,
                     all_items,
+                    pending,
                     base_revision,
                     digest,
                     use_current_settings,
@@ -2397,6 +2483,18 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &settings, &env,
                     )?;
                     let mut store = linguist_store::Store::open_existing(&root)?;
+                    if all_items && pending {
+                        // One revision per 10 generated items (WP-24).
+                        let (items, revision) =
+                            linguist_application::generation::generate_pending_chained(
+                                &mut store, &base, &settings, &env, &client, 10,
+                            )?;
+                        emit(&serde_json::json!({
+                            "schema_version": 2, "plan_id": plan, "revision": revision,
+                            "items": items, "collection_writes_enabled": false,
+                        }))?;
+                        return Ok(4);
+                    }
                     let Some(item_id) = item_id.filter(|_| !all_items) else {
                         let mut items = Vec::new();
                         for document in &base.documents {
@@ -2785,6 +2883,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                     decisions,
                     template,
                     actor,
+                    policy,
                 } => {
                     let latest = store.latest_revision(plan)?;
                     let base = store.revision(plan, latest)?;
@@ -2795,9 +2894,36 @@ fn run(cli: Cli) -> Result<u8, String> {
                         )?)?;
                         return Ok(0);
                     }
-                    let bytes = read_input(decisions.as_ref().unwrap(), max_bytes, max_chars)?;
-                    let batch: linguist_application::review::batch::ResolutionBatch =
-                        canonical::parse(&bytes).map_err(|e| e.to_string())?;
+                    let mut filled = None;
+                    let batch: linguist_application::review::batch::ResolutionBatch = if let Some(
+                        policy,
+                    ) = &policy
+                    {
+                        use linguist_application::review::policy::{Policy, fill};
+                        let policy = if policy == "builtin" {
+                            Policy::builtin()
+                        } else {
+                            let bytes = read_input(&PathBuf::from(policy), max_bytes, max_chars)?;
+                            serde_json::from_slice(&bytes)
+                                .map_err(|e| format!("REVIEW_POLICY_INVALID: {e}"))?
+                        };
+                        let template =
+                            linguist_application::review::batch::template(&base, &policy.actor)?;
+                        let result = fill(&policy, &base, &template)?;
+                        let Some(batch) = result.batch.clone() else {
+                            let ready = result.undecided.is_empty()
+                                && base.documents.iter().all(linguist_core::validation::ready);
+                            emit(&serde_json::json!({"schema_version": 2, "plan_id": plan,
+                                    "revision": base.revision, "digest": base.approval_digest().map_err(|e| e.to_string())?,
+                                    "ready": ready, "policy": {"decided": 0, "undecided": result.undecided}, "outcome": null}))?;
+                            return Ok(if ready { 0 } else { 4 });
+                        };
+                        filled = Some(result);
+                        serde_json::from_value(batch).map_err(|e| e.to_string())?
+                    } else {
+                        let bytes = read_input(decisions.as_ref().unwrap(), max_bytes, max_chars)?;
+                        canonical::parse(&bytes).map_err(|e| e.to_string())?
+                    };
                     let created_at = || -> Result<String, String> {
                         let seconds = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
@@ -2819,6 +2945,20 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &created_at,
                         &mut history,
                     )?;
+                    if let Some(filled) = filled {
+                        let ready = outcome.ready && filled.undecided.is_empty();
+                        emit(&serde_json::json!({"schema_version": 2, "plan_id": plan,
+                            "revision": outcome.revision, "digest": outcome.digest, "ready": ready,
+                            "policy": {"decided": filled.decided, "undecided": filled.undecided},
+                            "outcome": outcome}))?;
+                        return Ok(if outcome.conflict.is_some() {
+                            5
+                        } else if ready {
+                            0
+                        } else {
+                            4
+                        });
+                    }
                     emit(&outcome)?;
                     if outcome.conflict.is_some() {
                         return Ok(5);
@@ -3311,6 +3451,9 @@ fn run(cli: Cli) -> Result<u8, String> {
         }
         Command::Notes { command } => {
             match command {
+                NoteCommand::DeleteMerged { .. } | NoteCommand::RestoreMerged { .. } => {
+                    unreachable!("handled by merge_cmd")
+                }
                 NoteCommand::Show { note_id, media } => {
                     linguist_anki::wire_id(&serde_json::json!(note_id))?;
                     let client = anki_client(&settings)?;

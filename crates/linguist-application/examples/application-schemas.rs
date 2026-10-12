@@ -12,6 +12,8 @@ fn main() {
     write::<linguist_application::grammar::SplitRequest>("grammar-split-request");
     write::<linguist_application::mapping::FieldMapping>("source-field-mapping");
     write::<linguist_application::generation::Supplement>("generation-supplement");
+    write::<linguist_application::campaign::Spec>("campaign-spec");
+    write::<linguist_application::review::policy::Policy>("review-policy");
     let export = schemars::schema_for!(linguist_application::export::ExportManifest);
     let export_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../contracts/v2/export-manifest.schema.json");

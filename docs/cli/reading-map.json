@@ -306,6 +306,18 @@
         "implementation/README.md"
       ]
     },
+    "WP-24": {
+      "path": "implementation/wp-24.md",
+      "heading": "## WP-24 \u2014 unattended collection revamp campaign, monitored by an agent",
+      "title": "WP-24 \u2014 unattended collection revamp campaign, monitored by an agent",
+      "words": 4517,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "recovery/jobs.md",
+        "operations/campaign.md"
+      ]
+    },
     "OP-34": {
       "path": "operations/apply.md",
       "heading": "## OP-34 \u2014 `apply PLAN`",
@@ -319,6 +331,216 @@
         "contracts/identity.md",
         "recovery/apply.md",
         "recovery/split.md"
+      ]
+    },
+    "OP-62": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-62 \u2014 `campaign create --spec FILE [--dry-run]`",
+      "title": "OP-62 \u2014 `campaign create --spec FILE [--dry-run]`",
+      "words": 225,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-63": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-63 \u2014 `campaign list`",
+      "title": "OP-63 \u2014 `campaign list`",
+      "words": 19,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-64": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-64 \u2014 `campaign status [CAMPAIGN]`",
+      "title": "OP-64 \u2014 `campaign status [CAMPAIGN]`",
+      "words": 76,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-65": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-65 \u2014 `campaign batch CAMPAIGN BATCH`",
+      "title": "OP-65 \u2014 `campaign batch CAMPAIGN BATCH`",
+      "words": 41,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-66": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-66 \u2014 `campaign events CAMPAIGN`",
+      "title": "OP-66 \u2014 `campaign events CAMPAIGN`",
+      "words": 29,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-67": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-67 \u2014 `campaign run [CAMPAIGN] [--max-seconds N]`",
+      "title": "OP-67 \u2014 `campaign run [CAMPAIGN] [--max-seconds N]`",
+      "words": 195,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-68": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-68 \u2014 `campaign approve CAMPAIGN BATCH --actor NAME`",
+      "title": "OP-68 \u2014 `campaign approve CAMPAIGN BATCH --actor NAME`",
+      "words": 111,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-69": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-69 \u2014 `campaign item CAMPAIGN BATCH NOTE --settled|--defer REASON|--undefer`",
+      "title": "OP-69 \u2014 `campaign item CAMPAIGN BATCH NOTE --settled|--defer REASON|--undefer`",
+      "words": 58,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-70": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-70 \u2014 `campaign skip CAMPAIGN BATCH --reason R`",
+      "title": "OP-70 \u2014 `campaign skip CAMPAIGN BATCH --reason R`",
+      "words": 22,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-71": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-71 \u2014 `campaign pause CAMPAIGN [--reason R]`",
+      "title": "OP-71 \u2014 `campaign pause CAMPAIGN [--reason R]`",
+      "words": 23,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-72": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-72 \u2014 `campaign resume CAMPAIGN [--by-user]`",
+      "title": "OP-72 \u2014 `campaign resume CAMPAIGN [--by-user]`",
+      "words": 33,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-73": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-73 \u2014 `campaign cancel CAMPAIGN`",
+      "title": "OP-73 \u2014 `campaign cancel CAMPAIGN`",
+      "words": 21,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-74": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-74 \u2014 `campaign close CAMPAIGN`",
+      "title": "OP-74 \u2014 `campaign close CAMPAIGN`",
+      "words": 21,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-75": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-75 \u2014 `campaign agent-slot CAMPAIGN`",
+      "title": "OP-75 \u2014 `campaign agent-slot CAMPAIGN`",
+      "words": 32,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-76": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-76 \u2014 `campaign asset DIGEST --output FILE`",
+      "title": "OP-76 \u2014 `campaign asset DIGEST --output FILE`",
+      "words": 34,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-77": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-77 \u2014 `campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--execute]`",
+      "title": "OP-77 \u2014 `campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--execute]`",
+      "words": 48,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-78": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-78 \u2014 `jobs publish JOB --skip-failed`",
+      "title": "OP-78 \u2014 `jobs publish JOB --skip-failed`",
+      "words": 59,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-79": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-79 \u2014 `plans merge-notes PLAN --item ITEM --note NOTE...`",
+      "title": "OP-79 \u2014 `plans merge-notes PLAN --item ITEM --note NOTE...`",
+      "words": 88,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-80": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-80 \u2014 `notes delete-merged NOTE --survivor S --plan P [--apply]`",
+      "title": "OP-80 \u2014 `notes delete-merged NOTE --survivor S --plan P [--apply]`",
+      "words": 118,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-81": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-81 \u2014 `notes restore-merged NOTE [--apply]`",
+      "title": "OP-81 \u2014 `notes restore-merged NOTE [--apply]`",
+      "words": 59,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-82": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-82 \u2014 `campaign reopen CAMPAIGN BATCH --reason R`",
+      "title": "OP-82 \u2014 `campaign reopen CAMPAIGN BATCH --reason R`",
+      "words": 78,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
       ]
     },
     "OP-11": {
@@ -1076,6 +1298,20 @@
         "recovery/README.md",
         "recovery/journal.md",
         "contracts/identity.md"
+      ]
+    },
+    "ALG-CAMPAIGN": {
+      "path": "recovery/jobs.md",
+      "heading": "## ALG-CAMPAIGN \u2014 collection revamp campaign",
+      "title": "ALG-CAMPAIGN \u2014 collection revamp campaign",
+      "words": 379,
+      "requires": [
+        "contracts/invariants.md",
+        "recovery/README.md",
+        "recovery/journal.md",
+        "contracts/identity.md",
+        "recovery/apply.md",
+        "recovery/split.md"
       ]
     },
     "ALG-MIGRATE": {

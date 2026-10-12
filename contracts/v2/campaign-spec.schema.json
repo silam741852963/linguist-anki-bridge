@@ -1,0 +1,359 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spec",
+  "description": "`campaign create --spec FILE` (`contracts/v2/campaign-spec.schema.json`).",
+  "type": "object",
+  "properties": {
+    "batch_size": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "batch_sizes": {
+      "description": "Batch size per source ID (for example 10 for grammar).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0
+      },
+      "default": {}
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits",
+      "default": {
+        "agent_runs_per_day": 48,
+        "agent_share_max": 0.2,
+        "max_prepare_runs": 4,
+        "max_review_rounds": 4,
+        "max_step_failures": 3,
+        "prepare_ahead": 2,
+        "retain_done_checkpoints": 5,
+        "spot_check_share": 0.1
+      }
+    },
+    "merge_extra": {
+      "description": "Merge groups the duplicate rule cannot see (other note types).",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/MergeSpec"
+      }
+    },
+    "name": {
+      "type": "string"
+    },
+    "order": {
+      "description": "Cohort IDs (`SOURCE:CLASS`) in processing order.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "pilot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Pilot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "policy": {
+      "description": "Decision policy; `None` is the builtin policy.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Policy"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SourceSpec"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "sources",
+    "order",
+    "batch_size"
+  ],
+  "$defs": {
+    "Limits": {
+      "type": "object",
+      "properties": {
+        "agent_runs_per_day": {
+          "description": "Agent runs the tick wrapper may start per calendar day (UTC).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 48,
+          "minimum": 0
+        },
+        "agent_share_max": {
+          "description": "A batch with a larger share of agent-decided items pauses the campaign.",
+          "type": "number",
+          "format": "double",
+          "default": 0.2
+        },
+        "max_prepare_runs": {
+          "description": "`jobs run` invocations per prepare job before failed items are left out.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 4,
+          "minimum": 0
+        },
+        "max_review_rounds": {
+          "description": "Policy/generation rounds per review step.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 4,
+          "minimum": 0
+        },
+        "max_step_failures": {
+          "description": "Failed attempts of one step before the campaign pauses.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 3,
+          "minimum": 0
+        },
+        "prepare_ahead": {
+          "description": "Batches prepared ahead of the oldest unapplied one.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 2,
+          "minimum": 0
+        },
+        "retain_done_checkpoints": {
+          "description": "Checkpoints of this many newest `done` batches are kept.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 5,
+          "minimum": 0
+        },
+        "spot_check_share": {
+          "description": "Share of generated items the agent spot-checks before approval.",
+          "type": "number",
+          "format": "double",
+          "default": 0.1
+        }
+      },
+      "additionalProperties": false
+    },
+    "MergeSpec": {
+      "type": "object",
+      "properties": {
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "survivor": {
+          "description": "The note that survives; default the one with the most repetitions.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "notes"
+      ]
+    },
+    "Pilot": {
+      "type": "object",
+      "properties": {
+        "cohort": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cohort",
+        "size"
+      ]
+    },
+    "Policy": {
+      "description": "`contracts/v2/review-policy.schema.json`.",
+      "type": "object",
+      "properties": {
+        "accept_first_template": {
+          "description": "Issue codes closed with their first template choice.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "accept_generated_facts": {
+          "description": "Accept generated facts (the agent spot-checks a share of them).",
+          "type": "boolean"
+        },
+        "actor": {
+          "description": "Actor recorded on every policy decision.",
+          "type": "string"
+        },
+        "agent_codes": {
+          "description": "Issue codes always left to the agent.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "archive_picture_classes": {
+          "description": "OCR image classes archived (not rendered).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "history_map": {
+          "description": "SOURCE_ORDINAL=TASK entries for every native history review.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "keep_own_audio": {
+          "description": "Keep the note's own recording and decline synthesized/dictionary audio.",
+          "type": "boolean"
+        },
+        "keep_picture_classes": {
+          "description": "OCR image classes kept as the card's picture (vocabulary only).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "schema_version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "actor",
+        "history_map",
+        "keep_picture_classes",
+        "archive_picture_classes",
+        "keep_own_audio",
+        "accept_generated_facts",
+        "accept_first_template",
+        "agent_codes"
+      ]
+    },
+    "SourceSpec": {
+      "type": "object",
+      "properties": {
+        "audio_field": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "extra_agent_codes": {
+          "description": "Issue codes this source leaves to the agent on top of the policy's\n(for example OCR text of notes whose words come from screenshots).",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "id": {
+          "type": "string"
+        },
+        "language": {
+          "description": "Target language tag (`ja`, `en`); drives the kana and split rules.",
+          "type": "string"
+        },
+        "merge_duplicates": {
+          "description": "Group same word+reading notes for a merge.",
+          "type": "boolean",
+          "default": false
+        },
+        "picture_field": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "query": {
+          "description": "Anki search selecting this source's notes.",
+          "type": "string"
+        },
+        "reading_field": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "settings": {
+          "description": "`--set KEY=VALUE` overrides every command of this source runs with.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "target_models": {
+          "description": "Target note types a verified note must be on after apply.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "word_field": {
+          "description": "Source fields used by the cohort rules; absent fields disable a rule.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "query",
+        "purpose",
+        "target_models",
+        "language"
+      ]
+    }
+  }
+}

@@ -8,15 +8,20 @@ pub(crate) const SCHEMA_SQL: &str = "CREATE TABLE leases(resource TEXT PRIMARY K
 pub enum Resource {
     JobWorker(Uuid),
     CollectionWriter(Uuid),
+    /// One campaign tick at a time (WP-24).
+    Campaign(Uuid),
 }
 impl Resource {
     fn key(&self) -> Result<String> {
         match self {
-            Self::JobWorker(id) | Self::CollectionWriter(id) if id.is_nil() => {
+            Self::JobWorker(id) | Self::CollectionWriter(id) | Self::Campaign(id)
+                if id.is_nil() =>
+            {
                 Err("INVALID_LEASE_RESOURCE".into())
             }
             Self::JobWorker(id) => Ok(format!("job:{id}")),
             Self::CollectionWriter(id) => Ok(format!("writer:{id}")),
+            Self::Campaign(id) => Ok(format!("campaign:{id}")),
         }
     }
 }

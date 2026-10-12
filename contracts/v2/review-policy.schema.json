@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Policy",
+  "description": "`contracts/v2/review-policy.schema.json`.",
+  "type": "object",
+  "properties": {
+    "accept_first_template": {
+      "description": "Issue codes closed with their first template choice.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "accept_generated_facts": {
+      "description": "Accept generated facts (the agent spot-checks a share of them).",
+      "type": "boolean"
+    },
+    "actor": {
+      "description": "Actor recorded on every policy decision.",
+      "type": "string"
+    },
+    "agent_codes": {
+      "description": "Issue codes always left to the agent.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "archive_picture_classes": {
+      "description": "OCR image classes archived (not rendered).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "history_map": {
+      "description": "SOURCE_ORDINAL=TASK entries for every native history review.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "keep_own_audio": {
+      "description": "Keep the note's own recording and decline synthesized/dictionary audio.",
+      "type": "boolean"
+    },
+    "keep_picture_classes": {
+      "description": "OCR image classes kept as the card's picture (vocabulary only).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "actor",
+    "history_map",
+    "keep_picture_classes",
+    "archive_picture_classes",
+    "keep_own_audio",
+    "accept_generated_facts",
+    "accept_first_template",
+    "agent_codes"
+  ]
+}

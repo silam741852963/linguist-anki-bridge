@@ -859,6 +859,75 @@ impl Anki {
                 self.notes.remove(note_id);
                 None
             }
+            Effect::DeleteMergedNote {
+                note_id,
+                expected_pre_digest,
+                survivor_note_id,
+                survivor_model_name,
+            } => {
+                let note = self.notes.get(note_id).cloned()?;
+                if &content_digest(&note).unwrap() != expected_pre_digest
+                    || self
+                        .notes
+                        .get(survivor_note_id)
+                        .is_none_or(|s| &s.model_name != survivor_model_name)
+                {
+                    return Some("precondition_mismatch".into());
+                }
+                self.notes.remove(note_id);
+                None
+            }
+            Effect::RecreateDeletedNote {
+                note,
+                cards,
+                reviews,
+                ..
+            } => {
+                let id = note["id"].as_i64().unwrap();
+                if self.notes.contains_key(&id) {
+                    return Some("note_exists".into());
+                }
+                let model_id = note["model_id"].as_i64().unwrap();
+                let model = self.models.iter().find(|m| m.id == model_id).cloned()?;
+                let fields = model
+                    .fields
+                    .iter()
+                    .cloned()
+                    .zip(
+                        note["fields"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|v| v.as_str().unwrap().to_owned()),
+                    )
+                    .collect();
+                let cards = cards
+                    .iter()
+                    .map(|c| ObservedCard {
+                        id: c["id"].as_i64().unwrap(),
+                        ordinal: c["ordinal"].as_u64().unwrap() as u16,
+                        deck_id: c["deck_id"].as_i64().unwrap(),
+                        original_deck_id: 0,
+                        scheduler: BTreeMap::new(),
+                        history_digest: "0".repeat(64),
+                        review_count: reviews.iter().filter(|r| r["card_id"] == c["id"]).count()
+                            as u64,
+                    })
+                    .collect();
+                self.notes.insert(
+                    id,
+                    ObservedNote {
+                        id,
+                        model_id,
+                        model_name: model.name.clone(),
+                        model_manifest_digest: Self::model_digest(model_id),
+                        fields,
+                        tags: serde_json::from_value(note["tags"].clone()).unwrap(),
+                        cards,
+                    },
+                );
+                None
+            }
         }
     }
     pub fn study(&mut self) {

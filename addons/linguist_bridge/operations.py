@@ -31,6 +31,7 @@ class OperationError(RuntimeError):
 VARIANTS = frozenset({
     "install_model", "export_checkpoint", "store_media", "create_note",
     "update_note", "restore_note", "delete_unstudied_created_note",
+    "delete_merged_note", "recreate_deleted_note",
 })
 BEFORE_WRITE_REASONS = frozenset({
     "preflight_rejected", "operator_cancelled", "session_changed", "checkpoint_failed",

@@ -389,6 +389,78 @@ def delete_unstudied_created_note(col, body, manifest_digest=None):
     return perform_delete_unstudied_created_note(col, body, None)
 
 
+# ------------------------------------------------------------------ merge (WP-24)
+def preflight_delete_merged_note(col, body, manifest_digest=None):
+    """A duplicate merged into its survivor is removed only while its content
+    is unchanged since the merge was decided and the survivor exists on the
+    expected (revamped) note type."""
+    observed = observe_or_none(col, body["note_id"], manifest_digest)
+    if observed is None:
+        raise EffectError("BRIDGE_NOTE_MISSING")
+    if content_digest(observed) != body["expected_pre_digest"]:
+        raise EffectError("BRIDGE_PRECONDITION_FAILED")
+    survivor = observe_or_none(col, body["survivor_note_id"], manifest_digest)
+    if survivor is None or survivor["model_name"] != body["survivor_model_name"]:
+        raise EffectError("BRIDGE_MERGE_SURVIVOR_INVALID")
+    return None
+
+
+def perform_delete_merged_note(col, body, _prepared):
+    col.remove_notes([body["note_id"]])
+    return body["note_id"]
+
+
+def preflight_recreate_deleted_note(col, body, manifest_digest=None):
+    """Rollback of a merge: the note and its cards must still be absent, its
+    note type must exist with the same field count, and every deck exists."""
+    note = body["note"]
+    if observe_or_none(col, note["id"], manifest_digest) is not None:
+        raise EffectError("BRIDGE_NOTE_EXISTS")
+    for card in body["cards"]:
+        if col.db.scalar("select count() from cards where id = ?", card["id"]):
+            raise EffectError("BRIDGE_CARD_EXISTS")
+        _deck(col, card["deck_id"])
+    model = col.models.get(note["model_id"])
+    if model is None or len(model["flds"]) != len(note["fields"]):
+        raise EffectError("BRIDGE_MODEL_MISMATCH")
+    if col.db.scalar("select count() from notes where guid = ?", note["guid"]):
+        raise EffectError("BRIDGE_GUID_EXISTS")
+    return None
+
+
+def perform_recreate_deleted_note(col, body, _prepared):
+    note = body["note"]
+    usn = col.usn()
+    tags = " " + " ".join(note["tags"]) + " " if note["tags"] else ""
+    col.db.execute(
+        "insert into notes (id, guid, mid, mod, usn, tags, flds, sfld, csum, flags, data) "
+        "values (?, ?, ?, ?, ?, ?, ?, '', 0, 0, '')",
+        note["id"], note["guid"], note["model_id"], int(col.db.scalar("select strftime('%s','now')")),
+        usn, tags, "\x1f".join(note["fields"]))
+    for card in body["cards"]:
+        col.db.execute(
+            "insert into cards (id, nid, did, ord, mod, usn, type, queue, due, ivl, factor, reps, "
+            "lapses, left, odue, odid, flags, data) values "
+            "(?, ?, ?, ?, strftime('%s','now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            card["id"], note["id"], card["deck_id"], card["ordinal"], usn, card["type"],
+            card["queue"], card["due"], card["interval"], card["ease_factor"],
+            card["repetitions"], card["lapses"], card["remaining_steps"],
+            card["original_due"], card["original_deck_id"], card["flags"],
+            json.dumps({"cd": card["custom_data"]}) if card["custom_data"] else "")
+    for review in body["reviews"]:
+        # Anki keeps review rows of removed cards; only absent rows return.
+        col.db.execute(
+            "insert or ignore into revlog (id, cid, usn, ease, ivl, lastIvl, factor, time, type) "
+            "values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            review["id"], review["card_id"], review["usn"], review["ease"],
+            review["interval"], review["previous_interval"], review["factor"],
+            review["time"], review["type"])
+    # A backend update recomputes the sort field and checksum and commits.
+    restored = col.get_note(note["id"])
+    col.update_note(restored)
+    return note["id"]
+
+
 # ------------------------------------------------------------------ media
 def _safe_name(name):
     if (type(name) is not str or not name or len(name.encode("utf-8")) > 255

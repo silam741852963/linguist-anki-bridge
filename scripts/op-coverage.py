@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-61 with its
+"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-82 with its
 CLI handler and the tests that exercise it.
 
 Command-level tests are found by scanning `crates/linguist-cli/tests/*.rs`
@@ -34,7 +34,15 @@ OPS = [("OP-01", "doctor"), ("OP-02", "config init"), ("OP-03", "config show"),
        ("OP-52", "backup create"), ("OP-53", "backup list"), ("OP-54", "backup verify"),
        ("OP-55", "cache status"), ("OP-56", "cache prune"), ("OP-57", "resources list"),
        ("OP-58", "resources install"), ("OP-59", "recover inspect"),
-       ("OP-60", "recover reconcile"), ("OP-61", "completions")]
+       ("OP-60", "recover reconcile"), ("OP-61", "completions"),
+       ("OP-62", "campaign create"), ("OP-63", "campaign list"), ("OP-64", "campaign status"),
+       ("OP-65", "campaign batch"), ("OP-66", "campaign events"), ("OP-67", "campaign run"),
+       ("OP-68", "campaign approve"), ("OP-69", "campaign item"), ("OP-70", "campaign skip"),
+       ("OP-71", "campaign pause"), ("OP-72", "campaign resume"), ("OP-73", "campaign cancel"),
+       ("OP-74", "campaign close"), ("OP-75", "campaign agent-slot"), ("OP-76", "campaign asset"),
+       ("OP-77", "campaign install-timer"), ("OP-78", "jobs publish"), ("OP-79", "plans merge-notes"),
+       ("OP-80", "notes delete-merged"), ("OP-81", "notes restore-merged"),
+       ("OP-82", "campaign reopen")]
 APP = "crates/linguist-application/tests/"
 LIBRARY = {
     "OP-17": [APP + "checkpoint_writes.rs::created_model_is_journaled_before_call_and_verified",
@@ -49,6 +57,15 @@ LIBRARY = {
     "OP-50": [APP + "restore.rs::restore_after_later_study_restores_content_and_keeps_new_history",
               APP + "restore.rs::later_personal_edits_conflict_until_explicitly_merged"],
     "OP-52": [APP + "checkpoint_writes.rs::verified_checkpoint_has_receipt_restoration_and_committed_journal"],
+    "OP-67": [APP + "campaign.rs::a_campaign_runs_every_batch_to_done_and_merges_duplicates",
+              APP + "campaign.rs::a_tick_killed_after_any_command_loses_no_work_and_repeats_no_write"],
+    "OP-68": [APP + "campaign.rs::the_agent_settles_or_defers_what_the_policy_left_and_too_many_agent_decisions_pause"],
+    "OP-69": [APP + "campaign.rs::the_agent_settles_or_defers_what_the_policy_left_and_too_many_agent_decisions_pause"],
+    "OP-82": [APP + "campaign.rs::a_batch_is_ready_only_when_the_final_plan_has_no_open_issue"],
+    "OP-79": [APP + "merge.rs::a_merged_duplicate_is_archived_deleted_once_and_restorable"],
+    "OP-80": [APP + "merge.rs::a_merged_duplicate_is_archived_deleted_once_and_restorable",
+              APP + "merge.rs::a_note_the_plan_does_not_merge_is_never_deleted"],
+    "OP-81": [APP + "merge.rs::a_merged_duplicate_is_archived_deleted_once_and_restorable"],
     "OP-60": [APP + "apply.rs::timeout_after_accepted_create_reconciles_to_one_note",
               APP + "apply.rs::unknown_add_with_exact_marker_candidate_is_adopted"],
 }
@@ -87,7 +104,7 @@ def handler_line(words):
              "notes": "NoteCommand", "vocab": "PrepareCommand", "grammar": "PrepareCommand",
              "plans": "PlanCommand", "jobs": "JobCommand", "snapshots": "SnapshotCommand",
              "backup": "BackupCommand", "cache": "CacheCommand", "resources": "ResourceCommand",
-             "recover": "RecoveryCommand"}.get(words[0])
+             "recover": "RecoveryCommand", "campaign": "CampaignCommand"}.get(words[0])
     needles = [f"{group}::{variant}"] if group and len(words) > 1 else [f"Command::{variant}"]
     start = next(i for i, line in enumerate(main) if line.startswith("fn run(cli: Cli)"))
     for index, line in enumerate(main[start:], start + 1):
@@ -96,6 +113,12 @@ def handler_line(words):
     for index, line in enumerate(main, 1):
         if any(n in line for n in needles) and "fn state_write_estimate" not in "".join(main[max(0, index - 60):index]):
             return f"crates/linguist-cli/src/main.rs:{index}"
+    # WP-24 handlers live in their own modules.
+    for module in ("campaign.rs", "merge_cmd.rs"):
+        lines = (ROOT / "crates/linguist-cli/src" / module).read_text().splitlines()
+        for index, line in enumerate(lines, 1):
+            if any(n in line for n in needles) and ("=>" in line or "=>" in "".join(lines[index:index + 8])):
+                return f"crates/linguist-cli/src/{module}:{index}"
     return "crates/linguist-cli/src/main.rs"
 
 

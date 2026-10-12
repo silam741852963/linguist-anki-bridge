@@ -273,10 +273,17 @@ pub fn enrich_document(
             }
             vocab.dictionary = page.entries;
             let source_id = uuid::Uuid::new_v4();
-            let fields = BTreeMap::from([(
-                "provider_response".into(),
-                String::from_utf8(page.raw_bytes.clone()).map_err(|_| "INPUT_ENCODING")?,
-            )]);
+            // The raw response is archived as an asset by its digest; the plan
+            // keeps only the reference (WP-24: a Cambridge page inlined four
+            // times made one English document 2.7 MB).
+            std::str::from_utf8(&page.raw_bytes).map_err(|_| "INPUT_ENCODING")?;
+            let fields = BTreeMap::from([
+                ("provider_response_sha256".into(), page.raw_digest.clone()),
+                (
+                    "provider_response_bytes".into(),
+                    page.raw_bytes.len().to_string(),
+                ),
+            ]);
             document.sources.push(SourceRecord {
                 id: source_id,
                 kind: if japanese {
@@ -289,7 +296,7 @@ pub fn enrich_document(
                 .into(),
                 location: page.request_url.clone(),
                 digest: page.raw_digest.clone(),
-                text: fields.get("provider_response").cloned(),
+                text: None,
                 fields: fields.clone(),
                 model_manifest: if japanese {
                     "jisho-api-v1"
@@ -309,7 +316,7 @@ pub fn enrich_document(
                 id: uuid::Uuid::new_v4(),
                 source_id,
                 digest: page.raw_digest.clone(),
-                original_text: fields.get("provider_response").cloned(),
+                original_text: None,
                 original_fields: fields,
                 asset_digests: vec![page.raw_digest.clone()],
             });

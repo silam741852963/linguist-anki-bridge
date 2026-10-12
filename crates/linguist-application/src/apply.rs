@@ -178,6 +178,22 @@ pub enum Effect {
         note_id: i64,
         expected_pre_digest: String,
     },
+    /// WP-24: remove a duplicate merged into its survivor, while its content
+    /// is unchanged and the survivor is on its revamped note type.
+    DeleteMergedNote {
+        note_id: i64,
+        expected_pre_digest: String,
+        survivor_note_id: i64,
+        survivor_model_name: String,
+    },
+    /// WP-24 merge rollback: recreate a deleted note from its pre-delete
+    /// evidence with its note, card and review IDs.
+    RecreateDeletedNote {
+        note: serde_json::Value,
+        cards: Vec<serde_json::Value>,
+        reviews: Vec<serde_json::Value>,
+        expected_absent: bool,
+    },
 }
 
 impl Effect {
@@ -188,6 +204,8 @@ impl Effect {
             Self::UpdateNote(_) => "update_note",
             Self::RestoreNote(_) => "restore_note",
             Self::DeleteUnstudiedCreatedNote { .. } => "delete_unstudied_created_note",
+            Self::DeleteMergedNote { .. } => "delete_merged_note",
+            Self::RecreateDeletedNote { .. } => "recreate_deleted_note",
         }
     }
     /// Exact `{schema_version: 1, variant, body}` wire envelope the
@@ -1933,9 +1951,17 @@ pub(crate) fn read_step(
             let kept = restore.card_decks.iter().map(|c| c.card_id).collect();
             Ok(compare(digest_of(&restore_projection(&note, &kept))?, step))
         }
+        Effect::RecreateDeletedNote { .. } => Err(
+            "APPLY_EFFECT_NOT_JOURNALED: merge rollback is driven by `notes restore-merged`".into(),
+        ),
         Effect::DeleteUnstudiedCreatedNote {
             note_id,
             expected_pre_digest,
+        }
+        | Effect::DeleteMergedNote {
+            note_id,
+            expected_pre_digest,
+            ..
         } => match port.note(*note_id)? {
             None => Ok(compare(digest_of(&deleted_projection(*note_id))?, step)),
             Some(note) if &content_digest(&note)? == expected_pre_digest => Ok(Readback::Unchanged),

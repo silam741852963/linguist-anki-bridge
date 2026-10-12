@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "actor": "campaign-policy",
+  "history_map": ["0=comprehension", "1=production", "2=spelling"],
+  "keep_picture_classes": ["illustration"],
+  "archive_picture_classes": ["dictionary", "grammar"],
+  "keep_own_audio": true,
+  "accept_generated_facts": true,
+  "accept_first_template": [
+    "SOURCE_MEDIA_MISSING_REVIEW",
+    "SOURCE_HTML_TEXT_REVIEW",
+    "SOURCE_UNMAPPED_FIELD_REVIEW",
+    "SOURCE_STRUCTURED_ROLE_REVIEW",
+    "SOURCE_MEDIA_DISCOVERY_REVIEW",
+    "SOURCE_MEDIA_EMPTY_REVIEW",
+    "SOURCE_RICH_FIELD_REVIEW",
+    "SOURCE_COMBINED_FIELD_REVIEW",
+    "SOURCE_AUDIO_COMPLETENESS_REVIEW"
+  ],
+  "agent_codes": [
+    "IMAGE_CLASSIFICATION_REVIEW",
+    "GRAMMAR_SEGMENTATION_REVIEW",
+    "COLLECTION_DUPLICATE_REVIEW",
+    "SOURCE_EXAMPLES_REVIEW",
+    "SOURCE_EXAMPLES_SCHEMA_REVIEW",
+    "SOURCE_EXAMPLES_LIMIT_REVIEW",
+    "SOURCE_EXAMPLES_CONTENT_REVIEW"
+  ]
+}

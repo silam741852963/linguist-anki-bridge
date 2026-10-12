@@ -1103,8 +1103,22 @@ pub fn native_history_request(
         linguist_core::LearningContent::Vocabulary(_) => TargetModelKind::Vocabulary,
         linguist_core::LearningContent::Grammar(_) => TargetModelKind::Grammar,
     };
+    // A map entry for a template the note has no card of is dropped: a
+    // uniform map (0, 1, 2) serves notes with fewer cards (WP-24).
+    let observed: std::collections::BTreeSet<u16> = cards.iter().map(|card| card.ordinal).collect();
+    let unmapped: Vec<u16> = observed
+        .iter()
+        .copied()
+        .filter(|ordinal| !maps.iter().any(|(source, _)| source == ordinal))
+        .collect();
+    if !unmapped.is_empty() {
+        return Err(format!(
+            "NATIVE_HISTORY_CARD_UNMAPPED: map every source card's template ordinal {unmapped:?}; no card or review history is dropped"
+        ));
+    }
     let entries = maps
         .iter()
+        .filter(|(source_ordinal, _)| observed.contains(source_ordinal))
         .map(|(source_ordinal, task)| {
             let target_ordinal = match (kind, task) {
                 (TargetModelKind::Vocabulary, Task::Comprehension) => 0,

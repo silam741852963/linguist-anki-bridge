@@ -87,3 +87,24 @@ Aliases `inject`/`modernize` may map to add/revamp with deprecation messages; th
 | OP-59 | [`recover inspect`](maintenance.md#op-59-recover-inspect) |
 | OP-60 | [`recover reconcile OPERATION`](maintenance.md#op-60-recover-reconcile-operation) |
 | OP-61 | [`completions SHELL`](maintenance.md#op-61-completions-shell) |
+| OP-62 | [`campaign create --spec FILE [--dry-run]`](campaign.md#op-62-campaign-create---spec-file---dry-run) |
+| OP-63 | [`campaign list`](campaign.md#op-63-campaign-list) |
+| OP-64 | [`campaign status [CAMPAIGN]`](campaign.md#op-64-campaign-status-campaign) |
+| OP-65 | [`campaign batch CAMPAIGN BATCH`](campaign.md#op-65-campaign-batch-campaign-batch) |
+| OP-66 | [`campaign events CAMPAIGN`](campaign.md#op-66-campaign-events-campaign) |
+| OP-67 | [`campaign run [CAMPAIGN] [--max-seconds N]`](campaign.md#op-67-campaign-run-campaign---max-seconds-n) |
+| OP-68 | [`campaign approve CAMPAIGN BATCH --actor NAME`](campaign.md#op-68-campaign-approve-campaign-batch---actor-name) |
+| OP-69 | [`campaign item CAMPAIGN BATCH NOTE --settled&#124;--defer REASON&#124;--undefer`](campaign.md#op-69-campaign-item-campaign-batch-note---settled--defer-reason--undefer) |
+| OP-70 | [`campaign skip CAMPAIGN BATCH --reason R`](campaign.md#op-70-campaign-skip-campaign-batch---reason-r) |
+| OP-71 | [`campaign pause CAMPAIGN [--reason R]`](campaign.md#op-71-campaign-pause-campaign---reason-r) |
+| OP-72 | [`campaign resume CAMPAIGN [--by-user]`](campaign.md#op-72-campaign-resume-campaign---by-user) |
+| OP-73 | [`campaign cancel CAMPAIGN`](campaign.md#op-73-campaign-cancel-campaign) |
+| OP-74 | [`campaign close CAMPAIGN`](campaign.md#op-74-campaign-close-campaign) |
+| OP-75 | [`campaign agent-slot CAMPAIGN`](campaign.md#op-75-campaign-agent-slot-campaign) |
+| OP-76 | [`campaign asset DIGEST --output FILE`](campaign.md#op-76-campaign-asset-digest---output-file) |
+| OP-77 | [`campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--execute]`](campaign.md#op-77-campaign-install-timer-campaign---script-path---workdir-dir---interval-minutes-n---execute) |
+| OP-78 | [`jobs publish JOB --skip-failed`](campaign.md#op-78-jobs-publish-job---skip-failed) |
+| OP-79 | [`plans merge-notes PLAN --item ITEM --note NOTE...`](campaign.md#op-79-plans-merge-notes-plan---item-item---note-note) |
+| OP-80 | [`notes delete-merged NOTE --survivor S --plan P [--apply]`](campaign.md#op-80-notes-delete-merged-note---survivor-s---plan-p---apply) |
+| OP-81 | [`notes restore-merged NOTE [--apply]`](campaign.md#op-81-notes-restore-merged-note---apply) |
+| OP-82 | [`campaign reopen CAMPAIGN BATCH --reason R`](campaign.md#op-82-campaign-reopen-campaign-batch---reason-r) |

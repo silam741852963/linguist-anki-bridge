@@ -109,7 +109,7 @@ impl Desktop {
             info["anki_version"], "25.09.2",
             "evidence is pinned to this build"
         );
-        assert_eq!(info["mutation_variants"].as_array().unwrap().len(), 7);
+        assert_eq!(info["mutation_variants"].as_array().unwrap().len(), 9);
         self.endpoint = info["endpoint"].as_str().unwrap().to_owned();
         self.stdin = child.stdin.take();
         self.child = Some(child);
@@ -2089,4 +2089,194 @@ fn vocab_split_apply_study_rollback() {
         "the unstudied sibling is removed"
     );
     s.report("vocab_split");
+}
+
+/// WP-24: a campaign over studied notes, driven only by `campaign` commands
+/// and a test "agent" (sense keys, approvals). The pilot pauses for the user;
+/// Anki crashes in the middle of an apply job and restarts; a duplicate is
+/// merged into its survivor and deleted, then restored with its IDs.
+#[test]
+#[ignore = "needs Anki desktop and the AnkiConnect zip; the cli-dev release check runs it"]
+fn campaign_restart_recovery() {
+    let mut s = Scenario::new("campaign", "japanese_vocab", Some("Japanese::Vocab"), true);
+    s.install_model("japanese_vocab");
+    s.desktop.call(
+        "createModel",
+        json!({"modelName": "Campaign Source", "inOrderFields": ["Front", "Back"],
+               "css": ".card {}", "cardTemplates": [{"Name": "Card 1", "Front": "{{Front}}",
+               "Back": "{{Back}}"}]}),
+    );
+    let words = [
+        ("食べる", "to eat"),
+        ("飲む", "to drink"),
+        ("見る", "to see"),
+        ("聞く", "to hear"),
+        ("本", "book"),
+        ("本", "book"),
+    ];
+    let mut notes = Vec::new();
+    for (word, meaning) in words {
+        let note = s.desktop.add_note(
+            "Campaign Source",
+            "Default",
+            json!({"Front": word, "Back": meaning}),
+            &["legacy"],
+        );
+        s.desktop.study(note);
+        notes.push(note);
+    }
+    // The second 本 is studied more: it survives the merge.
+    s.desktop.study(notes[5]);
+    let before: Vec<Value> = notes.iter().map(|n| s.desktop.note(*n)).collect();
+    s.settings.push(format!(
+        "purposes.japanese_vocab.fields={}",
+        json!({"expression": "Front", "meaning": "Back"})
+    ));
+    s.settings
+        .push("purposes.japanese_vocab.source_model=Campaign Source".into());
+    let spec = s.root.join("campaign-spec.json");
+    std::fs::write(
+        &spec,
+        json!({"schema_version": 1, "name": "scenario",
+            "sources": [{"id": "ja", "query": "note:\"Campaign Source\"", "purpose": "japanese_vocab",
+                "target_models": ["Linguist Vocabulary v3"], "word_field": "Front", "reading_field": "Back",
+                "language": "ja", "merge_duplicates": true}],
+            "order": ["ja:plain", "ja:kana_only", "ja:duplicate"], "batch_size": 2,
+            "pilot": {"cohort": "ja:plain", "size": 1},
+            "limits": {"agent_share_max": 1.0}})
+        .to_string(),
+    )
+    .unwrap();
+    let created = s.ok(&["campaign", "create", "--spec", spec.to_str().unwrap()]);
+    let id = created["campaign"].as_str().unwrap().to_owned();
+    assert_eq!(
+        created["selection"]["merge_groups"],
+        json!([[notes[5].to_string(), notes[4].to_string()]])
+    );
+
+    // The "agent": author sense keys the authored dictionary cannot choose,
+    // then approve every ready batch.
+    let agent = |s: &mut Scenario| {
+        let status = s.ok(&["campaign", "status", &id]);
+        for entry in status["agent"].as_array().unwrap().clone() {
+            let batch = entry["batch"].to_string();
+            if entry["phase"] == "needs_agent" {
+                for (note, needs) in entry["needs"].as_object().unwrap() {
+                    if needs.to_string().contains("MERGE_CONFIRM") {
+                        s.ok(&["campaign", "item", &id, &batch, note, "--settled"]);
+                    }
+                }
+                let plan = entry["plan"].as_str().unwrap().to_owned();
+                let shown = s.ok(&["plans", "show", &plan]);
+                let items: Vec<Value> = shown["documents"].as_array().unwrap().iter()
+                    .filter(|d| d["content"]["body"]["sense_key"].as_str().unwrap_or("").is_empty())
+                    .map(|d| json!({"document_id": d["id"], "fields": {"SenseKey": {"intent": "set", "value": format!("sense-{}", &d["id"].as_str().unwrap()[..8])}}}))
+                    .collect();
+                if !items.is_empty() {
+                    let patch = s.root.join(format!("patch-{}.json", Uuid::new_v4()));
+                    std::fs::write(&patch, json!({"schema_version": 2, "base_digest": root_digest(&shown), "items": items}).to_string()).unwrap();
+                    let rev = shown["revision"].to_string();
+                    let (code, out, err) = s.cli(&[
+                        "plans",
+                        "edit",
+                        &plan,
+                        "--base-revision",
+                        &rev,
+                        "--patch",
+                        patch.to_str().unwrap(),
+                        "--save-draft",
+                    ]);
+                    assert!(code == 0 || code == 4, "{err} {out}");
+                }
+            } else if entry["phase"] == "ready" {
+                s.ok(&[
+                    "campaign",
+                    "approve",
+                    &id,
+                    &batch,
+                    "--actor",
+                    "scenario-agent",
+                ]);
+            }
+        }
+    };
+    let tick = |s: &mut Scenario| -> Value {
+        let (code, value, stderr) = s.cli(&["campaign", "run", &id, "--max-seconds", "600"]);
+        assert!(code == 0 || code == 5, "{stderr} {value}");
+        s.log.push(format!("tick -> {}", value["stopped"]));
+        value
+    };
+    // Pilot: one note, then the campaign pauses for the user's review.
+    let mut paused = false;
+    for _ in 0..12 {
+        let ran = tick(&mut s);
+        if ran["stopped"] == "CAMPAIGN_PILOT_REVIEW" {
+            paused = true;
+            break;
+        }
+        agent(&mut s);
+    }
+    assert!(paused, "the pilot pauses the campaign");
+    assert_eq!(
+        s.desktop.note(notes[0])["model_name"],
+        "Linguist Vocabulary v3"
+    );
+    s.ok(&["campaign", "resume", &id, "--by-user"]);
+    // Anki crashes after the first note type change of the next apply job.
+    s.desktop
+        .arm(json!({"point": "after_effect", "action": "crash", "variant": "update_note"}));
+    let mut crashed = false;
+    for _ in 0..40 {
+        tick(&mut s);
+        if s.desktop.try_call("version", json!({})).is_err() {
+            crashed = true;
+            s.desktop.wait_for_exit();
+            // A tick while Anki is down only waits.
+            let waiting = tick(&mut s);
+            s.log.push(format!("anki down -> {waiting}"));
+            s.desktop.restart();
+        }
+        agent(&mut s);
+        let status = s.ok(&["campaign", "status", &id]);
+        if status["finished"] == true {
+            break;
+        }
+        assert_eq!(status["status"], "running", "{status}");
+    }
+    assert!(crashed, "the armed crash happened");
+    let status = s.ok(&["campaign", "status", &id]);
+    assert_eq!(status["finished"], true, "{status}");
+    // Every surviving note is on v3 with its cards and reviews.
+    for (index, note) in notes.iter().enumerate().take(5).filter(|(i, _)| *i != 4) {
+        let after = s.desktop.note(*note);
+        assert_eq!(after["model_name"], "Linguist Vocabulary v3", "{after}");
+        assert_eq!(after["cards"][0]["id"], before[index]["cards"][0]["id"]);
+        assert_eq!(
+            after["cards"][0]["review_count"],
+            before[index]["cards"][0]["review_count"]
+        );
+    }
+    let survivor = s.desktop.note(notes[5]);
+    assert_eq!(survivor["model_name"], "Linguist Vocabulary v3");
+    assert_eq!(survivor["cards"][0]["review_count"], 2);
+    // The duplicate is gone, and comes back with its IDs and its review.
+    let gone = s.desktop.try_call(
+        "labInspect",
+        json!({"kind": "note", "note_id": notes[4], "session_epoch": s.desktop.epoch()}),
+    );
+    assert!(
+        gone.map(|v| v.is_null()).unwrap_or(true),
+        "the merged duplicate was deleted"
+    );
+    let restored = s.ok(&["notes", "restore-merged", &notes[4].to_string(), "--apply"]);
+    assert_eq!(restored["state"], "restored", "{restored}");
+    let back = s.desktop.note(notes[4]);
+    assert_eq!(back["model_name"], "Campaign Source");
+    assert_eq!(back["cards"][0]["id"], before[4]["cards"][0]["id"]);
+    assert_eq!(back["cards"][0]["review_count"], 1);
+    assert_eq!(
+        back["cards"][0]["history_digest"],
+        before[4]["cards"][0]["history_digest"]
+    );
+    s.report("campaign_restart_recovery");
 }

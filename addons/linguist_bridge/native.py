@@ -385,6 +385,10 @@ class NativeActions:
             return effects.preflight_restore_note(col, body)
         if variant == "delete_unstudied_created_note":
             return effects.preflight_delete_unstudied_created_note(col, body)
+        if variant == "delete_merged_note":
+            return effects.preflight_delete_merged_note(col, body)
+        if variant == "recreate_deleted_note":
+            return effects.preflight_recreate_deleted_note(col, body)
         if variant == "install_model":
             return effects.preflight_install_model(col, body)
         if variant == "store_media":
@@ -426,6 +430,10 @@ class NativeActions:
             return effects.perform_restore_note(col, body, prepared)
         if variant == "delete_unstudied_created_note":
             return effects.perform_delete_unstudied_created_note(col, body, prepared)
+        if variant == "delete_merged_note":
+            return effects.perform_delete_merged_note(col, body, prepared)
+        if variant == "recreate_deleted_note":
+            return effects.perform_recreate_deleted_note(col, body, prepared)
         if variant == "install_model":
             return effects.perform_install_model(col, body, prepared)
         if variant == "store_media":
@@ -445,10 +453,22 @@ class NativeActions:
             return {"note_id": observed["id"], "model_id": observed["model_id"],
                     "content_digest": effects.content_digest(observed),
                     "card_ids": [card["id"] for card in observed["cards"]]}
-        if variant == "delete_unstudied_created_note":
+        if variant in ("delete_unstudied_created_note", "delete_merged_note"):
             _require(effects.observe_or_none(col, body["note_id"]) is None,
                      "BRIDGE_READBACK_MISMATCH")
             return {"note_id": body["note_id"], "removed": True}
+        if variant == "recreate_deleted_note":
+            observed = effects.observe_note(col, body["note"]["id"])
+            counts = {}
+            for review in body["reviews"]:
+                counts[review["card_id"]] = counts.get(review["card_id"], 0) + 1
+            _require(sorted(card["id"] for card in observed["cards"])
+                     == sorted(card["id"] for card in body["cards"])
+                     and all(card["review_count"] == counts.get(card["id"], 0)
+                             for card in observed["cards"]),
+                     "BRIDGE_READBACK_MISMATCH")
+            return {"note_id": observed["id"], "content_digest": effects.content_digest(observed),
+                    "card_ids": [card["id"] for card in observed["cards"]]}
         if variant == "install_model":
             model = col.models.get(result)
             _require(model is not None

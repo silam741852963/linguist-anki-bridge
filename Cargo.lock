@@ -1126,7 +1126,7 @@ dependencies = [
 
 [[package]]
 name = "linguist-anki"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "base64",
  "linguist-config",
@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "linguist-application"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "ammonia",
  "base64",
@@ -1178,7 +1178,7 @@ dependencies = [
 
 [[package]]
 name = "linguist-cli"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "clap",
  "clap_complete",
@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "linguist-config"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "libc",
  "linguist-core",
@@ -1218,7 +1218,7 @@ dependencies = [
 
 [[package]]
 name = "linguist-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "ammonia",
  "language-tags",
@@ -1232,7 +1232,7 @@ dependencies = [
 
 [[package]]
 name = "linguist-dictionary"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "ammonia",
  "html-escape",
@@ -1248,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "linguist-provider"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "httpdate",
  "libc",
@@ -1263,7 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "linguist-store"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "libc",
  "linguist-core",

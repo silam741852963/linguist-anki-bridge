@@ -87,6 +87,7 @@
       ]
     },
     "GrammarSupplement": {
+      "description": "v3 grammar supplement: no recognition text cue (the v3 front shows the\npattern and an example); nuance, highlight forms and a JLPT level added.",
       "type": "object",
       "properties": {
         "examples": {
@@ -104,11 +105,23 @@
         "formation": {
           "type": "string"
         },
+        "forms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "jlpt": {
+          "type": "string"
+        },
         "meaning": {
           "type": "string"
         },
-        "recognition_prompt": {
-          "type": "string"
+        "nuance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GeneratedContrast"
+          }
         },
         "usage": {
           "type": "string"
@@ -119,10 +132,12 @@
         "meaning",
         "formation",
         "usage",
+        "nuance",
+        "forms",
         "examples",
-        "recognition_prompt",
         "exercise_prompt",
-        "exercise_answer"
+        "exercise_answer",
+        "jlpt"
       ]
     },
     "VocabularySupplement": {

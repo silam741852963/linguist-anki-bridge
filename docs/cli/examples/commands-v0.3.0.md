@@ -1,6 +1,6 @@
-# Command examples for linguist-anki-bridge 0.2.1
+# Command examples for linguist-anki-bridge 0.3.0
 
-These examples match release 0.2.1 (see the [release check](https://github.com/silam741852963/linguist-anki-bridge/blob/cli-dev/docs/cli/evidence/release-2026-10-11-v0.2.1/README.md) on the `cli-dev` branch). Every command path and flag below is checked against the built binary by `crates/linguist-cli/tests/release_ux.rs`. Replace uppercase placeholders with values printed by an earlier command. [Workflow examples](workflows.md) describe the target design. This page lists only what 0.2.1 does.
+These examples match release 0.3.0 (see the release check on the `cli-dev` branch). Every command path and flag below is checked against the built binary by `crates/linguist-cli/tests/release_ux.rs`. Replace uppercase placeholders with values printed by an earlier command. [Workflow examples](workflows.md) describe the target design. This page lists only what 0.3.0 does.
 
 ## Setup and diagnostics
 
@@ -121,3 +121,27 @@ linguist-anki-bridge resources install tesseract --source jpn.traineddata --vers
 linguist-anki-bridge config import --file old-config.yaml --output candidate.toml
 linguist-anki-bridge jobs migrate --legacy batch_jobs.sqlite3
 ```
+
+## Collection revamp campaign (WP-24)
+
+```sh
+linguist-anki-bridge campaign create --spec campaign-spec.json --dry-run
+linguist-anki-bridge campaign create --spec campaign-spec.json
+linguist-anki-bridge campaign status
+linguist-anki-bridge campaign run CAMPAIGN --max-seconds 3000
+linguist-anki-bridge campaign batch CAMPAIGN 1
+linguist-anki-bridge campaign item CAMPAIGN 3 NOTE --settled
+linguist-anki-bridge campaign item CAMPAIGN 3 NOTE --defer "homograph"
+linguist-anki-bridge campaign approve CAMPAIGN 3 --actor claude-agent
+linguist-anki-bridge campaign asset DIGEST --output picture.png
+linguist-anki-bridge campaign events CAMPAIGN --after 0 --limit 100
+linguist-anki-bridge campaign install-timer CAMPAIGN --script scripts/campaign-tick.sh --workdir . --execute
+linguist-anki-bridge campaign resume CAMPAIGN --by-user
+linguist-anki-bridge campaign close CAMPAIGN
+linguist-anki-bridge plans resolve-batch PLAN --policy builtin
+linguist-anki-bridge plans generate PLAN --all-items --pending --base-revision 3 --digest DIGEST --use-current-settings
+linguist-anki-bridge jobs publish JOB --skip-failed
+linguist-anki-bridge notes restore-merged NOTE --apply
+```
+
+`campaign run` advances every batch without judgment and exits; `scripts/campaign-tick.sh` runs it from a systemd user timer and starts the `campaign-tick` agent skill only when a batch needs it. Only the user resumes a paused campaign. After `campaign close`, sync to AnkiWeb and choose **Upload**.

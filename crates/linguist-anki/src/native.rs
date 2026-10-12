@@ -12,6 +12,10 @@ pub enum MutationVariant {
     UpdateNote,
     RestoreNote,
     DeleteUnstudiedCreatedNote,
+    /// WP-24 (companion 0.5.0): duplicate merge and its rollback. Optional:
+    /// an older verified companion declares neither and refuses them.
+    DeleteMergedNote,
+    RecreateDeletedNote,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,6 +150,7 @@ fn approval_digest(value: &str) -> bool {
         "checkpoint",
         "model-install",
         "lab-restore-decision-v1",
+        "lab-merge-decision-v1",
     ]
     .iter()
     .any(|kind| {
@@ -309,7 +314,7 @@ pub fn inspect_native_manifest(value: Value) -> Result<NativeInspection> {
     {
         return Err("ANKI_NATIVE_ACTIONS_INVALID".into());
     }
-    if declaration.mutation_variants.len() > 7
+    if declaration.mutation_variants.len() > 9
         || declaration
             .mutation_variants
             .iter()
@@ -464,6 +469,11 @@ pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[
     ),
     (
         "0.4.0",
+        "25.09.2",
+        "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
+    ),
+    (
+        "0.5.0",
         "25.09.2",
         "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
     ),

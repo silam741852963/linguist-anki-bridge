@@ -37,11 +37,21 @@ def main():
         "gate-evidence-not-run.json": "gate-evidence",
         "capability-report.json": "capability-report",
         "source-task-map.json": "source-task-map",
+        "campaign-spec.json": "campaign-spec",
     }
     for fixture_name, schema_name in fixture_schemas.items():
         value = json.loads((FIXTURES / fixture_name).read_text())
         errors = list(validator(schema_name).iter_errors(value))
         assert not errors, f"{fixture_name}: {errors}"
+
+    # WP-24: the shipped decision policy is a valid review policy.
+    policy = json.loads((ROOT / "resources/policies/campaign-default.json").read_text())
+    errors = list(validator("review-policy").iter_errors(policy))
+    assert not errors, f"campaign-default.json: {errors}"
+    spec = json.loads((FIXTURES / "campaign-spec.json").read_text())
+    invalid = deepcopy(spec)
+    invalid["sources"][0]["unknown"] = 1
+    require_rejected(validator("campaign-spec"), invalid, "campaign spec field")
 
     document = json.loads((FIXTURES / "vocabulary.json").read_text())
     document_checker = validator("learning-document")

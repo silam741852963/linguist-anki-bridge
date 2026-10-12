@@ -75,8 +75,12 @@ def _hash(value):
         raise _invalid() from None
 
 
-APPROVAL_KINDS = ("plan", "checkpoint", "model-install", "lab-restore-decision-v1")
+APPROVAL_KINDS = ("plan", "checkpoint", "model-install", "lab-restore-decision-v1",
+                  "lab-merge-decision-v1")
 RESTORE = "lab-restore-decision-v1"
+# WP-24: a recorded duplicate-merge decision authorizes deleting the merged
+# note after its survivor is applied, and recreating it on rollback.
+MERGE = "lab-merge-decision-v1"
 # A reviewed plan authorizes forward effects; an observed-state-bound restore
 # decision authorizes reverse effects (and re-storing archived media).
 VARIANT_APPROVAL = {
@@ -85,6 +89,8 @@ VARIANT_APPROVAL = {
     "store_media": ("plan", RESTORE),
     "restore_note": (RESTORE,),
     "delete_unstudied_created_note": (RESTORE,),
+    "delete_merged_note": (MERGE,),
+    "recreate_deleted_note": (MERGE,),
     "export_checkpoint": ("checkpoint",),
     "install_model": ("model-install",),
 }
@@ -306,6 +312,72 @@ def _delete_created(body, *_):
     _precondition(body["expected_pre_digest"])
 
 
+def _delete_merged(body, *_):
+    _exact(body, {"note_id", "expected_pre_digest", "survivor_note_id", "survivor_model_name"})
+    _int_id(body["note_id"])
+    _int_id(body["survivor_note_id"])
+    if body["note_id"] == body["survivor_note_id"]:
+        raise _invalid()
+    _precondition(body["expected_pre_digest"])
+    _label(body["survivor_model_name"])
+
+
+def _small_int(value, low=-(2 ** 53), high=2 ** 53):
+    if type(value) is not int or not low <= value <= high:
+        raise _invalid()
+
+
+CARD_KEYS = {"id", "ordinal", "deck_id", "original_deck_id", "type", "queue", "due",
+             "interval", "ease_factor", "repetitions", "lapses", "remaining_steps",
+             "original_due", "flags", "custom_data"}
+REVIEW_KEYS = {"id", "card_id", "usn", "ease", "interval", "previous_interval", "factor",
+               "time", "type"}
+
+
+def _recreate(body, *_):
+    _exact(body, {"note", "cards", "reviews", "expected_absent"})
+    if body["expected_absent"] is not True:
+        raise _invalid()
+    note = body["note"]
+    _exact(note, {"id", "guid", "model_id", "fields", "tags"})
+    _int_id(note["id"])
+    _int_id(note["model_id"])
+    _text(note["guid"], 64)
+    if type(note["fields"]) is not list or not 1 <= len(note["fields"]) <= 128:
+        raise _invalid()
+    for value in note["fields"]:
+        _text(value, MAX_FIELD_BYTES)
+    if type(note["tags"]) is not list or len(note["tags"]) > 256:
+        raise _invalid()
+    for tag in note["tags"]:
+        _text(tag, 512)
+    cards = body["cards"]
+    if type(cards) is not list or not 1 <= len(cards) <= 64:
+        raise _invalid()
+    ids = set()
+    for card in cards:
+        _exact(card, CARD_KEYS)
+        _int_id(card["id"])
+        _int_id(card["deck_id"])
+        _ordinal(card["ordinal"])
+        ids.add(card["id"])
+        for key in CARD_KEYS - {"id", "deck_id", "ordinal", "custom_data"}:
+            _small_int(card[key])
+        _text(card["custom_data"], 4096)
+    if len(ids) != len(cards):
+        raise _invalid()
+    reviews = body["reviews"]
+    if type(reviews) is not list or len(reviews) > 20000:
+        raise _invalid()
+    for review in reviews:
+        _exact(review, REVIEW_KEYS)
+        _int_id(review["id"])
+        if review["card_id"] not in ids:
+            raise _invalid()
+        for key in REVIEW_KEYS - {"id", "card_id"}:
+            _small_int(review[key])
+
+
 def _store_media(body, *_):
     _exact(body, {"filename", "sha256", "size_bytes", "staged_asset"})
     media_name(body["filename"])
@@ -357,6 +429,8 @@ VALIDATORS = {
     "update_note": _update_note,
     "restore_note": _restore_note,
     "delete_unstudied_created_note": _delete_created,
+    "delete_merged_note": _delete_merged,
+    "recreate_deleted_note": _recreate,
     "store_media": _store_media,
     "install_model": _install_model,
     "export_checkpoint": _export_checkpoint,

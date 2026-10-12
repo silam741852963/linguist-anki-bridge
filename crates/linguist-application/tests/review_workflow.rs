@@ -99,6 +99,13 @@ fn japanese() -> Vec<u8> {
     .unwrap()
 }
 
+fn after_count(f: &Fixture, id: uuid::Uuid) -> u32 {
+    linguist_store::Store::read_only(&f.state())
+        .unwrap()
+        .latest_revision(id)
+        .unwrap()
+}
+
 fn latest(f: &Fixture, id: uuid::Uuid) -> PlanRevision {
     let store = linguist_store::Store::read_only(&f.state()).unwrap();
     store
@@ -655,7 +662,15 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
     assert_eq!(outcome.applied.len(), 2);
     assert_eq!(outcome.verified_closed.len(), 1);
     assert_eq!(outcome.verified_closed[0].index, 0);
-    assert_eq!(outcome.revision, base.revision + 2);
+    // One pass, one published revision (WP-24), with both decisions in it.
+    assert_eq!(outcome.revision, base.revision + 1);
+    assert!(
+        outcome
+            .applied
+            .iter()
+            .all(|a| a.revision == outcome.revision)
+    );
+    assert_eq!(after_count(&f, base.id), base.revision + 1);
     let after = latest(&f, base.id);
     assert_eq!(after.revision, outcome.revision);
     assert_eq!(after.approval_digest().unwrap(), outcome.digest);
@@ -739,4 +754,196 @@ fn resolve_batch_applies_ordered_digest_bound_decisions_and_stops_at_a_conflict(
     let outcome = resolve_batch(&mut store, &base, &open, &clock, &mut no_history).unwrap();
     assert_eq!(outcome.conflict.unwrap().error, "REVIEW_ISSUE_STILL_OPEN");
     assert_eq!(latest(&f, base.id).revision, base.revision);
+}
+
+/// WP-24: the campaign policy picks the sense whose reading is the note's,
+/// leaves an unmatched choice to the agent, keeps illustrations, archives
+/// dictionary pages and asks about uncertain images.
+#[test]
+fn campaign_policy_decides_only_what_the_user_preferences_settle() {
+    use linguist_application::review::{batch::template, policy};
+    use linguist_core::records::{EvidenceTarget, MediaAsset, MediaOwner, MediaRole};
+    let f = Fixture::new();
+    let mut plan = two_sense_plan(&f);
+    let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+        panic!()
+    };
+    vocab.reading = "たべる".into();
+    let policy = policy::Policy::builtin();
+    policy.validate().unwrap();
+    let filled = policy::fill(&policy, &plan, &template(&plan, "x").unwrap()).unwrap();
+    assert_eq!(filled.decided, 1, "{filled:?}");
+    let batch = filled.batch.unwrap();
+    assert_eq!(batch["actor"], "campaign-policy");
+    assert_eq!(
+        batch["decisions"][0]["document_id"],
+        json!(plan.documents[0].id)
+    );
+    assert_eq!(
+        batch["decisions"][0]["choice"]["value"]["key"],
+        json!(sense_key(&plan, 0, 0)),
+        "the first (most common) sense with the note's reading"
+    );
+    assert_eq!(filled.undecided.len(), 1);
+    assert_eq!(filled.undecided[0].document_id, plan.documents[1].id);
+    assert!(
+        filled.undecided[0]
+            .reason
+            .starts_with("SENSE_READING_UNMATCHED")
+    );
+
+    // Source images: the decision follows the OCR classification.
+    let document = &mut plan.documents[0];
+    let source = uuid::Uuid::new_v4();
+    let mut entries = Vec::new();
+    for (name, class) in [
+        ("cat.jpg", Some("illustration")),
+        ("Screenshot (1).png", Some("dictionary")),
+        ("paste-1.jpg", Some("uncertain")),
+        ("never.png", None),
+        ("6f1a.gif", Some("illustration")),
+    ] {
+        let digest = format!("{:064x}", entries.len() + 1);
+        document.media.push(MediaAsset {
+            digest: digest.clone(),
+            filename: name.into(),
+            original_filename: Some(name.into()),
+            size_bytes: 1,
+            mime: if name.ends_with(".gif") {
+                "image/gif"
+            } else {
+                "image/png"
+            }
+            .into(),
+            owner: MediaOwner::Source,
+            role: MediaRole::Archive,
+            source_id: Some(source),
+            attribution: String::new(),
+            license: None,
+        });
+        let evidence = |field: &str, claim: String| Evidence {
+            id: uuid::Uuid::new_v4(),
+            field: field.into(),
+            provenance: Provenance::Source,
+            source_id: Some(source),
+            region_id: None,
+            target: Some(EvidenceTarget::MediaAsset {
+                digest: digest.clone(),
+            }),
+            source_span: None,
+            language: Language::try_from("ja".to_owned()).unwrap(),
+            claim,
+            source_url: None,
+            ambiguous: false,
+        };
+        document
+            .evidence
+            .push(evidence("media_format", "{}".into()));
+        if let Some(class) = class {
+            document.evidence.push(evidence(
+                &format!("ocr:{digest}"),
+                json!({"classification": {"class": class}}).to_string(),
+            ));
+        }
+        entries.push(json!({"document_id": document.id, "issue_id": format!("SOURCE_MEDIA_CONTENT_REVIEW:{name}"),
+            "input_digest": "d", "choice": null,
+            "options": {"issue": {"code": "SOURCE_MEDIA_CONTENT_REVIEW", "field": name, "source_refs": [source]}, "templates": []}}));
+    }
+    entries.push(json!({"document_id": document.id, "issue_id": "IMAGE_CANDIDATE_REVIEW:x", "input_digest": "d", "choice": null,
+        "options": {"issue": {"code": "IMAGE_CANDIDATE_REVIEW", "source_refs": ["abc"]}, "templates": []}}));
+    entries.push(json!({"document_id": document.id, "issue_id": "IMAGE_CLASSIFICATION_REVIEW:x", "input_digest": "d", "choice": null,
+        "options": {"issue": {"code": "IMAGE_CLASSIFICATION_REVIEW", "source_refs": [source]}, "templates": []}}));
+    let template =
+        json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": entries});
+    let filled = policy::fill(&policy, &plan, &template).unwrap();
+    let roles: Vec<_> = filled.batch.as_ref().unwrap()["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                d["issue_id"].as_str().unwrap().to_owned(),
+                d["choice"]["value"].clone(),
+            )
+        })
+        .collect();
+    let role = |name: &str| {
+        roles
+            .iter()
+            .find(|(id, _)| id.ends_with(name))
+            .map(|(_, v)| v["role"].clone())
+    };
+    assert_eq!(role("cat.jpg"), Some(json!("picture")));
+    assert_eq!(role("Screenshot (1).png"), Some(json!("archive")));
+    assert_eq!(
+        role("6f1a.gif"),
+        Some(json!("archive")),
+        "stroke GIFs are never pictures"
+    );
+    assert_eq!(role("paste-1.jpg"), None);
+    // A kept illustration declines the searched candidate.
+    assert_eq!(
+        roles
+            .iter()
+            .find(|(id, _)| id.starts_with("IMAGE_CANDIDATE"))
+            .unwrap()
+            .1,
+        json!("")
+    );
+    let open: BTreeSet<_> = filled
+        .undecided
+        .iter()
+        .map(|u| u.reason.split(':').next().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        open,
+        BTreeSet::from([
+            "AGENT_CODE".into(),
+            "IMAGE_CLASS_UNCERTAIN".into(),
+            "IMAGE_NOT_CLASSIFIED".into()
+        ])
+    );
+}
+
+/// WP-24: a generated collocation list that names the word itself is
+/// rejected by the policy; a proper one is verified.
+#[test]
+fn campaign_policy_rejects_a_collocation_that_is_the_word() {
+    use linguist_application::review::policy;
+    let f = Fixture::new();
+    let mut plan = two_sense_plan(&f);
+    let document = &mut plan.documents[0];
+    let mut entries = Vec::new();
+    for (index, claim) in [
+        r#"[{"phrase":"食べる","gloss":"eat"}]"#,
+        r#"[{"phrase":"ご飯を食べる","gloss":"eat a meal"}]"#,
+    ]
+    .iter()
+    .enumerate()
+    {
+        let id = uuid::Uuid::new_v4();
+        document.evidence.push(Evidence {
+            id,
+            field: "collocations".into(),
+            provenance: Provenance::Generated,
+            source_id: None,
+            region_id: None,
+            target: None,
+            source_span: None,
+            language: Language::try_from("en".to_owned()).unwrap(),
+            claim: (*claim).into(),
+            source_url: None,
+            ambiguous: false,
+        });
+        entries.push(json!({"document_id": document.id, "issue_id": format!("GENERATED_FACT_REVIEW:{index}"), "input_digest": "d", "choice": null,
+            "options": {"issue": {"code": "GENERATED_FACT_REVIEW", "source_refs": [id]}, "templates": [
+                {"choice": {"decision": "content_verified", "value": {"evidence_ids": [id]}}},
+                {"choice": {"decision": "content_rejected", "value": {"evidence_id": id}}}]}}));
+    }
+    let template =
+        json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": entries});
+    let filled = policy::fill(&policy::Policy::builtin(), &plan, &template).unwrap();
+    let decisions = filled.batch.unwrap()["decisions"].clone();
+    assert_eq!(decisions[0]["choice"]["decision"], "content_rejected");
+    assert_eq!(decisions[1]["choice"]["decision"], "content_verified");
 }

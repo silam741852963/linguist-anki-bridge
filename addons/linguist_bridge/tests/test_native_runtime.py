@@ -217,7 +217,7 @@ class NativeRuntimeTest(unittest.TestCase):
         self.assertEqual(sorted(manifest_["actions"]), sorted([
             "labCapabilities", "labBegin", "labInspect", "labMutate", "labOperationStatus",
             "labRebind", "labEnd"]))
-        self.assertEqual(len(manifest_["mutation_variants"]), 7)
+        self.assertEqual(len(manifest_["mutation_variants"]), 9)
         self.assertTrue(manifest_["api_key_configured"])
         self.util.KEY[0] = None
         unauthenticated = self.module.ac.handler({"action": "labCapabilities"})
