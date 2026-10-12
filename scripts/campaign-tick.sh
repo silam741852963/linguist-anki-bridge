@@ -11,7 +11,8 @@
 # LAB_MAX_SECONDS (tick budget), LAB_START_VOICEVOX=1, LAB_START_ANKI=1.
 set -u
 C=${LAB_CAMPAIGN:?LAB_CAMPAIGN is required}
-BIN=${LAB_BIN:-linguist-anki-bridge}
+BIN=$(command -v "${LAB_BIN:-linguist-anki-bridge}")
+[ -n "$BIN" ] || { echo "LAB_BIN not found" >&2; exit 1; }
 CLAUDE=${LAB_CLAUDE:-claude}
 STATE=${XDG_STATE_HOME:-$HOME/.local/state}/linguist-anki-bridge/campaign
 mkdir -p "$STATE"
@@ -53,15 +54,20 @@ STATUS=$("$BIN" --output json campaign status "$C" 2>> "$LOG")
 if [ "$(echo "$STATUS" | field agent_needed)" = True ]; then
   if "$BIN" --output json campaign agent-slot "$C" > /dev/null 2>> "$LOG"; then
     log "agent run"
-    "$CLAUDE" -p "/campaign-tick $C" \
-      --allowedTools "Bash($BIN --output json campaign:*)" "Bash($BIN --output json plans show:*)" \
-        "Bash($BIN --output json plans resolve:*)" "Bash($BIN --output json plans resolve-batch:*)" \
-        "Bash($BIN --output json plans split-vocab:*)" "Bash($BIN --output json plans split-grammar:*)" \
-        "Bash($BIN --output json plans edit:*)" "Bash($BIN --output json jobs show:*)" \
-        "Bash($BIN --output json jobs items:*)" "Read" "Write" \
-      --disallowedTools "Bash($BIN --output json campaign resume:*)" "Bash($BIN --output json campaign close:*)" \
-        "Bash($BIN --output json jobs rollback:*)" "Bash($BIN --output json snapshots restore:*)" \
-        "Bash($BIN --output json notes restore-merged:*)" "Bash($BIN --output json models:*)" \
+    # The agent gets the exact command to call (no variables): only these
+    # command prefixes are allowed, and the user-only ones are denied.
+    ALLOW=(Read Write)
+    DENY=()
+    for cmd in "campaign" "plans show" "plans resolve" "plans resolve-batch" "plans split-vocab" \
+               "plans split-grammar" "plans edit" "plans regenerate" "jobs show" "jobs items"; do
+      ALLOW+=("Bash($BIN --output json $cmd:*)")
+    done
+    for cmd in "campaign resume" "campaign close" "campaign cancel" "jobs rollback" "snapshots restore" \
+               "notes restore-merged" "notes delete-merged" "models"; do
+      DENY+=("Bash($BIN --output json $cmd:*)")
+    done
+    "$CLAUDE" -p "/campaign-tick $C (CLI: $BIN --output json)" \
+      --allowedTools "${ALLOW[@]}" --disallowedTools "${DENY[@]}" \
       >> "$STATE/agent-$(date +%F).log" 2>&1
     log "agent exit $?"
     run

@@ -9,9 +9,10 @@ You are the monitor of a running collection revamp campaign. The user is not
 watching. You decide what the decision policy could not, approve batches,
 and stop. You never change what the campaign cannot undo by itself.
 
-`BIN` below is the CLI the wrapper passed (`$LAB_BIN`, usually
-`target/lab/linguist-anki-bridge-head`); always call it with `--output json`.
-The campaign ID is the skill argument.
+The skill argument is `CAMPAIGN_ID (CLI: /absolute/path --output json)`.
+Below, `BIN --output json` means exactly that absolute path followed by
+`--output json`: type it literally, never through a variable, a relative
+path or `cd` (only that exact command prefix is allowed).
 
 ## Hard limits
 
@@ -25,7 +26,7 @@ The campaign ID is the skill argument.
 
 ## Steps
 
-1. `BIN --output json campaign status CAMPAIGN`. If `status` is not
+1. `BIN --output json campaign status CAMPAIGN_ID`. If `status` is not
    `running`, write one line saying why and stop. If `agent_needed` is false,
    stop.
 2. For each entry in `agent` with phase `needs_agent`: open

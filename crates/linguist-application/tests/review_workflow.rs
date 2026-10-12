@@ -916,7 +916,9 @@ fn campaign_policy_rejects_a_collocation_that_is_the_word() {
     let mut entries = Vec::new();
     for (index, claim) in [
         r#"[{"phrase":"食べる","gloss":"eat"}]"#,
-        r#"[{"phrase":"ご飯を食べる","gloss":"eat a meal"}]"#,
+        r#"[{"phrase":"ご飯を食べる","gloss":"eat a meal"},{"phrase":"食べ物","gloss":"food"}]"#,
+        r#"[{"phrase":"取っ手","gloss":"handle"}]"#,
+        r#"[{"phrase":"ご飯を食べる","gloss":"eat"},{"phrase":"ご飯を食べる","gloss":"eat rice"}]"#,
     ]
     .iter()
     .enumerate()
@@ -944,6 +946,20 @@ fn campaign_policy_rejects_a_collocation_that_is_the_word() {
         json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": entries});
     let filled = policy::fill(&policy::Policy::builtin(), &plan, &template).unwrap();
     let decisions = filled.batch.unwrap()["decisions"].clone();
-    assert_eq!(decisions[0]["choice"]["decision"], "content_rejected");
-    assert_eq!(decisions[1]["choice"]["decision"], "content_verified");
+    assert_eq!(
+        decisions[0]["choice"]["decision"], "content_rejected",
+        "the word itself"
+    );
+    assert_eq!(
+        decisions[1]["choice"]["decision"], "content_verified",
+        "word and stem"
+    );
+    assert_eq!(
+        decisions[2]["choice"]["decision"], "content_rejected",
+        "a phrase without the word"
+    );
+    assert_eq!(
+        decisions[3]["choice"]["decision"], "content_rejected",
+        "the same phrase twice"
+    );
 }

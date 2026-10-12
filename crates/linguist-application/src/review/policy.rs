@@ -190,16 +190,54 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
         .map(|t| spoken(t))
         .filter(|t| !t.is_empty())
         .collect();
-    serde_json::from_str::<Value>(claim)
+    let Some(items) = serde_json::from_str::<Value>(claim)
         .ok()
         .and_then(|v| v.as_array().cloned())
-        .is_some_and(|items| {
-            items.iter().any(|item| {
-                item[key]
-                    .as_str()
-                    .is_some_and(|text| own.contains(&spoken(text)))
-            })
+    else {
+        return false;
+    };
+    let phrases: Vec<String> = items
+        .iter()
+        .filter_map(|item| item[key].as_str().map(spoken))
+        .collect();
+    // The word itself, as a phrase or a contrast.
+    if phrases.iter().any(|p| own.contains(p)) {
+        return true;
+    }
+    if field != "collocations" {
+        return false;
+    }
+    // The same phrase twice.
+    let unique: std::collections::BTreeSet<&String> = phrases.iter().collect();
+    if unique.len() != phrases.len() {
+        return true;
+    }
+    // A collocation of the word contains the word: its written form, its
+    // reading, or (inflecting words) their stem without the last kana.
+    let stems: Vec<String> = own
+        .iter()
+        .flat_map(|w| {
+            let mut forms = vec![w.to_lowercase()];
+            let chars: Vec<char> = w.chars().collect();
+            if chars.len() > 1
+                && chars
+                    .last()
+                    .is_some_and(|c| matches!(c, '\u{3040}'..='\u{309f}'))
+            {
+                forms.push(chars[..chars.len() - 1].iter().collect());
+            }
+            if w.is_ascii() && chars.len() > 4 {
+                forms.push(w.to_lowercase().chars().take(4).collect());
+            }
+            forms
         })
+        .filter(|f| !f.is_empty())
+        .collect();
+    phrases.iter().any(|p| {
+        !stems
+            .iter()
+            .any(|stem| p.to_lowercase().contains(stem.as_str()))
+    })
 }
 
 /// Decide one template entry; `Err` is the reason it stays open.
