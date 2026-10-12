@@ -829,6 +829,17 @@ fn a_batch_over_the_size_limit_is_split_until_it_fits() {
     let store = linguist_store::Store::read_only(&root).unwrap();
     let batches = store.campaign_batches(id).unwrap();
     assert_eq!(batches.len(), 4, "4 notes, at most 1 per publishable plan");
+    // Once a split showed the size that publishes, later batches of the
+    // source are split before preparing: no further failed preparations.
+    let failed = cli
+        .world
+        .lock()
+        .unwrap()
+        .prepare_jobs
+        .values()
+        .filter(|notes| notes.len() > 1)
+        .count();
+    assert!(failed <= 2, "{failed} oversized prepare jobs");
     assert!(batches.iter().all(|b| b.phase == "done"));
     let w = cli.world.lock().unwrap();
     assert_eq!(w.applied.len(), 4);

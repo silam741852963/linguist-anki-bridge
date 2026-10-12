@@ -149,6 +149,15 @@ impl Context<'_> {
     // ------------------------------------------------------------ prep lane
 
     fn start(&self, record: &BatchRecord, mut data: BatchData) -> Result<Step, String> {
+        // A batch larger than the largest one of its source that published
+        // after a size split is split before it is prepared (WP-24: each
+        // failed attempt cost a whole preparation).
+        if data.merge.is_empty()
+            && let Some(cap) = self.size_cap(&data.source)?
+            && data.active_notes().count() > cap
+        {
+            return self.split(record, data, "SIZE_CAP_FROM_EARLIER_SPLIT");
+        }
         let mut args = s(&["jobs", "create", "--mode", "prepare"]);
         for note in data.active_notes() {
             args.extend(["--note-id".into(), note.clone()]);
@@ -326,6 +335,35 @@ impl Context<'_> {
             ))));
         }
         Ok(Ok(exhausted))
+    }
+
+    /// The smallest size a split of this source kept, if any batch of the
+    /// source was split for size.
+    fn size_cap(&self, source: &str) -> Result<Option<usize>, String> {
+        let store = self.store()?;
+        let batches = store.campaign_batches(self.id)?;
+        let of_source: BTreeSet<u32> = batches
+            .iter()
+            .filter(|b| b.data["source"] == source)
+            .map(|b| b.batch)
+            .collect();
+        let mut cap: Option<usize> = None;
+        let mut after = 0;
+        loop {
+            let events = store.campaign_events(self.id, after, 1000)?;
+            let Some(last) = events.last() else { break };
+            after = last.sequence;
+            for e in events.iter().filter(|e| e.kind == "split") {
+                if e.batch.is_some_and(|b| of_source.contains(&b))
+                    && e.body["detail"]["reason"] != "SIZE_CAP_FROM_EARLIER_SPLIT"
+                    && let Some(kept) = e.body["detail"]["kept"].as_u64()
+                {
+                    let kept = kept as usize;
+                    cap = Some(cap.map_or(kept, |c| c.min(kept)));
+                }
+            }
+        }
+        Ok(cap)
     }
 
     /// The batch's plan or archive is over the frozen size limits.
