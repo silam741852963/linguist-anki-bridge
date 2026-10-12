@@ -1,19 +1,17 @@
 #!/bin/bash
 # campaign-tick.sh: one WP-24 campaign tick, run by the systemd user timer.
 #
-# 1. `campaign run` advances every batch without judgment (no tokens).
-# 2. Only when `campaign status` says the agent is needed, and today's agent
-#    limit allows it, a headless Claude Code session runs the
-#    `campaign-tick` skill, then the campaign runs once more.
-# 3. A paused campaign (pilot review, guardrail) notifies the user.
+# 1. `campaign run` advances every batch without judgment (no tokens): the
+#    write lane and `prepare_parallel` prep workers loop on their own.
+# 2. A paused campaign (pilot review, guardrail) notifies the user.
+# The agent runs on its own timer (scripts/campaign-agent.sh).
 #
-# Environment: LAB_CAMPAIGN (required), LAB_BIN (CLI), LAB_CLAUDE (claude),
-# LAB_MAX_SECONDS (tick budget), LAB_START_VOICEVOX=1, LAB_START_ANKI=1.
+# Environment: LAB_CAMPAIGN (required), LAB_BIN (CLI), LAB_MAX_SECONDS (tick
+# budget), LAB_START_VOICEVOX=1, LAB_START_ANKI=1.
 set -u
 C=${LAB_CAMPAIGN:?LAB_CAMPAIGN is required}
 BIN=$(command -v "${LAB_BIN:-linguist-anki-bridge}")
 [ -n "$BIN" ] || { echo "LAB_BIN not found" >&2; exit 1; }
-CLAUDE=${LAB_CLAUDE:-claude}
 STATE=${XDG_STATE_HOME:-$HOME/.local/state}/linguist-anki-bridge/campaign
 mkdir -p "$STATE"
 LOG="$STATE/ticks.log"
@@ -50,31 +48,6 @@ field() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(sys.a
 
 log "tick start"
 run
-STATUS=$("$BIN" --output json campaign status "$C" 2>> "$LOG")
-if [ "$(echo "$STATUS" | field agent_needed)" = True ]; then
-  if "$BIN" --output json campaign agent-slot "$C" > /dev/null 2>> "$LOG"; then
-    log "agent run"
-    # The agent gets the exact command to call (no variables): only these
-    # command prefixes are allowed, and the user-only ones are denied.
-    ALLOW=(Read Write)
-    DENY=()
-    for cmd in "campaign" "plans show" "plans resolve" "plans resolve-batch" "plans split-vocab" \
-               "plans split-grammar" "plans edit" "plans regenerate" "jobs show" "jobs items"; do
-      ALLOW+=("Bash($BIN --output json $cmd:*)")
-    done
-    for cmd in "campaign resume" "campaign close" "campaign cancel" "jobs rollback" "snapshots restore" \
-               "notes restore-merged" "notes delete-merged" "models"; do
-      DENY+=("Bash($BIN --output json $cmd:*)")
-    done
-    "$CLAUDE" -p "/campaign-tick $C (CLI: $BIN --output json)" \
-      --allowedTools "${ALLOW[@]}" --disallowedTools "${DENY[@]}" \
-      >> "$STATE/agent-$(date +%F).log" 2>&1
-    log "agent exit $?"
-    run
-  else
-    log "agent limit reached for today"
-  fi
-fi
 STATUS=$("$BIN" --output json campaign status "$C" 2>> "$LOG")
 if [ "$(echo "$STATUS" | field user_needed)" = True ]; then
   CODE=$(echo "$STATUS" | field code)

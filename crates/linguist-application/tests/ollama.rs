@@ -1456,3 +1456,86 @@ fn chained_pending_generation_publishes_one_revision_per_chunk_and_resumes() {
     server.worker.join().unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn chained_pending_generation_drafts_a_window_from_an_agent_at_once() {
+    use linguist_application::{freeze_settings, generation::generate_pending_chained};
+    use linguist_core::records::PlanRevision;
+    use std::os::unix::fs::PermissionsExt;
+    let root =
+        std::env::temp_dir().join(format!("lab-parallel-generation-{}", uuid::Uuid::new_v4()));
+    let bin = root.with_extension("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let reply = json!({"type":"result","subtype":"success","is_error":false,
+        "structured_output":{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}},
+        "modelUsage":{"fake-model":{}}});
+    // Each call takes one second; four in one window take about one.
+    std::fs::write(
+        bin.join("claude"),
+        format!("#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '9.9.9'; exit 0; }}\ncat > /dev/null\nsleep 1\nprintf '%s' '{reply}'\n"),
+    )
+    .unwrap();
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let environment = std::collections::BTreeMap::from([
+        ("HOME".into(), root.to_str().unwrap().into()),
+        ("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())),
+    ]);
+    let mut current = settings();
+    for (key, value) in [
+        ("storage.state_dir", json!(root)),
+        ("llm.provider", json!("claude_code")),
+        ("llm.fallback", json!([])),
+        ("llm.agents.parallel", json!(4)),
+    ] {
+        current.values.insert(key.into(), value);
+    }
+    let documents: Vec<_> = (0..5)
+        .map(|_| {
+            let mut doc = generation_document();
+            doc.id = uuid::Uuid::new_v4();
+            doc
+        })
+        .collect();
+    let sources: Vec<_> = documents.iter().flat_map(|d| d.sources.clone()).collect();
+    let plan = PlanRevision {
+        grammar_groups: vec![],
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: freeze_settings(&current, &environment).unwrap(),
+        binding: None,
+        source_digest: canonical::digest("source-capture", &sources).unwrap(),
+        selection: None,
+        documents,
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    store.publish_revision(&plan).unwrap();
+    let client = transport::Client::from_settings(&current, &environment).unwrap();
+    let started = std::time::Instant::now();
+    let (items, revision) =
+        generate_pending_chained(&mut store, &plan, &current, &environment, &client, 2).unwrap();
+    let elapsed = started.elapsed();
+    // Five drafts in windows of four and one: about two seconds, not five.
+    assert!(
+        elapsed < std::time::Duration::from_millis(4500),
+        "{elapsed:?}"
+    );
+    assert_eq!(
+        items.iter().filter(|i| i.get("result").is_some()).count(),
+        5,
+        "{items:?}"
+    );
+    // Items stay in plan order; chunks of two give three revisions on top.
+    for (item, doc) in items.iter().zip(&plan.documents) {
+        assert_eq!(item["document_id"], json!(doc.id.to_string()));
+    }
+    assert_eq!(revision, 4);
+    let latest = store.revision(plan.id, 4).unwrap();
+    assert_eq!(latest.documents.len(), 5);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+    std::fs::remove_dir_all(bin).unwrap();
+}

@@ -1,6 +1,6 @@
 ---
 name: campaign-tick
-description: One unattended agent turn of a WP-24 collection revamp campaign. Use when invoked as `/campaign-tick CAMPAIGN_ID` by scripts/campaign-tick.sh, or when asked to monitor, unblock or approve campaign batches.
+description: One unattended agent turn of a WP-24 collection revamp campaign. Use when invoked as `/campaign-tick CAMPAIGN_ID` by scripts/campaign-agent.sh, or when asked to monitor, unblock or approve campaign batches.
 ---
 
 # Campaign tick (agent turn)
@@ -71,4 +71,6 @@ path or `cd` (only that exact command prefix is allowed).
 4. Entries with an `error`: read it. A transient error (Anki, Ollama or a
    provider was down) needs nothing. A repeated error on one note: defer it.
 5. End with a short report: what you decided, deferred and approved, per
-   batch. The wrapper runs the campaign again after you.
+   batch. While you run, the campaign leaves `needs_agent` batches alone;
+   the wrapper records your end (`campaign agent-done`) and starts a tick.
+   Never run `campaign tune` or `campaign agent-done` yourself.

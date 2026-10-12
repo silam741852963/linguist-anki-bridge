@@ -41,10 +41,11 @@ Inputs: campaign (default newest), tick budget (default 3000 s).
 Effects: holds the campaign lease; runs this binary's own commands as child processes (prepare jobs, `plans resolve-batch --policy`, `plans generate --all-items --pending`, `plans merge-notes`, apply jobs with `--create-checkpoint`, `recover reconcile`, `apply --split-group`, `notes delete-merged`); reads companion note evidence; deletes checkpoint files only of checkpoints the campaign created (retention).
 
 1. Stop at once unless the campaign is `running`.
-2. Each round runs one step of the write lane (oldest batch in `approved`, `applying`, `verifying`, `merging`) and one of the prepare lane (oldest batch in `preparing`, `reviewing`, `needs_agent`; or the next `selected` batch while fewer than `prepare_ahead` batches are in flight) in parallel, and records each with compare-and-set.
-3. A step that finds Anki, the companion or a service unavailable waits; repeated step errors pause the campaign; guardrail pauses stop the tick.
-4. After the pilot batch is `done`, pause with `CAMPAIGN_PILOT_REVIEW` once.
-5. Stop when no lane moved, the budget is spent, or the campaign paused.
+2. The write lane (oldest batch in `approved`, `applying`, `verifying`, `merging`) and `prepare_parallel` prep workers loop on their own, each recording its steps with compare-and-set. A prep worker claims a batch for its step: the oldest unclaimed batch in `preparing`, `reviewing`, `needs_agent` whose step moves, or the next `selected` batch while fewer than `prepare_ahead` batches (claimed ones included) are in flight. Every step reads its batch fresh, so a batch another lane or command moved is left alone.
+3. While an agent run is active (`agent-slot` recorded, no `agent-done` after it, under 45 minutes old) `needs_agent` batches are left alone, so a review never races the agent's edits.
+4. A step that finds Anki, the companion or a service unavailable waits; repeated step errors pause the campaign; guardrail pauses stop the tick. A lane that panics stops the others.
+5. After the pilot batch is `done`, pause with `CAMPAIGN_PILOT_REVIEW` once.
+6. A lane with nothing to do looks again every 20 s while another lane works; a move on any lane wakes the others. Stop when every lane is idle at once, the budget is spent, or the campaign stopped running.
 
 Result/failure: steps taken, why the tick stopped, pruned checkpoints. Exit 5 when the tick paused the campaign. `LEASE_HELD_OR_OWNER_UNVERIFIED` when another tick is running.
 
@@ -85,15 +86,15 @@ Effects: local status `closed` (terminal); reminds the user to sync to AnkiWeb a
 
 ## OP-75 — `campaign agent-slot CAMPAIGN`
 
-Effects: records one `agent_run` event when today's (UTC) count is below `agent_runs_per_day`; exit 5 and nothing recorded otherwise. Used by `scripts/campaign-tick.sh` before it starts an agent.
+Effects: records one `agent_run` event when today's (UTC) count is below `agent_runs_per_day`; exit 5 and nothing recorded otherwise. Used by `scripts/campaign-agent.sh` before it starts an agent; the event also starts the agent hold (OP-67 step 3) until `campaign agent-done`.
 
 ## OP-76 — `campaign asset DIGEST --output FILE`
 
 Effects: local read of one stored asset into a create-new file (so the agent can look at a picture or screenshot). `ASSET_NOT_FOUND` for an unknown digest.
 
-## OP-77 — `campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--execute]`
+## OP-77 — `campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--agent-script PATH] [--agent-interval-minutes N] [--execute]`
 
-Effects: prints, or with `--execute` writes, `~/.config/systemd/user/linguist-campaign.{service,timer}`: a oneshot service running the tick script with `LAB_CAMPAIGN`, `LAB_BIN` and the working directory, and a persistent timer (`OnUnitInactiveSec`). Enabling the timer is the user's `systemctl --user` command.
+Effects: prints, or with `--execute` writes, `~/.config/systemd/user/linguist-campaign.{service,timer}`: a oneshot service running the tick script with `LAB_CAMPAIGN`, `LAB_BIN` and the working directory, and a persistent timer (`OnUnitInactiveSec`, default 15 minutes). With `--agent-script`, also `linguist-campaign-agent.{service,timer}`: the agent wrapper (`scripts/campaign-agent.sh`) on its own timer (default every 5 minutes, at most 40 minutes per run), so batches waiting for judgment do not wait for a tick to end. Enabling the timers is the user's `systemctl --user` command. `CAMPAIGN_INTERVAL_INVALID` for a zero interval.
 
 ## OP-78 — `jobs publish JOB --skip-failed`
 
@@ -127,3 +128,11 @@ Inputs: a deleted duplicate. Effects (with `--apply`): one companion `recreate_d
 ## OP-82 — `campaign reopen CAMPAIGN BATCH --reason R`
 
 Inputs: an `approved` batch with no apply job and no recorded apply intent. Effects: local. The approval and the before-apply card facts are dropped, deferrals made by the approval (`VALIDATION:`) are cleared, and the batch returns to `reviewing`; the next tick reviews it again and a new `campaign approve` is needed. The plan's approval record stays in history; no apply job can be created from it by the campaign.
+
+## OP-83 — `campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N]`
+
+Inputs: at least one throughput limit. Effects: local. Records a `tuned` event holding the new limits; the definition stays frozen and every later command reads the frozen limits with the newest tuning applied (`campaign status` shows them under `limits`). A running tick keeps the limits it started with. Guardrails (`agent_share_max`, `spot_check_share`, `max_step_failures`, review rounds) are not tunable. `CAMPAIGN_TUNING_INVALID` unless `prepare_parallel` is 1-8 and at most `prepare_ahead` (1-32) and `agent_runs_per_day` is at most 288; `CAMPAIGN_TUNING_EMPTY` without a limit; `CAMPAIGN_FINISHED` for a cancelled or closed campaign.
+
+## OP-84 — `campaign agent-done CAMPAIGN`
+
+Effects: local. Records an `agent_done` event, which ends the agent hold started by `agent-slot` (OP-67 step 3): batches waiting for the agent are reviewed again by the next tick step. `scripts/campaign-agent.sh` runs it after every agent run, whatever its exit status.

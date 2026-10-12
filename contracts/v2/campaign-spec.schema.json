@@ -28,6 +28,7 @@
         "max_review_rounds": 4,
         "max_step_failures": 3,
         "prepare_ahead": 2,
+        "prepare_parallel": 1,
         "retain_done_checkpoints": 5,
         "spot_check_share": 0.1
       }
@@ -137,6 +138,13 @@
           "type": "integer",
           "format": "uint32",
           "default": 2,
+          "minimum": 0
+        },
+        "prepare_parallel": {
+          "description": "Batches one tick prepares and reviews at once (at most\n`prepare_ahead`, 1-8).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 1,
           "minimum": 0
         },
         "retain_done_checkpoints": {

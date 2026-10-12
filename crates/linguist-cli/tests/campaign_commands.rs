@@ -262,6 +262,33 @@ fn user_only_steps_refuse_an_agent_and_local_controls_record_events() {
     assert_eq!((code, slot["granted"].clone()), (0, json!(true)));
     let (code, slot, _) = run(cli(&home, &endpoint).args(["campaign", "agent-slot", &id]));
     assert_eq!((code, slot["granted"].clone()), (5, json!(false)));
+    // Throughput limits are tunable within range; the next slot follows them.
+    let (code, _, stderr) =
+        run(cli(&home, &endpoint).args(["campaign", "tune", &id, "--prepare-parallel", "9"]));
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("CAMPAIGN_TUNING_INVALID"), "{stderr}");
+    let (code, tuned, stderr) = run(cli(&home, &endpoint).args([
+        "campaign",
+        "tune",
+        &id,
+        "--agent-runs-per-day",
+        "2",
+        "--prepare-ahead",
+        "3",
+        "--prepare-parallel",
+        "3",
+    ]));
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(tuned["limits"]["prepare_parallel"], 3);
+    let (code, slot, _) = run(cli(&home, &endpoint).args(["campaign", "agent-slot", &id]));
+    assert_eq!((code, slot["granted"].clone()), (0, json!(true)));
+    let (_, status, _) = run(cli(&home, &endpoint).args(["campaign", "status", &id]));
+    assert_eq!(status["agent_active"], true);
+    assert_eq!(status["agent_runs_per_day"], 2);
+    let (code, _, stderr) = run(cli(&home, &endpoint).args(["campaign", "agent-done", &id]));
+    assert_eq!(code, 0, "{stderr}");
+    let (_, status, _) = run(cli(&home, &endpoint).args(["campaign", "status", &id]));
+    assert_eq!(status["agent_active"], false);
     // Pause; a run does nothing; only the user resumes.
     let (code, _, _) =
         run(cli(&home, &endpoint).args(["campaign", "pause", &id, "--reason", "holiday"]));
@@ -287,9 +314,18 @@ fn user_only_steps_refuse_an_agent_and_local_controls_record_events() {
         script.to_str().unwrap(),
         "--workdir",
         home.0.to_str().unwrap(),
+        "--agent-script",
+        script.to_str().unwrap(),
     ]));
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(units["written"], json!([]));
+    assert_eq!(units["units"][2]["name"], "linguist-campaign-agent.service");
+    assert!(
+        units["units"][3]["body"]
+            .as_str()
+            .unwrap()
+            .contains("OnUnitInactiveSec=5min")
+    );
     assert!(
         units["units"][0]["body"]
             .as_str()

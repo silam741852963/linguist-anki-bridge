@@ -237,6 +237,19 @@
       "sensitive": false
     },
     {
+      "key": "llm.agents.parallel",
+      "type": "integer",
+      "default": 1,
+      "constraints": {
+        "min": 1,
+        "max": 8
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Drafts requested at once from an external provider (agent or API) by `plans generate --all-items --pending`; local Ollama drafts stay one at a time.",
+      "sensitive": false
+    },
+    {
       "key": "llm.agents.claude_code.executable",
       "type": "string",
       "default": "claude",

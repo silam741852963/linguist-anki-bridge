@@ -80,6 +80,7 @@ pub fn publish_candidate_from(
         settings,
         environment,
         client,
+        None,
     )?;
     let digest = store.publish_revision(&child)?;
     result["digest"] = json!(digest);
@@ -122,91 +123,121 @@ pub fn generate_pending_chained(
         *published = (current.revision, digest);
         Ok(())
     };
-    for id in base.documents.iter().map(|d| d.id).collect::<Vec<_>>() {
+    // `llm.agents.parallel` drafts are requested at once from an external
+    // provider; each window is then merged onto the chain one by one, in
+    // order. Every item is drafted from the chain head before its window,
+    // which no other item of the window changes.
+    let parallel = match crate::agents::chain(settings)?.first() {
+        Some(crate::agents::Provider::Ollama) | None => 1,
+        Some(_) => settings.values["llm.agents.parallel"]
+            .as_u64()
+            .unwrap_or(1)
+            .max(1) as usize,
+    };
+    let mut eligible = Vec::new();
+    for id in base.documents.iter().map(|d| d.id) {
         let parent = current
             .documents
             .iter()
             .find(|d| d.id == id)
-            .ok_or("PLAN_ITEM_NOT_FOUND")?
-            .clone();
-        match build_request(&parent, settings) {
-            Err(reason) => {
-                items.push(json!({"document_id": id, "skipped": reason}));
-                continue;
-            }
+            .ok_or("PLAN_ITEM_NOT_FOUND")?;
+        match build_request(parent, settings) {
+            Err(reason) => items.push(json!({"document_id": id, "skipped": reason})),
             Ok(request) if request.allowed_fields.is_empty() => {
-                items.push(json!({"document_id": id, "skipped": "GENERATION_NOTHING_TO_FILL"}));
-                continue;
+                items.push(json!({"document_id": id, "skipped": "GENERATION_NOTHING_TO_FILL"}))
             }
-            Ok(_) => {}
+            Ok(_) => eligible.push(id),
         }
-        let digest = current.approval_digest().map_err(|e| e.to_string())?;
-        match candidate_from(
-            store,
-            &current,
-            &parent,
-            &digest,
-            settings,
-            environment,
-            client,
-        ) {
-            Ok((child, result)) => {
-                current = child;
-                pending += 1;
-                items.push(json!({"document_id": id, "result": result}));
+    }
+    for window in eligible.chunks(parallel) {
+        let parents = window
+            .iter()
+            .map(|id| {
+                current
+                    .documents
+                    .iter()
+                    .find(|d| d.id == *id)
+                    .cloned()
+                    .ok_or("PLAN_ITEM_NOT_FOUND")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let drafts: Vec<Option<Result<Produced, String>>> =
+            // Disabled generation is reported per item by candidate_from.
+            if window.len() == 1 || settings.values["llm.enabled"] != true {
+                window.iter().map(|_| None).collect()
+            } else {
+                std::thread::scope(|scope| {
+                    let handles = parents
+                        .iter()
+                        .map(|parent| {
+                            scope.spawn(move || produce(parent, settings, environment, client))
+                        })
+                        .collect::<Vec<_>>();
+                    handles
+                        .into_iter()
+                        .map(|handle| {
+                            Some(handle.join().unwrap_or_else(|_| {
+                                Err("GENERATION_WORKER_PANICKED".to_owned())
+                            }))
+                        })
+                        .collect()
+                })
+            };
+        for ((id, parent), produced) in window.iter().zip(&parents).zip(drafts) {
+            let digest = current.approval_digest().map_err(|e| e.to_string())?;
+            match candidate_from(
+                store,
+                &current,
+                parent,
+                &digest,
+                settings,
+                environment,
+                client,
+                produced,
+            ) {
+                Ok((child, result)) => {
+                    current = child;
+                    pending += 1;
+                    items.push(json!({"document_id": id, "result": result}));
+                }
+                Err(error) => items.push(json!({"document_id": id, "error": error})),
             }
-            Err(error) => items.push(json!({"document_id": id, "error": error})),
-        }
-        if pending >= chunk.max(1) {
-            flush(store, &mut current, &mut published)?;
-            pending = 0;
+            if pending >= chunk.max(1) {
+                flush(store, &mut current, &mut published)?;
+                pending = 0;
+            }
         }
     }
     flush(store, &mut current, &mut published)?;
+    // Report items in plan order, skipped ones included.
+    let order: BTreeMap<String, usize> = base
+        .documents
+        .iter()
+        .enumerate()
+        .map(|(index, d)| (d.id.to_string(), index))
+        .collect();
+    items.sort_by_key(|item| {
+        item["document_id"]
+            .as_str()
+            .and_then(|id| order.get(id))
+            .copied()
+    });
     Ok((items, published.0))
 }
 
-/// Generate one item's draft on `base` without publishing the revision (its
-/// assets are published). The caller checks `base` is the newest revision or
-/// the head of its own in-memory chain.
-fn candidate_from(
-    store: &mut linguist_store::Store,
-    base: &linguist_core::records::PlanRevision,
+/// A provider's draft for one item, with the provider and every attempt.
+type Produced = (GeneratedDraft, crate::agents::Provider, Vec<Value>);
+
+/// Ask `llm.provider`, then `llm.fallback` in order, for one item's draft;
+/// a provider that is not available here is skipped and every failure is
+/// reported, the first first. No store access: safe to run concurrently.
+fn produce(
     parent: &LearningDocument,
-    expected_digest: &str,
     settings: &Effective,
     environment: &BTreeMap<String, String>,
     client: &crate::ollama::transport::Client,
-) -> Result<(linguist_core::records::PlanRevision, Value), String> {
-    if base.approval_digest().map_err(|e| e.to_string())? != expected_digest
-        || !base
-            .documents
-            .iter()
-            .any(|document| document.id == parent.id)
-    {
-        return Err("GENERATION_BASE_CONFLICT".into());
-    }
-    let document_id = parent.id;
-    let frozen = crate::freeze_settings(settings, environment)?;
-    if frozen.values["storage.state_dir"] != base.settings.values["storage.state_dir"] {
-        return Err("GENERATION_STORAGE_CONFLICT".into());
-    }
-    if settings.values["llm.enabled"] != true {
-        return Err("GENERATION_DISABLED: enable llm.enabled in current settings".into());
-    }
-    // Check request and revised configuration before any provider call.
+) -> Result<Produced, String> {
     let request = build_request(parent, settings)?;
-    let mut child = base.clone();
-    child.revision = base
-        .revision
-        .checked_add(1)
-        .ok_or("GENERATION_REVISION_LIMIT")?;
-    child.parent_digest = Some(expected_digest.into());
-    child.settings = frozen;
-    child.binding = None;
-    child.approval_digest().map_err(|e| e.to_string())?;
-    // `llm.provider`, then `llm.fallback` in order; a provider that is not
-    // available here is skipped. Every failure is reported, the first first.
     let mut attempts = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     let mut produced = None;
@@ -241,12 +272,58 @@ fn candidate_from(
             }
         }
     }
-    let Some((mut draft, provider)) = produced else {
+    let Some((draft, provider)) = produced else {
         return Err(if errors.is_empty() {
             "GENERATION_PROVIDERS_UNAVAILABLE: no configured provider is available".into()
         } else {
             errors.join("; ")
         });
+    };
+    Ok((draft, provider, attempts))
+}
+
+/// Generate one item's draft on `base` without publishing the revision (its
+/// assets are published). The caller checks `base` is the newest revision or
+/// the head of its own in-memory chain.
+#[allow(clippy::too_many_arguments)]
+fn candidate_from(
+    store: &mut linguist_store::Store,
+    base: &linguist_core::records::PlanRevision,
+    parent: &LearningDocument,
+    expected_digest: &str,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    client: &crate::ollama::transport::Client,
+    produced: Option<Result<Produced, String>>,
+) -> Result<(linguist_core::records::PlanRevision, Value), String> {
+    if base.approval_digest().map_err(|e| e.to_string())? != expected_digest
+        || !base
+            .documents
+            .iter()
+            .any(|document| document.id == parent.id)
+    {
+        return Err("GENERATION_BASE_CONFLICT".into());
+    }
+    let document_id = parent.id;
+    let frozen = crate::freeze_settings(settings, environment)?;
+    if frozen.values["storage.state_dir"] != base.settings.values["storage.state_dir"] {
+        return Err("GENERATION_STORAGE_CONFLICT".into());
+    }
+    if settings.values["llm.enabled"] != true {
+        return Err("GENERATION_DISABLED: enable llm.enabled in current settings".into());
+    }
+    let mut child = base.clone();
+    child.revision = base
+        .revision
+        .checked_add(1)
+        .ok_or("GENERATION_REVISION_LIMIT")?;
+    child.parent_digest = Some(expected_digest.into());
+    child.settings = frozen;
+    child.binding = None;
+    child.approval_digest().map_err(|e| e.to_string())?;
+    let (mut draft, provider, attempts) = match produced {
+        Some(produced) => produced?,
+        None => produce(parent, settings, environment, client)?,
     };
     let local = provider == crate::agents::Provider::Ollama;
     let marker = if local {

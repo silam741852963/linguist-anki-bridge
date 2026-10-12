@@ -310,7 +310,7 @@
       "path": "implementation/wp-24.md",
       "heading": "## WP-24 \u2014 unattended collection revamp campaign, monitored by an agent",
       "title": "WP-24 \u2014 unattended collection revamp campaign, monitored by an agent",
-      "words": 4879,
+      "words": 4945,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
@@ -387,7 +387,7 @@
       "path": "operations/campaign.md",
       "heading": "## OP-67 \u2014 `campaign run [CAMPAIGN] [--max-seconds N]`",
       "title": "OP-67 \u2014 `campaign run [CAMPAIGN] [--max-seconds N]`",
-      "words": 195,
+      "words": 288,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -467,7 +467,7 @@
       "path": "operations/campaign.md",
       "heading": "## OP-75 \u2014 `campaign agent-slot CAMPAIGN`",
       "title": "OP-75 \u2014 `campaign agent-slot CAMPAIGN`",
-      "words": 32,
+      "words": 45,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -485,9 +485,9 @@
     },
     "OP-77": {
       "path": "operations/campaign.md",
-      "heading": "## OP-77 \u2014 `campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--execute]`",
-      "title": "OP-77 \u2014 `campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--execute]`",
-      "words": 48,
+      "heading": "## OP-77 \u2014 `campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--agent-script PATH] [--agent-interval-minutes N] [--execute]`",
+      "title": "OP-77 \u2014 `campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--agent-script PATH] [--agent-interval-minutes N] [--execute]`",
+      "words": 95,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -538,6 +538,26 @@
       "heading": "## OP-82 \u2014 `campaign reopen CAMPAIGN BATCH --reason R`",
       "title": "OP-82 \u2014 `campaign reopen CAMPAIGN BATCH --reason R`",
       "words": 78,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-83": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-83 \u2014 `campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N]`",
+      "title": "OP-83 \u2014 `campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N]`",
+      "words": 96,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-84": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-84 \u2014 `campaign agent-done CAMPAIGN`",
+      "title": "OP-84 \u2014 `campaign agent-done CAMPAIGN`",
+      "words": 47,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -1304,7 +1324,7 @@
       "path": "recovery/jobs.md",
       "heading": "## ALG-CAMPAIGN \u2014 collection revamp campaign",
       "title": "ALG-CAMPAIGN \u2014 collection revamp campaign",
-      "words": 379,
+      "words": 402,
       "requires": [
         "contracts/invariants.md",
         "recovery/README.md",

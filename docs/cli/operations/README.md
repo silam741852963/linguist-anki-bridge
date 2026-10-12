@@ -102,9 +102,11 @@ Aliases `inject`/`modernize` may map to add/revamp with deprecation messages; th
 | OP-74 | [`campaign close CAMPAIGN`](campaign.md#op-74-campaign-close-campaign) |
 | OP-75 | [`campaign agent-slot CAMPAIGN`](campaign.md#op-75-campaign-agent-slot-campaign) |
 | OP-76 | [`campaign asset DIGEST --output FILE`](campaign.md#op-76-campaign-asset-digest---output-file) |
-| OP-77 | [`campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--execute]`](campaign.md#op-77-campaign-install-timer-campaign---script-path---workdir-dir---interval-minutes-n---execute) |
+| OP-77 | [`campaign install-timer CAMPAIGN --script PATH --workdir DIR [--interval-minutes N] [--agent-script PATH] [--agent-interval-minutes N] [--execute]`](campaign.md#op-77-campaign-install-timer-campaign---script-path---workdir-dir---interval-minutes-n---agent-script-path---agent-interval-minutes-n---execute) |
 | OP-78 | [`jobs publish JOB --skip-failed`](campaign.md#op-78-jobs-publish-job---skip-failed) |
 | OP-79 | [`plans merge-notes PLAN --item ITEM --note NOTE...`](campaign.md#op-79-plans-merge-notes-plan---item-item---note-note) |
 | OP-80 | [`notes delete-merged NOTE --survivor S --plan P [--apply]`](campaign.md#op-80-notes-delete-merged-note---survivor-s---plan-p---apply) |
 | OP-81 | [`notes restore-merged NOTE [--apply]`](campaign.md#op-81-notes-restore-merged-note---apply) |
 | OP-82 | [`campaign reopen CAMPAIGN BATCH --reason R`](campaign.md#op-82-campaign-reopen-campaign-batch---reason-r) |
+| OP-83 | [`campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N]`](campaign.md#op-83-campaign-tune-campaign---prepare-ahead-n---prepare-parallel-n---agent-runs-per-day-n) |
+| OP-84 | [`campaign agent-done CAMPAIGN`](campaign.md#op-84-campaign-agent-done-campaign) |

@@ -7,6 +7,7 @@ use super::{Approval, BatchData, Definition, SourceSpec, verify};
 use linguist_store::{Store, campaign::BatchRecord, lease::Resource};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
 use uuid::Uuid;
 
 /// One child command's result.
@@ -68,6 +69,8 @@ pub struct Context<'a> {
     pub runner: &'a dyn Runner,
     pub collection: &'a dyn Collection,
     pub clock: &'a (dyn Fn() -> u64 + Sync),
+    /// How often an idle lane looks again while another lane is busy.
+    pub poll: std::time::Duration,
 }
 
 /// What one step did.
@@ -88,6 +91,15 @@ pub struct TickReport {
     /// idle, deadline, paused, cancelled, closed, or the pause code.
     pub stopped: String,
     pub pruned: Vec<String>,
+}
+
+/// State the lanes of one tick share.
+struct Shared {
+    /// Why the tick stops (the first lane to decide wins).
+    stop: Mutex<Option<String>>,
+    steps: Mutex<Vec<Value>>,
+    /// Per lane: found nothing to do since the last move on any lane.
+    idle: Mutex<Vec<bool>>,
 }
 
 const PREP_PHASES: [&str; 3] = ["preparing", "reviewing", "needs_agent"];
@@ -1025,37 +1037,192 @@ impl Context<'_> {
         }
     }
 
-    fn prep_lane(&self, batches: &[BatchRecord]) -> Option<(u32, Step)> {
-        for record in batches
-            .iter()
-            .filter(|b| PREP_PHASES.contains(&b.phase.as_str()))
-        {
-            let step = self.guarded(record);
-            if !matches!(step, Step::Waiting(_)) {
-                return Some((record.batch, step));
-            }
-        }
-        let in_flight = batches
-            .iter()
-            .filter(|b| {
-                matches!(
-                    b.phase.as_str(),
-                    "preparing" | "reviewing" | "needs_agent" | "ready" | "approved"
-                )
-            })
-            .count() as u32;
-        if in_flight >= self.definition.spec.limits.prepare_ahead {
-            return None;
-        }
-        let record = batches.iter().find(|b| b.phase == "selected")?;
-        Some((record.batch, self.guarded(record)))
+    /// Whether an agent run started and has not reported its end (it holds
+    /// `needs_agent` batches so a review never races the agent's edits).
+    fn agent_active(&self, store: &Store) -> Result<bool, String> {
+        let Some(start) = store.last_campaign_event(self.id, "agent_run")? else {
+            return Ok(false);
+        };
+        let ended = store
+            .last_campaign_event(self.id, "agent_done")?
+            .is_some_and(|done| done.sequence > start.sequence);
+        Ok(!ended && (self.clock)().saturating_sub(start.at_ms) < super::AGENT_HOLD_MS)
     }
 
-    fn write_lane(&self, batches: &[BatchRecord]) -> Option<(u32, Step)> {
-        let record = batches
+    /// Step `batch` if it is still in one of `phases` (read fresh: another
+    /// lane or command may have moved it since the caller's snapshot).
+    fn step_fresh(&self, batch: u32, phases: &[&str]) -> Result<Option<Step>, String> {
+        let record = self.batch_record(batch)?;
+        if !phases.contains(&record.phase.as_str()) {
+            return Ok(None);
+        }
+        Ok(Some(self.guarded(&record)))
+    }
+
+    /// One prep worker's step: the first prep-phase batch no other worker
+    /// holds whose step moves, else a new batch while fewer than
+    /// `prepare_ahead` are in flight.
+    fn prep_lane(&self, claims: &Mutex<BTreeSet<u32>>) -> Result<Option<(u32, Step)>, String> {
+        let store = self.store()?;
+        let hold = self.agent_active(&store)?;
+        let batches = store.campaign_batches(self.id)?;
+        drop(store);
+        for record in batches.iter().filter(|b| {
+            PREP_PHASES.contains(&b.phase.as_str()) && !(hold && b.phase == "needs_agent")
+        }) {
+            if !claims.lock().unwrap().insert(record.batch) {
+                continue;
+            }
+            let phases: &[&str] = if hold {
+                &PREP_PHASES[..2]
+            } else {
+                &PREP_PHASES
+            };
+            let step = self.step_fresh(record.batch, phases);
+            claims.lock().unwrap().remove(&record.batch);
+            match step? {
+                Some(Step::Waiting(_)) | None => {}
+                Some(step) => return Ok(Some((record.batch, step))),
+            }
+        }
+        let next = {
+            let mut claims = claims.lock().unwrap();
+            let batches = self.store()?.campaign_batches(self.id)?;
+            let in_flight = batches
+                .iter()
+                .filter(|b| {
+                    matches!(
+                        b.phase.as_str(),
+                        "preparing" | "reviewing" | "needs_agent" | "ready" | "approved"
+                    ) || (b.phase == "selected" && claims.contains(&b.batch))
+                })
+                .count() as u32;
+            if in_flight >= self.definition.spec.limits.prepare_ahead {
+                return Ok(None);
+            }
+            let Some(record) = batches
+                .iter()
+                .find(|b| b.phase == "selected" && !claims.contains(&b.batch))
+            else {
+                return Ok(None);
+            };
+            claims.insert(record.batch);
+            record.batch
+        };
+        let step = self.step_fresh(next, &["selected"]);
+        claims.lock().unwrap().remove(&next);
+        Ok(step?.map(|step| (next, step)))
+    }
+
+    fn write_lane(&self) -> Result<Option<(u32, Step)>, String> {
+        let batches = self.store()?.campaign_batches(self.id)?;
+        let Some(record) = batches
             .iter()
-            .find(|b| WRITE_PHASES.contains(&b.phase.as_str()))?;
-        Some((record.batch, self.guarded(record)))
+            .find(|b| WRITE_PHASES.contains(&b.phase.as_str()))
+        else {
+            return Ok(None);
+        };
+        Ok(self
+            .step_fresh(record.batch, &WRITE_PHASES)?
+            .map(|step| (record.batch, step)))
+    }
+
+    /// The pilot stops the campaign for the user's review once it is done.
+    fn pilot_review(&self) -> Result<bool, String> {
+        let mut store = self.store()?;
+        let batches = store.campaign_batches(self.id)?;
+        let Some(pilot) = batches.iter().find(|b| {
+            b.phase == "done" && b.data["pilot"] == true && b.data["pilot_reviewed"] != true
+        }) else {
+            return Ok(false);
+        };
+        let mut data = pilot.data.clone();
+        data["pilot_reviewed"] = true.into();
+        store.update_campaign_batch(
+            self.id,
+            pilot.batch,
+            pilot.version,
+            "done",
+            &data,
+            "batch",
+            &json!("pilot review requested"),
+            (self.clock)(),
+        )?;
+        self.pause(
+            "CAMPAIGN_PILOT_REVIEW",
+            "the pilot batch is applied; review it, then run `campaign resume`",
+        )?;
+        Ok(true)
+    }
+
+    /// One lane's loop: step until every lane is idle at once, the campaign
+    /// stops running, a step pauses it, or the deadline passes. A move on
+    /// any lane wakes the idle ones (it may have made work for them).
+    fn lane_loop(
+        &self,
+        lane: usize,
+        shared: &Shared,
+        deadline: u64,
+        step: &(dyn Fn() -> Result<Option<(u32, Step)>, String> + Sync),
+    ) {
+        let stop = |why: String| {
+            shared.stop.lock().unwrap().get_or_insert(why);
+        };
+        loop {
+            if shared.stop.lock().unwrap().is_some() {
+                return;
+            }
+            if (self.clock)() >= deadline {
+                return stop("deadline".into());
+            }
+            match self.store().and_then(|s| s.campaign(self.id)) {
+                Ok(c) if c.status != "running" => return stop(c.status),
+                Ok(_) => {}
+                Err(e) => return stop(format!("error: {e}")),
+            }
+            let moved = match step() {
+                Err(e) => return stop(format!("error: {e}")),
+                Ok(None) | Ok(Some((_, Step::Waiting(_)))) => false,
+                Ok(Some((batch, step))) => {
+                    shared
+                        .steps
+                        .lock()
+                        .unwrap()
+                        .push(json!({"batch": batch, "step": format!("{step:?}")}));
+                    if let Step::Pause { code, detail } = &step {
+                        if let Err(e) = self.pause(code, detail) {
+                            return stop(format!("error: {e}"));
+                        }
+                        return stop(code.clone());
+                    }
+                    true
+                }
+            };
+            if moved {
+                shared
+                    .idle
+                    .lock()
+                    .unwrap()
+                    .iter_mut()
+                    .for_each(|i| *i = false);
+                if lane == 0 {
+                    match self.pilot_review() {
+                        Ok(true) => return stop("CAMPAIGN_PILOT_REVIEW".into()),
+                        Ok(false) => {}
+                        Err(e) => return stop(format!("error: {e}")),
+                    }
+                }
+                continue;
+            }
+            {
+                let mut idle = shared.idle.lock().unwrap();
+                idle[lane] = true;
+                if idle.iter().all(|i| *i) {
+                    return stop("idle".into());
+                }
+            }
+            std::thread::sleep(self.poll);
+        }
     }
 
     /// Delete checkpoint files of `done` batches beyond the newest
@@ -1113,76 +1280,70 @@ impl Context<'_> {
         Ok(())
     }
 
-    /// One tick: rounds of (write lane ∥ prep lane) until idle, paused or
-    /// out of time. Holds the campaign lease throughout.
+    /// One tick: the write lane and `prepare_parallel` prep workers loop on
+    /// their own until all are idle, the campaign stops, or out of time.
+    /// Holds the campaign lease throughout.
     pub fn tick(&self, max_seconds: u64) -> Result<TickReport, String> {
         let mut store = self.store()?;
         let lease = store.acquire_lease(&Resource::Campaign(self.id), LEASE_SECONDS)?;
         let deadline = (self.clock)().saturating_add(max_seconds.saturating_mul(1000));
-        let mut steps = Vec::new();
-        let result = (|| -> Result<String, String> {
-            loop {
-                store.renew_lease(&lease, LEASE_SECONDS)?;
-                let campaign = store.campaign(self.id)?;
-                if campaign.status != "running" {
-                    return Ok(campaign.status);
+        let workers = self.definition.spec.limits.prepare_parallel.clamp(1, 8) as usize;
+        let shared = Shared {
+            stop: Mutex::new(None),
+            steps: Mutex::new(Vec::new()),
+            idle: Mutex::new(vec![false; workers + 1]),
+        };
+        let claims = Mutex::new(BTreeSet::new());
+        let write = || self.write_lane();
+        let prep = || self.prep_lane(&claims);
+        // A panicking lane stops the others (as a killed process would).
+        let guarded =
+            |lane: usize, step: &(dyn Fn() -> Result<Option<(u32, Step)>, String> + Sync)| {
+                let run =
+                    std::panic::AssertUnwindSafe(|| self.lane_loop(lane, &shared, deadline, step));
+                if let Err(panic) = std::panic::catch_unwind(run) {
+                    shared
+                        .stop
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get_or_insert("error: CAMPAIGN_LANE_PANICKED".into());
+                    std::panic::resume_unwind(panic);
                 }
-                if (self.clock)() >= deadline {
-                    return Ok("deadline".into());
-                }
-                let batches = store.campaign_batches(self.id)?;
-                let (write, prep) = std::thread::scope(|scope| {
-                    let write = scope.spawn(|| self.write_lane(&batches));
-                    let prep = scope.spawn(|| self.prep_lane(&batches));
-                    (write.join(), prep.join())
-                });
-                let results: Vec<(u32, Step)> = [write, prep]
-                    .into_iter()
-                    .map(|r| r.map_err(|_| "CAMPAIGN_LANE_PANICKED".to_owned()))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect();
-                let mut moved = false;
-                for (batch, step) in &results {
-                    steps.push(json!({"batch": batch, "step": format!("{step:?}")}));
-                    match step {
-                        Step::Moved(_) => moved = true,
-                        Step::Pause { code, detail } => {
-                            self.pause(code, detail)?;
-                            return Ok(code.clone());
-                        }
-                        Step::Waiting(_) => {}
+            };
+        let renewed = std::thread::scope(|scope| {
+            let mut handles = vec![scope.spawn(|| guarded(0, &write))];
+            for lane in 1..=workers {
+                let (guarded, prep) = (&guarded, &prep);
+                handles.push(scope.spawn(move || guarded(lane, prep)));
+            }
+            let mut renewed = Ok(());
+            while !handles.iter().all(|h| h.is_finished()) {
+                std::thread::sleep(self.poll.min(std::time::Duration::from_secs(5)));
+                if renewed.is_ok() {
+                    renewed = store.renew_lease(&lease, LEASE_SECONDS);
+                    if let Err(e) = &renewed {
+                        shared
+                            .stop
+                            .lock()
+                            .unwrap()
+                            .get_or_insert(format!("error: {e}"));
                     }
                 }
-                // The pilot stops the campaign for the user's review.
-                let batches = store.campaign_batches(self.id)?;
-                if let Some(pilot) = batches.iter().find(|b| {
-                    b.phase == "done" && b.data["pilot"] == true && b.data["pilot_reviewed"] != true
-                }) {
-                    let mut data = pilot.data.clone();
-                    data["pilot_reviewed"] = true.into();
-                    store.update_campaign_batch(
-                        self.id,
-                        pilot.batch,
-                        pilot.version,
-                        "done",
-                        &data,
-                        "batch",
-                        &json!("pilot review requested"),
-                        (self.clock)(),
-                    )?;
-                    self.pause(
-                        "CAMPAIGN_PILOT_REVIEW",
-                        "the pilot batch is applied; review it, then run `campaign resume`",
-                    )?;
-                    return Ok("CAMPAIGN_PILOT_REVIEW".into());
-                }
-                if !moved {
-                    return Ok("idle".into());
-                }
             }
-        })();
+            let panicked = handles.into_iter().any(|h| h.join().is_err());
+            renewed.and(if panicked {
+                Err("CAMPAIGN_LANE_PANICKED".to_owned())
+            } else {
+                Ok(())
+            })
+        });
+        let result = renewed.and_then(|()| {
+            let stopped = shared.stop.into_inner().unwrap().unwrap_or("idle".into());
+            match stopped.strip_prefix("error: ") {
+                Some(error) => Err(error.to_owned()),
+                None => Ok(stopped),
+            }
+        });
         let pruned = self
             .retention()
             .unwrap_or_else(|e| vec![format!("error: {e}")]);
@@ -1191,7 +1352,7 @@ impl Context<'_> {
         released?;
         Ok(TickReport {
             campaign: self.id,
-            steps,
+            steps: shared.steps.into_inner().unwrap(),
             stopped,
             pruned,
         })
@@ -1489,8 +1650,7 @@ pub enum ItemAction {
 /// commands that move it on.
 pub fn status(store: &Store, id: Uuid, now: u64) -> Result<Value, String> {
     let campaign = store.campaign(id)?;
-    let definition: Definition = serde_json::from_value(campaign.definition.clone())
-        .map_err(|e| format!("CAMPAIGN_RECORD_CORRUPT: {e}"))?;
+    let definition = Definition::effective(store, id)?;
     let batches = store.campaign_batches(id)?;
     let mut phases: BTreeMap<String, usize> = BTreeMap::new();
     let mut notes_by_phase: BTreeMap<String, usize> = BTreeMap::new();
@@ -1539,6 +1699,15 @@ pub fn status(store: &Store, id: Uuid, now: u64) -> Result<Value, String> {
     let day = now - now % 86_400_000;
     let runs_today = store.count_campaign_events(id, "agent_run", day)?;
     let user_needed = campaign.status == "paused";
+    let agent_active = match store.last_campaign_event(id, "agent_run")? {
+        Some(start) => {
+            !store
+                .last_campaign_event(id, "agent_done")?
+                .is_some_and(|done| done.sequence > start.sequence)
+                && now.saturating_sub(start.at_ms) < super::AGENT_HOLD_MS
+        }
+        None => false,
+    };
     let finished = batches
         .iter()
         .all(|b| matches!(b.phase.as_str(), "done" | "deferred" | "skipped"));
@@ -1559,6 +1728,8 @@ pub fn status(store: &Store, id: Uuid, now: u64) -> Result<Value, String> {
         "agent": agent,
         "agent_runs_today": runs_today,
         "agent_runs_per_day": definition.spec.limits.agent_runs_per_day,
+        "agent_active": agent_active,
+        "limits": definition.spec.limits,
         "user_needed": user_needed,
         "sync_reminder": format!(
             "{applied} applied notes wait for one AnkiWeb full sync: choose Upload when the campaign is closed; review only in this desktop profile until then"

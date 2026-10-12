@@ -603,6 +603,16 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "llm.agents.parallel": {
+          "default": 1,
+          "description": "Drafts requested at once from an external provider (agent or API) by `plans generate --all-items --pending`; local Ollama drafts stay one at a time.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "llm.agents.timeout_seconds": {
           "default": 600,
           "description": "Deadline for one agent or API generation.",
@@ -756,7 +766,7 @@
           "x-sensitive": false
         },
         "llm.prompts.grammar": {
-          "default": "builtin:grammar-v2",
+          "default": "builtin:grammar-v3",
           "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
           "maxLength": 1048576,
           "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
@@ -1955,6 +1965,16 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "llm.agents.parallel": {
+          "default": 1,
+          "description": "Drafts requested at once from an external provider (agent or API) by `plans generate --all-items --pending`; local Ollama drafts stay one at a time.",
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "llm.agents.timeout_seconds": {
           "default": 600,
           "description": "Deadline for one agent or API generation.",
@@ -2108,7 +2128,7 @@
           "x-sensitive": false
         },
         "llm.prompts.grammar": {
-          "default": "builtin:grammar-v2",
+          "default": "builtin:grammar-v3",
           "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
           "maxLength": 1048576,
           "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
@@ -3467,6 +3487,16 @@
       "x-scope": "purpose",
       "x-sensitive": false
     },
+    "llm.agents.parallel": {
+      "default": 1,
+      "description": "Drafts requested at once from an external provider (agent or API) by `plans generate --all-items --pending`; local Ollama drafts stay one at a time.",
+      "maximum": 8,
+      "minimum": 1,
+      "type": "integer",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
     "llm.agents.timeout_seconds": {
       "default": 600,
       "description": "Deadline for one agent or API generation.",
@@ -3620,7 +3650,7 @@
       "x-sensitive": false
     },
     "llm.prompts.grammar": {
-      "default": "builtin:grammar-v2",
+      "default": "builtin:grammar-v3",
       "description": "Versioned builtin or pinned file path; trusted user instruction resource.",
       "maxLength": 1048576,
       "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",

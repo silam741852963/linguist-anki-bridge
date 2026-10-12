@@ -344,6 +344,7 @@ pub const ROWS: &[Row] = &[
     c("llm.provider", AGENTS),
     c("llm.fallback", AGENTS),
     c("llm.agents.timeout_seconds", AGENTS),
+    c("llm.agents.parallel", GEN),
     c("llm.agents.claude_code.executable", AGENTS),
     c("llm.agents.claude_code.model", AGENTS),
     c("llm.agents.codex.executable", AGENTS),

@@ -276,6 +276,9 @@ llm.fallback = ["claude_code", "codex"]
 # Deadline for one agent or API generation.
 llm.agents.timeout_seconds = 600
 
+# Drafts requested at once from an external provider (agent or API) by `plans generate --all-items --pending`; local Ollama drafts stay one at a time.
+llm.agents.parallel = 1
+
 # Claude Code executable (name looked up on PATH, or an absolute path); run as `claude -p` with no tools and a JSON schema.
 llm.agents.claude_code.executable = "claude"
 

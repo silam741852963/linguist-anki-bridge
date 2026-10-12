@@ -151,7 +151,29 @@ pub(crate) enum CampaignCommand {
         /// Campaign ID from `campaign list`.
         campaign: Uuid,
     },
-    /// Write the systemd user timer that runs scripts/campaign-tick.sh.
+    /// Record that the agent run started by `agent-slot` ended; batches
+    /// waiting for the agent are reviewed again.
+    AgentDone {
+        /// Campaign ID from `campaign list`.
+        campaign: Uuid,
+    },
+    /// Change throughput limits of a running campaign (recorded as a
+    /// `tuned` event; guardrails are not tunable).
+    Tune {
+        /// Campaign ID from `campaign list`.
+        campaign: Uuid,
+        /// Batches prepared ahead of the oldest unapplied one (1-32).
+        #[arg(long)]
+        prepare_ahead: Option<u32>,
+        /// Batches prepared and reviewed at once (1-8, at most prepare-ahead).
+        #[arg(long)]
+        prepare_parallel: Option<u32>,
+        /// Agent runs per day (at most 288, one every 5 minutes).
+        #[arg(long)]
+        agent_runs_per_day: Option<u32>,
+    },
+    /// Write the systemd user timers that run scripts/campaign-tick.sh and,
+    /// with --agent-script, scripts/campaign-agent.sh on its own timer.
     InstallTimer {
         /// Campaign ID from `campaign list`.
         campaign: Uuid,
@@ -161,6 +183,12 @@ pub(crate) enum CampaignCommand {
         /// The tick wrapper script.
         #[arg(long)]
         script: PathBuf,
+        /// The agent wrapper script (its own timer).
+        #[arg(long)]
+        agent_script: Option<PathBuf>,
+        /// Minutes between agent runs.
+        #[arg(long, default_value_t = 5)]
+        agent_interval_minutes: u32,
         /// Working directory for the agent (the repository with the skill).
         #[arg(long)]
         workdir: PathBuf,
@@ -261,9 +289,9 @@ fn newest(root: &Path) -> Result<Uuid, String> {
         .ok_or_else(|| "CAMPAIGN_NOT_FOUND: create one with `campaign create --spec FILE`".into())
 }
 
+/// The frozen definition with the newest `campaign tune` applied.
 fn definition(root: &Path, id: Uuid) -> Result<Definition, String> {
-    let record = linguist_store::Store::read_only(root)?.campaign(id)?;
-    serde_json::from_value(record.definition).map_err(|e| format!("CAMPAIGN_RECORD_CORRUPT: {e}"))
+    Definition::effective(&linguist_store::Store::read_only(root)?, id)
 }
 
 fn global_args(globals: &Globals) -> Result<Vec<String>, String> {
@@ -484,6 +512,7 @@ fn context<'a>(
         runner,
         collection,
         clock,
+        poll: std::time::Duration::from_secs(20),
     })
 }
 
@@ -756,10 +785,51 @@ pub(crate) fn handle(
             store.append_campaign_event(campaign, None, "agent_run", &json!({}), now())?;
             emit(&json!({"granted": true, "used_today": used + 1}))?;
         }
+        CampaignCommand::AgentDone { campaign } => {
+            definition(&root, campaign)?;
+            let mut store = linguist_store::Store::open_existing(&root)?;
+            store.append_campaign_event(campaign, None, "agent_done", &json!({}), now())?;
+            emit(&json!({"campaign": campaign, "agent_done": true}))?;
+        }
+        CampaignCommand::Tune {
+            campaign,
+            prepare_ahead,
+            prepare_parallel,
+            agent_runs_per_day,
+        } => {
+            let tuning = campaign::Tuning {
+                prepare_ahead,
+                prepare_parallel,
+                agent_runs_per_day,
+            };
+            if tuning.is_empty() {
+                return Err("CAMPAIGN_TUNING_EMPTY: give at least one limit".into());
+            }
+            let mut limits = definition(&root, campaign)?.spec.limits;
+            tuning.apply(&mut limits)?;
+            let mut store = linguist_store::Store::open_existing(&root)?;
+            if matches!(
+                store.campaign(campaign)?.status.as_str(),
+                "cancelled" | "closed"
+            ) {
+                return Err("CAMPAIGN_FINISHED".into());
+            }
+            store.append_campaign_event(
+                campaign,
+                None,
+                "tuned",
+                &json!({"tuning": tuning, "limits": limits}),
+                now(),
+            )?;
+            emit(&json!({"campaign": campaign, "limits": limits,
+                "note": "a running tick keeps its limits; the next tick uses these"}))?;
+        }
         CampaignCommand::InstallTimer {
             campaign,
             interval_minutes,
             script,
+            agent_script,
+            agent_interval_minutes,
             workdir,
             env,
             execute,
@@ -776,7 +846,23 @@ pub(crate) fn handle(
             let script = std::fs::canonicalize(&script).map_err(|_| "CAMPAIGN_SCRIPT_NOT_FOUND")?;
             let workdir =
                 std::fs::canonicalize(&workdir).map_err(|_| "CAMPAIGN_WORKDIR_NOT_FOUND")?;
-            let units = timer_units(campaign, interval_minutes, &exe, &script, &workdir, &env);
+            let agent_script = agent_script
+                .map(|p| std::fs::canonicalize(p).map_err(|_| "CAMPAIGN_SCRIPT_NOT_FOUND"))
+                .transpose()?;
+            if interval_minutes == 0 || agent_interval_minutes == 0 {
+                return Err("CAMPAIGN_INTERVAL_INVALID".into());
+            }
+            let units = timer_units(
+                campaign,
+                interval_minutes,
+                &exe,
+                &script,
+                agent_script
+                    .as_deref()
+                    .map(|script| (script, agent_interval_minutes)),
+                &workdir,
+                &env,
+            );
             let home = std::env::var("HOME").map_err(|_| "HOME_UNSET")?;
             let directory = PathBuf::from(home).join(".config/systemd/user");
             let mut written = Vec::new();
@@ -791,7 +877,11 @@ pub(crate) fn handle(
             emit(
                 &json!({"units": units.iter().map(|(n, b)| json!({"name": n, "body": b})).collect::<Vec<_>>(),
                 "written": written,
-                "next_commands": ["systemctl --user daemon-reload", "systemctl --user enable --now linguist-campaign.timer"]}),
+                "next_commands": if agent_script.is_some() {
+                    json!(["systemctl --user daemon-reload", "systemctl --user enable --now linguist-campaign.timer linguist-campaign-agent.timer"])
+                } else {
+                    json!(["systemctl --user daemon-reload", "systemctl --user enable --now linguist-campaign.timer"])
+                }}),
             )?;
         }
     }
@@ -803,6 +893,7 @@ fn timer_units(
     interval: u32,
     exe: &Path,
     script: &Path,
+    agent: Option<(&Path, u32)>,
     workdir: &Path,
     env: &[String],
 ) -> Vec<(String, String)> {
@@ -819,8 +910,26 @@ fn timer_units(
     let timer = format!(
         "[Unit]\nDescription=Run the Linguist campaign tick every {interval} minutes\n\n[Timer]\nOnBootSec=5min\nOnUnitInactiveSec={interval}min\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n"
     );
-    vec![
+    let mut units = vec![
         ("linguist-campaign.service".into(), service),
         ("linguist-campaign.timer".into(), timer),
-    ]
+    ];
+    if let Some((agent, minutes)) = agent {
+        units.push((
+            "linguist-campaign-agent.service".into(),
+            format!(
+                "[Unit]\nDescription=Linguist collection revamp campaign agent\nAfter=network-online.target\n\n[Service]\nType=oneshot\nWorkingDirectory={wd}\nEnvironment=LAB_CAMPAIGN={campaign}\nEnvironment=LAB_BIN={exe}\n{extra}ExecStart={script}\nTimeoutStartSec=40min\n",
+                wd = workdir.display(),
+                exe = exe.display(),
+                script = agent.display(),
+            ),
+        ));
+        units.push((
+            "linguist-campaign-agent.timer".into(),
+            format!(
+                "[Unit]\nDescription=Run the Linguist campaign agent every {minutes} minutes\n\n[Timer]\nOnBootSec=7min\nOnUnitInactiveSec={minutes}min\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n"
+            ),
+        ));
+    }
+    units
 }

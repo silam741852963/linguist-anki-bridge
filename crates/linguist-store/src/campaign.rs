@@ -458,6 +458,37 @@ impl Store {
         .collect()
     }
 
+    /// The newest event of one kind (for example the last `tuned` limits).
+    pub fn last_campaign_event(&self, id: Uuid, kind: &str) -> Result<Option<CampaignEvent>> {
+        let row = self
+            .connection
+            .query_row(
+                "SELECT sequence,at_ms,batch,kind,body FROM campaign_events WHERE campaign=?1 AND kind=?2 ORDER BY sequence DESC LIMIT 1",
+                params![id.to_string(), kind],
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, Option<u32>>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, Vec<u8>>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(sql)?;
+        row.map(|(sequence, at, batch, kind, body)| {
+            Ok(CampaignEvent {
+                sequence: sequence as u64,
+                at_ms: at as u64,
+                batch,
+                kind,
+                body: json(body)?,
+            })
+        })
+        .transpose()
+    }
+
     /// Events of one kind since `since_ms` (for example agent runs today).
     pub fn count_campaign_events(&self, id: Uuid, kind: &str, since_ms: u64) -> Result<u64> {
         self.connection

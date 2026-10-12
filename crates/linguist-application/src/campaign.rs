@@ -125,6 +125,9 @@ pub struct Limits {
     pub max_review_rounds: u32,
     /// Batches prepared ahead of the oldest unapplied one.
     pub prepare_ahead: u32,
+    /// Batches one tick prepares and reviews at once (at most
+    /// `prepare_ahead`, 1-8).
+    pub prepare_parallel: u32,
     /// Failed attempts of one step before the campaign pauses.
     pub max_step_failures: u32,
 }
@@ -139,6 +142,7 @@ impl Default for Limits {
             max_prepare_runs: 4,
             max_review_rounds: 4,
             prepare_ahead: 2,
+            prepare_parallel: 1,
             max_step_failures: 3,
         }
     }
@@ -210,6 +214,8 @@ impl Spec {
             || l.max_review_rounds == 0
             || l.prepare_ahead == 0
             || l.max_step_failures == 0
+            || !(1..=8).contains(&l.prepare_parallel)
+            || l.prepare_parallel > l.prepare_ahead
         {
             return bad("limits out of range");
         }
@@ -325,6 +331,61 @@ pub struct Definition {
     /// Path of the frozen policy file children read.
     pub policy_path: String,
     pub selection: select::SelectionReport,
+}
+
+/// An agent run that has not reported its end holds `needs_agent` batches
+/// for at most this long (a killed agent session releases them then).
+pub const AGENT_HOLD_MS: u64 = 45 * 60 * 1000;
+
+/// Limits `campaign tune` may change: throughput only, never a guardrail
+/// (agent share, spot checks, step failures).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Tuning {
+    pub prepare_ahead: Option<u32>,
+    pub prepare_parallel: Option<u32>,
+    pub agent_runs_per_day: Option<u32>,
+}
+
+impl Tuning {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+    /// Apply onto `limits`, refusing values outside the spec's ranges.
+    pub fn apply(&self, limits: &mut Limits) -> Result<(), String> {
+        if let Some(v) = self.prepare_ahead {
+            limits.prepare_ahead = v;
+        }
+        if let Some(v) = self.prepare_parallel {
+            limits.prepare_parallel = v;
+        }
+        if let Some(v) = self.agent_runs_per_day {
+            limits.agent_runs_per_day = v;
+        }
+        if !(1..=8).contains(&limits.prepare_parallel)
+            || !(1..=32).contains(&limits.prepare_ahead)
+            || limits.prepare_parallel > limits.prepare_ahead
+            || limits.agent_runs_per_day > 288
+        {
+            return Err("CAMPAIGN_TUNING_INVALID: prepare_parallel 1-8 and at most prepare_ahead (1-32); agent_runs_per_day at most 288".into());
+        }
+        Ok(())
+    }
+}
+
+impl Definition {
+    /// The frozen definition with the newest `campaign tune` applied.
+    pub fn effective(store: &linguist_store::Store, id: uuid::Uuid) -> Result<Self, String> {
+        let record = store.campaign(id)?;
+        let mut definition: Self = serde_json::from_value(record.definition)
+            .map_err(|e| format!("CAMPAIGN_RECORD_CORRUPT: {e}"))?;
+        if let Some(event) = store.last_campaign_event(id, "tuned")? {
+            let limits: Limits = serde_json::from_value(event.body["limits"].clone())
+                .map_err(|e| format!("CAMPAIGN_RECORD_CORRUPT: {e}"))?;
+            definition.spec.limits = limits;
+        }
+        Ok(definition)
+    }
 }
 
 pub fn now_ms() -> u64 {

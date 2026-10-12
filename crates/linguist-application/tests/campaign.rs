@@ -99,6 +99,9 @@ fn cohorts_follow_the_collection_analysis_rules() {
 #[derive(Default)]
 struct World {
     calls: Vec<String>,
+    /// Threads that sent commands (lanes and prep workers).
+    threads: BTreeSet<String>,
+    prepare_delay_ms: u64,
     next: u64,
     prepare_jobs: BTreeMap<String, Vec<String>>,
     plans: BTreeMap<String, Plan>,
@@ -333,7 +336,18 @@ impl FakeCli {
 impl Runner for FakeCli {
     fn run(&self, source: &SourceSpec, args: &[String]) -> Output {
         assert_eq!(source.purpose, "japanese_vocab");
+        // Preparation takes a while, outside the world lock (as a child
+        // process would), so parallel prep workers overlap.
+        if args.first().is_some_and(|a| a == "jobs") && args.get(1).is_some_and(|a| a == "run") {
+            let delay = self.world.lock().unwrap().prepare_delay_ms;
+            std::thread::sleep(std::time::Duration::from_millis(delay));
+        }
         let out = self.answer(args);
+        self.world
+            .lock()
+            .unwrap()
+            .threads
+            .insert(format!("{:?}", std::thread::current().id()));
         let left = self.kill_after.load(Ordering::SeqCst);
         if left > 0 {
             self.kill_after.store(left - 1, Ordering::SeqCst);
@@ -422,17 +436,15 @@ fn context<'a>(
     anki: &'a FakeAnki<'a>,
     clock: &'a (dyn Fn() -> u64 + Sync),
 ) -> Context<'a> {
-    let record = linguist_store::Store::read_only(root)
-        .unwrap()
-        .campaign(id)
-        .unwrap();
+    let store = linguist_store::Store::read_only(root).unwrap();
     Context {
         root,
         id,
-        definition: serde_json::from_value(record.definition).unwrap(),
+        definition: linguist_application::campaign::Definition::effective(&store, id).unwrap(),
         runner: cli,
         collection: anki,
         clock,
+        poll: std::time::Duration::from_millis(5),
     }
 }
 
@@ -622,8 +634,14 @@ fn a_tick_killed_after_any_command_loses_no_work_and_repeats_no_write() {
             clock: AtomicU64::new(1000),
         };
         let kills = drive(&root, id, &cli, Some(every));
-        assert_eq!(kills, 1, "kill after command {every}");
         let w = cli.world.lock().unwrap();
+        // Idle lanes look again while another lane works, so a run may send
+        // a few commands fewer than the counting run and never reach `every`.
+        assert!(
+            kills == 1 || (kills == 0 && (w.calls.len() as u64) < every),
+            "kill after command {every}: {kills} kills, {} commands",
+            w.calls.len()
+        );
         assert_eq!(w.applied.len(), 4, "kill every {every}");
         // A note may be applied by a job only once, even when a killed tick
         // left an orphan job behind (it is never run).
@@ -883,4 +901,106 @@ fn audio_lost_to_a_service_outage_is_enriched_again_then_left_to_the_agent() {
             .unwrap()
             .starts_with("AUDIO_SYNTHESIS_UNAVAILABLE")
     );
+}
+
+#[test]
+fn tuned_prep_workers_prepare_batches_at_once_and_the_agent_holds_its_batches() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-parallel-{}", Uuid::new_v4()));
+    let mut spec = spec(false);
+    spec.batch_size = 1;
+    let id = create(&root, spec, world_notes());
+    // Guardrails are not tunable, and parallel prep stays within prepare_ahead.
+    let mut limits = Limits::default();
+    let refused = campaign::Tuning {
+        prepare_parallel: Some(5),
+        ..Default::default()
+    }
+    .apply(&mut limits)
+    .unwrap_err();
+    assert!(refused.starts_with("CAMPAIGN_TUNING_INVALID"), "{refused}");
+    let tuning = campaign::Tuning {
+        prepare_ahead: Some(4),
+        prepare_parallel: Some(3),
+        agent_runs_per_day: Some(288),
+    };
+    let mut limits = spec_limits(&root, id);
+    tuning.apply(&mut limits).unwrap();
+    linguist_store::Store::open_existing(&root)
+        .unwrap()
+        .append_campaign_event(id, None, "tuned", &json!({"limits": limits}), 2)
+        .unwrap();
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    cli.world.lock().unwrap().prepare_delay_ms = 50;
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    assert_eq!(ctx.definition.spec.limits.prepare_parallel, 3);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let status = campaign::engine::status(&store, id, 0).unwrap();
+    assert_eq!(status["limits"]["prepare_ahead"], 4);
+    assert_eq!(status["agent_runs_per_day"], 288);
+    // An agent run in progress holds batches waiting for it.
+    let mut writer = linguist_store::Store::open_existing(&root).unwrap();
+    writer
+        .append_campaign_event(id, None, "agent_run", &json!({}), 1000)
+        .unwrap();
+    ctx.tick(600).unwrap();
+    // Three prep workers and the write lane each sent commands.
+    assert!(
+        cli.world.lock().unwrap().threads.len() >= 3,
+        "{:?}",
+        cli.world.lock().unwrap().threads
+    );
+    // Four batches in flight (prepare_ahead), none past preparation.
+    let p = phases(&root, id);
+    assert_eq!(
+        p.iter()
+            .filter(|p| matches!(p.as_str(), "needs_agent" | "ready"))
+            .count(),
+        4,
+        "{p:?}"
+    );
+    assert_eq!(
+        campaign::engine::status(&store, id, 2000).unwrap()["agent_active"],
+        true
+    );
+    // A batch waiting for the agent is not rechecked while the agent runs,
+    // even when its plan changed.
+    let waiting: Vec<u32> = store
+        .campaign_batches(id)
+        .unwrap()
+        .into_iter()
+        .filter(|b| b.phase == "needs_agent")
+        .map(|b| b.batch)
+        .collect();
+    assert!(!waiting.is_empty(), "{p:?}");
+    {
+        let mut w = cli.world.lock().unwrap();
+        for plan in w.plans.values_mut() {
+            plan.revision += 1;
+        }
+    }
+    let calls = cli.world.lock().unwrap().calls.len();
+    ctx.tick(600).unwrap();
+    assert_eq!(cli.world.lock().unwrap().calls.len(), calls, "nothing sent");
+    writer
+        .append_campaign_event(id, None, "agent_done", &json!({}), 3000)
+        .unwrap();
+    assert_eq!(
+        campaign::engine::status(&store, id, 3000).unwrap()["agent_active"],
+        false
+    );
+    ctx.tick(600).unwrap();
+    assert!(cli.world.lock().unwrap().calls.len() > calls);
+    drop((store, writer));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+fn spec_limits(root: &std::path::Path, id: Uuid) -> Limits {
+    let store = linguist_store::Store::read_only(root).unwrap();
+    Definition::effective(&store, id).unwrap().spec.limits
 }
