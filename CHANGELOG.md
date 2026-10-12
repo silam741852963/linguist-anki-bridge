@@ -12,6 +12,7 @@ Unattended collection revamp campaigns (WP-24). Companion add-on 0.5.0; local st
 - **Duplicate merge**: `plans merge-notes` archives duplicates on their survivor's item; `notes delete-merged` deletes a duplicate after its survivor is applied (companion `delete_merged_note`); `notes restore-merged` recreates it with its note, card and review IDs (`recreate_deleted_note`).
 - **Native history**: a uniform history map drops entries for templates a note has no card of.
 - **Agent driver**: `scripts/campaign-tick.sh` (systemd user timer) and the `campaign-tick` project skill.
+- Release check 2026-10-12: every command passes, including all eleven desktop scenarios; 13 of 14 gates pass, EV-02 stays blocked.
 
 ## 0.2.1 — 2026-10-11
 

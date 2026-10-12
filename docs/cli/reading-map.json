@@ -310,7 +310,7 @@
       "path": "implementation/wp-24.md",
       "heading": "## WP-24 \u2014 unattended collection revamp campaign, monitored by an agent",
       "title": "WP-24 \u2014 unattended collection revamp campaign, monitored by an agent",
-      "words": 4746,
+      "words": 4790,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
