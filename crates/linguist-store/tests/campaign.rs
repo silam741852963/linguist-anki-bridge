@@ -175,3 +175,41 @@ fn a_schema_14_store_gains_campaign_tables_on_open() {
             .starts_with(".schema-v14-")
     }));
 }
+
+#[test]
+fn a_batch_splits_into_two_atomically() {
+    let mut store = Store::open(&root("split")).unwrap();
+    let id = Uuid::new_v4();
+    store
+        .create_campaign(id, &json!({}), &batches(), 1)
+        .unwrap();
+    let new = store
+        .split_campaign_batch(
+            id,
+            1,
+            1,
+            "selected",
+            &json!({"notes": ["1"]}),
+            &json!({"notes": ["2"]}),
+            &json!("too big"),
+            2,
+        )
+        .unwrap();
+    assert_eq!(new, 3);
+    assert_eq!(
+        store.campaign_batch(id, 1).unwrap().data["notes"],
+        json!(["1"])
+    );
+    let moved = store.campaign_batch(id, 3).unwrap();
+    assert_eq!(
+        (moved.cohort.as_str(), moved.phase.as_str()),
+        ("ja_plain", "selected")
+    );
+    assert_eq!(
+        store
+            .split_campaign_batch(id, 1, 1, "selected", &json!({}), &json!({}), &json!(""), 3)
+            .unwrap_err(),
+        "CAMPAIGN_BATCH_CONFLICT"
+    );
+    assert_eq!(store.campaign_batches(id).unwrap().len(), 3);
+}

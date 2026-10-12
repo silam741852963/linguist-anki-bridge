@@ -111,6 +111,8 @@ struct World {
     agent_decided: BTreeSet<String>,
     /// Drafts made by the next `plans generate` (each reopens its note's reviews).
     drafts: usize,
+    /// A prepare job with more notes cannot publish its plan.
+    max_notes: Option<usize>,
 }
 
 #[derive(Clone, Default)]
@@ -170,6 +172,13 @@ impl FakeCli {
             }
             ["jobs", "run", job] => {
                 let notes = w.prepare_jobs[*job].clone();
+                if w.max_notes.is_some_and(|max| notes.len() > max) {
+                    return Output {
+                        code: 2,
+                        json: Value::Null,
+                        stderr: json!({"error": "REVAMP_BATCH_ARCHIVE_LIMIT"}).to_string(),
+                    };
+                }
                 w.plans.entry((*job).to_owned()).or_insert(Plan {
                     revision: 1,
                     notes: notes.clone(),
@@ -770,4 +779,29 @@ fn a_batch_is_ready_only_when_the_final_plan_has_no_open_issue() {
         .position(|c| c.starts_with("plans generate"))
         .unwrap();
     assert!(last > generate, "a policy pass follows the drafts");
+}
+
+#[test]
+fn a_batch_over_the_size_limit_is_split_until_it_fits() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-split-{}", Uuid::new_v4()));
+    let mut spec = spec(false);
+    spec.batch_size = 4;
+    let notes: Vec<NoteInfo> = (0..4)
+        .map(|i| note(&format!("20{i}"), &format!("語{i}"), &format!("ご{i}"), 1))
+        .collect();
+    let id = create(&root, spec, notes);
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    cli.world.lock().unwrap().max_notes = Some(1);
+    drive(&root, id, &cli, None);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let batches = store.campaign_batches(id).unwrap();
+    assert_eq!(batches.len(), 4, "4 notes, at most 1 per publishable plan");
+    assert!(batches.iter().all(|b| b.phase == "done"));
+    let w = cli.world.lock().unwrap();
+    assert_eq!(w.applied.len(), 4);
+    assert!(w.applied.values().all(|n| *n == 1));
 }

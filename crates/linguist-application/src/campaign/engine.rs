@@ -184,6 +184,9 @@ impl Context<'_> {
         if out.unavailable() && out.json.is_null() {
             return Ok(Step::Waiting(out.error()));
         }
+        if out.json.is_null() && Self::too_big(&out) {
+            return self.split(record, data, &out.code_name());
+        }
         if out.json.is_null() {
             return Err(out.error());
         }
@@ -238,6 +241,51 @@ impl Context<'_> {
             }
             None => self.moved(record, "preparing", &data, "prepare job ran; items remain"),
         }
+    }
+
+    /// The batch's plan or archive is over the frozen size limits.
+    fn too_big(out: &Output) -> bool {
+        matches!(
+            out.code_name().as_str(),
+            "REVAMP_BATCH_ARCHIVE_LIMIT" | "PREPARATION_PLAN_SIZE_LIMIT"
+        )
+    }
+
+    /// Halve a batch whose plan cannot be published: the first half is
+    /// prepared again here, the second half becomes a new batch at the end.
+    fn split(&self, record: &BatchRecord, data: BatchData, why: &str) -> Result<Step, String> {
+        let notes: Vec<String> = data.active_notes().cloned().collect();
+        if notes.len() < 2 || !data.merge.is_empty() {
+            return Err(format!("{why}: a single note is over the size limit"));
+        }
+        let (first, second) = notes.split_at(notes.len() / 2);
+        let part = |ids: &[String], pilot: bool| BatchData {
+            source: data.source.clone(),
+            notes: ids.to_vec(),
+            pilot,
+            split_candidates: data
+                .split_candidates
+                .iter()
+                .filter(|n| ids.contains(n))
+                .cloned()
+                .collect(),
+            ..Default::default()
+        };
+        let new = self.store()?.split_campaign_batch(
+            self.id,
+            record.batch,
+            record.version,
+            "selected",
+            &part(first, data.pilot).to_value(),
+            &part(second, false).to_value(),
+            &json!({"reason": why, "kept": first.len(), "moved": second.len()}),
+            (self.clock)(),
+        )?;
+        Ok(Step::Moved(format!(
+            "batch {}: {why}; split, {} notes moved to batch {new}",
+            record.batch,
+            second.len()
+        )))
     }
 
     fn plan_show(&self, data: &BatchData, issues_only: bool) -> Result<Value, String> {
@@ -690,10 +738,15 @@ impl Context<'_> {
             let Some(op) = journal["journal"]["id"].as_str() else {
                 continue;
             };
-            let out = self.cli(
-                &data,
-                s(&["recover", "reconcile", op, "--rebind", "--apply"]),
-            )?;
+            // `--rebind` accepts a new Anki session; it is refused while
+            // the session is unchanged, so it is only the second attempt.
+            let mut out = self.cli(&data, s(&["recover", "reconcile", op, "--apply"]))?;
+            if out.code != 0 && out.error().contains("SESSION_CHANGED") {
+                out = self.cli(
+                    &data,
+                    s(&["recover", "reconcile", op, "--rebind", "--apply"]),
+                )?;
+            }
             if out.code != 0 {
                 if out.unavailable() {
                     return Ok(Step::Waiting(out.error()));

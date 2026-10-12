@@ -309,6 +309,64 @@ impl Store {
         Ok(expected_version + 1)
     }
 
+    /// Split one batch (compare-and-set on its version): the row keeps
+    /// `keep` and a new batch with the next free number takes `moved`, in
+    /// the same cohort, both in `phase`. Returns the new batch number.
+    #[allow(clippy::too_many_arguments)]
+    pub fn split_campaign_batch(
+        &mut self,
+        id: Uuid,
+        batch: u32,
+        expected_version: u64,
+        phase: &str,
+        keep: &serde_json::Value,
+        moved: &serde_json::Value,
+        event: &serde_json::Value,
+        now: u64,
+    ) -> Result<u32> {
+        self.writable_check()?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(sql)?;
+        let cohort: String = tx
+            .query_row(
+                "SELECT cohort FROM campaign_batches WHERE campaign=?1 AND batch=?2 AND version=?3",
+                params![id.to_string(), batch, expected_version as i64],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(sql)?
+            .ok_or("CAMPAIGN_BATCH_CONFLICT")?;
+        tx.execute(
+            "UPDATE campaign_batches SET phase=?4,data=?5,version=version+1,updated_ms=?6 WHERE campaign=?1 AND batch=?2 AND version=?3",
+            params![id.to_string(), batch, expected_version as i64, phase, encode(keep)?, now as i64],
+        )
+        .map_err(sql)?;
+        let next: u32 = tx
+            .query_row(
+                "SELECT MAX(batch)+1 FROM campaign_batches WHERE campaign=?1",
+                [id.to_string()],
+                |r| r.get(0),
+            )
+            .map_err(sql)?;
+        tx.execute(
+            "INSERT INTO campaign_batches(campaign,batch,cohort,phase,version,data,updated_ms) VALUES(?1,?2,?3,?4,1,?5,?6)",
+            params![id.to_string(), next, cohort, phase, encode(moved)?, now as i64],
+        )
+        .map_err(sql)?;
+        append(
+            &tx,
+            id,
+            Some(batch),
+            "split",
+            &serde_json::json!({"new_batch": next, "detail": event}),
+            now,
+        )?;
+        tx.commit().map_err(sql)?;
+        Ok(next)
+    }
+
     /// Compare-and-set the campaign status (running, paused, cancelled, closed).
     #[allow(clippy::too_many_arguments)]
     pub fn set_campaign_status(
