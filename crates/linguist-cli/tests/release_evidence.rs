@@ -4,12 +4,12 @@
 use std::path::Path;
 
 #[test]
-fn operation_coverage_lists_existing_tests_for_all_84_operations() {
+fn operation_coverage_lists_existing_tests_for_all_85_operations() {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let text =
         std::fs::read_to_string(repo.join("docs/cli/implementation/op-coverage.md")).unwrap();
     let rows: Vec<&str> = text.lines().filter(|l| l.starts_with("| OP-")).collect();
-    assert_eq!(rows.len(), 84);
+    assert_eq!(rows.len(), 85);
     for (index, row) in rows.iter().enumerate() {
         assert!(
             row.starts_with(&format!("| OP-{:02} |", index + 1)),
@@ -35,5 +35,5 @@ fn operation_coverage_lists_existing_tests_for_all_84_operations() {
         );
         count += 1;
     }
-    assert!(count >= 84, "{count}");
+    assert!(count >= 85, "{count}");
 }

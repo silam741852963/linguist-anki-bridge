@@ -1648,6 +1648,87 @@ pub enum ItemAction {
 
 /// Agent-facing status: counts, what needs the agent or the user, and the
 /// commands that move it on.
+/// `campaign requeue`: notes a finished batch deferred for one of
+/// `reasons` (reason prefixes such as `AGENT:`) go round again in a new
+/// `selected` batch per source batch, prepared from scratch with the current
+/// generation settings. The finished batch keeps them as deferred with the
+/// new batch named, so a note is requeued at most once per pass.
+pub fn requeue(store: &mut Store, id: Uuid, reasons: &[String], now: u64) -> Result<Value, String> {
+    let campaign = store.campaign(id)?;
+    if matches!(campaign.status.as_str(), "cancelled" | "closed") {
+        return Err("CAMPAIGN_FINISHED".into());
+    }
+    // No tick runs meanwhile: the new batch number is named in the old one.
+    let lease = store.acquire_lease(&Resource::Campaign(id), LEASE_SECONDS)?;
+    let result = requeue_locked(store, id, reasons, now);
+    let released = store.release_lease(&lease);
+    let value = result?;
+    released?;
+    Ok(value)
+}
+
+fn requeue_locked(
+    store: &mut Store,
+    id: Uuid,
+    reasons: &[String],
+    now: u64,
+) -> Result<Value, String> {
+    let mut created = Vec::new();
+    for record in store.campaign_batches(id)? {
+        if record.phase != "done" {
+            continue;
+        }
+        let mut data = BatchData::from_value(&record.data)?;
+        if !data.merge.is_empty() {
+            continue;
+        }
+        let notes: Vec<String> = data
+            .deferred
+            .iter()
+            .filter(|(_, why)| reasons.iter().any(|r| why.starts_with(r.as_str())))
+            .map(|(note, _)| note.clone())
+            .collect();
+        if notes.is_empty() {
+            continue;
+        }
+        let fresh = BatchData {
+            source: data.source.clone(),
+            split_candidates: data
+                .split_candidates
+                .iter()
+                .filter(|n| notes.contains(n))
+                .cloned()
+                .collect(),
+            notes: notes.clone(),
+            ..BatchData::default()
+        };
+        let next = store
+            .campaign_batches(id)?
+            .iter()
+            .map(|b| b.batch)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        for note in &notes {
+            let why = data.deferred[note].clone();
+            data.deferred
+                .insert(note.clone(), format!("REQUEUED to batch {next}: {why}"));
+        }
+        let batch = store.move_to_new_batch(
+            id,
+            record.batch,
+            record.version,
+            ("done", &data.to_value()),
+            ("selected", &fresh.to_value()),
+            "requeued",
+            &json!({"notes": notes, "reasons": reasons}),
+            now,
+        )?;
+        created.push(json!({"from": record.batch, "batch": batch, "notes": notes.len()}));
+    }
+    Ok(json!({"campaign": id, "requeued": created}))
+}
+
 pub fn status(store: &Store, id: Uuid, now: u64) -> Result<Value, String> {
     let campaign = store.campaign(id)?;
     let definition = Definition::effective(store, id)?;
@@ -1663,7 +1744,12 @@ pub fn status(store: &Store, id: Uuid, now: u64) -> Result<Value, String> {
         *notes_by_phase.entry(record.phase.clone()).or_default() +=
             data.notes.len() + data.merge.len();
         applied += data.committed.len();
-        deferred += data.deferred.len();
+        // A requeued note counts in the batch it went round again in.
+        deferred += data
+            .deferred
+            .values()
+            .filter(|why| !why.starts_with("REQUEUED"))
+            .count();
         match record.phase.as_str() {
             "needs_agent" => agent.push(json!({
                 "batch": record.batch, "cohort": record.cohort, "phase": record.phase,

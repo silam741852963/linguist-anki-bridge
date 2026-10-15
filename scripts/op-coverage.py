@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-84 with its
+"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-85 with its
 CLI handler and the tests that exercise it.
 
 Command-level tests are found by scanning `crates/linguist-cli/tests/*.rs`
@@ -42,7 +42,7 @@ OPS = [("OP-01", "doctor"), ("OP-02", "config init"), ("OP-03", "config show"),
        ("OP-74", "campaign close"), ("OP-75", "campaign agent-slot"), ("OP-76", "campaign asset"),
        ("OP-77", "campaign install-timer"), ("OP-78", "jobs publish"), ("OP-79", "plans merge-notes"),
        ("OP-80", "notes delete-merged"), ("OP-81", "notes restore-merged"),
-       ("OP-82", "campaign reopen"), ("OP-83", "campaign tune"), ("OP-84", "campaign agent-done")]
+       ("OP-82", "campaign reopen"), ("OP-83", "campaign tune"), ("OP-84", "campaign agent-done"), ("OP-85", "campaign requeue")]
 APP = "crates/linguist-application/tests/"
 LIBRARY = {
     "OP-17": [APP + "checkpoint_writes.rs::created_model_is_journaled_before_call_and_verified",
@@ -65,6 +65,7 @@ LIBRARY = {
     "OP-82": [APP + "campaign.rs::a_batch_is_ready_only_when_the_final_plan_has_no_open_issue"],
     "OP-83": [APP + "campaign.rs::tuned_prep_workers_prepare_batches_at_once_and_the_agent_holds_its_batches"],
     "OP-84": [APP + "campaign.rs::tuned_prep_workers_prepare_batches_at_once_and_the_agent_holds_its_batches"],
+    "OP-85": [APP + "campaign.rs::deferred_notes_of_finished_batches_are_requeued_once"],
     "OP-79": [APP + "merge.rs::a_merged_duplicate_is_archived_deleted_once_and_restorable"],
     "OP-80": [APP + "merge.rs::a_merged_duplicate_is_archived_deleted_once_and_restorable",
               APP + "merge.rs::a_note_the_plan_does_not_merge_is_never_deleted"],

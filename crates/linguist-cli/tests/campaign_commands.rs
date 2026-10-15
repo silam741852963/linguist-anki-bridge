@@ -287,6 +287,10 @@ fn user_only_steps_refuse_an_agent_and_local_controls_record_events() {
     assert_eq!(status["agent_runs_per_day"], 2);
     let (code, _, stderr) = run(cli(&home, &endpoint).args(["campaign", "agent-done", &id]));
     assert_eq!(code, 0, "{stderr}");
+    // Nothing is finished yet, so nothing goes round again.
+    let (code, requeued, stderr) = run(cli(&home, &endpoint).args(["campaign", "requeue", &id]));
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(requeued["requeued"], json!([]));
     let (_, status, _) = run(cli(&home, &endpoint).args(["campaign", "status", &id]));
     assert_eq!(status["agent_active"], false);
     // Pause; a run does nothing; only the user resumes.

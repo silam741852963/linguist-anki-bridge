@@ -310,7 +310,7 @@
       "path": "implementation/wp-24.md",
       "heading": "## WP-24 \u2014 unattended collection revamp campaign, monitored by an agent",
       "title": "WP-24 \u2014 unattended collection revamp campaign, monitored by an agent",
-      "words": 4945,
+      "words": 5209,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
@@ -558,6 +558,16 @@
       "heading": "## OP-84 \u2014 `campaign agent-done CAMPAIGN`",
       "title": "OP-84 \u2014 `campaign agent-done CAMPAIGN`",
       "words": 47,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-85": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-85 \u2014 `campaign requeue CAMPAIGN [--reason PREFIX]...`",
+      "title": "OP-85 \u2014 `campaign requeue CAMPAIGN [--reason PREFIX]...`",
+      "words": 129,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"

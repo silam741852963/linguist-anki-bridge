@@ -115,6 +115,30 @@ fn spoken(text: &str) -> String {
     text.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
+/// Katakana folded to hiragana (a reading written either way is the same).
+fn hiragana(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '\u{30a1}'..='\u{30f6}' => char::from_u32(c as u32 - 0x60).unwrap_or(c),
+            _ => c,
+        })
+        .collect()
+}
+
+/// A note's reading field as its readings: the whole field without spaces
+/// (`だい どころ` is だいどころ) and each part between separators or spaces
+/// (`そふ おじいさん`, `なおる; なおす`).
+fn readings(raw: &str) -> Vec<String> {
+    let mut all = vec![hiragana(&spoken(raw))];
+    all.extend(
+        raw.split(|c: char| c.is_whitespace() || ",、;；/／・".contains(c))
+            .map(hiragana)
+            .filter(|r| !r.is_empty()),
+    );
+    all.retain(|r| !r.is_empty());
+    all
+}
+
 fn is_stroke_gif(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.ends_with(".gif")
@@ -174,6 +198,22 @@ fn has_own_audio(document: &LearningDocument) -> bool {
         .any(|m| m.owner == MediaOwner::Source && m.mime.starts_with("audio/"))
 }
 
+fn is_kanji(c: char) -> bool {
+    matches!(c, '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}' | '\u{f900}'..='\u{faff}' | '々')
+}
+
+/// Some occurrence of `word` in `phrase` is not glued to a neighbouring
+/// kanji (a word that starts or ends in kana may touch kanji there).
+fn stands_alone(phrase: &str, word: &str) -> bool {
+    let (first, last) = (word.chars().next(), word.chars().last());
+    phrase.match_indices(word).any(|(at, _)| {
+        let before = phrase[..at].chars().last();
+        let after = phrase[at + word.len()..].chars().next();
+        !(first.is_some_and(is_kanji) && before.is_some_and(is_kanji))
+            && !(last.is_some_and(is_kanji) && after.is_some_and(is_kanji))
+    })
+}
+
 /// True when a generated collocation or nuance list names the expression
 /// (or its reading) itself as a phrase or contrast.
 fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bool {
@@ -205,7 +245,34 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
         return true;
     }
     if field != "collocations" {
-        return false;
+        // Another spelling of the same word is no contrast (朝ご飯 and
+        // 朝御飯): a form of a dictionary entry with the note's reading.
+        let reading = hiragana(&spoken(&vocab.reading));
+        let spellings: Vec<String> = vocab
+            .dictionary
+            .iter()
+            .filter(|entry| {
+                !reading.is_empty()
+                    && entry
+                        .readings
+                        .iter()
+                        .any(|r| hiragana(&spoken(r)) == reading)
+            })
+            .flat_map(|entry| entry.forms.iter().map(|f| spoken(f)))
+            .collect();
+        return phrases
+            .iter()
+            .any(|p| spellings.contains(p) || hiragana(p) == reading);
+    }
+    // A compound that holds the word's kanji is another word (体温 is not
+    // a phrase of 体 read からだ): the written form must stand on its own.
+    let expression = spoken(&vocab.expression);
+    if !expression.is_empty()
+        && phrases
+            .iter()
+            .any(|p| p.contains(&expression) && !stands_alone(p, &expression))
+    {
+        return true;
     }
     // The same phrase twice.
     let unique: std::collections::BTreeSet<&String> = phrases.iter().collect();
@@ -265,19 +332,28 @@ fn decide(
             let LearningContent::Vocabulary(vocab) = &document.content else {
                 return Err("NOT_VOCABULARY".into());
             };
-            let own = spoken(if vocab.reading.is_empty() {
+            let raw = if vocab.reading.is_empty() {
                 &vocab.pronunciation
             } else {
                 &vocab.reading
-            });
+            };
             // The sense whose reading is the note's own, in dictionary order
             // (common senses first); without a reading match only a single
             // candidate is taken.
-            if let Some(t) = templates.iter().find(|t| {
-                t["reading"]
-                    .as_str()
-                    .is_some_and(|r| !own.is_empty() && own.contains(&spoken(r)))
-            }) {
+            // Equal, never a prefix: だいどこ is not 台所's だいどころ.
+            // The whole field first (`から だ` is からだ), then its parts.
+            let own_readings = readings(raw);
+            let equal = |wanted: &[String]| {
+                templates.iter().find(|t| {
+                    t["reading"].as_str().is_some_and(|r| {
+                        let r = hiragana(&spoken(r));
+                        !r.is_empty() && wanted.contains(&r)
+                    })
+                })
+            };
+            if let Some(t) =
+                equal(&own_readings[..1.min(own_readings.len())]).or_else(|| equal(&own_readings))
+            {
                 return Ok(choice(t));
             }
             if templates.iter().all(|t| t["reading"].is_null()) {

@@ -136,3 +136,8 @@ Inputs: at least one throughput limit. Effects: local. Records a `tuned` event h
 ## OP-84 — `campaign agent-done CAMPAIGN`
 
 Effects: local. Records an `agent_done` event, which ends the agent hold started by `agent-slot` (OP-67 step 3): batches waiting for the agent are reviewed again by the next tick step. `scripts/campaign-agent.sh` runs it after every agent run, whatever its exit status.
+
+## OP-85 — `campaign requeue CAMPAIGN [--reason PREFIX]...`
+
+Inputs: deferral reason prefixes (default `AGENT:` and `APPLY_FAILED:`). Effects: local, under the campaign lease (refused with `LEASE_HELD_OR_OWNER_UNVERIFIED` while a tick runs). For every `done` batch without a merge, the notes deferred for a matching reason move to one new `selected` batch (same cohort), prepared from scratch with the current settings (for example after a generation, prompt or policy fix). The finished batch keeps each note as deferred with `REQUEUED to batch N: <old reason>`, so a note is requeued once per pass and counted once in `campaign status`. Deferred notes were never written, so nothing in Anki changes. A `requeued` event names the notes. `CAMPAIGN_FINISHED` for a cancelled or closed campaign. The agent wrapper denies it: requeueing is the user's call.
+

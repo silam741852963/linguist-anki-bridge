@@ -324,6 +324,33 @@ impl Store {
         event: &serde_json::Value,
         now: u64,
     ) -> Result<u32> {
+        self.move_to_new_batch(
+            id,
+            batch,
+            expected_version,
+            (phase, keep),
+            (phase, moved),
+            "split",
+            event,
+            now,
+        )
+    }
+
+    /// Atomically update one batch and create the next batch from part of
+    /// it, each with its own phase (`split`, or `requeued` notes deferred
+    /// in a finished batch going round again).
+    #[allow(clippy::too_many_arguments)]
+    pub fn move_to_new_batch(
+        &mut self,
+        id: Uuid,
+        batch: u32,
+        expected_version: u64,
+        (phase, keep): (&str, &serde_json::Value),
+        (moved_phase, moved): (&str, &serde_json::Value),
+        kind: &str,
+        event: &serde_json::Value,
+        now: u64,
+    ) -> Result<u32> {
         self.writable_check()?;
         let tx = self
             .connection
@@ -352,14 +379,14 @@ impl Store {
             .map_err(sql)?;
         tx.execute(
             "INSERT INTO campaign_batches(campaign,batch,cohort,phase,version,data,updated_ms) VALUES(?1,?2,?3,?4,1,?5,?6)",
-            params![id.to_string(), next, cohort, phase, encode(moved)?, now as i64],
+            params![id.to_string(), next, cohort, moved_phase, encode(moved)?, now as i64],
         )
         .map_err(sql)?;
         append(
             &tx,
             id,
             Some(batch),
-            "split",
+            kind,
             &serde_json::json!({"new_batch": next, "detail": event}),
             now,
         )?;

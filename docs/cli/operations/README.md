@@ -110,3 +110,4 @@ Aliases `inject`/`modernize` may map to add/revamp with deprecation messages; th
 | OP-82 | [`campaign reopen CAMPAIGN BATCH --reason R`](campaign.md#op-82-campaign-reopen-campaign-batch---reason-r) |
 | OP-83 | [`campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N]`](campaign.md#op-83-campaign-tune-campaign---prepare-ahead-n---prepare-parallel-n---agent-runs-per-day-n) |
 | OP-84 | [`campaign agent-done CAMPAIGN`](campaign.md#op-84-campaign-agent-done-campaign) |
+| OP-85 | [`campaign requeue CAMPAIGN [--reason PREFIX]...`](campaign.md#op-85-campaign-requeue-campaign---reason-prefix) |

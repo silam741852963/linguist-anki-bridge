@@ -760,6 +760,19 @@ pub fn parse_output(bytes: &[u8], max_bytes: u64, max_chars: usize) -> Result<Su
     canonical::parse(bytes).map_err(|_| "GENERATION_OUTPUT_SCHEMA_INVALID".into())
 }
 
+/// More than half of the letters are kana or CJK ideographs (a few quoted
+/// words such as する or を in an English sentence are fine).
+fn mostly_cjk(text: &str) -> bool {
+    let letters: Vec<char> = text.chars().filter(|c| c.is_alphabetic()).collect();
+    let cjk = letters
+        .iter()
+        .filter(|c| {
+            matches!(**c, '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}' | '\u{f900}'..='\u{faff}' | '\u{ff66}'..='\u{ff9f}' | '\u{ac00}'..='\u{d7af}')
+        })
+        .count();
+    cjk * 2 > letters.len()
+}
+
 /// Validate a supplement against the exact document/request before any future merge.
 pub fn validate_output(
     doc: &LearningDocument,
@@ -852,6 +865,30 @@ pub fn validate_output(
     }
     let translation_required = doc.target_language.as_str().split('-').next()
         != doc.explanation_language.as_str().split('-').next();
+    // Explanations are written in the explanation language: a usage note in
+    // Japanese on an English card (殺す, 笑う) is refused and drafted again.
+    let explaining = match &output {
+        Supplement::Vocabulary(v) => [v.usage.as_str()]
+            .into_iter()
+            .chain(v.nuance.iter().map(|n| n.difference.as_str()))
+            .chain(v.collocations.iter().map(|c| c.gloss.as_str()))
+            .chain(v.examples.iter().map(|e| e.translation.as_str()))
+            .collect::<Vec<_>>(),
+        Supplement::Grammar(g) => [g.meaning.as_str(), g.usage.as_str()]
+            .into_iter()
+            .chain(g.nuance.iter().map(|n| n.difference.as_str()))
+            .chain(g.examples.iter().map(|e| e.translation.as_str()))
+            .collect(),
+    };
+    if translation_required
+        && !matches!(
+            doc.explanation_language.as_str().split('-').next(),
+            Some("ja" | "zh" | "ko")
+        )
+        && explaining.iter().any(|text| mostly_cjk(text))
+    {
+        return Err("GENERATION_EXPLANATION_LANGUAGE".into());
+    }
     if examples.iter().any(|example| {
         example.sentence.trim().is_empty()
             || (translation_required && example.translation.trim().is_empty())

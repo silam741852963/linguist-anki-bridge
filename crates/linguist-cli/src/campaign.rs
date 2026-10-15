@@ -151,6 +151,15 @@ pub(crate) enum CampaignCommand {
         /// Campaign ID from `campaign list`.
         campaign: Uuid,
     },
+    /// Send notes that finished batches deferred back round in new batches
+    /// (for example after a generation or policy fix).
+    Requeue {
+        /// Campaign ID from `campaign list`.
+        campaign: Uuid,
+        /// Deferral reason prefixes to requeue (repeatable).
+        #[arg(long = "reason", default_values_t = ["AGENT:".to_owned(), "APPLY_FAILED:".to_owned()])]
+        reasons: Vec<String>,
+    },
     /// Record that the agent run started by `agent-slot` ended; batches
     /// waiting for the agent are reviewed again.
     AgentDone {
@@ -784,6 +793,14 @@ pub(crate) fn handle(
             }
             store.append_campaign_event(campaign, None, "agent_run", &json!({}), now())?;
             emit(&json!({"granted": true, "used_today": used + 1}))?;
+        }
+        CampaignCommand::Requeue { campaign, reasons } => {
+            definition(&root, campaign)?;
+            if reasons.iter().any(|r| r.is_empty()) {
+                return Err("CAMPAIGN_REASON_EMPTY".into());
+            }
+            let mut store = linguist_store::Store::open_existing(&root)?;
+            emit(&engine::requeue(&mut store, campaign, &reasons, now())?)?;
         }
         CampaignCommand::AgentDone { campaign } => {
             definition(&root, campaign)?;

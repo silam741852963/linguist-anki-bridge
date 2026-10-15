@@ -963,3 +963,86 @@ fn campaign_policy_rejects_a_collocation_that_is_the_word() {
         "the same phrase twice"
     );
 }
+
+/// WP-24 agent findings, reinforced in the policy: a sense is chosen only by
+/// an equal reading (台所 だいどころ is not だいどこ), a collocation must use
+/// the word itself, not a compound sharing its kanji (体温 for 体 read からだ),
+/// and another spelling of the word is no nuance contrast (躰 for 体).
+#[test]
+fn campaign_policy_reinforces_the_agents_findings() {
+    use linguist_application::review::policy;
+    let f = Fixture::new();
+    let mut plan = two_sense_plan(&f);
+    let document = &mut plan.documents[0];
+    let LearningContent::Vocabulary(vocab) = &mut document.content else {
+        panic!()
+    };
+    vocab.expression = "体".into();
+    vocab.reading = "から だ".into();
+    vocab.dictionary[0].forms = vec!["体".into(), "躰".into()];
+    vocab.dictionary[0].readings = vec!["からだ".into()];
+    let sense = |key: &str| json!({"decision": "sense_with_reading", "value": {"key": key}});
+    let mut entries = vec![
+        json!({"document_id": document.id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
+        "options": {"issue": {"code": "DICTIONARY_SENSE_REVIEW"}, "templates": [
+            {"reading": "から", "choice": sense("prefix")},
+            {"reading": "カラダ", "choice": sense("equal")}]}}),
+    ];
+    for (index, (field, claim)) in [
+        (
+            "collocations",
+            r#"[{"phrase":"体を動かす","gloss":"move one's body"}]"#,
+        ),
+        (
+            "collocations",
+            r#"[{"phrase":"体温を測る","gloss":"take one's temperature"}]"#,
+        ),
+        (
+            "nuance",
+            r#"[{"expression":"躰","difference":"older spelling"}]"#,
+        ),
+        (
+            "nuance",
+            r#"[{"expression":"身体","difference":"more formal"}]"#,
+        ),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let id = uuid::Uuid::new_v4();
+        document.evidence.push(Evidence {
+            id,
+            field: (*field).into(),
+            provenance: Provenance::Generated,
+            source_id: None,
+            region_id: None,
+            target: None,
+            source_span: None,
+            language: Language::try_from("en".to_owned()).unwrap(),
+            claim: (*claim).into(),
+            source_url: None,
+            ambiguous: false,
+        });
+        entries.push(json!({"document_id": document.id, "issue_id": format!("GENERATED_FACT_REVIEW:{index}"), "input_digest": "d", "choice": null,
+            "options": {"issue": {"code": "GENERATED_FACT_REVIEW", "source_refs": [id]}, "templates": [
+                {"choice": {"decision": "content_verified", "value": {"evidence_ids": [id]}}},
+                {"choice": {"decision": "content_rejected", "value": {"evidence_id": id}}}]}}));
+    }
+    let template =
+        json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": entries});
+    let filled = policy::fill(&policy::Policy::builtin(), &plan, &template).unwrap();
+    let decisions = filled.batch.unwrap()["decisions"].clone();
+    assert_eq!(
+        decisions[0]["choice"]["value"]["key"], "equal",
+        "{decisions}"
+    );
+    let decision = |i: usize| decisions[i]["choice"]["decision"].clone();
+    assert_eq!(decision(1), "content_verified", "the word itself");
+    assert_eq!(
+        decision(2),
+        "content_rejected",
+        "a compound sharing its kanji"
+    );
+    assert_eq!(decision(3), "content_rejected", "another spelling");
+    assert_eq!(decision(4), "content_verified", "a different word");
+}

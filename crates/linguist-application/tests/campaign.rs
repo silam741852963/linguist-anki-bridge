@@ -1004,3 +1004,57 @@ fn spec_limits(root: &std::path::Path, id: Uuid) -> Limits {
     let store = linguist_store::Store::read_only(root).unwrap();
     Definition::effective(&store, id).unwrap().spec.limits
 }
+
+#[test]
+fn deferred_notes_of_finished_batches_are_requeued_once() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-requeue-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    drive(&root, id, &cli, None);
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let done = store.campaign_batch(id, 1).unwrap();
+    let mut data = BatchData::from_value(&done.data).unwrap();
+    let note = data.notes[0].clone();
+    data.deferred.insert(
+        note.clone(),
+        "AGENT: spot-check: invented collocation".into(),
+    );
+    data.deferred
+        .insert(data.notes[1].clone(), "VALIDATION: kept".into());
+    store
+        .update_campaign_batch(
+            id,
+            1,
+            done.version,
+            "done",
+            &data.to_value(),
+            "batch",
+            &json!("test"),
+            5,
+        )
+        .unwrap();
+    let before = store.campaign_batches(id).unwrap().len() as u32;
+    let reasons = ["AGENT:".to_owned()];
+    let out = campaign::engine::requeue(&mut store, id, &reasons, 6).unwrap();
+    assert_eq!(out["requeued"][0]["from"], 1, "{out}");
+    let new = store.campaign_batch(id, before + 1).unwrap();
+    assert_eq!(new.phase, "selected");
+    assert_eq!(
+        BatchData::from_value(&new.data).unwrap().notes,
+        std::slice::from_ref(&note)
+    );
+    let old = BatchData::from_value(&store.campaign_batch(id, 1).unwrap().data).unwrap();
+    assert!(old.deferred[&note].starts_with(&format!("REQUEUED to batch {}", before + 1)));
+    // Only the matching reason, and only once.
+    let again = campaign::engine::requeue(&mut store, id, &reasons, 7).unwrap();
+    assert_eq!(again["requeued"], json!([]));
+    drop(store);
+    // The requeued note is prepared and applied again.
+    drive(&root, id, &cli, None);
+    assert_eq!(cli.world.lock().unwrap().applied[&note], 2);
+    std::fs::remove_dir_all(root).unwrap();
+}

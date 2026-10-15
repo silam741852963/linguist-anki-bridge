@@ -7,6 +7,8 @@ Faster campaigns.
 - **Independent lanes**: `campaign run` runs the write lane and `prepare_parallel` prep workers (1-8), each looping on its own; prep workers claim distinct batches and read each batch fresh before a step. A lane that panics stops the tick.
 - **`campaign tune`**: change `prepare_ahead`, `prepare_parallel` and `agent_runs_per_day` of a running campaign (a `tuned` event; guardrails stay frozen). `campaign status` shows the effective `limits`.
 - **Agent on its own timer**: `scripts/campaign-agent.sh` and `campaign install-timer --agent-script` (every 5 minutes). `campaign agent-slot` .. `campaign agent-done` hold `needs_agent` batches so a review never races the agent's edits; `campaign status` shows `agent_active`.
+- **Quality fixes from the agent's spot checks**: the policy picks a sense only by an equal reading (台所 だいどころ no longer takes だいどこ); a collocation that only holds the word's kanji inside a compound (体温 for 体 read からだ) and a nuance contrast with another spelling of the word (朝ご飯/朝御飯) are rejected; a draft whose explanations are not in the explanation language is refused (`GENERATION_EXPLANATION_LANGUAGE`); the vocabulary prompt states these rules.
+- **`campaign requeue`**: notes that finished batches deferred (default reasons `AGENT:`, `APPLY_FAILED:`) go round again in new batches.
 - **Parallel generation**: `llm.agents.parallel` (1-8, default 1) drafts that many items at once from an external provider in `plans generate --all-items --pending`; local Ollama stays one at a time.
 
 ## 0.3.0 — 2026-10-11

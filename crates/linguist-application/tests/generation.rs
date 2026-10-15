@@ -826,3 +826,27 @@ fn rejecting_a_generated_fact_removes_exactly_that_content() {
     );
     assert!(!after.evidence.iter().any(|e| e.field == "nuance"));
 }
+/// WP-24 (殺す, 笑う): usage written in Japanese on an English card is
+/// refused so the draft is made again; a few quoted Japanese words are fine.
+#[test]
+fn explanations_are_in_the_explanation_language() {
+    let doc = document();
+    let request = build_request(&doc, &settings()).unwrap();
+    assert!(request.allowed_fields.iter().any(|f| f == "usage"));
+    let output = |usage: &str| {
+        serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":usage,"examples":[],"nuance":[],"collocations":[]}})).unwrap()
+    };
+    assert_eq!(
+        validate_output(
+            &doc,
+            &request,
+            &output("日常会話で使う普通の動詞です。"),
+            10000,
+            10000
+        )
+        .unwrap_err(),
+        "GENERATION_EXPLANATION_LANGUAGE"
+    );
+    let quoted = output("A neutral verb; takes を for what is eaten, as in ご飯を食べる.");
+    assert!(validate_output(&doc, &request, &quoted, 10000, 10000).is_ok());
+}
