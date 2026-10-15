@@ -146,6 +146,10 @@ pub fn generate_pending_chained(
             Ok(request) if request.allowed_fields.is_empty() => {
                 items.push(json!({"document_id": id, "skipped": "GENERATION_NOTHING_TO_FILL"}))
             }
+            // A field the review keeps rejecting is not drafted forever.
+            Ok(_) if drafts(parent) >= MAX_DRAFTS_PER_ITEM => {
+                items.push(json!({"document_id": id, "skipped": "GENERATION_ATTEMPTS_EXHAUSTED"}))
+            }
             Ok(_) => eligible.push(id),
         }
     }
@@ -223,6 +227,17 @@ pub fn generate_pending_chained(
             .copied()
     });
     Ok((items, published.0))
+}
+
+/// Drafts `plans generate --all-items --pending` makes of one item at most.
+pub const MAX_DRAFTS_PER_ITEM: usize = 3;
+
+fn drafts(document: &LearningDocument) -> usize {
+    document
+        .sources
+        .iter()
+        .filter(|s| s.kind == "generated_supplement_v2")
+        .count()
 }
 
 /// A provider's draft for one item, with the provider and every attempt.
@@ -343,6 +358,20 @@ fn candidate_from(
         return Err("GENERATION_DRAFT_CONFLICT".into());
     }
     draft.document.reviews.clear();
+    // The newest draft supersedes earlier ones: their engine markers (an
+    // uncertified local fallback, an external provider) no longer apply.
+    let newest = draft
+        .document
+        .sources
+        .iter()
+        .rev()
+        .find(|s| s.kind == "generated_supplement_v2")
+        .map(|s| s.id.to_string());
+    draft.document.issues.retain(|issue| {
+        !(issue.stage == "generation"
+            && issue.code.starts_with("GENERATION_ENGINE_")
+            && issue.source_refs.first() != newest.as_ref())
+    });
     let verified = if local {
         certified_engine(store, client, &draft.document)?
     } else {

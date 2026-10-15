@@ -1535,6 +1535,41 @@ fn chained_pending_generation_drafts_a_window_from_an_agent_at_once() {
     assert_eq!(revision, 4);
     let latest = store.revision(plan.id, 4).unwrap();
     assert_eq!(latest.documents.len(), 5);
+    // Drafting an item again leaves one engine marker, the newest draft's;
+    // an item drafted three times is not drafted again.
+    let mut again = latest.clone();
+    for (index, doc) in again.documents.iter_mut().enumerate().take(2) {
+        if let linguist_core::LearningContent::Vocabulary(v) = &mut doc.content {
+            v.usage.clear();
+        }
+        if index == 1 {
+            let generated = doc
+                .sources
+                .iter()
+                .find(|s| s.kind == "generated_supplement_v2")
+                .unwrap()
+                .clone();
+            for _ in 0..2 {
+                let mut copy = generated.clone();
+                copy.id = uuid::Uuid::new_v4();
+                doc.sources.push(copy);
+            }
+        }
+    }
+    again.revision = 5;
+    again.parent_digest = Some(latest.approval_digest().unwrap());
+    store.publish_revision(&again).unwrap();
+    let (items, _) =
+        generate_pending_chained(&mut store, &again, &current, &environment, &client, 10).unwrap();
+    assert!(items[0].get("result").is_some(), "{items:?}");
+    assert_eq!(items[1]["skipped"], "GENERATION_ATTEMPTS_EXHAUSTED");
+    let newest = store.revision(plan.id, 6).unwrap();
+    let markers = newest.documents[0]
+        .issues
+        .iter()
+        .filter(|i| i.code.starts_with("GENERATION_ENGINE_"))
+        .count();
+    assert_eq!(markers, 1);
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
     std::fs::remove_dir_all(bin).unwrap();
