@@ -100,6 +100,10 @@ pub(crate) enum CampaignCommand {
         /// Why, recorded in the campaign events.
         #[arg(long)]
         reason: String,
+        /// Prepare the batch again from scratch (ready, needs_agent or
+        /// approved, no apply job) with the current settings.
+        #[arg(long)]
+        fresh: bool,
     },
     /// Leave a whole batch out before approval.
     Skip {
@@ -700,6 +704,7 @@ pub(crate) fn handle(
             campaign,
             batch,
             reason,
+            fresh,
         } => {
             let def = definition(&root, campaign)?;
             let runner = ChildRunner {
@@ -713,7 +718,10 @@ pub(crate) fn handle(
                 settings,
             };
             let clock = now;
-            emit(&context(&root, campaign, &runner, &companion, &clock)?.reopen(batch, &reason)?)?;
+            emit(
+                &context(&root, campaign, &runner, &companion, &clock)?
+                    .reopen(batch, &reason, fresh)?,
+            )?;
         }
         CampaignCommand::Skip {
             campaign,

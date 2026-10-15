@@ -1598,9 +1598,38 @@ impl Context<'_> {
     /// review before any apply job exists for it. Deferrals the approval
     /// made (`VALIDATION:`) are cleared; the next tick reviews it again and
     /// a new approval is needed.
-    pub fn reopen(&self, batch: u32, reason: &str) -> Result<Value, String> {
+    pub fn reopen(&self, batch: u32, reason: &str, fresh: bool) -> Result<Value, String> {
         let record = self.batch_record(batch)?;
         let mut data = BatchData::from_value(&record.data)?;
+        // --fresh: prepare the batch again from scratch (a new prepare job
+        // and plan with the current settings, for example a stronger model);
+        // nothing was written, so every note returns, deferred ones too.
+        if fresh {
+            if !matches!(record.phase.as_str(), "ready" | "needs_agent" | "approved")
+                || !data.apply_jobs.is_empty()
+                || data.apply_intent_ms.is_some()
+            {
+                return Err(format!(
+                    "CAMPAIGN_BATCH_LOCKED: batch {batch} is {} (only a ready, needs_agent or approved batch without an apply job is prepared again)",
+                    record.phase
+                ));
+            }
+            let again = BatchData {
+                source: data.source.clone(),
+                notes: data.notes.clone(),
+                merge: data.merge.clone(),
+                pilot: data.pilot,
+                split_candidates: data.split_candidates.clone(),
+                ..BatchData::default()
+            };
+            self.save(
+                &record,
+                "selected",
+                &again,
+                json!({"reopen": reason, "fresh": true, "old_plan": data.plan}),
+            )?;
+            return Ok(json!({"batch": batch, "phase": "selected", "notes": again.notes.len()}));
+        }
         if record.phase != "approved"
             || !data.apply_jobs.is_empty()
             || data.apply_intent_ms.is_some()

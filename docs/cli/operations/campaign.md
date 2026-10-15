@@ -125,9 +125,9 @@ Effects (with `--apply`): one companion `delete_merged_note` effect.
 
 Inputs: a deleted duplicate. Effects (with `--apply`): one companion `recreate_deleted_note` effect that inserts the note, its cards (same IDs, decks and schedule) and any review rows Anki no longer has, then recomputes the sort field and checksum. Refused when the note, a card or the GUID exists. The agent's allowlist excludes it.
 
-## OP-82 — `campaign reopen CAMPAIGN BATCH --reason R`
+## OP-82 — `campaign reopen CAMPAIGN BATCH --reason R [--fresh]`
 
-Inputs: an `approved` batch with no apply job and no recorded apply intent. Effects: local. The approval and the before-apply card facts are dropped, deferrals made by the approval (`VALIDATION:`) are cleared, and the batch returns to `reviewing`; the next tick reviews it again and a new `campaign approve` is needed. The plan's approval record stays in history; no apply job can be created from it by the campaign.
+Inputs: an `approved` batch with no apply job and no recorded apply intent. Effects: local. The approval and the before-apply card facts are dropped, deferrals made by the approval (`VALIDATION:`) are cleared, and the batch returns to `reviewing`; the next tick reviews it again and a new `campaign approve` is needed. The plan's approval record stays in history; no apply job can be created from it by the campaign. With `--fresh` (a `ready`, `needs_agent` or `approved` batch, no apply job, no apply intent) the batch returns to `selected` with only its notes, merge group, pilot flag and split candidates: the next tick creates a new prepare job and plan with the current settings (for example a stronger generation model), and notes it had deferred return too. The old plan stays in the store, unapproved.
 
 ## OP-83 — `campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N]`
 

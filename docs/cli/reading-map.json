@@ -535,9 +535,9 @@
     },
     "OP-82": {
       "path": "operations/campaign.md",
-      "heading": "## OP-82 \u2014 `campaign reopen CAMPAIGN BATCH --reason R`",
-      "title": "OP-82 \u2014 `campaign reopen CAMPAIGN BATCH --reason R`",
-      "words": 78,
+      "heading": "## OP-82 \u2014 `campaign reopen CAMPAIGN BATCH --reason R [--fresh]`",
+      "title": "OP-82 \u2014 `campaign reopen CAMPAIGN BATCH --reason R [--fresh]`",
+      "words": 144,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"

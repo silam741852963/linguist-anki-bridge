@@ -1058,3 +1058,53 @@ fn deferred_notes_of_finished_batches_are_requeued_once() {
     assert_eq!(cli.world.lock().unwrap().applied[&note], 2);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a_ready_batch_reopened_fresh_is_prepared_again_from_scratch() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-fresh-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    ctx.tick(600).unwrap();
+    assert_eq!(phases(&root, id), ["ready"]);
+    let old = BatchData::from_value(
+        &linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign_batch(id, 1)
+            .unwrap()
+            .data,
+    )
+    .unwrap();
+    let out = ctx.reopen(1, "stronger model", true).unwrap();
+    assert_eq!(out["phase"], "selected");
+    let data = BatchData::from_value(
+        &linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign_batch(id, 1)
+            .unwrap()
+            .data,
+    )
+    .unwrap();
+    assert_eq!((data.plan, data.prepare_job), (None, None));
+    assert_eq!(data.notes, old.notes);
+    // A plain reopen still needs an approved batch.
+    ctx.tick(600).unwrap();
+    assert!(ctx.reopen(1, "again", false).is_err());
+    let new = BatchData::from_value(
+        &linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign_batch(id, 1)
+            .unwrap()
+            .data,
+    )
+    .unwrap();
+    assert_ne!(new.plan, old.plan, "a new plan");
+    assert_eq!(phases(&root, id), ["ready"]);
+    std::fs::remove_dir_all(root).unwrap();
+}
