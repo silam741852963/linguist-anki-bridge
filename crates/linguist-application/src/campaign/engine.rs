@@ -154,7 +154,11 @@ impl Context<'_> {
         data: &BatchData,
         what: &str,
     ) -> Result<Step, String> {
-        self.save(record, phase, data, json!(what))?;
+        // A step that moves the batch ends its run of failures.
+        let mut data = data.clone();
+        data.step_failures = 0;
+        data.last_error = None;
+        self.save(record, phase, &data, json!(what))?;
         Ok(Step::Moved(format!("batch {}: {what}", record.batch)))
     }
 
@@ -260,17 +264,27 @@ impl Context<'_> {
         });
         if plan.is_none() && pending == 0 && failed > 0 && transient && data.read_retries < 3 {
             let retried = self.cli(&data, s(&["jobs", "retry", &job, "--failed"]))?;
-            if retried.code != 0 {
+            let none_eligible = retried.code == 4
+                && retried.json["eligible"]
+                    .as_array()
+                    .is_some_and(|e| e.is_empty());
+            if retried.code != 0 && !none_eligible {
                 return Err(retried.error());
             }
-            data.read_retries += 1;
-            data.read_retry_after_ms = Some((self.clock)() + 5 * 60 * 1000);
-            return self.moved(
-                record,
-                "preparing",
-                &data,
-                &format!("{failed} notes failed to read (Anki busy); read again later"),
-            );
+            if none_eligible {
+                // The job's own attempt budget is spent: leave the notes
+                // out (deferred; `campaign requeue` reads them in a new job).
+                data.read_retries = 3;
+            } else {
+                data.read_retries += 1;
+                data.read_retry_after_ms = Some((self.clock)() + 5 * 60 * 1000);
+                return self.moved(
+                    record,
+                    "preparing",
+                    &data,
+                    &format!("{failed} notes failed to read (Anki busy); read again later"),
+                );
+            }
         }
         if plan.is_none() && pending == 0 && failed > 0
             || plan.is_none() && data.prepare_runs >= self.definition.spec.limits.max_prepare_runs

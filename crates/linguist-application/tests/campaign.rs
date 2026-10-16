@@ -123,6 +123,8 @@ struct World {
     /// Notes whose read fails (Anki busy) this many more times.
     read_fail: BTreeMap<String, u32>,
     read_retries: u32,
+    /// Retries the prepare job's attempt budget still allows (None: any).
+    retry_budget: Option<u32>,
 }
 
 #[derive(Clone, Default)]
@@ -210,7 +212,15 @@ impl FakeCli {
                     json!({"plan": {"id": job}, "item_counts": {"captured": notes.len()}, "error_counts": {}, "captured_this_run": notes.len()}),
                 )
             }
+            ["jobs", "retry", _, "--failed"] if w.retry_budget == Some(0) => Output {
+                code: 4,
+                json: json!({"eligible": [], "refused": [{"code": "JOB_RETRY_ATTEMPTS_EXHAUSTED"}]}),
+                stderr: String::new(),
+            },
             ["jobs", "retry", _, "--failed"] => {
+                if let Some(left) = w.retry_budget.as_mut() {
+                    *left -= 1;
+                }
                 w.read_retries += 1;
                 for left in w.read_fail.values_mut() {
                     *left = left.saturating_sub(1);
@@ -1189,5 +1199,36 @@ fn notes_anki_was_too_busy_to_read_are_read_again_before_any_is_left_out() {
         data.deferred
     );
     assert!(data.deferred["102"].starts_with("PREPARE_FAILED: SOURCE_READ_CONNECTION_FAILED"));
+    std::fs::remove_dir_all(root).unwrap();
+
+    // A job whose attempt budget is spent is published without the notes
+    // at once (exit 4, nothing eligible), never a step failure.
+    let root = std::env::temp_dir().join(format!("lab-campaign-budget-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.read_fail.insert("102".into(), 9);
+        w.retry_budget = Some(0);
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    ctx.tick(600).unwrap();
+    let record = linguist_store::Store::read_only(&root)
+        .unwrap()
+        .campaign_batch(id, 1)
+        .unwrap();
+    let data = BatchData::from_value(&record.data).unwrap();
+    assert_eq!(
+        (data.step_failures, data.plan.is_some()),
+        (0, true),
+        "{data:?}"
+    );
+    assert!(data.deferred.contains_key("102"));
     std::fs::remove_dir_all(root).unwrap();
 }
