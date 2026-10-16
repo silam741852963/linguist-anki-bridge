@@ -186,6 +186,10 @@ fn run(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // Its own process group: an agent run under a wrapper (codex-meter.sh)
+    // is ended whole on a timeout, not just the wrapper (WP-24: orphaned
+    // `codex exec` processes outlived their deadline).
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = command.spawn().map_err(|_| "AGENT_SPAWN_FAILED")?;
     let mut stdin = child.stdin.take().ok_or("AGENT_SPAWN_FAILED")?;
     let input = input.as_bytes().to_vec();
@@ -219,6 +223,12 @@ fn run(
             break status;
         }
         if Instant::now() >= deadline {
+            if let Ok(group) = i32::try_from(child.id()) {
+                // SAFETY: signals the process group this function created.
+                unsafe {
+                    libc::kill(-group, libc::SIGKILL);
+                }
+            }
             let _ = child.kill();
             let _ = child.wait();
             return Err("AGENT_TIMEOUT".into());
@@ -613,6 +623,47 @@ mod tests {
             tuned.contains("-c model_reasoning_effort=\"low\""),
             "{tuned}"
         );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_timed_out_agent_is_ended_with_everything_it_started() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::env::temp_dir().join(format!("lab-timeout-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let script = directory.join("wrapper");
+        let pidfile = directory.join("child.pid");
+        // A wrapper whose own child would outlive it (codex-meter.sh -> codex).
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nsleep 30 &\necho $! > '{}'\nwait\n",
+                pidfile.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let env = BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]);
+        let started = Instant::now();
+        let result = run(
+            Command::new(&script),
+            &directory,
+            "",
+            &env,
+            Duration::from_millis(500),
+            1024,
+        );
+        assert_eq!(result.err().as_deref(), Some("AGENT_TIMEOUT"));
+        assert!(started.elapsed() < Duration::from_secs(10));
+        let pid: i32 = std::fs::read_to_string(&pidfile)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        // SAFETY: signal 0 only checks that the process exists.
+        let alive = unsafe { libc::kill(pid, 0) } == 0;
+        assert!(!alive, "the wrapper's child {pid} outlived the timeout");
         let _ = std::fs::remove_dir_all(&directory);
     }
 
