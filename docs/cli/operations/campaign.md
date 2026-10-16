@@ -38,12 +38,12 @@ Inputs: `--after N`, `--limit` (1–1000). Effects: local read. Result: events o
 
 Inputs: campaign (default newest), tick budget (default 3000 s).
 
-Effects: holds the campaign lease; runs this binary's own commands as child processes (prepare jobs, `plans resolve-batch --policy`, `plans generate --all-items --pending`, `plans merge-notes`, apply jobs with `--create-checkpoint`, `recover reconcile`, `apply --split-group`, `notes delete-merged`); reads companion note evidence; deletes checkpoint files only of checkpoints the campaign created (retention).
+Effects: holds the campaign lease; runs this binary's own commands as child processes (prepare jobs, `plans resolve-batch --policy`, `plans generate --all-items --pending --certified-engine-only`, `plans merge-notes`, apply jobs with `--create-checkpoint`, `recover reconcile`, `apply --split-group`, `notes delete-merged`); reads companion note evidence; deletes checkpoint files only of checkpoints the campaign created (retention).
 
 1. Stop at once unless the campaign is `running`.
 2. The write lane (oldest batch in `approved`, `applying`, `verifying`, `merging`) and `prepare_parallel` prep workers loop on their own, each recording its steps with compare-and-set. A prep worker claims a batch for its step: the oldest unclaimed batch in `preparing`, `reviewing`, `needs_agent` whose step moves, or the next `selected` batch while fewer than `prepare_ahead` batches (claimed ones included) are in flight. Every step reads its batch fresh, so a batch another lane or command moved is left alone.
 3. While an agent run is active (`agent-slot` recorded, no `agent-done` after it, under 45 minutes old) `needs_agent` batches are left alone, so a review never races the agent's edits.
-4. A step that finds Anki, the companion or a service unavailable waits; repeated step errors pause the campaign; guardrail pauses stop the tick. A lane that panics stops the others.
+4. A step that finds Anki, the companion or a service unavailable waits; drafts wait while every generation provider is at its usage limit, and a local engine that no passed certification covers (an upgraded Ollama) pauses the campaign with `GENERATION_ENGINE_UNVERIFIED` instead of writing blocked drafts (`doctor --ollama --certify`, then `campaign resume`); repeated step errors pause the campaign; guardrail pauses stop the tick. A lane that panics stops the others.
 5. After the pilot batch is `done`, pause with `CAMPAIGN_PILOT_REVIEW` once.
 6. A lane with nothing to do looks again every 20 s while another lane works; a move on any lane wakes the others. Stop when every lane is idle at once, the budget is spent, or the campaign stopped running.
 

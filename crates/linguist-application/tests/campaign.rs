@@ -968,6 +968,39 @@ fn a_batch_whose_drafts_failed_is_never_ready() {
 }
 
 #[test]
+fn an_uncertified_local_engine_pauses_the_campaign() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-engine-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    cli.world.lock().unwrap().draft_fail = Some((
+        99,
+        "AGENT_QUOTA_COOLDOWN: codex reported its usage limit; skipped until 9 (x); fallback ollama: GENERATION_ENGINE_UNVERIFIED: no passed certification covers the local engine as it is now".into(),
+    ));
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    let report = ctx.tick(600).unwrap();
+    assert_eq!(report.stopped, "GENERATION_ENGINE_UNVERIFIED");
+    let status =
+        campaign::engine::status(&linguist_store::Store::read_only(&root).unwrap(), id, 0).unwrap();
+    assert_eq!(status["status"], "paused");
+    assert_eq!(status["code"], "GENERATION_ENGINE_UNVERIFIED");
+    let generates = cli
+        .world
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .filter(|c| c.starts_with("plans generate") && c.contains("--certified-engine-only"))
+        .count();
+    assert_eq!(generates, 1, "one refused generate, then the pause");
+}
+
+#[test]
 fn a_batch_over_the_size_limit_is_split_until_it_fits() {
     let root = std::env::temp_dir().join(format!("lab-campaign-split-{}", Uuid::new_v4()));
     let mut spec = spec(false);

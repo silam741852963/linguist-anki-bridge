@@ -997,6 +997,11 @@ enum PlanCommand {
         /// Freeze current configuration into the child revision (including --set overrides).
         #[arg(long)]
         use_current_settings: bool,
+        /// With --pending: never draft with a local engine that no passed
+        /// certification covers (its drafts would be blocked); as the provider
+        /// drafts go to now, each item is refused with GENERATION_ENGINE_UNVERIFIED.
+        #[arg(long, requires = "pending")]
+        certified_engine_only: bool,
     },
     /// Read managed v2 duplicate candidates for one authored add item; never clears apply.
     DuplicateCandidates {
@@ -2468,6 +2473,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                     base_revision,
                     digest,
                     use_current_settings,
+                    certified_engine_only,
                 } => {
                     if !use_current_settings {
                         return Err("GENERATION_CURRENT_SETTINGS_ACK_REQUIRED: pass --use-current-settings to freeze the resolved configuration into a new revision".into());
@@ -2487,7 +2493,13 @@ fn run(cli: Cli) -> Result<u8, String> {
                         // One revision per 10 generated items (WP-24).
                         let (items, revision) =
                             linguist_application::generation::generate_pending_chained(
-                                &mut store, &base, &settings, &env, &client, 10,
+                                &mut store,
+                                &base,
+                                &settings,
+                                &env,
+                                &client,
+                                10,
+                                certified_engine_only,
                             )?;
                         emit(&serde_json::json!({
                             "schema_version": 2, "plan_id": plan, "revision": revision,

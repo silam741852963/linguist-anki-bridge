@@ -19,8 +19,10 @@
 # llm.fallback drafts. With no fallback configured, the driver pauses the
 # campaign when Codex reports its usage limit, probes every PROBE_SECONDS and
 # resumes once Codex answers (the user's standing authorization for quota
-# pauses, valid only while a session runs the driver). Any other stop ends
-# the driver.
+# pauses, valid only while a session runs the driver). A pause because the
+# local engine lost its certification (an upgraded Ollama) is certified
+# again with `doctor --ollama --certify` and resumed when that passes. Any
+# other stop ends the driver.
 #
 # Environment: LINGUIST_BIN (CLI; default target/lab/linguist-anki-bridge-head
 # when present, else linguist-anki-bridge on PATH), PROBE_SECONDS (1800),
@@ -106,6 +108,17 @@ drive() {
         cli campaign requeue "$C" --reason AGENT: --reason APPLY_FAILED: --reason PREPARE_FAILED: >> "$LOG" 2>&1
         cli campaign resume "$C" --by-user >> "$LOG" 2>&1
         continue
+      fi
+      # An upgraded local engine: certify it again; resume only if it passes.
+      if [ "$(cli campaign status "$C" | json 'd.get("code") or ""')" = GENERATION_ENGINE_UNVERIFIED ]; then
+        say "local engine not certified; running doctor --ollama --certify"
+        if cli doctor --ollama --certify > "$SESSION/certify-last.json" 2>> "$LOG" &&
+          [ "$(json 'd.get("certification",d).get("passed")' < "$SESSION/certify-last.json")" = True ]; then
+          say "certified; resume"
+          cli campaign resume "$C" --by-user >> "$LOG" 2>&1
+          continue
+        fi
+        say "certification failed: see $SESSION/certify-last.json"
       fi
       say "STOPPED ${s[*]}"; return
     fi

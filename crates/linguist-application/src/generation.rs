@@ -99,10 +99,49 @@ pub fn generate_pending_chained(
     environment: &BTreeMap<String, String>,
     client: &crate::ollama::transport::Client,
     chunk: usize,
+    certified_only: bool,
 ) -> Result<(Vec<Value>, u32), String> {
     if store.latest_revision(base.id)? != base.revision {
         return Err("GENERATION_BASE_CONFLICT".into());
     }
+    // `--certified-engine-only` (a campaign): a local engine without a
+    // passed certification of its identity and version would only write
+    // drafts blocked by GENERATION_ENGINE_UNVERIFIED. As a fallback it is
+    // left out; as the provider drafts go to now, every item is refused.
+    let mut refused = None;
+    let trimmed;
+    let chain = crate::agents::chain(settings)?;
+    let settings = if certified_only && chain.contains(&crate::agents::Provider::Ollama) {
+        let certified = client.certified(store);
+        if matches!(certified, Ok(true)) {
+            settings
+        } else if crate::agents::current(settings, environment)?
+            == Some(crate::agents::Provider::Ollama)
+        {
+            refused = Some(match certified {
+                Err(error) => format!("GENERATION_ENGINE_UNVERIFIED: the local engine cannot be checked ({error})"),
+                _ => "GENERATION_ENGINE_UNVERIFIED: no passed certification covers the local engine as it is now (run `doctor --ollama --certify`)".to_owned(),
+            });
+            settings
+        } else {
+            let mut without = settings.clone();
+            without.values.insert(
+                "llm.fallback".into(),
+                json!(
+                    chain
+                        .iter()
+                        .skip(1)
+                        .filter(|p| **p != crate::agents::Provider::Ollama)
+                        .map(|p| p.name())
+                        .collect::<Vec<_>>()
+                ),
+            );
+            trimmed = without;
+            &trimmed
+        }
+    } else {
+        settings
+    };
     let mut published = (
         base.revision,
         base.approval_digest().map_err(|e| e.to_string())?,
@@ -153,6 +192,11 @@ pub fn generate_pending_chained(
                 items.push(json!({"document_id": id, "skipped": "GENERATION_ATTEMPTS_EXHAUSTED"}))
             }
             Ok(_) => eligible.push(id),
+        }
+    }
+    if let Some(reason) = refused {
+        for id in std::mem::take(&mut eligible) {
+            items.push(json!({"document_id": id, "error": reason}));
         }
     }
     for window in eligible.chunks(parallel) {

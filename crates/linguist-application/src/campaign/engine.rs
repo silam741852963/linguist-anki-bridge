@@ -613,6 +613,7 @@ impl Context<'_> {
                     "--digest",
                     &digest,
                     "--use-current-settings",
+                    "--certified-engine-only",
                 ]),
             )?;
             if generated.unavailable() && generated.json.is_null() {
@@ -635,6 +636,14 @@ impl Context<'_> {
                     }
                     continue;
                 };
+                // A local engine no certification covers drafts nothing until
+                // it is certified again (an upgraded Ollama): the user's step.
+                if error.contains("GENERATION_ENGINE_UNVERIFIED") {
+                    return Ok(Step::Pause {
+                        code: "GENERATION_ENGINE_UNVERIFIED".into(),
+                        detail: error.chars().take(300).collect(),
+                    });
+                }
                 // Only when every provider of the chain hit its usage limit:
                 // a fallback that failed otherwise counts as a failed draft.
                 if error.split("; fallback ").all(crate::agents::usage_limited) {

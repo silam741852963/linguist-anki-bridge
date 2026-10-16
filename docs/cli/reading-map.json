@@ -387,7 +387,7 @@
       "path": "operations/campaign.md",
       "heading": "## OP-67 \u2014 `campaign run [CAMPAIGN] [--max-seconds N]`",
       "title": "OP-67 \u2014 `campaign run [CAMPAIGN] [--max-seconds N]`",
-      "words": 288,
+      "words": 328,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"

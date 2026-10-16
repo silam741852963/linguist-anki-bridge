@@ -1438,7 +1438,8 @@ fn chained_pending_generation_publishes_one_revision_per_chunk_and_resumes() {
     store.publish_revision(&plan).unwrap();
     let client = transport::Client::from_settings(&current, &environment).unwrap();
     let (items, revision) =
-        generate_pending_chained(&mut store, &plan, &current, &environment, &client, 2).unwrap();
+        generate_pending_chained(&mut store, &plan, &current, &environment, &client, 2, false)
+            .unwrap();
     // Three drafts, chunks of two: one revision after two, one at the end.
     assert_eq!(revision, 3, "{items:?}");
     assert_eq!(
@@ -1448,8 +1449,16 @@ fn chained_pending_generation_publishes_one_revision_per_chunk_and_resumes() {
     assert_eq!(items[1]["skipped"], "GENERATION_ACCEPTED_ANSWER_REQUIRED");
     // A rerun finds nothing pending and publishes nothing.
     let latest = store.revision(plan.id, 3).unwrap();
-    let (again, revision) =
-        generate_pending_chained(&mut store, &latest, &current, &environment, &client, 2).unwrap();
+    let (again, revision) = generate_pending_chained(
+        &mut store,
+        &latest,
+        &current,
+        &environment,
+        &client,
+        2,
+        false,
+    )
+    .unwrap();
     assert_eq!(revision, 3);
     assert!(again.iter().all(|i| i.get("result").is_none()), "{again:?}");
     drop(store);
@@ -1516,7 +1525,8 @@ fn chained_pending_generation_drafts_a_window_from_an_agent_at_once() {
     let client = transport::Client::from_settings(&current, &environment).unwrap();
     let started = std::time::Instant::now();
     let (items, revision) =
-        generate_pending_chained(&mut store, &plan, &current, &environment, &client, 2).unwrap();
+        generate_pending_chained(&mut store, &plan, &current, &environment, &client, 2, false)
+            .unwrap();
     let elapsed = started.elapsed();
     // Five drafts in windows of four and one: about two seconds, not five.
     assert!(
@@ -1559,8 +1569,16 @@ fn chained_pending_generation_drafts_a_window_from_an_agent_at_once() {
     again.revision = 5;
     again.parent_digest = Some(latest.approval_digest().unwrap());
     store.publish_revision(&again).unwrap();
-    let (items, _) =
-        generate_pending_chained(&mut store, &again, &current, &environment, &client, 10).unwrap();
+    let (items, _) = generate_pending_chained(
+        &mut store,
+        &again,
+        &current,
+        &environment,
+        &client,
+        10,
+        false,
+    )
+    .unwrap();
     assert!(items[0].get("result").is_some(), "{items:?}");
     assert_eq!(items[1]["skipped"], "GENERATION_ATTEMPTS_EXHAUSTED");
     let newest = store.revision(plan.id, 6).unwrap();
@@ -1573,4 +1591,91 @@ fn chained_pending_generation_drafts_a_window_from_an_agent_at_once() {
     drop(store);
     std::fs::remove_dir_all(root).unwrap();
     std::fs::remove_dir_all(bin).unwrap();
+}
+
+#[test]
+fn a_campaign_never_drafts_with_an_engine_no_certification_covers() {
+    use linguist_application::{freeze_settings, generation::generate_pending_chained};
+    use linguist_core::records::PlanRevision;
+    let mut output = completion_response();
+    output["message"]["content"] = json!(
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
+    );
+    // Uncertified: the identity check reads the model, nothing is drafted.
+    // Certified (an upgraded engine certified again): the check, then a draft.
+    let replies = vec![
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+        reply(json!({"version": "0.40.4"})),
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+        reply(output),
+        reply(inventory()),
+        reply(show()),
+        reply(inventory()),
+        reply(json!({"version": "0.40.4"})),
+    ];
+    let server = FixtureServer::new(replies);
+    let root = std::env::temp_dir().join(format!("lab-certified-only-{}", uuid::Uuid::new_v4()));
+    let environment =
+        std::collections::BTreeMap::from([("HOME".into(), root.to_str().unwrap().into())]);
+    let mut current = settings();
+    current
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    current
+        .values
+        .insert("llm.endpoint".into(), json!(server.endpoint));
+    current
+        .values
+        .insert("services.ollama.min_interval_seconds".into(), json!(0));
+    let document = generation_document();
+    let plan = PlanRevision {
+        grammar_groups: vec![],
+        schema_version: 2,
+        id: uuid::Uuid::new_v4(),
+        revision: 1,
+        parent_digest: None,
+        settings: freeze_settings(&current, &environment).unwrap(),
+        binding: None,
+        source_digest: canonical::digest("source-capture", &document.sources).unwrap(),
+        selection: None,
+        documents: vec![document],
+        rendered: vec![],
+        review_decisions: vec![],
+    };
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    store.publish_revision(&plan).unwrap();
+    let client = transport::Client::from_settings(&current, &environment).unwrap();
+    let (items, revision) =
+        generate_pending_chained(&mut store, &plan, &current, &environment, &client, 10, true)
+            .unwrap();
+    assert_eq!(revision, 1, "nothing drafted: {items:?}");
+    assert!(
+        items[0]["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("GENERATION_ENGINE_UNVERIFIED"),
+        "{items:?}"
+    );
+    let tags = serde_json::to_vec(&inventory()).unwrap();
+    let details = serde_json::to_vec(&show()).unwrap();
+    let evidence = verify_local_model(&tags, &details, &tags, &current).unwrap();
+    let identity = certify::identity_digest(&certify::identity(&evidence, &current)).unwrap();
+    store
+        .record_engine_certification(&identity, "0.40.4", true, 1, &json!({}))
+        .unwrap();
+    let (items, revision) =
+        generate_pending_chained(&mut store, &plan, &current, &environment, &client, 10, true)
+            .unwrap();
+    assert_eq!(revision, 2, "{items:?}");
+    assert_eq!(items[0]["result"]["generation_engine_verified"], true);
+    drop(store);
+    server.worker.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }

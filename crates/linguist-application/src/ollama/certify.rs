@@ -120,6 +120,17 @@ impl Client {
         Ok(Reply { status, value })
     }
 
+    /// Whether a passed certification covers the engine as it is now: its
+    /// identity (model digest, transport options) and its version.
+    pub fn certified(&self, store: &linguist_store::Store) -> Result<bool, String> {
+        let evidence = self.model_evidence()?;
+        let digest = identity_digest(&identity(&evidence, self.settings()))?;
+        Ok(match store.latest_engine_certification(&digest)? {
+            Some(record) => record.passed && self.engine_version()? == record.engine_version,
+            None => false,
+        })
+    }
+
     /// Run every probe. The result is evidence either way; only `passed`
     /// certifications may clear the engine gate.
     pub fn certify(&self) -> Result<Certification, String> {
