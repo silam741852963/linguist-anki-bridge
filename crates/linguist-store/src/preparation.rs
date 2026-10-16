@@ -317,6 +317,26 @@ impl Store {
             .collect();
         let source_digest =
             canonical::digest("source-capture", &sources).map_err(|e| e.to_string())?;
+        // Without its failed notes the plan covers fewer notes than were
+        // selected: its receipt names exactly the captured ones, in order.
+        let mut selection = definition.selection;
+        let captured: Vec<String> = documents
+            .iter()
+            .flat_map(|document| &document.sources)
+            .filter(|source| source.kind == "anki_read_capture_v2")
+            .filter_map(|source| source.location.strip_prefix("anki_note:"))
+            .fold(Vec::new(), |mut ids, id| {
+                if !ids.iter().any(|seen| seen == id) {
+                    ids.push(id.to_owned());
+                }
+                ids
+            });
+        if skip_failed && captured != selection.selected_note_ids {
+            selection.selector = linguist_core::records::SelectionInput::NoteIds(captured.clone());
+            selection.matched_note_ids = captured.clone();
+            selection.selected_note_ids = captured;
+            selection.command_limit = None;
+        }
         let plan = linguist_core::records::PlanRevision {
             grammar_groups: vec![],
             schema_version: 2,
@@ -326,7 +346,7 @@ impl Store {
             settings: definition.job.settings,
             binding: None,
             source_digest,
-            selection: Some(definition.selection),
+            selection: Some(selection),
             documents,
             rendered: vec![],
             review_decisions: vec![],

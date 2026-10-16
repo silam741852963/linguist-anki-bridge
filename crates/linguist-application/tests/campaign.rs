@@ -120,6 +120,9 @@ struct World {
     /// enrichment runs it takes until it is back.
     outage: BTreeMap<String, u32>,
     reenriched: Vec<String>,
+    /// Notes whose read fails (Anki busy) this many more times.
+    read_fail: BTreeMap<String, u32>,
+    read_retries: u32,
 }
 
 #[derive(Clone, Default)]
@@ -188,6 +191,16 @@ impl FakeCli {
                         stderr: json!({"error": "REVAMP_BATCH_ARCHIVE_LIMIT"}).to_string(),
                     };
                 }
+                let failing: Vec<String> = notes
+                    .iter()
+                    .filter(|n| w.read_fail.get(*n).is_some_and(|left| *left > 0))
+                    .cloned()
+                    .collect();
+                if !failing.is_empty() && !w.plans.contains_key(*job) {
+                    return ok(json!({"plan": null, "captured_this_run": 0,
+                        "item_counts": {"captured": notes.len() - failing.len(), "failed": failing.len(), "pending": 0},
+                        "error_counts": {"SOURCE_READ_CONNECTION_FAILED": failing.len()}}));
+                }
                 w.plans.entry((*job).to_owned()).or_insert(Plan {
                     revision: 1,
                     notes: notes.clone(),
@@ -196,6 +209,29 @@ impl FakeCli {
                 ok(
                     json!({"plan": {"id": job}, "item_counts": {"captured": notes.len()}, "error_counts": {}, "captured_this_run": notes.len()}),
                 )
+            }
+            ["jobs", "retry", _, "--failed"] => {
+                w.read_retries += 1;
+                for left in w.read_fail.values_mut() {
+                    *left = left.saturating_sub(1);
+                }
+                ok(json!({"retried": true}))
+            }
+            ["jobs", "publish", job, "--skip-failed"] => {
+                let notes = w.prepare_jobs[*job].clone();
+                let (bad, good): (Vec<String>, Vec<String>) = notes
+                    .into_iter()
+                    .partition(|n| w.read_fail.get(n).is_some_and(|left| *left > 0));
+                w.plans.insert(
+                    (*job).to_owned(),
+                    Plan {
+                        revision: 1,
+                        notes: good,
+                        ..Default::default()
+                    },
+                );
+                ok(json!({"plan": {"id": job},
+                    "skipped": bad.iter().map(|n| json!({"note_id": n, "error_code": "SOURCE_READ_CONNECTION_FAILED"})).collect::<Vec<_>>()}))
             }
             ["plans", "show", plan, rest @ ..] => {
                 let p = w.plans[*plan].clone();
@@ -1106,5 +1142,52 @@ fn a_ready_batch_reopened_fresh_is_prepared_again_from_scratch() {
     .unwrap();
     assert_ne!(new.plan, old.plan, "a new plan");
     assert_eq!(phases(&root, id), ["ready"]);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn notes_anki_was_too_busy_to_read_are_read_again_before_any_is_left_out() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-busy-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.read_fail.insert("101".into(), 2); // readable after two retries
+        w.read_fail.insert("102".into(), 9); // never
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..12 {
+        ctx.tick(600).unwrap();
+        // Five minutes pass between ticks.
+        cli.clock.fetch_add(5 * 60 * 1000, Ordering::SeqCst);
+    }
+    let w = cli.world.lock().unwrap();
+    assert_eq!(
+        w.read_retries, 3,
+        "three retries, then the rest is published"
+    );
+    drop(w);
+    let data = BatchData::from_value(
+        &linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign_batch(id, 1)
+            .unwrap()
+            .data,
+    )
+    .unwrap();
+    assert!(data.plan.is_some());
+    assert_eq!(
+        data.deferred.keys().collect::<Vec<_>>(),
+        ["102"],
+        "{:?}",
+        data.deferred
+    );
+    assert!(data.deferred["102"].starts_with("PREPARE_FAILED: SOURCE_READ_CONNECTION_FAILED"));
     std::fs::remove_dir_all(root).unwrap();
 }

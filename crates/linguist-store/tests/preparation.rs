@@ -1161,3 +1161,75 @@ fn enriched_checkpoints_keep_the_capture_first_and_only_add_provider_sources() {
     ));
     append(&mut store, enriched).unwrap();
 }
+
+/// WP-24: publishing without failed notes gives a valid plan whose selection
+/// receipt names exactly the captured notes (it used to fail with
+/// PLAN_SELECTION_INVALID, so the campaign retried the publish forever).
+#[test]
+fn a_plan_published_without_failed_notes_has_a_matching_selection_receipt() {
+    use linguist_store::lease::Resource;
+    let f = Fixture::new();
+    let mut store = f.open();
+    let definition = definition();
+    let id = definition.job.id;
+    store.create_preparation_job(&definition).unwrap();
+    let hash = store.publish_asset(b"retained originals", 1000).unwrap();
+    let (first, second) = (definition.job.item_ids[0], definition.job.item_ids[1]);
+    let started = store
+        .append_preparation_event(id, first, 1, PreparationStage::Started, None)
+        .unwrap();
+    let mut doc = capture(&hash);
+    doc.id = uuid::Uuid::new_v4();
+    let captured = store
+        .append_preparation_event(
+            id,
+            first,
+            1,
+            PreparationStage::Captured {
+                document: Box::new(doc),
+            },
+            Some(&started.digest),
+        )
+        .unwrap();
+    let started = store
+        .append_preparation_event(
+            id,
+            second,
+            1,
+            PreparationStage::Started,
+            Some(&captured.digest),
+        )
+        .unwrap();
+    let failed = store
+        .append_preparation_event(
+            id,
+            second,
+            1,
+            PreparationStage::Failed {
+                code: "SOURCE_READ_CONNECTION_FAILED".into(),
+                retry_eligible: true,
+            },
+            Some(&started.digest),
+        )
+        .unwrap();
+    let lease = store.acquire_lease(&Resource::JobWorker(id), 60).unwrap();
+    assert!(
+        store
+            .publish_preparation_plan(id, Some(&failed.digest), &lease)
+            .unwrap()
+            .is_none(),
+        "a failed note blocks the full publish"
+    );
+    store
+        .publish_preparation_plan_skipping_failed(id, Some(&failed.digest), &lease)
+        .unwrap()
+        .unwrap();
+    let plan = store.revision(id, 1).unwrap();
+    let selection = plan.selection.unwrap();
+    assert_eq!(selection.selected_note_ids, ["123"]);
+    assert_eq!(selection.matched_note_ids, ["123"]);
+    assert_eq!(
+        selection.selector,
+        SelectionInput::NoteIds(vec!["123".into()])
+    );
+}

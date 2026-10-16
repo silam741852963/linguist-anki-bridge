@@ -191,6 +191,15 @@ impl Context<'_> {
             .prepare_job
             .ok_or("CAMPAIGN_PREPARE_JOB_MISSING")?
             .to_string();
+        if data
+            .read_retry_after_ms
+            .is_some_and(|at| (self.clock)() < at)
+        {
+            return Ok(Step::Waiting(format!(
+                "batch {}: waiting before reading failed notes again",
+                record.batch
+            )));
+        }
         let out = self.cli(&data, s(&["jobs", "run", &job]))?;
         if out.code == 7 && out.code_name() == "PREPARATION_ACTIVE_ITEM_REQUIRES_RECOVERY" {
             let rec = self.cli(
@@ -221,9 +230,11 @@ impl Context<'_> {
                     )
                 })
         });
+        let pending = out.json["item_counts"]["pending"].as_u64().unwrap_or(0);
         if out.json["plan"].is_null()
             && out.json["captured_this_run"].as_u64() == Some(0)
             && connection_only
+            && pending > 0
         {
             return Ok(Step::Waiting(format!(
                 "batch {}: Anki is not reachable",
@@ -232,8 +243,35 @@ impl Context<'_> {
         }
         data.prepare_runs += 1;
         let mut plan = out.json["plan"]["id"].as_str().map(str::to_owned);
-        let pending = out.json["item_counts"]["pending"].as_u64().unwrap_or(0);
         let failed = out.json["item_counts"]["failed"].as_u64().unwrap_or(0);
+        // Reads that failed because Anki was busy or briefly unreachable are
+        // read again (after five minutes, three times) before any note is
+        // left out of the batch.
+        let transient = counts.as_object().is_some_and(|c| {
+            !c.is_empty()
+                && c.keys().all(|k| {
+                    matches!(
+                        k.as_str(),
+                        "SOURCE_READ_CONNECTION_FAILED"
+                            | "SOURCE_READ_UNAVAILABLE"
+                            | "SOURCE_READ_TIMEOUT"
+                    )
+                })
+        });
+        if plan.is_none() && pending == 0 && failed > 0 && transient && data.read_retries < 3 {
+            let retried = self.cli(&data, s(&["jobs", "retry", &job, "--failed"]))?;
+            if retried.code != 0 {
+                return Err(retried.error());
+            }
+            data.read_retries += 1;
+            data.read_retry_after_ms = Some((self.clock)() + 5 * 60 * 1000);
+            return self.moved(
+                record,
+                "preparing",
+                &data,
+                &format!("{failed} notes failed to read (Anki busy); read again later"),
+            );
+        }
         if plan.is_none() && pending == 0 && failed > 0
             || plan.is_none() && data.prepare_runs >= self.definition.spec.limits.max_prepare_runs
         {
@@ -252,6 +290,11 @@ impl Context<'_> {
             plan = published.json["plan"]["id"].as_str().map(str::to_owned);
             if plan.is_none() && published.code == 5 && pending == 0 {
                 return self.moved(record, "skipped", &data, "every note failed to prepare");
+            }
+            // A refused publish is an error (counted, then a pause), never a
+            // silent loop of prepare runs.
+            if plan.is_none() && pending == 0 && published.json["plan"].is_null() {
+                return Err(published.error());
             }
         }
         match plan {

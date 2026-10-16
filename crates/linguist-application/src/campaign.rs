@@ -263,6 +263,9 @@ pub struct BatchData {
     pub split_candidates: Vec<String>,
     pub prepare_job: Option<uuid::Uuid>,
     pub prepare_runs: u32,
+    /// Times failed reads (Anki busy or unreachable) were read again.
+    pub read_retries: u32,
+    pub read_retry_after_ms: Option<u64>,
     pub plan: Option<uuid::Uuid>,
     /// note ID -> plan document ID.
     pub documents: BTreeMap<String, uuid::Uuid>,
