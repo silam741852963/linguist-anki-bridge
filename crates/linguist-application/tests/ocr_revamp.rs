@@ -251,6 +251,70 @@ fn source_images_are_ocrd_before_publication_and_gate_generation_until_reviewed(
             "OCR reviews stay settled"
         );
     }
+    // WP-24: choosing a sense changes the selected facts, never the source:
+    // the OCR verifications stay settled instead of going back to the agent.
+    {
+        let rich = linguist_core::LearningDocument::from_json(include_bytes!(
+            "../../../contracts/v2/fixtures/vocabulary-rich-dictionary.json"
+        ))
+        .unwrap();
+        let linguist_core::LearningContent::Vocabulary(source) = &rich.content else {
+            panic!()
+        };
+        let mut plan = current.clone();
+        let document = &mut plan.documents[0];
+        if let linguist_core::LearningContent::Vocabulary(v) = &mut document.content {
+            let mut entry = source.dictionary[0].clone();
+            entry.forms = vec![v.expression.clone()];
+            v.dictionary = vec![entry];
+            v.meaning.clear();
+            v.sense_key.clear();
+        }
+        let bound = document.semantic_digest().unwrap();
+        for review in &mut document.reviews {
+            review.input_digest = bound.clone();
+        }
+        for decision in &mut plan.review_decisions {
+            decision.input_digest = bound.clone();
+        }
+        let document = &plan.documents[0];
+        let sense = format!("DICTIONARY_SENSE_REVIEW:{}", document.id);
+        assert!(validation::validate(document).iter().any(|i| i.id == sense));
+        assert!(
+            validation::validate(document)
+                .iter()
+                .all(|i| i.stage != "ocr")
+        );
+        let chosen = review::resolve(
+            &plan,
+            &review::ResolutionRequest {
+                schema_version: 2,
+                base_revision: plan.revision,
+                base_digest: plan.approval_digest().unwrap(),
+                document_id: document.id,
+                issue_id: sense,
+                input_digest: bound,
+                actor: "reviewer".into(),
+                choice: ReviewChoice::Sense("erode".into()),
+            },
+            "unix-seconds:2".into(),
+        )
+        .unwrap()
+        .revision;
+        let document = &chosen.documents[0];
+        let kept = document
+            .reviews
+            .iter()
+            .filter(|r| matches!(r.choice, ReviewChoice::SourceContentVerified { .. }))
+            .count();
+        assert_eq!(kept, ocr_issues.len(), "{:?}", document.reviews);
+        assert!(
+            validation::validate(document)
+                .iter()
+                .all(|i| i.stage != "ocr"),
+            "OCR reviews stay settled after a sense choice"
+        );
+    }
     // Without OCR evidence an inspect-policy image blocks generation.
     let mut bare = current.documents[0].clone();
     bare.evidence.retain(|e| e.provenance != Provenance::Ocr);

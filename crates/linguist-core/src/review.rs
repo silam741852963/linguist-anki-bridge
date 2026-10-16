@@ -7,6 +7,43 @@ use crate::{
     records::{MediaRole, PlanRevision, ReviewChoice, ReviewDecision},
 };
 pub(crate) use media::source_media_matches;
+
+/// Drop every decision except those about the source alone (an image's role,
+/// verified source or OCR text): a sense choice changes the selected facts,
+/// never the source. The kept ones are rebound to the new document while they
+/// still settle their issue.
+fn keep_source_decisions(
+    document: &mut crate::LearningDocument,
+    decisions: &mut Vec<ReviewDecision>,
+) -> Result<(), ContractError> {
+    let source_only = |choice: &ReviewChoice| {
+        matches!(
+            choice,
+            ReviewChoice::SourceMediaRole { .. } | ReviewChoice::SourceContentVerified { .. }
+        )
+    };
+    let current = document.semantic_digest()?;
+    let before: BTreeSet<_> = document.reviews.iter().map(|review| review.id).collect();
+    document
+        .reviews
+        .retain(|review| source_only(&review.choice));
+    for review in &mut document.reviews {
+        review.input_digest = current.clone();
+    }
+    let open: BTreeSet<_> = crate::validation::validate(document)
+        .into_iter()
+        .map(|issue| issue.id)
+        .collect();
+    document
+        .reviews
+        .retain(|review| !open.contains(&review.issue_id));
+    let kept: BTreeSet<_> = document.reviews.iter().map(|review| review.id).collect();
+    decisions.retain(|decision| !before.contains(&decision.id) || kept.contains(&decision.id));
+    for decision in decisions.iter_mut().filter(|d| kept.contains(&d.id)) {
+        decision.input_digest = current.clone();
+    }
+    Ok(())
+}
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -477,12 +514,11 @@ pub fn resolve(
             }
             vocab.meaning = sense.definitions.join("; ");
             vocab.sense_key = key.clone();
-            // Decisions bound to the previous semantic document must not survive selected facts changing.
-            let old_ids: BTreeSet<_> = document.reviews.iter().map(|review| review.id).collect();
-            document.reviews.clear();
-            candidate
-                .review_decisions
-                .retain(|decision| !old_ids.contains(&decision.id));
+            // Decisions bound to the previous semantic document must not
+            // survive selected facts changing, except those about the source
+            // alone (WP-24: the policy decides the sense again after every
+            // draft, which sent an agent's image decisions back each time).
+            keep_source_decisions(document, &mut candidate.review_decisions)?;
         }
         ReviewChoice::Expression { region_id } => {
             if !expression_applicable(document, issue, &request.choice) {
