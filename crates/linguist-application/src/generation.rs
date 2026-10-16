@@ -1361,9 +1361,44 @@ fn merge_checked_output(
         original_fields: fields,
         asset_digests: assets.keys().cloned().collect(),
     });
-    // Conservative whole-document invalidation until dependency-specific rebinding exists.
+    // Conservative invalidation: a draft changes generated content, so every
+    // decision about it goes. Decisions about the source alone (a source
+    // image's role, verified source or OCR text) cannot depend on generated
+    // content; they are kept, rebound to the new document, while they still
+    // settle an open issue.
+    let kept: Vec<_> = child
+        .reviews
+        .iter()
+        .filter(|review| {
+            matches!(
+                review.choice,
+                linguist_core::records::ReviewChoice::SourceMediaRole { .. }
+                    | linguist_core::records::ReviewChoice::SourceContentVerified { .. }
+            )
+        })
+        .cloned()
+        .collect();
     child.reviews.clear();
     child.issues.retain(|issue| issue.stage != "validation");
+    let open: std::collections::BTreeSet<_> = validation::validate(&child)
+        .into_iter()
+        .map(|issue| issue.id)
+        .collect();
+    let digest = child.semantic_digest().map_err(|e| e.to_string())?;
+    for mut review in kept {
+        if open.contains(&review.issue_id) {
+            review.input_digest = digest.clone();
+            child.reviews.push(review);
+        }
+    }
+    // A kept decision that no longer settles its issue is dropped.
+    let still_open: std::collections::BTreeSet<_> = validation::validate(&child)
+        .into_iter()
+        .map(|issue| issue.id)
+        .collect();
+    child
+        .reviews
+        .retain(|review| !still_open.contains(&review.issue_id));
     child.issues.extend(validation::validate(&child));
     Ok(GeneratedDraft {
         document: child,

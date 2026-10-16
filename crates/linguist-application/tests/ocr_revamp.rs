@@ -213,6 +213,44 @@ fn source_images_are_ocrd_before_publication_and_gate_generation_until_reviewed(
             .revision;
     }
     ocr_inspection::generation_ready(&current.documents[0], &llm).unwrap();
+    // WP-24: a generated draft keeps the OCR verification (a decision about
+    // the source alone), rebound to the new document; the OCR review stays
+    // settled instead of going back to the reviewer.
+    {
+        use linguist_application::generation::{ModelIdentity, build_request, merge_output};
+        let mut verified = current.documents[0].clone();
+        if let linguist_core::LearningContent::Vocabulary(v) = &mut verified.content {
+            v.meaning = "an accepted meaning".into();
+            v.sense_key = "accepted".into();
+        }
+        let bound = verified.semantic_digest().unwrap();
+        for review in &mut verified.reviews {
+            review.input_digest = bound.clone();
+        }
+        let verified = &verified;
+        let request = build_request(verified, &llm).unwrap();
+        let raw = br#"{"kind":"vocabulary","body":{"usage":"Used in everyday speech.","examples":[],"nuance":[],"collocations":[]}}"#;
+        let model = ModelIdentity {
+            name: llm.values["llm.model"].as_str().unwrap().into(),
+            digest: format!("sha256:{}", "a".repeat(64)),
+        };
+        let draft = merge_output(verified, &llm, &request, raw, &model).unwrap();
+        let kept: Vec<_> = draft
+            .document
+            .reviews
+            .iter()
+            .filter(|r| matches!(r.choice, ReviewChoice::SourceContentVerified { .. }))
+            .collect();
+        assert_eq!(kept.len(), ocr_issues.len(), "{:?}", draft.document.reviews);
+        let digest = draft.document.semantic_digest().unwrap();
+        assert!(kept.iter().all(|r| r.input_digest == digest));
+        assert!(
+            validation::validate(&draft.document)
+                .iter()
+                .all(|i| i.stage != "ocr"),
+            "OCR reviews stay settled"
+        );
+    }
     // Without OCR evidence an inspect-policy image blocks generation.
     let mut bare = current.documents[0].clone();
     bare.evidence.retain(|e| e.provenance != Provenance::Ocr);
