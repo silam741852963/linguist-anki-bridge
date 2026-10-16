@@ -1036,6 +1036,25 @@ fn campaign_policy_reinforces_the_agents_findings() {
         decisions[0]["choice"]["value"]["key"], "equal",
         "{decisions}"
     );
+    // Spaced syllables with separated readings (二十七: に じゅう なな; に じゅう しち).
+    let mut numbers = plan.clone();
+    let LearningContent::Vocabulary(v) = &mut numbers.documents[0].content else {
+        panic!()
+    };
+    v.reading.clear();
+    v.pronunciation = "に じゅう なな; に じゅう しち".into();
+    let only_sense = json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": [
+        {"document_id": numbers.documents[0].id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
+         "options": {"issue": {"code": "DICTIONARY_SENSE_REVIEW"}, "templates": [
+            {"reading": "に", "choice": sense("syllable")},
+            {"reading": "にじゅうしち", "choice": sense("second")},
+            {"reading": "にじゅうなな", "choice": sense("first")}]}}]});
+    let filled = policy::fill(&policy::Policy::builtin(), &numbers, &only_sense).unwrap();
+    assert_eq!(
+        filled.batch.unwrap()["decisions"][0]["choice"]["value"]["key"],
+        "second",
+        "a separated reading, never a syllable; dictionary order among equals"
+    );
     let decision = |i: usize| decisions[i]["choice"]["decision"].clone();
     assert_eq!(decision(1), "content_verified", "the word itself");
     assert_eq!(

@@ -45,8 +45,14 @@ path or `cd` (only that exact command prefix is allowed).
      at it (Read). A picture that helps recall the word (illustration, photo,
      drawing) is `picture`; a dictionary page, a screenshot of text or a
      grammar page is `archive`. Resolve the `SOURCE_MEDIA_CONTENT_REVIEW`
-     with a `source_media_role` decision, and the classification review with
-     its template.
+     with a `source_media_role` decision (the policy's choice shape: source
+     ID, asset digest, original file name, the `media_format` evidence ID,
+     role, attribution "User's own collection media (previous note).",
+     license null), then the classification review with its template: on a
+     vocabulary note the OCR text of a picture is not used, so accepting it
+     records how the image is used, not that garbled OCR is right. Resolving
+     the role reopens the item's other reviews; the next policy pass settles
+     them.
    - `SPLIT_CANDIDATE`: look at the word. Several separate words or
      readings (`祖父 お祖父さん`, `治る; 直る`): run
      `plans split-vocab PLAN --template ITEM`, check the units, then

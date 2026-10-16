@@ -125,18 +125,22 @@ fn hiragana(text: &str) -> String {
         .collect()
 }
 
-/// A note's reading field as its readings: the whole field without spaces
-/// (`だい どころ` is だいどころ) and each part between separators or spaces
-/// (`そふ おじいさん`, `なおる; なおす`).
-fn readings(raw: &str) -> Vec<String> {
-    let mut all = vec![hiragana(&spoken(raw))];
-    all.extend(
-        raw.split(|c: char| c.is_whitespace() || ",、;；/／・".contains(c))
-            .map(hiragana)
-            .filter(|r| !r.is_empty()),
-    );
-    all.retain(|r| !r.is_empty());
-    all
+/// A note's reading field as tiers of readings, best first: the whole field
+/// without spaces (`だい どころ` is だいどころ); each part between separators,
+/// without spaces (`に じゅう なな; に じゅう しち`); each space-separated word
+/// (`そふ おじいさん`), only when nothing better matches.
+fn readings(raw: &str) -> [Vec<String>; 3] {
+    let clean =
+        |v: Vec<String>| -> Vec<String> { v.into_iter().filter(|r| !r.is_empty()).collect() };
+    [
+        clean(vec![hiragana(&spoken(raw))]),
+        clean(
+            raw.split(|c: char| ",、;；/／・".contains(c))
+                .map(|part| hiragana(&spoken(part)))
+                .collect(),
+        ),
+        clean(raw.split_whitespace().map(hiragana).collect()),
+    ]
 }
 
 fn is_stroke_gif(name: &str) -> bool {
@@ -341,7 +345,8 @@ fn decide(
             // (common senses first); without a reading match only a single
             // candidate is taken.
             // Equal, never a prefix: だいどこ is not 台所's だいどころ.
-            // The whole field first (`から だ` is からだ), then its parts.
+            // The whole field first (`から だ` is からだ), then separated
+            // readings, then space-separated words.
             let own_readings = readings(raw);
             let equal = |wanted: &[String]| {
                 templates.iter().find(|t| {
@@ -351,9 +356,7 @@ fn decide(
                     })
                 })
             };
-            if let Some(t) =
-                equal(&own_readings[..1.min(own_readings.len())]).or_else(|| equal(&own_readings))
-            {
+            if let Some(t) = own_readings.iter().find_map(|tier| equal(tier)) {
                 return Ok(choice(t));
             }
             if templates.iter().all(|t| t["reading"].is_null()) {
