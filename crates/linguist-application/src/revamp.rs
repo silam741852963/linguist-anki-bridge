@@ -937,8 +937,8 @@ fn prepare_ids(
         let root = std::path::Path::new(frozen.values["storage.state_dir"].as_str().unwrap());
         let mut store = linguist_store::Store::open_existing(root)?;
         let base = store.revision(first.plan_id, 1)?;
-        let child =
-            crate::dictionary::enrich_revision(&mut store, &base, None).map_err(|error| {
+        let child = crate::dictionary::enrich_revision(&mut store, &base, None, environment)
+            .map_err(|error| {
                 format!(
                     "{error}; retained_source_plan={} revision=1 digest={}",
                     first.plan_id, first.digest

@@ -2690,6 +2690,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                         &mut linguist_store::Store::open_existing(&root)?,
                         &base,
                         None,
+                        &std::env::vars().collect(),
                     )?;
                     emit(
                         &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":child.revision,"digest":child.approval_digest().map_err(|e| e.to_string())?,"issues":child.documents.iter().map(|document|serde_json::json!({"document_id":document.id,"issues":document.issues})).collect::<Vec<_>>(),"ready":false,"apply_eligible":false,"writes_enabled":false}),

@@ -466,10 +466,12 @@ pub fn prepare_document(
     let mut document = documents.remove(0);
     if settings.values["dictionary.provider"] != "authored" && !purpose.ends_with("_grammar") {
         let cap = settings.values["input.max_file_mb"].as_u64().unwrap() * 1024 * 1024;
+        // The environment reaches a generated dictionary entry's provider
+        // (an agent needs PATH and HOME); an empty one made it exit 127.
         let (enriched, responses) = crate::dictionary::enrich_document(
             &document,
             settings,
-            &Default::default(),
+            environment,
             providers.dictionary,
         )?;
         document = enriched;

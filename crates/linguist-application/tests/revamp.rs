@@ -1107,14 +1107,23 @@ fn dictionary_enrichment_retains_source_revision_and_requires_sense_review() {
     let mut store = linguist_store::Store::open_existing(&root).unwrap();
     let base = store.revision(prepared.plan_id, 1).unwrap();
     assert!(
-        linguist_application::dictionary::enrich_revision(&mut store, &base, Some(&Failure))
-            .is_err()
+        linguist_application::dictionary::enrich_revision(
+            &mut store,
+            &base,
+            Some(&Failure),
+            &Default::default()
+        )
+        .is_err()
     );
     assert_eq!(store.latest_revision(base.id).unwrap(), 1);
     assert_eq!(store.revision(base.id, 1).unwrap(), base);
-    let child =
-        linguist_application::dictionary::enrich_revision(&mut store, &base, Some(&Dictionary))
-            .unwrap();
+    let child = linguist_application::dictionary::enrich_revision(
+        &mut store,
+        &base,
+        Some(&Dictionary),
+        &Default::default(),
+    )
+    .unwrap();
     assert_eq!(child.revision, 2);
     assert_eq!(child.parent_digest, Some(base.approval_digest().unwrap()));
     assert_eq!(child.documents[0].sources[0], base.documents[0].sources[0]);
@@ -1158,14 +1167,24 @@ fn dictionary_enrichment_retains_source_revision_and_requires_sense_review() {
     );
     assert_eq!(store.revision(base.id, 1).unwrap(), base);
     assert!(
-        linguist_application::dictionary::enrich_revision(&mut store, &base, Some(&Dictionary))
-            .unwrap_err()
-            .contains("BASE_CONFLICT")
+        linguist_application::dictionary::enrich_revision(
+            &mut store,
+            &base,
+            Some(&Dictionary),
+            &Default::default()
+        )
+        .unwrap_err()
+        .contains("BASE_CONFLICT")
     );
     assert!(
-        linguist_application::dictionary::enrich_revision(&mut store, &child, Some(&Dictionary))
-            .unwrap_err()
-            .contains("ALREADY_ENRICHED")
+        linguist_application::dictionary::enrich_revision(
+            &mut store,
+            &child,
+            Some(&Dictionary),
+            &Default::default()
+        )
+        .unwrap_err()
+        .contains("ALREADY_ENRICHED")
     );
     drop(store);
     let reopened = linguist_store::Store::read_only(&root).unwrap();
@@ -2232,9 +2251,13 @@ fn prepare_job_items_match_the_plan_level_revamp_stages() {
         publish_capture_draft(&capture, &settings, "english_vocab", &environment).unwrap();
     let mut store = linguist_store::Store::open_existing(&root).unwrap();
     let base = store.revision(prepared.plan_id, 1).unwrap();
-    let child =
-        linguist_application::dictionary::enrich_revision(&mut store, &base, Some(&Dictionary))
-            .unwrap();
+    let child = linguist_application::dictionary::enrich_revision(
+        &mut store,
+        &base,
+        Some(&Dictionary),
+        &Default::default(),
+    )
+    .unwrap();
     // Job path: one staged document, every stage in the worker.
     let staged = stage_document(&capture, &settings, "english_vocab").unwrap();
     let providers = linguist_application::vocab::Providers {

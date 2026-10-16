@@ -1120,6 +1120,37 @@ fn a_word_the_dictionary_lacks_gets_a_generated_entry_in_its_style() {
             .all(|e| e.provider != "generated-dictionary-v1")
     );
     assert!(v.meaning.is_empty() && v.sense_key.is_empty());
+    // A prepare job (the campaign's path) reaches the agent the same way: it
+    // passes its environment (PATH) to the generated entry's provider.
+    let mut staged = plan.documents[0].clone();
+    if let LearningContent::Vocabulary(v) = &mut staged.content {
+        v.dictionary.clear();
+        v.meaning.clear();
+        v.sense_key.clear();
+    }
+    staged.issues.clear();
+    let prepared = linguist_application::jobs::prepare_document(
+        staged,
+        &BTreeMap::new(),
+        &settings,
+        "japanese_vocab",
+        &environment,
+        Providers {
+            dictionary: Some(&Dictionary),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let LearningContent::Vocabulary(v) = &prepared.0.content else {
+        panic!()
+    };
+    assert!(
+        v.dictionary
+            .iter()
+            .any(|e| e.provider == "generated-dictionary-v1"),
+        "{:?}",
+        prepared.0.issues
+    );
     let _ = std::fs::remove_dir_all(&bin);
 }
 

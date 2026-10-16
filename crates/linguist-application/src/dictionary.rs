@@ -30,6 +30,7 @@ pub fn enrich_revision(
     store: &mut linguist_store::Store,
     base: &PlanRevision,
     dictionary: Option<&dyn crate::DictionaryPort>,
+    environment: &BTreeMap<String, String>,
 ) -> Result<PlanRevision, String> {
     if store.latest_revision(base.id)? != base.revision
         || store.revision(base.id, base.revision)? != *base
@@ -85,8 +86,7 @@ pub fn enrich_revision(
     let mut child = base.clone();
     let mut assets = Vec::new();
     for document in &mut child.documents {
-        let (enriched, responses) =
-            enrich_document(document, &settings, &Default::default(), dictionary)?;
+        let (enriched, responses) = enrich_document(document, &settings, environment, dictionary)?;
         for bytes in responses {
             if seen.insert(canonical::asset_digest(&bytes)) {
                 total = total
