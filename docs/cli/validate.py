@@ -91,7 +91,7 @@ def main():
     saved = json.loads((ROOT / 'reading-map.json').read_text())
     check(saved == routes, 'Stale reading map; run validate.py --update-map')
     ids = set(routes['records'])
-    check({i for i in ids if i.startswith('OP-')} == {f'OP-{i:02}' for i in range(1,86)}, 'Operation coverage')
+    check({i for i in ids if i.startswith('OP-')} == {f'OP-{i:02}' for i in range(1,87)}, 'Operation coverage')
     check({i for i in ids if i.startswith('WP-')} == {f'WP-{i:02}' for i in range(1,25)}, 'Package coverage')
     algorithms = {i for i in ids if i.startswith('ALG-')}
     check(len(algorithms) == 19, 'Algorithm coverage')
@@ -120,6 +120,6 @@ def main():
         for n,line in enumerate(s.splitlines(),1): check(line.rstrip() == line, f'{p.relative_to(REPO)}:{n}: whitespace')
     check(not any(p.name.startswith('cli-') for p in ROOT.parent.iterdir()), 'CLI documents outside docs/cli')
     if errors: raise SystemExit('\n'.join(errors))
-    print(f'PASS: {len(entries)} settings/{len(index["groups"])} groups; 85 operations, 19 algorithms, 24 packages; {len(files)} Markdown files; routes, presets, links and defaults valid.')
+    print(f'PASS: {len(entries)} settings/{len(index["groups"])} groups; 86 operations, 19 algorithms, 24 packages; {len(files)} Markdown files; routes, presets, links and defaults valid.')
 
 if __name__ == '__main__': main()

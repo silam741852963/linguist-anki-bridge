@@ -409,3 +409,62 @@ fn merge_commands_and_failed_item_publication_without_a_companion() {
     assert_ne!(code, 0);
     assert!(stderr.contains("PLAN_NOT_FOUND"), "{stderr}");
 }
+
+#[test]
+fn wrap_up_pauses_closes_the_agent_turn_and_ends_orphaned_agents() {
+    use std::os::unix::process::CommandExt;
+    let home = home();
+    let (endpoint, _) = fake_anki(collection);
+    let spec = spec(&home);
+    let (_, created, _) =
+        run(cli(&home, &endpoint).args(["campaign", "create", "--spec", spec.to_str().unwrap()]));
+    let id = created["campaign"].as_str().unwrap().to_owned();
+    let (code, _, _) = run(cli(&home, &endpoint).args(["campaign", "agent-slot", &id]));
+    assert_eq!(code, 0);
+    // An agent whose generation process is gone: its own process group, in
+    // a private linguist-agent-* directory.
+    let workdir =
+        std::env::temp_dir().join(format!("linguist-agent-{}", uuid::Uuid::new_v4().simple()));
+    std::fs::create_dir_all(&workdir).unwrap();
+    let mut agent = Command::new("sleep")
+        .arg("60")
+        .current_dir(&workdir)
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let (code, handoff, stderr) = run(cli(&home, &endpoint)
+        .env("TMPDIR", std::env::temp_dir())
+        .args(["campaign", "wrap-up", &id, "--wait-seconds", "5"]));
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(handoff["was"], "running");
+    assert_eq!(handoff["status"], "paused");
+    assert_eq!(handoff["tick"], "stopped");
+    assert!(
+        handoff["agents_ended"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(agent.id())),
+        "{handoff}"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(agent.try_wait().unwrap().is_some(), "the orphan was ended");
+    let _ = std::fs::remove_dir_all(&workdir);
+    let (_, status, _) = run(cli(&home, &endpoint).args(["campaign", "status", &id]));
+    assert_eq!(
+        status["agent_active"], false,
+        "the open agent turn is closed"
+    );
+    assert!(
+        status["detail"].as_str().unwrap().contains("wrapped up"),
+        "{status}"
+    );
+    let (_, events, _) = run(cli(&home, &endpoint).args(["campaign", "events", &id]));
+    assert!(events.to_string().contains("wrapped_up"), "{events}");
+    // A paused campaign keeps its reason; only the user resumes it.
+    let (code, _, _) =
+        run(cli(&home, &endpoint).args(["campaign", "pause", &id, "--reason", "quota"]));
+    assert_eq!(code, 0);
+    let (code, again, _) = run(cli(&home, &endpoint).args(["campaign", "wrap-up", &id]));
+    assert_eq!((code, again["was"].clone()), (0, json!("paused")));
+    assert_eq!(again["detail"], "quota");
+}

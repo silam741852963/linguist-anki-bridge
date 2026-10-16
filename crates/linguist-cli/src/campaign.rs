@@ -170,6 +170,17 @@ pub(crate) enum CampaignCommand {
         /// Campaign ID from `campaign list`.
         campaign: Uuid,
     },
+    /// End a session cleanly: pause the campaign, let the running tick
+    /// finish its step, end agent processes nothing waits for any more, close
+    /// an open agent turn and record a handoff (exit 5 while a tick still
+    /// runs).
+    WrapUp {
+        /// Campaign ID from `campaign list`.
+        campaign: Uuid,
+        /// How long to wait for the running tick to stop.
+        #[arg(long, default_value_t = 900)]
+        wait_seconds: u64,
+    },
     /// Change throughput limits of a running campaign (recorded as a
     /// `tuned` event; guardrails are not tunable).
     Tune {
@@ -558,6 +569,138 @@ fn set_status(
     Ok(json!({"campaign": id, "status": status}))
 }
 
+/// The reason a wrapped-up campaign carries until the user resumes it.
+const WRAPPED_UP: &str = "wrapped up at the end of a session; resume with `campaign resume`";
+
+/// `campaign wrap-up`: returns the handoff and whether the tick stopped.
+fn wrap_up(
+    root: &Path,
+    id: Uuid,
+    wait_seconds: u64,
+    settings: &linguist_config::Effective,
+) -> Result<(Value, bool), String> {
+    definition(root, id)?;
+    // A campaign paused for another reason (a guardrail, a quota) keeps it.
+    let was = linguist_store::Store::read_only(root)?.campaign(id)?.status;
+    if was == "running" {
+        set_status(
+            root,
+            id,
+            "paused",
+            Some("CAMPAIGN_PAUSED_BY_REQUEST"),
+            Some(WRAPPED_UP),
+            "paused",
+        )?;
+    }
+    // The tick sees the pause before its next step and releases its lease.
+    let resource = linguist_store::lease::Resource::Campaign(id);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(wait_seconds);
+    let stopped = loop {
+        let lease = linguist_store::Store::read_only(root)?.lease_status(&resource)?;
+        if lease.lease != "active" || lease.owner == "absent" {
+            break true;
+        }
+        if std::time::Instant::now() >= deadline {
+            break false;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    };
+    // With no tick left, an agent still running waits for nobody.
+    let ended = if stopped {
+        end_orphaned_agents()
+    } else {
+        Vec::new()
+    };
+    let mut store = linguist_store::Store::open_existing(root)?;
+    let status = engine::status(&store, id, now())?;
+    if status["agent_active"] == true {
+        store.append_campaign_event(id, None, "agent_done", &json!({"by": "wrap-up"}), now())?;
+    }
+    let environment: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    let cooldowns: serde_json::Map<String, Value> = linguist_application::agents::chain(settings)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|provider| {
+            linguist_application::agents::cooling(provider, settings, &environment).map(|c| {
+                (
+                    provider.name().to_owned(),
+                    json!({"until": c.until, "said": c.said}),
+                )
+            })
+        })
+        .collect();
+    let handoff = json!({
+        "campaign": id,
+        "was": was,
+        "status": linguist_store::Store::read_only(root)?.campaign(id)?.status,
+        "code": status["code"],
+        "detail": status["detail"],
+        "tick": if stopped { "stopped" } else { "still running" },
+        "agents_ended": ended,
+        "applied_notes": status["applied_notes"],
+        "deferred_notes": status["deferred_notes"],
+        "notes_by_phase": status["notes_by_phase"],
+        "agent_batches": status["agent"].as_array().map_or(0, Vec::len),
+        "quota_cooldowns": cooldowns,
+        "resume": [
+            format!("linguist-anki-bridge campaign status {id}"),
+            format!("linguist-anki-bridge campaign resume {id} --by-user"),
+            format!("linguist-anki-bridge campaign run {id} --max-seconds 3000"),
+        ],
+    });
+    store.append_campaign_event(id, None, "wrapped_up", &handoff, now())?;
+    Ok((handoff, stopped))
+}
+
+/// End agent runs (`codex exec`, `claude -p`) whose generation process is
+/// gone: each runs in its own process group in a private
+/// `linguist-agent-*` directory, and an orphan has been re-parented away
+/// from any linguist process. Returns the process groups ended.
+fn end_orphaned_agents() -> Vec<i32> {
+    let marker = std::env::temp_dir().join("linguist-agent-");
+    let marker = marker.to_string_lossy().into_owned();
+    let field = |pid: i32, index: usize| -> Option<String> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // Fields after the parenthesised command: state ppid pgrp ...
+        let rest = &stat[stat.rfind(')')? + 2..];
+        rest.split(' ').nth(index).map(str::to_owned)
+    };
+    let linguist = |pid: i32| {
+        std::fs::read_to_string(format!("/proc/{pid}/comm"))
+            .is_ok_and(|comm| comm.starts_with("linguist-anki"))
+    };
+    let own = unsafe { libc::getpgrp() };
+    let mut groups = std::collections::BTreeSet::new();
+    for entry in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        let in_workdir = std::fs::read_link(format!("/proc/{pid}/cwd"))
+            .is_ok_and(|cwd| cwd.to_string_lossy().starts_with(&marker));
+        let (Some(ppid), Some(group)) = (
+            field(pid, 1).and_then(|p| p.parse::<i32>().ok()),
+            field(pid, 2).and_then(|p| p.parse::<i32>().ok()),
+        ) else {
+            continue;
+        };
+        // The group leader is the agent run() started; its parent tells.
+        if in_workdir && group == pid && group != own && !linguist(ppid) {
+            groups.insert(group);
+        }
+    }
+    for group in &groups {
+        // SAFETY: signals a process group an agent run created.
+        unsafe {
+            libc::kill(-group, libc::SIGKILL);
+        }
+    }
+    groups.into_iter().collect()
+}
+
 pub(crate) fn handle(
     globals: &Globals,
     settings: &linguist_config::Effective,
@@ -815,6 +958,16 @@ pub(crate) fn handle(
             let mut store = linguist_store::Store::open_existing(&root)?;
             store.append_campaign_event(campaign, None, "agent_done", &json!({}), now())?;
             emit(&json!({"campaign": campaign, "agent_done": true}))?;
+        }
+        CampaignCommand::WrapUp {
+            campaign,
+            wait_seconds,
+        } => {
+            let (handoff, stopped) = wrap_up(&root, campaign, wait_seconds, settings)?;
+            emit(&handoff)?;
+            if !stopped {
+                return Ok(5);
+            }
         }
         CampaignCommand::Tune {
             campaign,

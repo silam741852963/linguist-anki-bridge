@@ -635,7 +635,9 @@ impl Context<'_> {
                     }
                     continue;
                 };
-                if error.to_lowercase().contains("usage limit") {
+                // Only when every provider of the chain hit its usage limit:
+                // a fallback that failed otherwise counts as a failed draft.
+                if error.split("; fallback ").all(crate::agents::usage_limited) {
                     return Ok(Step::Waiting(format!("GENERATION_UNAVAILABLE: {error}")));
                 }
                 let document = item["document_id"].as_str().unwrap_or_default();

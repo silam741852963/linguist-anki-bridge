@@ -6,13 +6,16 @@
 //! review are unchanged. Settings: `llm.provider` picks the first provider and
 //! `llm.fallback` the ones tried, in order, when it fails. An agent that is not
 //! installed (looked up only on the `PATH` of the environment the pipeline was
-//! given) or an API without `llm.api.endpoint` is skipped, not failed.
+//! given) or an API without `llm.api.endpoint` is skipped, not failed. A
+//! provider that reports its usage limit is skipped for
+//! `llm.quota_cooldown_seconds`, so the rest of the chain drafts at once.
 //!
 //! Agents run with the user's environment (they need their own sign-in), no
 //! tools (`claude --tools ""`, `codex --sandbox read-only`), no saved session,
 //! in an empty private working directory, under `llm.agents.timeout_seconds`.
 use crate::generation::GenerationRequest;
 use linguist_config::Effective;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -130,12 +133,125 @@ pub fn generate(
         .unwrap_or(16)
         * 1024
         * 1024;
-    match provider {
+    if let Some(cooldown) = cooling(provider, settings, environment) {
+        return Err(cooldown.error(provider));
+    }
+    let result = match provider {
         Provider::Ollama => Err("GENERATION_PROVIDER_INVALID".into()),
         Provider::ClaudeCode => claude_code(request, settings, environment, timeout, limit),
         Provider::Codex => codex(request, settings, environment, timeout, limit),
         Provider::OpenAiCompatible => api(request, settings, environment, timeout, limit),
+    };
+    if let Err(error) = &result
+        && usage_limited(error)
+    {
+        cool_down(provider, error, settings, environment);
     }
+    result
+}
+
+/// A provider that reported its usage limit, skipped until `until`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Cooldown {
+    /// Seconds since the Unix epoch.
+    pub until: u64,
+    /// The provider's own words.
+    pub said: String,
+}
+
+impl Cooldown {
+    /// The skip as a chain error; it names the usage limit, so a campaign
+    /// waits for the quota when no other provider drafted either.
+    fn error(&self, provider: Provider) -> String {
+        format!(
+            "AGENT_QUOTA_COOLDOWN: {} reported its usage limit; skipped until {} ({})",
+            provider.name(),
+            self.until,
+            self.said
+        )
+    }
+}
+
+/// An agent's failure that is its usage limit (Codex "You've hit your usage
+/// limit", Claude Code "usage limit reached"), not a fault of the request.
+pub fn usage_limited(error: &str) -> bool {
+    error.to_lowercase().contains("usage limit")
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// `<storage.state_dir>/agents/quota-<provider>.json`, shared by every process
+/// of one state directory (prepare jobs, ticks).
+fn cooldown_path(
+    provider: Provider,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) -> Option<PathBuf> {
+    let root = linguist_config::expand_path(
+        settings.values.get("storage.state_dir")?.as_str()?,
+        environment,
+    )
+    .ok()
+    .filter(|root| root.is_absolute())?;
+    Some(
+        root.join("agents")
+            .join(format!("quota-{}.json", provider.name())),
+    )
+}
+
+/// The provider's current cooldown (`llm.quota_cooldown_seconds` after its
+/// last usage limit), if any.
+pub fn cooling(
+    provider: Provider,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) -> Option<Cooldown> {
+    let bytes = std::fs::read(cooldown_path(provider, settings, environment)?).ok()?;
+    let cooldown: Cooldown = serde_json::from_slice(&bytes).ok()?;
+    (cooldown.until > now()).then_some(cooldown)
+}
+
+/// Record the usage limit; failing to record it only costs one more try.
+fn cool_down(
+    provider: Provider,
+    error: &str,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) {
+    let Some(path) = cooldown_path(provider, settings, environment) else {
+        return;
+    };
+    let seconds = settings
+        .values
+        .get("llm.quota_cooldown_seconds")
+        .and_then(Value::as_u64)
+        .unwrap_or(1800);
+    let cooldown = Cooldown {
+        until: now() + seconds,
+        said: error.chars().take(300).collect(),
+    };
+    let Ok(bytes) = serde_json::to_vec(&cooldown) else {
+        return;
+    };
+    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new("/")))
+        .and_then(|()| std::fs::write(&temporary, bytes))
+        .and_then(|()| std::fs::rename(&temporary, &path));
+}
+
+/// The first provider of the chain that is not cooling down after its usage
+/// limit: the one drafts go to now.
+pub fn current(
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) -> Result<Option<Provider>, String> {
+    Ok(chain(settings)?.into_iter().find(|provider| {
+        *provider == Provider::Ollama || cooling(*provider, settings, environment).is_none()
+    }))
 }
 
 /// The prompt an agent reads on stdin: the same instructions and input JSON as
@@ -623,6 +739,69 @@ mod tests {
             tuned.contains("-c model_reasoning_effort=\"low\""),
             "{tuned}"
         );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn an_agent_at_its_usage_limit_is_skipped_until_the_cooldown_ends() {
+        use linguist_config::{ConfigFile, Registry, ResolveOptions, resolve};
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::env::temp_dir().join(format!("lab-quota-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let script = directory.join("codex");
+        let calls = directory.join("calls.txt");
+        // Answers its usage limit and counts its runs (shell builtins only).
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\n[ \"$1\" = --version ] && exit 0\necho run >> '{}'\necho \"ERROR: You've hit your usage limit.\" >&2\nexit 1\n",
+                calls.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let env = BTreeMap::from([("PATH".into(), directory.display().to_string())]);
+        let document = linguist_core::LearningDocument::from_json(include_bytes!(
+            "../../../contracts/v2/fixtures/vocabulary.json"
+        ))
+        .unwrap();
+        let mut settings = resolve(
+            &Registry::builtin(),
+            &ConfigFile::default(),
+            &ResolveOptions::default(),
+        )
+        .unwrap();
+        settings.values.insert(
+            "storage.state_dir".into(),
+            json!(directory.join("state").display().to_string()),
+        );
+        settings
+            .values
+            .insert("llm.provider".into(), json!("codex"));
+        settings
+            .values
+            .insert("llm.fallback".into(), json!(["ollama"]));
+        let request = crate::generation::build_request(&document, &settings).unwrap();
+        assert_eq!(current(&settings, &env).unwrap(), Some(Provider::Codex));
+        let first = generate(Provider::Codex, &request, &settings, &env).unwrap_err();
+        assert!(
+            first.starts_with("AGENT_FAILED") && usage_limited(&first),
+            "{first}"
+        );
+        // Skipped without running it; drafts go to the next provider.
+        let second = generate(Provider::Codex, &request, &settings, &env).unwrap_err();
+        assert!(
+            second.starts_with("AGENT_QUOTA_COOLDOWN: codex") && usage_limited(&second),
+            "{second}"
+        );
+        assert_eq!(std::fs::read_to_string(&calls).unwrap().lines().count(), 1);
+        assert_eq!(current(&settings, &env).unwrap(), Some(Provider::Ollama));
+        // Once the cooldown ends it is tried again.
+        let path = cooldown_path(Provider::Codex, &settings, &env).unwrap();
+        std::fs::write(&path, br#"{"until": 1, "said": "old"}"#).unwrap();
+        assert_eq!(current(&settings, &env).unwrap(), Some(Provider::Codex));
+        let _ = generate(Provider::Codex, &request, &settings, &env).unwrap_err();
+        assert_eq!(std::fs::read_to_string(&calls).unwrap().lines().count(), 2);
         let _ = std::fs::remove_dir_all(&directory);
     }
 

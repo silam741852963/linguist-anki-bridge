@@ -220,7 +220,20 @@
       },
       "scope": "purpose",
       "consumer": "generation",
-      "description": "Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
+      "description": "Providers tried in order when the first one fails (model error, cut-off, invalid output or its usage limit). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.quota_cooldown_seconds",
+      "type": "integer",
+      "default": 1800,
+      "constraints": {
+        "min": 60,
+        "max": 86400
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "An agent or API that reports its usage limit is skipped for this long, so the next provider of llm.fallback drafts at once; then it is tried again.",
       "sensitive": false
     },
     {

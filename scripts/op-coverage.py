@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-85 with its
+"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-86 with its
 CLI handler and the tests that exercise it.
 
 Command-level tests are found by scanning `crates/linguist-cli/tests/*.rs`
@@ -42,7 +42,8 @@ OPS = [("OP-01", "doctor"), ("OP-02", "config init"), ("OP-03", "config show"),
        ("OP-74", "campaign close"), ("OP-75", "campaign agent-slot"), ("OP-76", "campaign asset"),
        ("OP-77", "campaign install-timer"), ("OP-78", "jobs publish"), ("OP-79", "plans merge-notes"),
        ("OP-80", "notes delete-merged"), ("OP-81", "notes restore-merged"),
-       ("OP-82", "campaign reopen"), ("OP-83", "campaign tune"), ("OP-84", "campaign agent-done"), ("OP-85", "campaign requeue")]
+       ("OP-82", "campaign reopen"), ("OP-83", "campaign tune"), ("OP-84", "campaign agent-done"), ("OP-85", "campaign requeue"),
+       ("OP-86", "campaign wrap-up")]
 APP = "crates/linguist-application/tests/"
 LIBRARY = {
     "OP-17": [APP + "checkpoint_writes.rs::created_model_is_journaled_before_call_and_verified",

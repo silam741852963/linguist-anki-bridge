@@ -127,7 +127,9 @@ pub fn generate_pending_chained(
     // provider; each window is then merged onto the chain one by one, in
     // order. Every item is drafted from the chain head before its window,
     // which no other item of the window changes.
-    let parallel = match crate::agents::chain(settings)?.first() {
+    // A provider cooling down after its usage limit is skipped: when that
+    // leaves local Ollama first, drafts go one at a time.
+    let parallel = match crate::agents::current(settings, environment)? {
         Some(crate::agents::Provider::Ollama) | None => 1,
         Some(_) => settings.values["llm.agents.parallel"]
             .as_u64()

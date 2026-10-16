@@ -573,6 +573,16 @@
         "operations/README.md"
       ]
     },
+    "OP-86": {
+      "path": "operations/campaign.md",
+      "heading": "## OP-86 \u2014 `campaign wrap-up CAMPAIGN [--wait-seconds N]`",
+      "title": "OP-86 \u2014 `campaign wrap-up CAMPAIGN [--wait-seconds N]`",
+      "words": 195,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
     "OP-11": {
       "path": "operations/collection.md",
       "heading": "## OP-11 \u2014 `decks list`",

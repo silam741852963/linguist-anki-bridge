@@ -949,6 +949,11 @@ impl Store {
         worker_status(&self.connection, job)
     }
 
+    /// Any resource's lease as observed now (a campaign's tick, for example).
+    pub fn lease_status(&self, resource: &crate::lease::Resource) -> Result<WorkerStatus> {
+        crate::lease::status(&self.connection, resource)
+    }
+
     /// Record that a preparation worker honoured the current pause/cancel
     /// request. Requires the worker's lease; reuses an existing acknowledgement.
     pub fn acknowledge_preparation_stop(

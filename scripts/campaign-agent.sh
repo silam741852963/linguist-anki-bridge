@@ -42,7 +42,7 @@ for cmd in "campaign" "plans show" "plans resolve" "plans resolve-batch" "plans 
            "plans split-grammar" "plans edit" "plans regenerate" "jobs show" "jobs items"; do
   ALLOW+=("Bash($BIN --output json $cmd:*)")
 done
-for cmd in "campaign resume" "campaign close" "campaign cancel" "campaign tune" "campaign requeue" "jobs rollback" \
+for cmd in "campaign resume" "campaign close" "campaign cancel" "campaign tune" "campaign requeue" "campaign wrap-up" "jobs rollback" \
            "snapshots restore" "notes restore-merged" "notes delete-merged" "models"; do
   DENY+=("Bash($BIN --output json $cmd:*)")
 done

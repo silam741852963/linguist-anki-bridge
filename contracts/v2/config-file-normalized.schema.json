@@ -730,7 +730,7 @@
             "claude_code",
             "codex"
           ],
-          "description": "Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
+          "description": "Providers tried in order when the first one fails (model error, cut-off, invalid output or its usage limit). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
           "items": {
             "enum": [
               "ollama",
@@ -826,6 +826,16 @@
           ],
           "maxLength": 1048576,
           "type": "string",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.quota_cooldown_seconds": {
+          "default": 1800,
+          "description": "An agent or API that reports its usage limit is skipped for this long, so the next provider of llm.fallback drafts at once; then it is tried again.",
+          "maximum": 86400,
+          "minimum": 60,
+          "type": "integer",
           "x-consumer": "generation",
           "x-scope": "purpose",
           "x-sensitive": false
@@ -2109,7 +2119,7 @@
             "claude_code",
             "codex"
           ],
-          "description": "Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
+          "description": "Providers tried in order when the first one fails (model error, cut-off, invalid output or its usage limit). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
           "items": {
             "enum": [
               "ollama",
@@ -2205,6 +2215,16 @@
           ],
           "maxLength": 1048576,
           "type": "string",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.quota_cooldown_seconds": {
+          "default": 1800,
+          "description": "An agent or API that reports its usage limit is skipped for this long, so the next provider of llm.fallback drafts at once; then it is tried again.",
+          "maximum": 86400,
+          "minimum": 60,
+          "type": "integer",
           "x-consumer": "generation",
           "x-scope": "purpose",
           "x-sensitive": false
@@ -3648,7 +3668,7 @@
         "claude_code",
         "codex"
       ],
-      "description": "Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
+      "description": "Providers tried in order when the first one fails (model error, cut-off, invalid output or its usage limit). An agent that is not installed, or an API without llm.api.endpoint, is skipped.",
       "items": {
         "enum": [
           "ollama",
@@ -3744,6 +3764,16 @@
       ],
       "maxLength": 1048576,
       "type": "string",
+      "x-consumer": "generation",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.quota_cooldown_seconds": {
+      "default": 1800,
+      "description": "An agent or API that reports its usage limit is skipped for this long, so the next provider of llm.fallback drafts at once; then it is tried again.",
+      "maximum": 86400,
+      "minimum": 60,
+      "type": "integer",
       "x-consumer": "generation",
       "x-scope": "purpose",
       "x-sensitive": false

@@ -270,8 +270,11 @@ llm.enabled = true
 # Generation provider tried first: local Ollama, a command-line agent (Claude Code `claude -p`, Codex `codex exec`) or an OpenAI-compatible chat API (llm.api.*). Drafts from anything but a certified Ollama engine carry GENERATION_ENGINE_EXTERNAL.
 llm.provider = "ollama"
 
-# Providers tried in order when the first one fails (model error, cut-off or invalid output). An agent that is not installed, or an API without llm.api.endpoint, is skipped.
+# Providers tried in order when the first one fails (model error, cut-off, invalid output or its usage limit). An agent that is not installed, or an API without llm.api.endpoint, is skipped.
 llm.fallback = ["claude_code", "codex"]
+
+# An agent or API that reports its usage limit is skipped for this long, so the next provider of llm.fallback drafts at once; then it is tried again.
+llm.quota_cooldown_seconds = 1800
 
 # Deadline for one agent or API generation.
 llm.agents.timeout_seconds = 600

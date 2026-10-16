@@ -343,6 +343,7 @@ pub const ROWS: &[Row] = &[
     c("llm.repair_attempts", REPAIR),
     c("llm.provider", AGENTS),
     c("llm.fallback", AGENTS),
+    c("llm.quota_cooldown_seconds", AGENTS),
     c("llm.agents.timeout_seconds", AGENTS),
     c("llm.agents.parallel", GEN),
     c("llm.agents.claude_code.executable", AGENTS),

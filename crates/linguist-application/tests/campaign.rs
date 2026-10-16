@@ -931,7 +931,12 @@ fn a_batch_whose_drafts_failed_is_never_ready() {
         kill_after: AtomicU64::new(0),
         clock: AtomicU64::new(1000),
     };
-    cli.world.lock().unwrap().draft_fail = Some((99, "GENERATION_INCOMPLETE_EXAMPLE".into()));
+    // Codex at its usage limit, the local fallback's draft refused: that
+    // counts as a failed draft, not a wait for the quota.
+    cli.world.lock().unwrap().draft_fail = Some((
+        99,
+        "AGENT_QUOTA_COOLDOWN: codex reported its usage limit; skipped until 9 (x); fallback ollama: GENERATION_INCOMPLETE_EXAMPLE".into(),
+    ));
     let anki = FakeAnki(&cli);
     let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
     let ctx = context(&root, id, &cli, &anki, &clock);
@@ -957,7 +962,7 @@ fn a_batch_whose_drafts_failed_is_never_ready() {
             needs[note][0]
                 .as_str()
                 .unwrap()
-                .starts_with("GENERATION_FAILED: 3 drafts failed (GENERATION_INCOMPLETE_EXAMPLE)")
+                .starts_with("GENERATION_FAILED: 3 drafts failed (AGENT_QUOTA_COOLDOWN")
         );
     }
 }
