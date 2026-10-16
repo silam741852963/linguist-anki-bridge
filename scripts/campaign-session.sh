@@ -170,7 +170,7 @@ start() {
     echo "paused: ${s[1]:-}; look at it, then run: $B campaign resume $C" >&2; return 1
   fi
   echo "$C" > "$SESSION/campaign"
-  setsid "$REPO/scripts/campaign-session.sh" _drive "$C" >> "$LOG" 2>&1 < /dev/null &
+  setsid "$REPO/scripts/campaign-session.sh" _drive "$C" > /dev/null 2>> "$LOG" < /dev/null &
   echo $! > "$SESSION/driver.pid"
   say "driver started (pid $!) for $C"
 }
