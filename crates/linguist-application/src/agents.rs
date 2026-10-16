@@ -421,6 +421,11 @@ fn codex(
     if let Some(model) = model {
         command.args(["-m", model]);
     }
+    if let Some(effort) =
+        setting(settings, "llm.agents.codex.reasoning_effort").filter(|effort| *effort != "default")
+    {
+        command.args(["-c", &format!("model_reasoning_effort=\"{effort}\"")]);
+    }
     command.arg("-");
     let output = run(
         command,
@@ -549,6 +554,66 @@ mod tests {
         let mut two = schema.clone();
         two["oneOf"] = json!([{"type": "object"}, {"type": "object"}]);
         assert!(agent_schema(&two).get("oneOf").is_some());
+    }
+
+    #[test]
+    fn codex_gets_the_configured_model_and_reasoning_effort() {
+        use linguist_config::{ConfigFile, Registry, ResolveOptions, resolve};
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::env::temp_dir().join(format!("lab-codex-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let script = directory.join("codex");
+        // Records its arguments (shell builtins only: the agent runs with
+        // the given PATH alone) and answers an empty object.
+        let recorded = directory.join("args.txt");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\n[ \"$1\" = --version ] && exit 0\nout=''; prev=''\nfor a in \"$@\"; do [ \"$prev\" = -o ] && out=$a; prev=$a; done\nprintf '%s\\n' \"$@\" > '{}'\nprintf '{{}}' > \"$out\"\n",
+                recorded.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let env = BTreeMap::from([("PATH".into(), directory.display().to_string())]);
+        let document = linguist_core::LearningDocument::from_json(include_bytes!(
+            "../../../contracts/v2/fixtures/vocabulary.json"
+        ))
+        .unwrap();
+        let mut settings = resolve(
+            &Registry::builtin(),
+            &ConfigFile::default(),
+            &ResolveOptions::default(),
+        )
+        .unwrap();
+        let request = crate::generation::build_request(&document, &settings).unwrap();
+        let args = |settings: &Effective| {
+            let out = codex(&request, settings, &env, Duration::from_secs(10), 1 << 20)
+                .unwrap()
+                .unwrap();
+            assert_eq!(out.content, "{}");
+            std::fs::read_to_string(&recorded)
+                .unwrap()
+                .replace('\n', " ")
+        };
+        let plain = args(&settings);
+        assert!(
+            !plain.contains("-m ") && !plain.contains("model_reasoning_effort"),
+            "{plain}"
+        );
+        settings
+            .values
+            .insert("llm.agents.codex.model".into(), json!("gpt-6.1-sol"));
+        settings
+            .values
+            .insert("llm.agents.codex.reasoning_effort".into(), json!("low"));
+        let tuned = args(&settings);
+        assert!(tuned.contains("-m gpt-6.1-sol"), "{tuned}");
+        assert!(
+            tuned.contains("-c model_reasoning_effort=\"low\""),
+            "{tuned}"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]

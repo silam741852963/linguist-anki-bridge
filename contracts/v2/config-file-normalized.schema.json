@@ -603,6 +603,23 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "llm.agents.codex.reasoning_effort": {
+          "default": "default",
+          "description": "Reasoning effort for Codex (-c model_reasoning_effort); default keeps the Codex configuration's own.",
+          "enum": [
+            "default",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "llm.agents.parallel": {
           "default": 1,
           "description": "Drafts requested at once from an external provider (agent or API) by `plans generate --all-items --pending`; local Ollama drafts stay one at a time.",
@@ -1962,6 +1979,23 @@
           ],
           "x-consumer": "generation",
           "x-runtime-format": "nonempty",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.codex.reasoning_effort": {
+          "default": "default",
+          "description": "Reasoning effort for Codex (-c model_reasoning_effort); default keeps the Codex configuration's own.",
+          "enum": [
+            "default",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "maxLength": 1048576,
+          "type": "string",
+          "x-consumer": "generation",
           "x-scope": "purpose",
           "x-sensitive": false
         },
@@ -3484,6 +3518,23 @@
       ],
       "x-consumer": "generation",
       "x-runtime-format": "nonempty",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.agents.codex.reasoning_effort": {
+      "default": "default",
+      "description": "Reasoning effort for Codex (-c model_reasoning_effort); default keeps the Codex configuration's own.",
+      "enum": [
+        "default",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "maxLength": 1048576,
+      "type": "string",
+      "x-consumer": "generation",
       "x-scope": "purpose",
       "x-sensitive": false
     },

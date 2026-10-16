@@ -349,6 +349,7 @@ pub const ROWS: &[Row] = &[
     c("llm.agents.claude_code.model", AGENTS),
     c("llm.agents.codex.executable", AGENTS),
     c("llm.agents.codex.model", AGENTS),
+    c("llm.agents.codex.reasoning_effort", AGENTS),
     c("llm.api.endpoint", AGENTS),
     c("llm.api.model", AGENTS),
     c("llm.api.api_key_env", AGENTS),

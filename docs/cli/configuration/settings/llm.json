@@ -298,6 +298,25 @@
       "sensitive": false
     },
     {
+      "key": "llm.agents.codex.reasoning_effort",
+      "type": "enum",
+      "default": "default",
+      "constraints": {
+        "values": [
+          "default",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Reasoning effort for Codex (-c model_reasoning_effort); default keeps the Codex configuration's own.",
+      "sensitive": false
+    },
+    {
       "key": "llm.api.endpoint",
       "type": "string|null",
       "default": null,

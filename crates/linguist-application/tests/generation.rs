@@ -299,7 +299,7 @@ fn merge_archives_raw_output_preserves_parent_and_requires_generated_fact_review
     let original = doc.clone();
     let config = settings();
     let request = build_request(&doc, &config).unwrap();
-    let raw = br#" {"kind":"vocabulary","body":{"usage":"A meal context.","examples":[{"sentence":"New sentence.","translation":"New translation."}],"nuance":[],"collocations":[]}} "#;
+    let raw = r#" {"kind":"vocabulary","body":{"usage":"A meal context.","examples":[{"sentence":"新しい例文です。","translation":"New translation."}],"nuance":[],"collocations":[]}} "#.as_bytes();
     let draft = merge_output(&doc, &config, &request, raw, &identity(&config)).unwrap();
     assert_eq!(doc, original);
     let parent = match &doc.content {
@@ -394,7 +394,7 @@ fn full_provider_archive_assets_survive_store_publication_and_restart() {
     let doc = document();
     let config = settings();
     let request = build_request(&doc, &config).unwrap();
-    let bytes = br#"{"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":"A new example.","translation":"Translation."}],"nuance":[],"collocations":[]}}"#;
+    let bytes = r#"{"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":"新しい例です。","translation":"Translation."}],"nuance":[],"collocations":[]}}"#.as_bytes();
     let response = serde_json::to_vec_pretty(&json!({
         "model":config.values["llm.model"],"done":true,"done_reason":"stop",
         "message":{"role":"assistant","content":std::str::from_utf8(bytes).unwrap(),"thinking":"private fixture"},
@@ -724,7 +724,7 @@ fn monolingual_echoed_translations_and_glosses_are_dropped() {
     }
     let config = settings();
     let request = build_request(&doc, &config).unwrap();
-    let raw = r#"{"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":"Sentence one.","translation":"Sentence one."}],"nuance":[],"collocations":[{"phrase":"some phrase","gloss":"A some phrase"}]}}"#;
+    let raw = r#"{"kind":"vocabulary","body":{"usage":"","examples":[{"sentence":"一つ目の文です。","translation":"一つ目の文です。"}],"nuance":[],"collocations":[{"phrase":"some phrase","gloss":"A some phrase"}]}}"#;
     let draft = merge_output(&doc, &config, &request, raw.as_bytes(), &identity(&config)).unwrap();
     let LearningContent::Vocabulary(v) = &draft.document.content else {
         unreachable!()
@@ -745,7 +745,7 @@ fn rejecting_a_generated_fact_removes_exactly_that_content() {
     }
     let config = settings();
     let request = build_request(&doc, &config).unwrap();
-    let raw = r#"{"kind":"vocabulary","body":{"usage":"Neutral.","examples":[{"sentence":"One.","translation":"1"},{"sentence":"Two.","translation":"2"}],"nuance":[{"expression":"召し上がる","difference":"Wrong."}],"collocations":[]}}"#;
+    let raw = r#"{"kind":"vocabulary","body":{"usage":"Neutral.","examples":[{"sentence":"一つ。","translation":"1"},{"sentence":"二つ。","translation":"2"}],"nuance":[{"expression":"召し上がる","difference":"Wrong."}],"collocations":[]}}"#;
     let draft = merge_output(&doc, &config, &request, raw.as_bytes(), &identity(&config)).unwrap();
     let document = draft.document;
     let plan = PlanRevision {
@@ -816,7 +816,7 @@ fn rejecting_a_generated_fact_removes_exactly_that_content() {
     assert!(v.nuance.is_empty());
     assert_eq!(v.usage, "Neutral.");
     assert_eq!(v.examples.len(), examples_before - 1);
-    assert_eq!(v.examples.last().unwrap().sentence, "Two.");
+    assert_eq!(v.examples.last().unwrap().sentence, "二つ。");
     // The surviving example's evidence now points at its new index.
     let last = v.examples.len() - 1;
     let id = v.examples[last].evidence_ids[0];
@@ -873,6 +873,26 @@ fn explanations_are_in_the_explanation_language() {
         .unwrap_err(),
         "GENERATION_PROMPT_WORDING"
     );
+}
+
+/// WP-24 (立ち上がる): an example in no Japanese at all (`x = x`) is refused.
+#[test]
+fn examples_are_in_the_target_language() {
+    let doc = document();
+    let request = build_request(&doc, &settings()).unwrap();
+    assert!(request.allowed_fields.iter().any(|f| f == "examples"));
+    let output = |sentence: &str| {
+        serde_json::to_vec(
+            &json!({"kind":"vocabulary","body":{"usage":"","nuance":[],"collocations":[],
+            "examples":[{"sentence":sentence,"translation":"x"}]}}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        validate_output(&doc, &request, &output("x"), 10000, 10000).unwrap_err(),
+        "GENERATION_EXAMPLE_LANGUAGE"
+    );
+    assert!(validate_output(&doc, &request, &output("ご飯を食べます。"), 10000, 10000).is_ok());
 }
 
 /// WP-24 (血液): examples that only repeat the collocations are refused.

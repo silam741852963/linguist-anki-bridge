@@ -947,6 +947,18 @@ pub fn validate_output(
     }) {
         return Err("GENERATION_PROMPT_WORDING".into());
     }
+    // An example is a sentence in the target language (立ち上がる drew
+    // `x = x` from gpt-6-luna): a Japanese, Chinese or Korean card needs a
+    // sentence mostly in its own script.
+    if matches!(
+        doc.target_language.as_str().split('-').next(),
+        Some("ja" | "zh" | "ko")
+    ) && examples
+        .iter()
+        .any(|example| !example.sentence.trim().is_empty() && !mostly_cjk(&example.sentence))
+    {
+        return Err("GENERATION_EXAMPLE_LANGUAGE".into());
+    }
     if examples.iter().any(|example| {
         example.sentence.trim().is_empty()
             || (translation_required && example.translation.trim().is_empty())
