@@ -616,12 +616,23 @@ impl Context<'_> {
             if generated.unavailable() && generated.json.is_null() {
                 return Ok(Step::Waiting(generated.error()));
             }
-            let fresh = generated.json["items"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter(|i| i.get("result").is_some())
-                .count();
+            let items = generated.json["items"].as_array().into_iter().flatten();
+            let failed: Vec<&str> = items
+                .clone()
+                .filter_map(|i| i.get("error").and_then(Value::as_str))
+                .collect();
+            // A draft that failed (provider down, usage limit) is not
+            // "nothing new": the item would reach approval without its
+            // generated fields. A usage limit waits; anything else counts
+            // toward the step-failure pause.
+            if let Some(first) = failed.first() {
+                let detail = format!("{} items failed to draft: {first}", failed.len());
+                if first.to_lowercase().contains("usage limit") {
+                    return Ok(Step::Waiting(format!("GENERATION_UNAVAILABLE: {detail}")));
+                }
+                return Err(format!("GENERATION_FAILED: {detail}"));
+            }
+            let fresh = items.filter(|i| i.get("result").is_some()).count();
             // Nothing new was drafted: the policy pass above saw the final plan.
             if fresh == 0 && out.code != 5 {
                 break;

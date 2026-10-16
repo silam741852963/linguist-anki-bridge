@@ -125,6 +125,8 @@ struct World {
     read_retries: u32,
     /// Retries the prepare job's attempt budget still allows (None: any).
     retry_budget: Option<u32>,
+    /// The next `plans generate` calls fail every item with this error.
+    draft_fail: Option<(u32, String)>,
 }
 
 #[derive(Clone, Default)]
@@ -302,6 +304,13 @@ impl FakeCli {
                 ok(json!({"revision": 0}))
             }
             ["plans", "generate", plan, ..] => {
+                if let Some((left, error)) = w.draft_fail.clone() {
+                    w.draft_fail = (left > 1).then(|| (left - 1, error.clone()));
+                    let notes = w.plans[*plan].notes.clone();
+                    return ok(
+                        json!({"items": notes.iter().map(|n| json!({"document_id": doc(n), "error": error})).collect::<Vec<_>>()}),
+                    );
+                }
                 let drafts = std::mem::take(&mut w.drafts);
                 let p = w.plans.get_mut(*plan).unwrap();
                 let drafted: Vec<String> = p.notes.iter().take(drafts).cloned().collect();
@@ -872,6 +881,70 @@ fn a_batch_is_ready_only_when_the_final_plan_has_no_open_issue() {
         .position(|c| c.starts_with("plans generate"))
         .unwrap();
     assert!(last > generate, "a policy pass follows the drafts");
+}
+
+#[test]
+fn a_batch_whose_drafts_failed_is_never_ready() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-draftfail-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    // A usage limit waits without counting failures; then drafting works.
+    cli.world.lock().unwrap().draft_fail = Some((
+        3,
+        "AGENT_FAILED: exit Some(1): ERROR: You've hit your usage limit.".into(),
+    ));
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    ctx.tick(600).unwrap();
+    assert_eq!(phases(&root, id), ["reviewing"], "waits while drafts fail");
+    for _ in 0..4 {
+        ctx.tick(600).unwrap();
+    }
+    assert_eq!(phases(&root, id), ["ready"]);
+    let generates = cli
+        .world
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .filter(|c| c.starts_with("plans generate"))
+        .count();
+    assert!(generates >= 4, "ready only after a generate without errors");
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let batch = &store.campaign_batches(id).unwrap()[0];
+    assert_eq!(
+        batch.data["step_failures"], 0,
+        "a usage limit is not a failure"
+    );
+    drop(store);
+
+    // Any other draft error counts toward the step-failure pause.
+    let root = std::env::temp_dir().join(format!("lab-campaign-draftfail2-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    cli.world.lock().unwrap().draft_fail = Some((99, "AGENT_OUTPUT_INVALID".into()));
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    let _ = ctx.tick(600);
+    assert_ne!(phases(&root, id), ["ready"]);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let batch = &store.campaign_batches(id).unwrap()[0];
+    assert!(
+        batch.data["last_error"]
+            .as_str()
+            .unwrap()
+            .starts_with("GENERATION_FAILED")
+    );
 }
 
 #[test]
