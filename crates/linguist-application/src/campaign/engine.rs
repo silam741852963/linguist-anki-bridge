@@ -105,6 +105,8 @@ struct Shared {
 const PREP_PHASES: [&str; 3] = ["preparing", "reviewing", "needs_agent"];
 const WRITE_PHASES: [&str; 4] = ["approved", "applying", "verifying", "merging"];
 const LEASE_SECONDS: u64 = 120;
+/// Failed drafts of one note before the agent decides (WP-24).
+const MAX_DRAFT_FAILURES: u32 = 3;
 
 fn s(args: &[&str]) -> Vec<String> {
     args.iter().map(|a| (*a).to_owned()).collect()
@@ -617,20 +619,44 @@ impl Context<'_> {
                 return Ok(Step::Waiting(generated.error()));
             }
             let items = generated.json["items"].as_array().into_iter().flatten();
-            let failed: Vec<&str> = items
-                .clone()
-                .filter_map(|i| i.get("error").and_then(Value::as_str))
-                .collect();
-            // A draft that failed (provider down, usage limit) is not
-            // "nothing new": the item would reach approval without its
-            // generated fields. A usage limit waits; anything else counts
-            // toward the step-failure pause.
-            if let Some(first) = failed.first() {
-                let detail = format!("{} items failed to draft: {first}", failed.len());
-                if first.to_lowercase().contains("usage limit") {
-                    return Ok(Step::Waiting(format!("GENERATION_UNAVAILABLE: {detail}")));
+            // A draft that failed (usage limit, provider down, a draft the
+            // checks refused) is not "nothing new": the item would reach
+            // approval without its generated fields. A usage limit waits;
+            // otherwise each note is drafted again up to MAX_DRAFT_FAILURES
+            // times, then left to the agent.
+            let mut again = false;
+            for item in items.clone() {
+                let Some(error) = item.get("error").and_then(Value::as_str) else {
+                    if item.get("result").is_some()
+                        && let Some(note) =
+                            self.note_of(&data, item["document_id"].as_str().unwrap_or_default())
+                    {
+                        data.draft_failures.remove(&note);
+                    }
+                    continue;
+                };
+                if error.to_lowercase().contains("usage limit") {
+                    return Ok(Step::Waiting(format!("GENERATION_UNAVAILABLE: {error}")));
                 }
-                return Err(format!("GENERATION_FAILED: {detail}"));
+                let document = item["document_id"].as_str().unwrap_or_default();
+                let Some(note) = self.note_of(&data, document) else {
+                    continue;
+                };
+                if data.deferred.contains_key(&note) {
+                    continue;
+                }
+                let failures = data.draft_failures.entry(note).or_default();
+                failures.0 += 1;
+                failures.1 = error.chars().take(300).collect();
+                again |= failures.0 < MAX_DRAFT_FAILURES;
+            }
+            if again {
+                return self.moved(
+                    record,
+                    &record.phase,
+                    &data,
+                    "drafts failed; drafting again",
+                );
             }
             let fresh = items.filter(|i| i.get("result").is_some()).count();
             // Nothing new was drafted: the policy pass above saw the final plan.
@@ -661,6 +687,13 @@ impl Context<'_> {
                 "MERGE_CONFIRM: confirm that {} hold the same word as this survivor, then mark it settled; otherwise skip the batch",
                 data.merge.join(", ")
             ));
+        }
+        for (note, (_, error)) in &data.draft_failures {
+            if !data.deferred.contains_key(note) {
+                data.needs.entry(note.clone()).or_default().push(format!(
+                    "GENERATION_FAILED: {MAX_DRAFT_FAILURES} drafts failed ({error}); defer it, or `campaign reopen --fresh` the batch"
+                ));
+            }
         }
         for note in exhausted {
             if !data.deferred.contains_key(&note) {

@@ -266,6 +266,8 @@ pub struct BatchData {
     /// Times failed reads (Anki busy or unreachable) were read again.
     pub read_retries: u32,
     pub read_retry_after_ms: Option<u64>,
+    /// note ID -> (failed drafts, last error); after three the agent decides.
+    pub draft_failures: BTreeMap<String, (u32, String)>,
     pub plan: Option<uuid::Uuid>,
     /// note ID -> plan document ID.
     pub documents: BTreeMap<String, uuid::Uuid>,

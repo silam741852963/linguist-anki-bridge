@@ -923,7 +923,7 @@ fn a_batch_whose_drafts_failed_is_never_ready() {
     );
     drop(store);
 
-    // Any other draft error counts toward the step-failure pause.
+    // A draft the checks refuse is drafted again, then left to the agent.
     let root = std::env::temp_dir().join(format!("lab-campaign-draftfail2-{}", Uuid::new_v4()));
     let id = create(&root, spec(false), world_notes()[..2].to_vec());
     let cli = FakeCli {
@@ -931,20 +931,35 @@ fn a_batch_whose_drafts_failed_is_never_ready() {
         kill_after: AtomicU64::new(0),
         clock: AtomicU64::new(1000),
     };
-    cli.world.lock().unwrap().draft_fail = Some((99, "AGENT_OUTPUT_INVALID".into()));
+    cli.world.lock().unwrap().draft_fail = Some((99, "GENERATION_INCOMPLETE_EXAMPLE".into()));
     let anki = FakeAnki(&cli);
     let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
     let ctx = context(&root, id, &cli, &anki, &clock);
-    let _ = ctx.tick(600);
-    assert_ne!(phases(&root, id), ["ready"]);
-    let store = linguist_store::Store::read_only(&root).unwrap();
-    let batch = &store.campaign_batches(id).unwrap()[0];
-    assert!(
-        batch.data["last_error"]
-            .as_str()
-            .unwrap()
-            .starts_with("GENERATION_FAILED")
-    );
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    assert_eq!(phases(&root, id), ["needs_agent"]);
+    let generates = cli
+        .world
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .filter(|c| c.starts_with("plans generate"))
+        .count();
+    assert_eq!(generates, 3, "three drafts per note, then the agent");
+    let status =
+        campaign::engine::status(&linguist_store::Store::read_only(&root).unwrap(), id, 0).unwrap();
+    assert_eq!(status["status"], "running", "a refused draft never pauses");
+    let needs = &status["agent"][0]["needs"];
+    for note in ["101", "102"] {
+        assert!(
+            needs[note][0]
+                .as_str()
+                .unwrap()
+                .starts_with("GENERATION_FAILED: 3 drafts failed (GENERATION_INCOMPLETE_EXAMPLE)")
+        );
+    }
 }
 
 #[test]
