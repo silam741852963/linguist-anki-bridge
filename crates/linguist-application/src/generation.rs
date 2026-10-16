@@ -357,7 +357,15 @@ fn candidate_from(
     {
         return Err("GENERATION_DRAFT_CONFLICT".into());
     }
-    draft.document.reviews.clear();
+    // merge_checked_output kept only the decisions about the source alone,
+    // rebound to the draft; nothing else survives a draft.
+    draft.document.reviews.retain(|review| {
+        matches!(
+            review.choice,
+            linguist_core::records::ReviewChoice::SourceMediaRole { .. }
+                | linguist_core::records::ReviewChoice::SourceContentVerified { .. }
+        )
+    });
     // The newest draft supersedes earlier ones: their engine markers (an
     // uncertified local fallback, an external provider) no longer apply.
     let newest = draft
