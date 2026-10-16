@@ -849,6 +849,19 @@ fn explanations_are_in_the_explanation_language() {
     );
     let quoted = output("A neutral verb; takes を for what is eaten, as in ご飯を食べる.");
     assert!(validate_output(&doc, &request, &quoted, 10000, 10000).is_ok());
+    // The prompt's placeholder is no explanation (講師: "…, while the
+    // accepted expression can refer more broadly…").
+    assert_eq!(
+        validate_output(
+            &doc,
+            &request,
+            &output("Broader than the accepted expression."),
+            10000,
+            10000
+        )
+        .unwrap_err(),
+        "GENERATION_PROMPT_WORDING"
+    );
 }
 
 /// WP-24 (血液): examples that only repeat the collocations are refused.

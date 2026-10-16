@@ -936,6 +936,14 @@ pub fn validate_output(
     {
         return Err("GENERATION_EXPLANATION_LANGUAGE".into());
     }
+    // The prompt's own wording is no explanation ("…, while the accepted
+    // expression can refer…"): the learner sees the word, not a placeholder.
+    if explaining
+        .iter()
+        .any(|text| text.to_lowercase().contains("accepted expression"))
+    {
+        return Err("GENERATION_PROMPT_WORDING".into());
+    }
     if examples.iter().any(|example| {
         example.sentence.trim().is_empty()
             || (translation_required && example.translation.trim().is_empty())

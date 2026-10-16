@@ -1005,6 +1005,10 @@ fn campaign_policy_reinforces_the_agents_findings() {
             "nuance",
             r#"[{"expression":"身体","difference":"more formal"}]"#,
         ),
+        (
+            "nuance",
+            r#"[{"expression":"体の","difference":"its own form"}]"#,
+        ),
     ]
     .iter()
     .enumerate()
@@ -1078,4 +1082,9 @@ fn campaign_policy_reinforces_the_agents_findings() {
     );
     assert_eq!(decision(3), "content_rejected", "another spelling");
     assert_eq!(decision(4), "content_verified", "a different word");
+    assert_eq!(
+        decision(5),
+        "content_rejected",
+        "one of its own forms (節約する)"
+    );
 }
