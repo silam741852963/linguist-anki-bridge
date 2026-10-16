@@ -937,11 +937,14 @@ pub fn validate_output(
         return Err("GENERATION_EXPLANATION_LANGUAGE".into());
     }
     // The prompt's own wording is no explanation ("…, while the accepted
-    // expression can refer…"): the learner sees the word, not a placeholder.
-    if explaining
-        .iter()
-        .any(|text| text.to_lowercase().contains("accepted expression"))
-    {
+    // expression can refer…", "less honorific than the expression"): the
+    // learner sees the word, not a placeholder. A vocabulary card has no
+    // other "expression" to refer to.
+    let vocabulary = matches!(output, Supplement::Vocabulary(_));
+    if explaining.iter().any(|text| {
+        let text = text.to_lowercase();
+        text.contains("accepted expression") || (vocabulary && text.contains("the expression"))
+    }) {
         return Err("GENERATION_PROMPT_WORDING".into());
     }
     if examples.iter().any(|example| {

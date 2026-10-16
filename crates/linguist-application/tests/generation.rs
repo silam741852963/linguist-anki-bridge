@@ -862,6 +862,17 @@ fn explanations_are_in_the_explanation_language() {
         .unwrap_err(),
         "GENERATION_PROMPT_WORDING"
     );
+    assert_eq!(
+        validate_output(
+            &doc,
+            &request,
+            &output("More neutral and less honorific than the expression."),
+            10000,
+            10000
+        )
+        .unwrap_err(),
+        "GENERATION_PROMPT_WORDING"
+    );
 }
 
 /// WP-24 (血液): examples that only repeat the collocations are refused.
