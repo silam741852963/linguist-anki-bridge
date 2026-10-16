@@ -53,12 +53,13 @@ path or `cd` (only that exact command prefix is allowed).
      records how the image is used, not that garbled OCR is right. Resolving
      the role reopens the item's other reviews; the next policy pass settles
      them.
-   - `SPLIT_CANDIDATE`: look at the word. Several separate words or
-     readings (`祖父 お祖父さん`, `治る; 直る`): run
-     `plans split-vocab PLAN --template ITEM`, check the units, then
-     `plans split-vocab PLAN --request FILE`. A collocation frame or one
-     phrase (`味見(する/を見る)`, `pick someone/something out`) is one note.
-     Then `campaign item CAMPAIGN BATCH NOTE --settled`.
+   - `SPLIT_CANDIDATE` / `VOCAB_SPLIT_REQUIRED`: look at the word. Several
+     separate words or readings (`祖父 お祖父さん`, `治る; 直る`): do not
+     split inside a campaign (split units get no dictionary meaning or
+     enrichment there); defer the note with
+     `AGENT: multi-word note, split outside the campaign`. A collocation
+     frame or one phrase (`味見(する/を見る)`, `pick someone/something
+     out`) is one note: `campaign item CAMPAIGN BATCH NOTE --settled`.
    - `GRAMMAR_OCR_NEEDS_AGENT`, `OCR_TEXT_REVIEW`,
      `GRAMMAR_SEGMENTATION_REVIEW`: copy each screenshot (`campaign asset`),
      read it, and compare every OCR line with the image. Fix wrong text with
