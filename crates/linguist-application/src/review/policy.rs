@@ -126,7 +126,8 @@ fn hiragana(text: &str) -> String {
 }
 
 /// A note's reading field as tiers of readings, best first: the whole field
-/// without spaces (`だい どころ` is だいどころ); each part between separators,
+/// without spaces (`だい どころ` is だいどころ); each part between separators or
+/// line breaks,
 /// without spaces (`に じゅう なな; に じゅう しち`); each space-separated word
 /// (`そふ おじいさん`), only when nothing better matches.
 fn readings(raw: &str) -> [Vec<String>; 3] {
@@ -135,7 +136,7 @@ fn readings(raw: &str) -> [Vec<String>; 3] {
     [
         clean(vec![hiragana(&spoken(raw))]),
         clean(
-            raw.split(|c: char| ",、;；/／・".contains(c))
+            raw.split(|c: char| ",、;；/／・\n".contains(c))
                 .map(|part| hiragana(&spoken(part)))
                 .collect(),
         ),

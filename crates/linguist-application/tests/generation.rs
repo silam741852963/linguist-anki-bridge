@@ -850,3 +850,18 @@ fn explanations_are_in_the_explanation_language() {
     let quoted = output("A neutral verb; takes を for what is eaten, as in ご飯を食べる.");
     assert!(validate_output(&doc, &request, &quoted, 10000, 10000).is_ok());
 }
+
+/// WP-24 (血液): examples that only repeat the collocations are refused.
+#[test]
+fn examples_are_sentences_not_the_collocations_again() {
+    let doc = document();
+    let request = build_request(&doc, &settings()).unwrap();
+    let output = serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":"","nuance":[],
+        "collocations":[{"phrase":"ご飯を食べる","gloss":"eat a meal"}],
+        "examples":[{"sentence":"ご飯を食べる。","translation":"eat a meal"}]}}))
+    .unwrap();
+    assert_eq!(
+        validate_output(&doc, &request, &output, 10000, 10000).unwrap_err(),
+        "GENERATION_EXAMPLE_NOT_SENTENCE"
+    );
+}

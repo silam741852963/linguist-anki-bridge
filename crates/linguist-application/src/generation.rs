@@ -843,6 +843,16 @@ pub fn validate_output(
             {
                 return Err("GENERATION_GLOSS_UNTRANSLATED".into());
             }
+            // An example is a sentence, not one of the collocations again
+            // (血液の流れ as both).
+            if v.examples.iter().any(|e| {
+                v.collocations.iter().any(|c| {
+                    squash(&c.phrase)
+                        == squash(e.sentence.trim_end_matches(['。', '.', '！', '？']))
+                })
+            }) {
+                return Err("GENERATION_EXAMPLE_NOT_SENTENCE".into());
+            }
             (vec![("usage", &v.usage)], &v.examples)
         }
         (LearningContent::Grammar(_), Supplement::Grammar(g)) => {

@@ -1055,6 +1055,20 @@ fn campaign_policy_reinforces_the_agents_findings() {
         "second",
         "a separated reading, never a syllable; dictionary order among equals"
     );
+    // Readings on separate lines (意見: い けん / ご い けん).
+    let LearningContent::Vocabulary(v) = &mut numbers.documents[0].content else {
+        panic!()
+    };
+    v.pronunciation = "い けん\n\nご い けん".into();
+    let lines = json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": [
+        {"document_id": numbers.documents[0].id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
+         "options": {"issue": {"code": "DICTIONARY_SENSE_REVIEW"}, "templates": [
+            {"reading": "いけん", "choice": sense("opinion")}]}}]});
+    let filled = policy::fill(&policy::Policy::builtin(), &numbers, &lines).unwrap();
+    assert_eq!(
+        filled.batch.unwrap()["decisions"][0]["choice"]["value"]["key"],
+        "opinion"
+    );
     let decision = |i: usize| decisions[i]["choice"]["decision"].clone();
     assert_eq!(decision(1), "content_verified", "the word itself");
     assert_eq!(
