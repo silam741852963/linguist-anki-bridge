@@ -893,6 +893,8 @@ fn examples_are_in_the_target_language() {
         "GENERATION_EXAMPLE_LANGUAGE"
     );
     assert!(validate_output(&doc, &request, &output("ご飯を食べます。"), 10000, 10000).is_ok());
+    let loanwords = output("Gmail and LINE: メールをする。");
+    assert!(validate_output(&doc, &request, &loanwords, 10000, 10000).is_ok());
 }
 
 /// WP-24 (血液): examples that only repeat the collocations are refused.

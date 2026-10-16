@@ -949,13 +949,15 @@ pub fn validate_output(
     }
     // An example is a sentence in the target language (立ち上がる drew
     // `x = x` from gpt-6-luna): a Japanese, Chinese or Korean card needs a
-    // sentence mostly in its own script.
+    // sentence with its own script in it (loanwords in Latin letters, as in
+    // LINEでやり取りする, are fine).
+    let cjk = |c: char| matches!(c, '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}' | '\u{f900}'..='\u{faff}' | '\u{ff66}'..='\u{ff9f}' | '\u{ac00}'..='\u{d7af}');
     if matches!(
         doc.target_language.as_str().split('-').next(),
         Some("ja" | "zh" | "ko")
     ) && examples
         .iter()
-        .any(|example| !example.sentence.trim().is_empty() && !mostly_cjk(&example.sentence))
+        .any(|example| !example.sentence.trim().is_empty() && !example.sentence.chars().any(cjk))
     {
         return Err("GENERATION_EXAMPLE_LANGUAGE".into());
     }
