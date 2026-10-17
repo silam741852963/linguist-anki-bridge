@@ -1226,7 +1226,8 @@ fn tuned_prep_workers_prepare_batches_at_once_and_the_agent_holds_its_batches() 
     let mut spec = spec(false);
     spec.batch_size = 1;
     let id = create(&root, spec, world_notes());
-    // Guardrails are not tunable, and parallel prep stays within prepare_ahead.
+    // Parallel prep stays within prepare_ahead; the agent share is the
+    // only tunable guardrail (the user's step, checked by the CLI).
     let mut limits = Limits::default();
     let refused = campaign::Tuning {
         prepare_parallel: Some(5),
@@ -1239,6 +1240,7 @@ fn tuned_prep_workers_prepare_batches_at_once_and_the_agent_holds_its_batches() 
         prepare_ahead: Some(4),
         prepare_parallel: Some(3),
         agent_runs_per_day: Some(288),
+        agent_share_max: None,
     };
     let mut limits = spec_limits(&root, id);
     tuning.apply(&mut limits).unwrap();
