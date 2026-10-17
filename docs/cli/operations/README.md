@@ -108,7 +108,7 @@ Aliases `inject`/`modernize` may map to add/revamp with deprecation messages; th
 | OP-80 | [`notes delete-merged NOTE --survivor S --plan P [--apply]`](campaign.md#op-80-notes-delete-merged-note---survivor-s---plan-p---apply) |
 | OP-81 | [`notes restore-merged NOTE [--apply]`](campaign.md#op-81-notes-restore-merged-note---apply) |
 | OP-82 | [`campaign reopen CAMPAIGN BATCH --reason R [--fresh]`](campaign.md#op-82-campaign-reopen-campaign-batch---reason-r---fresh) |
-| OP-83 | [`campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N]`](campaign.md#op-83-campaign-tune-campaign---prepare-ahead-n---prepare-parallel-n---agent-runs-per-day-n) |
+| OP-83 | [`campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N] [--agent-share-max X --by-user]`](campaign.md#op-83-campaign-tune-campaign---prepare-ahead-n---prepare-parallel-n---agent-runs-per-day-n---agent-share-max-x---by-user) |
 | OP-84 | [`campaign agent-done CAMPAIGN`](campaign.md#op-84-campaign-agent-done-campaign) |
 | OP-85 | [`campaign requeue CAMPAIGN [--reason PREFIX]...`](campaign.md#op-85-campaign-requeue-campaign---reason-prefix) |
 | OP-86 | [`campaign wrap-up CAMPAIGN [--wait-seconds N]`](campaign.md#op-86-campaign-wrap-up-campaign---wait-seconds-n) |

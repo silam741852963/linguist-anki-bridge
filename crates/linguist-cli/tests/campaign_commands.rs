@@ -280,6 +280,38 @@ fn user_only_steps_refuse_an_agent_and_local_controls_record_events() {
     ]));
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(tuned["limits"]["prepare_parallel"], 3);
+    // The agent share guardrail moves only as the user's step, within range.
+    let (code, _, stderr) =
+        run(cli(&home, &endpoint).args(["campaign", "tune", &id, "--agent-share-max", "0.3"]));
+    assert_eq!(code, 2, "{stderr}");
+    assert!(
+        stderr.contains("CAMPAIGN_TUNE_BY_USER_REQUIRED"),
+        "{stderr}"
+    );
+    let (code, _, stderr) = run(cli(&home, &endpoint).args([
+        "campaign",
+        "tune",
+        &id,
+        "--agent-share-max",
+        "0.9",
+        "--by-user",
+    ]));
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("CAMPAIGN_TUNING_INVALID"), "{stderr}");
+    let (code, tuned, stderr) = run(cli(&home, &endpoint).args([
+        "campaign",
+        "tune",
+        &id,
+        "--agent-share-max",
+        "0.3",
+        "--by-user",
+    ]));
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(tuned["limits"]["agent_share_max"], 0.3);
+    assert_eq!(
+        tuned["limits"]["prepare_parallel"], 3,
+        "earlier tuning kept"
+    );
     let (code, slot, _) = run(cli(&home, &endpoint).args(["campaign", "agent-slot", &id]));
     assert_eq!((code, slot["granted"].clone()), (0, json!(true)));
     let (_, status, _) = run(cli(&home, &endpoint).args(["campaign", "status", &id]));

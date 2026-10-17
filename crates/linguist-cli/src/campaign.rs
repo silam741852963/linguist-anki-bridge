@@ -195,6 +195,13 @@ pub(crate) enum CampaignCommand {
         /// Agent runs per day (at most 288, one every 5 minutes).
         #[arg(long)]
         agent_runs_per_day: Option<u32>,
+        /// Largest share of a batch's notes the agent may decide (0.05-0.5,
+        /// a guardrail: the user's step, needs a terminal or --by-user).
+        #[arg(long)]
+        agent_share_max: Option<f64>,
+        /// Confirm that the user, not an agent, changes the guardrail.
+        #[arg(long)]
+        by_user: bool,
     },
     /// Write the systemd user timers that run scripts/campaign-tick.sh and,
     /// with --agent-script, scripts/campaign-agent.sh on its own timer.
@@ -974,11 +981,18 @@ pub(crate) fn handle(
             prepare_ahead,
             prepare_parallel,
             agent_runs_per_day,
+            agent_share_max,
+            by_user,
         } => {
+            use std::io::IsTerminal;
+            if agent_share_max.is_some() && !by_user && !std::io::stdin().is_terminal() {
+                return Err("CAMPAIGN_TUNE_BY_USER_REQUIRED: only the user changes the agent share guardrail; run it in a terminal or pass --by-user".into());
+            }
             let tuning = campaign::Tuning {
                 prepare_ahead,
                 prepare_parallel,
                 agent_runs_per_day,
+                agent_share_max,
             };
             if tuning.is_empty() {
                 return Err("CAMPAIGN_TUNING_EMPTY: give at least one limit".into());

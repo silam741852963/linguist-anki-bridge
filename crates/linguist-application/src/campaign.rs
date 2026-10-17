@@ -342,14 +342,17 @@ pub struct Definition {
 /// for at most this long (a killed agent session releases them then).
 pub const AGENT_HOLD_MS: u64 = 45 * 60 * 1000;
 
-/// Limits `campaign tune` may change: throughput only, never a guardrail
-/// (agent share, spot checks, step failures).
+/// Limits `campaign tune` may change: throughput, and the agent share
+/// guardrail only as the user's own step (`--by-user`); never spot checks or
+/// step failures.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tuning {
     pub prepare_ahead: Option<u32>,
     pub prepare_parallel: Option<u32>,
     pub agent_runs_per_day: Option<u32>,
+    #[serde(default)]
+    pub agent_share_max: Option<f64>,
 }
 
 impl Tuning {
@@ -366,6 +369,12 @@ impl Tuning {
         }
         if let Some(v) = self.agent_runs_per_day {
             limits.agent_runs_per_day = v;
+        }
+        if let Some(v) = self.agent_share_max {
+            if !(0.05..=0.5).contains(&v) {
+                return Err("CAMPAIGN_TUNING_INVALID: agent_share_max 0.05-0.5".into());
+            }
+            limits.agent_share_max = v;
         }
         if !(1..=8).contains(&limits.prepare_parallel)
             || !(1..=32).contains(&limits.prepare_ahead)

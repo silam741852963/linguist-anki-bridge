@@ -545,9 +545,9 @@
     },
     "OP-83": {
       "path": "operations/campaign.md",
-      "heading": "## OP-83 \u2014 `campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N]`",
-      "title": "OP-83 \u2014 `campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N]`",
-      "words": 96,
+      "heading": "## OP-83 \u2014 `campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N] [--agent-share-max X --by-user]`",
+      "title": "OP-83 \u2014 `campaign tune CAMPAIGN [--prepare-ahead N] [--prepare-parallel N] [--agent-runs-per-day N] [--agent-share-max X --by-user]`",
+      "words": 124,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
