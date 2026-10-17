@@ -174,7 +174,7 @@ impl FakeCli {
                 .notes
                 .iter()
                 .filter(|n| !p.decided.contains(*n))
-                .map(|n| json!({"request_identity": {"document_id": doc(n)}}))
+                .map(|n| json!({"issue": {"id": format!("DICTIONARY_SENSE_REVIEW:{n}")}, "request_identity": {"document_id": doc(n)}}))
                 .collect();
             let mut v = json!({"revision": p.revision, "digest": format!("d{}", p.revision), "issues": open, "grammar_groups": []});
             if !issues_only {
@@ -1115,6 +1115,33 @@ fn an_agent_edit_during_a_review_is_reviewed_again() {
     }
     // The needs were computed before the agent's decision: the batch is
     // reviewed again on the newer revision instead of waiting for nothing.
+    assert_eq!(phases(&root, id), ["ready"]);
+}
+
+#[test]
+fn needs_already_met_are_reviewed_again_not_waited_for() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-met-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    cli.world.lock().unwrap().hard.insert("101".into());
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    ctx.tick(600).unwrap();
+    assert_eq!(phases(&root, id), ["needs_agent"]);
+    // The issue is settled without a newer revision being seen (a review
+    // that raced the agent): the batch is reviewed again.
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.hard.clear();
+        let plan = w.plans.values_mut().next().unwrap();
+        plan.decided.insert("101".into());
+    }
+    ctx.tick(600).unwrap();
     assert_eq!(phases(&root, id), ["ready"]);
 }
 

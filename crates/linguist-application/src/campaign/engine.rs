@@ -527,7 +527,10 @@ impl Context<'_> {
         let plan = data.plan.ok_or("CAMPAIGN_PLAN_MISSING")?.to_string();
         let head = self.plan_show(&data, true)?;
         let revision = head["revision"].as_u64().unwrap_or(0) as u32;
-        if record.phase == "needs_agent" && data.checked_revision == Some(revision) {
+        if record.phase == "needs_agent"
+            && data.checked_revision == Some(revision)
+            && !needs_met(&data, &head)
+        {
             return Ok(Step::Waiting(format!(
                 "batch {}: waiting for the agent",
                 record.batch
@@ -1977,4 +1980,30 @@ pub fn status(store: &Store, id: Uuid, now: u64) -> Result<Value, String> {
             "{applied} applied notes wait for one AnkiWeb full sync: choose Upload when the campaign is closed; review only in this desktop profile until then"
         ),
     }))
+}
+
+/// Every need is an open review issue of the plan that the agent has since
+/// settled: the batch is reviewed again instead of waiting for nothing (a
+/// review that raced the agent's decisions recorded needs already met).
+/// Needs that are no issue (a failed draft, a merge to confirm, a split
+/// candidate) always wait for the agent.
+fn needs_met(data: &BatchData, head: &Value) -> bool {
+    let open: BTreeSet<&str> = head["issues"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry["issue"]["id"].as_str())
+        .collect();
+    let mut any = false;
+    for need in data.needs.values().flatten() {
+        let Some((issue, _)) = need.split_once(": ") else {
+            return false;
+        };
+        // Issue ids are CODE:subject; the agent's own needs are bare codes.
+        if !issue.contains(':') || open.contains(issue) {
+            return false;
+        }
+        any = true;
+    }
+    any
 }
