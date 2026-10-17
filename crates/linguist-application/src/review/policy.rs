@@ -227,6 +227,19 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
     })
 }
 
+/// A prefix, suffix or counter (副, 総, 代) is only ever written inside
+/// compounds (副社長, 総人口, 電気代): the compound rules do not apply.
+fn affix(vocab: &linguist_core::Vocabulary) -> bool {
+    let expression = spoken(&vocab.expression);
+    vocab
+        .dictionary
+        .iter()
+        .filter(|entry| entry.forms.iter().any(|form| spoken(form) == expression))
+        .flat_map(|entry| &entry.senses)
+        .flat_map(|sense| &sense.labels)
+        .any(|label| matches!(label.as_str(), "Prefix" | "Suffix" | "Counter"))
+}
+
 /// True when a generated collocation or nuance list names the expression
 /// (or its reading) itself as a phrase or contrast.
 fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bool {
@@ -235,16 +248,47 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
     };
     // An example of a word written in kanji uses the word, not only
     // compounds that hold it (球 drew 球体 and 球場).
+    // An example uses the word at all, in some form (直ちに drew a sentence
+    // with たちまち): its written form, its reading, or their stem.
     if field == "examples" {
         let expression = spoken(&vocab.expression);
-        return serde_json::from_str::<Value>(claim)
+        let Some(sentence) = serde_json::from_str::<Value>(claim)
             .ok()
             .and_then(|v| v["sentence"].as_str().map(spoken))
-            .is_some_and(|sentence| {
-                expression.chars().any(is_kanji)
-                    && sentence.contains(&expression)
-                    && !stands_alone(&sentence, &expression)
-            });
+        else {
+            return false;
+        };
+        let stem = |t: &str| -> String {
+            let chars: Vec<char> = t.chars().collect();
+            if chars.len() > 1
+                && chars
+                    .last()
+                    .is_some_and(|c| matches!(c, '\u{3040}'..='\u{309f}'))
+            {
+                chars[..chars.len() - 1].iter().collect()
+            } else {
+                t.to_owned()
+            }
+        };
+        let reading = spoken(&vocab.reading);
+        let forms = [
+            expression.clone(),
+            reading.clone(),
+            stem(&expression),
+            stem(&reading),
+        ];
+        // A single kana (た from たま) matches anything: it does not count.
+        let telling = |f: &String| f.chars().count() > 1 || f.chars().any(is_kanji);
+        if !forms
+            .iter()
+            .any(|f| telling(f) && sentence.contains(f.as_str()))
+        {
+            return true;
+        }
+        return !affix(vocab)
+            && expression.chars().any(is_kanji)
+            && sentence.contains(&expression)
+            && !stands_alone(&sentence, &expression);
     }
     let key = match field {
         "collocations" => "phrase",
@@ -305,6 +349,7 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
     // a phrase of 体 read からだ): the written form must stand on its own.
     let expression = spoken(&vocab.expression);
     if !expression.is_empty()
+        && !affix(vocab)
         && phrases
             .iter()
             .any(|p| p.contains(&expression) && !stands_alone(p, &expression))
@@ -613,7 +658,28 @@ mod compound_tests {
         let rejected = |s: &str| super::repeats_the_word(&document, "examples", &example(s));
         assert!(rejected("球場は観客で埋め尽くされた。"));
         assert!(!rejected("彼は野球の球を投げた。"));
+        // No form of the word at all (直ちに: a sentence with たちまち).
+        assert!(rejected("大雨で、たちまち水浸しになった。"));
         // Written in kana only: nothing to judge.
         assert!(!rejected("たまを投げた。"));
+        // A prefix is only ever written inside compounds (副社長).
+        let linguist_core::LearningContent::Vocabulary(v) = &mut document.content else {
+            panic!()
+        };
+        v.expression = "副".into();
+        v.reading = "ふく".into();
+        v.dictionary = vec![
+            serde_json::from_value(serde_json::json!({
+                "provider": "jisho", "source_url": "https://jisho.org/search/副",
+                "language": "ja", "forms": ["副"], "readings": ["ふく"],
+                "senses": [{"key": "1", "definitions": ["vice-"], "labels": ["Noun", "Prefix"]}]
+            }))
+            .unwrap(),
+        ];
+        assert!(!super::repeats_the_word(
+            &document,
+            "examples",
+            &example("彼は副社長になった。")
+        ));
     }
 }
