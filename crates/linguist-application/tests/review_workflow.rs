@@ -1009,6 +1009,10 @@ fn campaign_policy_reinforces_the_agents_findings() {
             "nuance",
             r#"[{"expression":"体の","difference":"its own form"}]"#,
         ),
+        (
+            "collocations",
+            r#"[{"phrase":"体を洗う","gloss":"wash oneself"},{"phrase":"体の","gloss":"of the body"}]"#,
+        ),
     ]
     .iter()
     .enumerate()
@@ -1086,5 +1090,10 @@ fn campaign_policy_reinforces_the_agents_findings() {
         decision(5),
         "content_rejected",
         "one of its own forms (節約する)"
+    );
+    assert_eq!(
+        decision(6),
+        "content_rejected",
+        "a collocation that is one of its own forms (遠慮する)"
     );
 }

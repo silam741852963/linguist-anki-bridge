@@ -245,20 +245,19 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
         .iter()
         .filter_map(|item| item[key].as_str().map(spoken))
         .collect();
-    // The word itself, as a phrase or a contrast; a contrast with one of its
-    // own forms (節約 and 節約する, 綺麗 and 綺麗な) is no contrast either.
+    // The word itself, as a phrase or a contrast; one of its own forms is no
+    // contrast (節約 and 節約する, 綺麗 and 綺麗な) and no collocation either
+    // (遠慮する for 遠慮: the word with a suffix, WP-24 spot check).
     if phrases.iter().any(|p| own.contains(p)) {
         return true;
     }
-    if field == "nuance"
-        && phrases.iter().any(|p| {
-            own.iter().any(|w| {
-                p.strip_prefix(w.as_str()).is_some_and(|rest| {
-                    ["する", "します", "な", "だ", "です", "に", "の", "的"].contains(&rest)
-                })
+    if phrases.iter().any(|p| {
+        own.iter().any(|w| {
+            p.strip_prefix(w.as_str()).is_some_and(|rest| {
+                ["する", "します", "な", "だ", "です", "に", "の", "的"].contains(&rest)
             })
         })
-    {
+    }) {
         return true;
     }
     if field != "collocations" {
