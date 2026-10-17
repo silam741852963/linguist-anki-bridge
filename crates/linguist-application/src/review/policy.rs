@@ -227,6 +227,86 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
     })
 }
 
+/// Words of three or more letters, lower case, without the commonest ones.
+fn words(text: &str) -> std::collections::BTreeSet<String> {
+    const COMMON: &[&str] = &[
+        "the",
+        "and",
+        "for",
+        "with",
+        "one",
+        "one's",
+        "someone",
+        "something",
+        "etc",
+        "noun",
+        "verb",
+        "suru",
+        "adjective",
+        "adverb",
+        "usually",
+        "written",
+        "using",
+        "kana",
+        "alone",
+        "links",
+        "details",
+        "common",
+        "word",
+        "jlpt",
+    ];
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .filter(|w| w.chars().count() >= 3 && !COMMON.contains(w))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The sense, among templates of equal reading, whose definitions share the
+/// most words with the OCR text of the note's own images (a dictionary
+/// screenshot the learner kept), when one shares strictly more than every
+/// other.
+fn screenshot_sense<'a>(
+    vocab: &linguist_core::Vocabulary,
+    document: &LearningDocument,
+    matching: &[&'a Value],
+) -> Option<&'a Value> {
+    if matching.len() < 2 {
+        return None;
+    }
+    let seen = words(
+        &document
+            .regions
+            .iter()
+            .map(|region| region.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    if seen.is_empty() {
+        return None;
+    }
+    let mut scored: Vec<(usize, &'a Value)> = matching
+        .iter()
+        .map(|template| {
+            let key = template["choice"]["value"]["key"]
+                .as_str()
+                .unwrap_or_default();
+            let definitions = vocab
+                .dictionary
+                .iter()
+                .flat_map(|entry| &entry.senses)
+                .filter(|sense| sense.key == key)
+                .flat_map(|sense| &sense.definitions)
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(" ");
+            (words(&definitions).intersection(&seen).count(), *template)
+        })
+        .collect();
+    scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+    (scored[0].0 > 0 && scored[0].0 > scored[1].0).then_some(scored[0].1)
+}
+
 /// A prefix, suffix or counter (副, 総, 代) is only ever written inside
 /// compounds (副社長, 総人口, 電気代): the compound rules do not apply.
 fn affix(vocab: &linguist_core::Vocabulary) -> bool {
@@ -426,16 +506,30 @@ fn decide(
             // The whole field first (`から だ` is からだ), then separated
             // readings, then space-separated words.
             let own_readings = readings(raw);
-            let equal = |wanted: &[String]| {
-                templates.iter().find(|t| {
-                    t["reading"].as_str().is_some_and(|r| {
-                        let r = hiragana(&spoken(r));
-                        !r.is_empty() && wanted.contains(&r)
+            let equal = |wanted: &[String]| -> Vec<&Value> {
+                templates
+                    .iter()
+                    .copied()
+                    .filter(|t| {
+                        t["reading"].as_str().is_some_and(|r| {
+                            let r = hiragana(&spoken(r));
+                            !r.is_empty() && wanted.contains(&r)
+                        })
                     })
-                })
+                    .collect()
             };
-            if let Some(t) = own_readings.iter().find_map(|tier| equal(tier)) {
-                return Ok(choice(t));
+            if let Some(matching) = own_readings
+                .iter()
+                .map(|tier| equal(tier))
+                .find(|matching| !matching.is_empty())
+            {
+                // Several senses share the reading: the one the learner's own
+                // dictionary screenshot names (its OCR text) wins outright;
+                // otherwise dictionary order (WP-24: 得意 took "pride" when
+                // the screenshot said "one's strong point").
+                return Ok(choice(
+                    screenshot_sense(vocab, document, &matching).unwrap_or(matching[0]),
+                ));
             }
             if templates.iter().all(|t| t["reading"].is_null()) {
                 return Ok(choice(templates[0]));

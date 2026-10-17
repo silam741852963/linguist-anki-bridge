@@ -968,6 +968,57 @@ fn campaign_policy_rejects_a_collocation_that_is_the_word() {
 /// an equal reading (台所 だいどころ is not だいどこ), a collocation must use
 /// the word itself, not a compound sharing its kanji (体温 for 体 read からだ),
 /// and another spelling of the word is no nuance contrast (躰 for 体).
+/// WP-24 (得意, 一覧, 再生): among senses of the same reading, the one the
+/// learner's own dictionary screenshot names is chosen, not the first.
+#[test]
+fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
+    use linguist_application::review::policy;
+    let f = Fixture::new();
+    let mut plan = two_sense_plan(&f);
+    let (first, second) = (sense_key(&plan, 0, 0), sense_key(&plan, 0, 1));
+    let document = &mut plan.documents[0];
+    let LearningContent::Vocabulary(vocab) = &mut document.content else {
+        panic!()
+    };
+    vocab.reading = "たべる".into();
+    let sense = |key: &str| json!({"decision": "sense_with_reading", "value": {"key": key, "reading": "たべる"}});
+    let batch = |document: &linguist_core::LearningDocument| {
+        json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": [
+        {"document_id": document.id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
+         "options": {"issue": {"code": "DICTIONARY_SENSE_REVIEW"}, "templates": [
+            {"reading": "たべる", "choice": sense(&first)},
+            {"reading": "たべる", "choice": sense(&second)}]}}]})
+    };
+    let chosen = |plan: &PlanRevision| {
+        policy::fill(&policy::Policy::builtin(), plan, &batch(&plan.documents[0]))
+            .unwrap()
+            .batch
+            .unwrap()["decisions"][0]["choice"]["value"]["key"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    // Without a screenshot: dictionary order.
+    assert_eq!(chosen(&plan), first);
+    // The learner's screenshot names the second sense.
+    let source_id = plan.documents[0].sources[0].id;
+    plan.documents[0]
+        .regions
+        .push(linguist_core::records::SourceRegion {
+            id: uuid::Uuid::new_v4(),
+            source_id,
+            image_digest: "a".repeat(64),
+            bounds: [0, 0, 10, 10],
+            reading_order: 0,
+            engine: "tesseract".into(),
+            settings_digest: "b".repeat(64),
+            text: "1. to live on (e.g. a salary)".into(),
+            confidence: Some(0.9),
+            language: Language::try_from("en".to_owned()).unwrap(),
+        });
+    assert_eq!(chosen(&plan), second);
+}
+
 #[test]
 fn campaign_policy_reinforces_the_agents_findings() {
     use linguist_application::review::policy;
