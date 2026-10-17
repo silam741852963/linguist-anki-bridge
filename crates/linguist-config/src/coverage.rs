@@ -346,6 +346,8 @@ pub const ROWS: &[Row] = &[
     c("llm.quota_cooldown_seconds", AGENTS),
     c("llm.agents.timeout_seconds", AGENTS),
     c("llm.agents.parallel", GEN),
+    c("llm.agents.max_calls_per_window", AGENTS),
+    c("llm.agents.budget_window_seconds", AGENTS),
     c("llm.agents.claude_code.executable", AGENTS),
     c("llm.agents.claude_code.model", AGENTS),
     c("llm.agents.codex.executable", AGENTS),

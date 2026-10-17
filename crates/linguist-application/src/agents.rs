@@ -136,6 +136,7 @@ pub fn generate(
     if let Some(cooldown) = cooling(provider, settings, environment) {
         return Err(cooldown.error(provider));
     }
+    count_call(provider, settings, environment);
     let result = match provider {
         Provider::Ollama => Err("GENERATION_PROVIDER_INVALID".into()),
         Provider::ClaudeCode => claude_code(request, settings, environment, timeout, limit),
@@ -205,14 +206,97 @@ fn cooldown_path(
 
 /// The provider's current cooldown (`llm.quota_cooldown_seconds` after its
 /// last usage limit), if any.
+/// A provider that spent its own budget (`llm.agents.max_calls_per_window`
+/// calls in `llm.agents.budget_window_seconds`) cools down the same way, so
+/// a quota shared with other work is never run out.
 pub fn cooling(
     provider: Provider,
     settings: &Effective,
     environment: &BTreeMap<String, String>,
 ) -> Option<Cooldown> {
-    let bytes = std::fs::read(cooldown_path(provider, settings, environment)?).ok()?;
-    let cooldown: Cooldown = serde_json::from_slice(&bytes).ok()?;
-    (cooldown.until > now()).then_some(cooldown)
+    let reported = std::fs::read(cooldown_path(provider, settings, environment)?)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Cooldown>(&bytes).ok())
+        .filter(|cooldown| cooldown.until > now());
+    reported.or_else(|| budget_spent(provider, settings, environment))
+}
+
+fn budget(settings: &Effective) -> Option<(u64, u64)> {
+    let calls = settings
+        .values
+        .get("llm.agents.max_calls_per_window")
+        .and_then(Value::as_u64)
+        .filter(|calls| *calls > 0)?;
+    let window = settings
+        .values
+        .get("llm.agents.budget_window_seconds")
+        .and_then(Value::as_u64)
+        .unwrap_or(18_000);
+    Some((calls, window))
+}
+
+/// `<storage.state_dir>/agents/calls-<provider>.log`: one start time per
+/// line, appended by every process of this state directory.
+fn calls_path(
+    provider: Provider,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) -> Option<PathBuf> {
+    cooldown_path(provider, settings, environment)
+        .map(|path| path.with_file_name(format!("calls-{}.log", provider.name())))
+}
+
+fn calls_since(path: &Path, since: u64) -> Vec<u64> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| line.trim().parse::<u64>().ok())
+        .filter(|at| *at > since)
+        .collect()
+}
+
+fn budget_spent(
+    provider: Provider,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) -> Option<Cooldown> {
+    let (calls, window) = budget(settings)?;
+    let path = calls_path(provider, settings, environment)?;
+    let recent = calls_since(&path, now().saturating_sub(window));
+    (recent.len() as u64 >= calls).then(|| Cooldown {
+        until: recent.iter().min().copied().unwrap_or_else(now) + window,
+        said: format!(
+            "its own usage limit: {calls} calls per {window} s (llm.agents.max_calls_per_window)"
+        ),
+    })
+}
+
+/// Count one call against the budget (only when a budget is set); the log
+/// keeps only the current window once it holds four budgets.
+fn count_call(provider: Provider, settings: &Effective, environment: &BTreeMap<String, String>) {
+    let Some((calls, window)) = budget(settings) else {
+        return;
+    };
+    let Some(path) = calls_path(provider, settings, environment) else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new("/")));
+    let lines = std::fs::read_to_string(&path)
+        .map(|text| text.lines().count() as u64)
+        .unwrap_or(0);
+    if lines >= calls.saturating_mul(4) {
+        let keep: String = calls_since(&path, now().saturating_sub(window))
+            .iter()
+            .map(|at| format!("{at}\n"))
+            .collect();
+        let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+        let _ = std::fs::write(&temporary, keep).and_then(|()| std::fs::rename(&temporary, &path));
+    }
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut file| file.write_all(format!("{}\n", now()).as_bytes()));
 }
 
 /// Record the usage limit; failing to record it only costs one more try.
@@ -802,6 +886,50 @@ mod tests {
         assert_eq!(current(&settings, &env).unwrap(), Some(Provider::Codex));
         let _ = generate(Provider::Codex, &request, &settings, &env).unwrap_err();
         assert_eq!(std::fs::read_to_string(&calls).unwrap().lines().count(), 2);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn an_agent_past_its_own_budget_cools_down_until_the_window_frees() {
+        use linguist_config::{ConfigFile, Registry, ResolveOptions, resolve};
+        let directory = std::env::temp_dir().join(format!("lab-budget-{}", uuid::Uuid::new_v4()));
+        let env = BTreeMap::from([("PATH".into(), directory.display().to_string())]);
+        let mut settings = resolve(
+            &Registry::builtin(),
+            &ConfigFile::default(),
+            &ResolveOptions::default(),
+        )
+        .unwrap();
+        settings.values.insert(
+            "storage.state_dir".into(),
+            json!(directory.join("state").display().to_string()),
+        );
+        settings
+            .values
+            .insert("llm.provider".into(), json!("codex"));
+        settings
+            .values
+            .insert("llm.fallback".into(), json!(["ollama"]));
+        // No budget: nothing is counted.
+        count_call(Provider::Codex, &settings, &env);
+        assert!(calls_path(Provider::Codex, &settings, &env).is_some_and(|p| !p.exists()));
+        settings
+            .values
+            .insert("llm.agents.max_calls_per_window".into(), json!(2));
+        settings
+            .values
+            .insert("llm.agents.budget_window_seconds".into(), json!(3600));
+        count_call(Provider::Codex, &settings, &env);
+        assert!(cooling(Provider::Codex, &settings, &env).is_none());
+        assert_eq!(current(&settings, &env).unwrap(), Some(Provider::Codex));
+        count_call(Provider::Codex, &settings, &env);
+        let spent = cooling(Provider::Codex, &settings, &env).unwrap();
+        assert!(spent.until > now() + 3500 && usage_limited(&spent.error(Provider::Codex)));
+        assert_eq!(current(&settings, &env).unwrap(), Some(Provider::Ollama));
+        // Calls older than the window no longer count.
+        let path = calls_path(Provider::Codex, &settings, &env).unwrap();
+        std::fs::write(&path, "1\n2\n").unwrap();
+        assert!(cooling(Provider::Codex, &settings, &env).is_none());
         let _ = std::fs::remove_dir_all(&directory);
     }
 

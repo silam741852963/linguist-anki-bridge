@@ -263,6 +263,32 @@
       "sensitive": false
     },
     {
+      "key": "llm.agents.max_calls_per_window",
+      "type": "integer",
+      "default": 0,
+      "constraints": {
+        "min": 0,
+        "max": 100000
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Calls each agent or API may start in llm.agents.budget_window_seconds (0 = no budget). A provider that spent it is skipped like one at its usage limit until the window frees, so the rest of llm.fallback drafts and a shared quota is never run out.",
+      "sensitive": false
+    },
+    {
+      "key": "llm.agents.budget_window_seconds",
+      "type": "integer",
+      "default": 18000,
+      "constraints": {
+        "min": 60,
+        "max": 604800
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "The sliding window of llm.agents.max_calls_per_window (default five hours, a Codex usage window).",
+      "sensitive": false
+    },
+    {
       "key": "llm.agents.claude_code.executable",
       "type": "string",
       "default": "claude",
