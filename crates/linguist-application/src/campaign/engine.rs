@@ -296,10 +296,16 @@ impl Context<'_> {
                 if let Some(note) = item["note_id"].as_str() {
                     data.deferred.insert(
                         note.into(),
-                        format!(
-                            "PREPARE_FAILED: {}",
-                            item["error_code"].as_str().unwrap_or("")
-                        ),
+                        match item["error_detail"].as_str() {
+                            Some(detail) => format!(
+                                "PREPARE_FAILED: {} ({detail})",
+                                item["error_code"].as_str().unwrap_or("")
+                            ),
+                            None => format!(
+                                "PREPARE_FAILED: {}",
+                                item["error_code"].as_str().unwrap_or("")
+                            ),
+                        },
                     );
                 }
             }

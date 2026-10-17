@@ -39,9 +39,20 @@ impl PreparationDefinition {
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PreparationStage {
     Started,
-    Captured { document: Box<LearningDocument> },
-    Failed { code: String, retry_eligible: bool },
-    Interrupted { actor: String },
+    Captured {
+        document: Box<LearningDocument>,
+    },
+    Failed {
+        code: String,
+        retry_eligible: bool,
+        /// The error the code classifies, for diagnosis (absent in older
+        /// events, so their digests are unchanged).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+    },
+    Interrupted {
+        actor: String,
+    },
 }
 fn retry_code(code: &str) -> bool {
     matches!(
@@ -51,6 +62,7 @@ fn retry_code(code: &str) -> bool {
             | "SOURCE_READ_RATE_LIMITED"
             | "SOURCE_READ_UNAVAILABLE"
             | "ENRICHMENT_PROVIDER_TRANSIENT"
+            | "SOURCE_CAPTURE_TRANSIENT"
     )
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -87,6 +99,9 @@ pub struct PreparationItemSummary {
     pub checkpoint_digest: Option<String>,
     pub document_id: Option<Uuid>,
     pub error_code: Option<String>,
+    /// The error behind `error_code`, when the attempt recorded one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_detail: Option<String>,
     pub retry_eligible: bool,
 }
 
@@ -452,6 +467,7 @@ impl Store {
                 checkpoint_digest: None,
                 document_id: None,
                 error_code: None,
+                error_detail: None,
                 retry_eligible: false,
             };
             if let Some((sequence, digest, body)) = row {
@@ -488,7 +504,9 @@ impl Store {
                     PreparationStage::Failed {
                         code,
                         retry_eligible,
+                        detail,
                     } => {
+                        summary.error_detail = detail;
                         summary.state = "failed".into();
                         summary.error_code = Some(code);
                         summary.retry_eligible = retry_eligible
@@ -704,6 +722,7 @@ impl Store {
         if let PreparationStage::Failed {
             code,
             retry_eligible,
+            ..
         } = &stage
             && (code.is_empty()
                 || code.len() > 100

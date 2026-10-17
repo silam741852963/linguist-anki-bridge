@@ -202,6 +202,7 @@ fn audit_pages_verify_chain_anchors_and_reject_rehashed_broken_links() {
             PreparationStage::Failed {
                 code: "SOURCE_READ_TIMEOUT".into(),
                 retry_eligible: true,
+                detail: None,
             },
             Some(&first.digest),
         )
@@ -349,6 +350,7 @@ fn controls_are_immutable_idempotent_and_gate_dispatch_without_losing_results() 
             PreparationStage::Failed {
                 code: "SOURCE_READ_TIMEOUT".into(),
                 retry_eligible: true,
+                detail: None,
             },
             Some(&started.digest),
             &lease,
@@ -684,6 +686,7 @@ fn worker_checkpoints_reject_wrong_expired_and_released_fencing_tokens() {
     let failure = PreparationStage::Failed {
         code: "SOURCE_READ_TIMEOUT".into(),
         retry_eligible: true,
+        detail: None,
     };
     assert_eq!(
         store
@@ -784,6 +787,7 @@ fn definitions_events_and_original_assets_survive_reopen_with_cas_conflicts() {
                 PreparationStage::Failed {
                     code: "SOURCE_IDENTITY_CONFLICT".into(),
                     retry_eligible: true,
+                    detail: None,
                 },
                 Some(&started.digest)
             )
@@ -884,6 +888,7 @@ fn retries_are_explicit_classified_bounded_and_never_assume_a_worker_died() {
             PreparationStage::Failed {
                 code: "SOURCE_READ_TIMEOUT".into(),
                 retry_eligible: true,
+                detail: None,
             },
             Some(&started.digest),
         )
@@ -899,6 +904,7 @@ fn retries_are_explicit_classified_bounded_and_never_assume_a_worker_died() {
             PreparationStage::Failed {
                 code: "SOURCE_READ_TIMEOUT".into(),
                 retry_eligible: true,
+                detail: None,
             },
             Some(&retry.digest),
         )
@@ -926,6 +932,7 @@ fn retries_are_explicit_classified_bounded_and_never_assume_a_worker_died() {
             PreparationStage::Failed {
                 code: "SOURCE_IDENTITY_CONFLICT".into(),
                 retry_eligible: false,
+                detail: None,
             },
             Some(&started.digest),
         )
@@ -1208,6 +1215,7 @@ fn a_plan_published_without_failed_notes_has_a_matching_selection_receipt() {
             PreparationStage::Failed {
                 code: "SOURCE_READ_CONNECTION_FAILED".into(),
                 retry_eligible: true,
+                detail: None,
             },
             Some(&started.digest),
         )

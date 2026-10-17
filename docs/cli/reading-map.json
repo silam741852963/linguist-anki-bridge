@@ -913,7 +913,7 @@
       "path": "operations/jobs.md",
       "heading": "## OP-39 \u2014 `jobs run JOB`",
       "title": "OP-39 \u2014 `jobs run JOB`",
-      "words": 1011,
+      "words": 1063,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

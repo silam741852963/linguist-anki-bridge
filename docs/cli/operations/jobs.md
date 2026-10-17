@@ -131,8 +131,13 @@ process-wide `services.*` gates, so `concurrency` and `min_interval_seconds` hol
 across workers. Recognized Anki transport failures receive stable retry codes;
 transient provider reads (DNS, deadline, transport, `Retry-After`, HTTP
 408/425/429/5xx) fail with retryable `ENRICHMENT_PROVIDER_TRANSIENT`; any other
-enrichment failure is `ENRICHMENT_FAILED`, and other capture failures
-`SOURCE_CAPTURE_REVIEW_REQUIRED`. Non-retryable failures need review and halt the
+enrichment failure is `ENRICHMENT_FAILED`; another capture failure from a
+dependency that was away a moment (a timeout, an unavailable, busy or locked
+service or store, a rate or usage limit, HTTP 5xx) is retryable
+`SOURCE_CAPTURE_TRANSIENT`, and the rest `SOURCE_CAPTURE_REVIEW_REQUIRED`. These
+catch-all failures keep the error they classify (`error_detail` in `jobs items`
+and `jobs publish --skip-failed`, and in a campaign's `PREPARE_FAILED` deferral).
+Non-retryable failures need review and halt the
 run; `jobs retry` refuses them with `JOB_RETRY_REQUIRES_REVIEW`. A job's plan
 equals a `vocab revamp` plan of the same notes apart from fresh IDs, fetch times
 and provider page bytes, but it is one revision instead of one per stage.

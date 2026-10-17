@@ -121,6 +121,7 @@ pub fn audit(
             PreparationStage::Failed {
                 code,
                 retry_eligible,
+                ..
             } => {
                 serde_json::json!({"state":"failed","error_code":code,"retry_classified":retry_eligible})
             }
@@ -340,6 +341,10 @@ pub fn run(
                                 error if error.starts_with("ENRICHMENT_FAILED:") => {
                                     "ENRICHMENT_FAILED"
                                 }
+                                // A service or store that was away a moment
+                                // (WP-24: 28 notes failed for good, then
+                                // captured cleanly when run again).
+                                error if capture_transient(error) => "SOURCE_CAPTURE_TRANSIENT",
                                 _ => "SOURCE_CAPTURE_REVIEW_REQUIRED",
                             };
                             let retry_eligible = matches!(
@@ -349,6 +354,7 @@ pub fn run(
                                     | "SOURCE_READ_RATE_LIMITED"
                                     | "SOURCE_READ_UNAVAILABLE"
                                     | "ENRICHMENT_PROVIDER_TRANSIENT"
+                                    | "SOURCE_CAPTURE_TRANSIENT"
                             );
                             stop |=
                                 !retry_eligible || settings.values["jobs.on_item_error"] == "stop";
@@ -356,6 +362,14 @@ pub fn run(
                                 PreparationStage::Failed {
                                     code: code.into(),
                                     retry_eligible,
+                                    // A catch-all code keeps what it caught.
+                                    detail: matches!(
+                                        code,
+                                        "SOURCE_CAPTURE_REVIEW_REQUIRED"
+                                            | "SOURCE_CAPTURE_TRANSIENT"
+                                            | "ENRICHMENT_FAILED"
+                                    )
+                                    .then(|| error.chars().take(500).collect()),
                                 },
                                 false,
                             )
@@ -679,6 +693,7 @@ pub fn publish_skipping_failed(
                     skipped.push(serde_json::json!({
                         "note_id": definition.selection.selected_note_ids[item.index as usize],
                         "error_code": item.error_code,
+                        "error_detail": item.error_detail,
                     }));
                 }
             }
@@ -717,6 +732,50 @@ mod tests {
             "AUDIO_SETTING_MISSING",
         ] {
             assert_eq!(super::enrichment_code(error), "ENRICHMENT_FAILED");
+        }
+    }
+}
+
+/// A capture error from a dependency that was away a moment (a timeout, an
+/// unavailable or busy service, a locked store, a usage limit), which a
+/// later attempt can pass, as opposed to one about the note itself.
+fn capture_transient(error: &str) -> bool {
+    let upper = error.to_ascii_uppercase();
+    [
+        "TIMEOUT",
+        "UNAVAILABLE",
+        "CONNECTION",
+        "BUSY",
+        "LOCKED",
+        "RATE_LIMIT",
+        "HTTP_FAILURE: 5",
+        "USAGE LIMIT",
+        "OUTCOME_UNKNOWN",
+    ]
+    .iter()
+    .any(|marker| upper.contains(marker))
+}
+
+#[cfg(test)]
+mod capture_tests {
+    #[test]
+    fn transient_capture_errors_are_retried_and_others_reviewed() {
+        for error in [
+            "OCR_TIMEOUT",
+            "VOICEVOX_UNAVAILABLE: engine down",
+            "STORE_BUSY",
+            "database is locked",
+            "AGENT_FAILED: exit Some(1): You've hit your usage limit.",
+            "PROVIDER_HTTP_FAILURE: 503",
+        ] {
+            assert!(super::capture_transient(error), "{error}");
+        }
+        for error in [
+            "SOURCE_FIELD_MISSING",
+            "MEDIA_ASSET_INVALID",
+            "PROVIDER_HTTP_FAILURE: 404",
+        ] {
+            assert!(!super::capture_transient(error), "{error}");
         }
     }
 }
