@@ -211,11 +211,19 @@ fn is_kanji(c: char) -> bool {
 /// kanji (a word that starts or ends in kana may touch kanji there).
 fn stands_alone(phrase: &str, word: &str) -> bool {
     let (first, last) = (word.chars().next(), word.chars().last());
+    // A noun written with trailing kana (物干し) is glued to a kanji or
+    // katakana noun right after it (物干し台, 物干しロープ); a verb or
+    // adjective ending (見る人, 高い山) is not.
+    let inflecting = last.is_some_and(|c| "るうくすつぬぶむぐい".contains(c));
+    let katakana = |c: char| matches!(c, '\u{30a1}'..='\u{30fa}' | 'ー');
     phrase.match_indices(word).any(|(at, _)| {
         let before = phrase[..at].chars().last();
         let after = phrase[at + word.len()..].chars().next();
         !(first.is_some_and(is_kanji) && before.is_some_and(is_kanji))
             && !(last.is_some_and(is_kanji) && after.is_some_and(is_kanji))
+            && !(!inflecting
+                && last.is_some_and(|c| !is_kanji(c))
+                && after.is_some_and(|c| is_kanji(c) || katakana(c)))
     })
 }
 
@@ -225,6 +233,19 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
     let LearningContent::Vocabulary(vocab) = &document.content else {
         return false;
     };
+    // An example of a word written in kanji uses the word, not only
+    // compounds that hold it (球 drew 球体 and 球場).
+    if field == "examples" {
+        let expression = spoken(&vocab.expression);
+        return serde_json::from_str::<Value>(claim)
+            .ok()
+            .and_then(|v| v["sentence"].as_str().map(spoken))
+            .is_some_and(|sentence| {
+                expression.chars().any(is_kanji)
+                    && sentence.contains(&expression)
+                    && !stands_alone(&sentence, &expression)
+            });
+    }
     let key = match field {
         "collocations" => "phrase",
         "nuance" => "expression",
@@ -556,4 +577,43 @@ pub fn fill(policy: &Policy, plan: &PlanRevision, template: &Value) -> Result<Fi
         decided: if only_assertions { 0 } else { count },
         undecided,
     })
+}
+
+#[cfg(test)]
+mod compound_tests {
+    use super::stands_alone;
+
+    #[test]
+    fn a_word_inside_a_compound_does_not_stand_alone() {
+        // Kanji words (WP-24: 体温 for 体, 球体 and 球場 for 球).
+        assert!(!stands_alone("体温を測る", "体"));
+        assert!(!stands_alone("この球体は滑らかだ。", "球"));
+        assert!(stands_alone("野球の球を投げた。", "球"));
+        // A noun with trailing kana glued to a noun (物干し台, 物干しロープ).
+        assert!(!stands_alone("物干し台", "物干し"));
+        assert!(!stands_alone("物干しロープ", "物干し"));
+        assert!(stands_alone("物干しに干す", "物干し"));
+        // A verb or adjective before a noun is a phrase.
+        assert!(stands_alone("見る人", "見る"));
+        assert!(stands_alone("高い山に登る", "高い"));
+    }
+
+    #[test]
+    fn an_example_with_the_word_only_inside_compounds_is_rejected() {
+        let mut document = linguist_core::LearningDocument::from_json(include_bytes!(
+            "../../../../contracts/v2/fixtures/vocabulary.json"
+        ))
+        .unwrap();
+        let linguist_core::LearningContent::Vocabulary(v) = &mut document.content else {
+            panic!()
+        };
+        v.expression = "球".into();
+        v.reading = "たま".into();
+        let example = |s: &str| format!(r#"{{"sentence":"{s}","translation":"x"}}"#);
+        let rejected = |s: &str| super::repeats_the_word(&document, "examples", &example(s));
+        assert!(rejected("球場は観客で埋め尽くされた。"));
+        assert!(!rejected("彼は野球の球を投げた。"));
+        // Written in kana only: nothing to judge.
+        assert!(!rejected("たまを投げた。"));
+    }
 }
