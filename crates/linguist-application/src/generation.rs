@@ -1019,6 +1019,18 @@ pub fn validate_output(
     {
         return Err("GENERATION_SCRIPT_MIXED".into());
     }
+    // A collocation's gloss translates the phrase, not an example (整う got
+    // "All the necessary preparations are complete." as a gloss).
+    if let Supplement::Vocabulary(v) = &output
+        && v.collocations.iter().any(|c| {
+            !c.gloss.trim().is_empty()
+                && v.examples
+                    .iter()
+                    .any(|e| e.translation.trim() == c.gloss.trim())
+        })
+    {
+        return Err("GENERATION_COLLOCATION_GLOSS".into());
+    }
     if examples.iter().any(|example| {
         example.sentence.trim().is_empty()
             || (translation_required && example.translation.trim().is_empty())

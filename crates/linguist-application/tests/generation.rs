@@ -225,6 +225,15 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         "GENERATION_GLOSS_UNTRANSLATED"
     );
     assert!(validate_output(&doc, &request, &output("eat a meal"), 10000, 10000).is_ok());
+    // 整う: a gloss copied from an example's translation is refused.
+    let copied = serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":"","nuance":[],
+        "examples":[{"sentence":"ご飯を食べました。","translation":"I ate a meal."}],
+        "collocations":[{"phrase":"ご飯を食べる","gloss":"I ate a meal."}]}}))
+    .unwrap();
+    assert_eq!(
+        validate_output(&doc, &request, &copied, 10000, 10000).unwrap_err(),
+        "GENERATION_COLLOCATION_GLOSS"
+    );
 }
 #[test]
 fn grammar_fields_are_preserved_and_disabled_generation_is_explicit() {
