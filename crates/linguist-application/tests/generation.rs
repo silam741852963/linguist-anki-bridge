@@ -895,6 +895,11 @@ fn examples_are_in_the_target_language() {
     assert!(validate_output(&doc, &request, &output("ご飯を食べます。"), 10000, 10000).is_ok());
     let loanwords = output("Gmail and LINE: メールをする。");
     assert!(validate_output(&doc, &request, &loanwords, 10000, 10000).is_ok());
+    // 決して drew 絶대로 for 絶対に: hangul on a Japanese card is refused.
+    assert_eq!(
+        validate_output(&doc, &request, &output("絶대로行きません。"), 10000, 10000).unwrap_err(),
+        "GENERATION_SCRIPT_MIXED"
+    );
 }
 
 /// WP-24 (血液): examples that only repeat the collocations are refused.

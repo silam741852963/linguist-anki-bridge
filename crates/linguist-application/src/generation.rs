@@ -1007,6 +1007,18 @@ pub fn validate_output(
     {
         return Err("GENERATION_EXAMPLE_LANGUAGE".into());
     }
+    // Hangul on a Japanese card is a model slip (決して: 絶대로 for 絶対に, a
+    // gemma4:12b draft): nothing a Japanese card shows is written in it.
+    let hangul = |c: char| matches!(c, '\u{1100}'..='\u{11ff}' | '\u{3130}'..='\u{318f}' | '\u{ac00}'..='\u{d7af}');
+    if doc.target_language.as_str().split('-').next() == Some("ja")
+        && doc.explanation_language.as_str().split('-').next() != Some("ko")
+        && serde_json::to_string(&output)
+            .map_err(|e| e.to_string())?
+            .chars()
+            .any(hangul)
+    {
+        return Err("GENERATION_SCRIPT_MIXED".into());
+    }
     if examples.iter().any(|example| {
         example.sentence.trim().is_empty()
             || (translation_required && example.translation.trim().is_empty())
