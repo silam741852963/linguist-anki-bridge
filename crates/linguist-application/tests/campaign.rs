@@ -127,6 +127,9 @@ struct World {
     retry_budget: Option<u32>,
     /// The next `plans generate` calls fail every item with this error.
     draft_fail: Option<(u32, String)>,
+    /// An apply that ends needing recovery, then reconcile attempts that
+    /// stay unresolved (exit 4) this many times before one resolves it.
+    recovery: Option<u32>,
 }
 
 #[derive(Clone, Default)]
@@ -360,6 +363,42 @@ impl FakeCli {
                 let list: Vec<Value> = w.checkpoints.iter().map(|(c, t)| json!({"id": c, "path": format!("/nonexistent/{c}.colpkg"), "created_ms": t})).collect();
                 ok(json!({"checkpoints": list}))
             }
+            ["jobs", verb @ ("run" | "resume"), job, "--apply"] if w.recovery.is_some() => {
+                let _ = verb;
+                // The write lands once; its outcome is unknown until reconciled.
+                let (plan, items, ran) = w.apply_jobs[*job].clone();
+                for n in w.plans[&plan]
+                    .notes
+                    .clone()
+                    .iter()
+                    .filter(|n| !ran && items.contains(&doc(n)))
+                {
+                    *w.applied.entry(n.clone()).or_default() += 1;
+                }
+                w.apply_jobs.get_mut(*job).unwrap().2 = true;
+                ok(
+                    json!({"run": {"stop": "recovery_required", "stop_code": null, "status": {"counts": {"needs_recovery": 1}}}}),
+                )
+            }
+            ["recover", "inspect", "--pending"] => ok(match w.recovery {
+                Some(_) => json!({"journals": [{"journal": {"id": "op-1"}}]}),
+                None => json!({"journals": []}),
+            }),
+            ["recover", "reconcile", "op-1", "--apply"] => match w.recovery {
+                Some(left) if left > 0 => {
+                    w.recovery = Some(left - 1);
+                    Output {
+                        code: 4,
+                        json: json!({"reconcile": {"state": "needs_recovery"}}),
+                        stderr: String::new(),
+                    }
+                }
+                _ => {
+                    w.recovery = None;
+                    // The write had landed: reconcile adopts it.
+                    ok(json!({"reconcile": {"state": "committed"}}))
+                }
+            },
             ["jobs", verb @ ("run" | "resume"), job, "--apply"] => {
                 let _ = verb;
                 let (plan, items, ran) = w.apply_jobs[*job].clone();
@@ -998,6 +1037,48 @@ fn an_uncertified_local_engine_pauses_the_campaign() {
         .filter(|c| c.starts_with("plans generate") && c.contains("--certified-engine-only"))
         .count();
     assert_eq!(generates, 1, "one refused generate, then the pause");
+}
+
+#[test]
+fn an_unresolved_reconcile_is_tried_again_before_it_pauses() {
+    let run = |unresolved: u32| {
+        let root = std::env::temp_dir().join(format!("lab-campaign-reconcile-{}", Uuid::new_v4()));
+        let mut spec = spec(false);
+        spec.limits.max_step_failures = 3;
+        let id = create(&root, spec, world_notes()[..2].to_vec());
+        let cli = FakeCli {
+            world: Mutex::default(),
+            kill_after: AtomicU64::new(0),
+            clock: AtomicU64::new(1000),
+        };
+        cli.world.lock().unwrap().recovery = Some(unresolved);
+        let anki = FakeAnki(&cli);
+        let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+        let ctx = context(&root, id, &cli, &anki, &clock);
+        ctx.tick(600).unwrap();
+        ctx.approve(1, "claude-agent").unwrap();
+        for _ in 0..8 {
+            ctx.tick(600).unwrap();
+        }
+        let status =
+            campaign::engine::status(&linguist_store::Store::read_only(&root).unwrap(), id, 0)
+                .unwrap();
+        (phases(&root, id), status)
+    };
+    // Anki was briefly away: the next attempts resolve it, no pause.
+    let (phases, status) = run(2);
+    assert_eq!(status["status"], "running", "{status}");
+    assert_eq!(phases, ["done"]);
+    // Never resolved: the step-failure guardrail pauses, naming the outcome.
+    let (_, status) = run(999);
+    assert_eq!(status["status"], "paused", "{status}");
+    assert!(
+        status["detail"]
+            .as_str()
+            .unwrap()
+            .contains("needs_recovery"),
+        "{status}"
+    );
 }
 
 #[test]

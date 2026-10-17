@@ -1011,6 +1011,17 @@ impl Context<'_> {
                 if out.unavailable() {
                     return Ok(Step::Waiting(out.error()));
                 }
+                // Exit 4: reconciled but still unresolved, an outcome on
+                // stdout (Anki was away a moment longer). Reconciling is
+                // idempotent: a step failure tries again, and the step
+                // failure guardrail pauses with it if it never resolves.
+                if out.code == 4 && !out.json["reconcile"].is_null() {
+                    let why = format!("unresolved: {}", out.json["reconcile"]);
+                    return Err(format!(
+                        "CAMPAIGN_RECONCILE_UNRESOLVED: operation {op}: {}",
+                        why.chars().take(600).collect::<String>()
+                    ));
+                }
                 return Ok(Step::Pause {
                     code: "CAMPAIGN_PAUSED_UNKNOWN_OUTCOME".into(),
                     detail: format!("operation {op}: {}", out.error()),
