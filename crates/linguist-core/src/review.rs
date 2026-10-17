@@ -821,9 +821,15 @@ fn expression_applicable(
 /// Decisions checked against facts other than generated content (sense,
 /// media, source history, duplicates, segmentation, split anchor).
 pub fn rebindable(choice: &ReviewChoice) -> bool {
+    // Decisions about the source alone (an image's role, verified source or
+    // OCR text) hold whatever a later decision changes in the generated or
+    // selected content (WP-24: a rejected generated fact sent an agent's
+    // image role back to the agent).
     matches!(
         choice,
-        ReviewChoice::NativeHistory { .. }
+        ReviewChoice::SourceMediaRole { .. }
+            | ReviewChoice::SourceContentVerified { .. }
+            | ReviewChoice::NativeHistory { .. }
             | ReviewChoice::MissingMedia { .. }
             | ReviewChoice::Sense(_)
             | ReviewChoice::SenseWithReading { .. }

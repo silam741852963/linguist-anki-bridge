@@ -314,6 +314,65 @@ fn source_images_are_ocrd_before_publication_and_gate_generation_until_reviewed(
                 .all(|i| i.stage != "ocr"),
             "OCR reviews stay settled after a sense choice"
         );
+        // A rejected generated fact changes the content too; the source
+        // decisions still hold (WP-24 batch 36: an agent's image role went
+        // back to the agent after the policy rejected a collocation).
+        let mut drafted = chosen.clone();
+        let document = &mut drafted.documents[0];
+        let evidence = uuid::Uuid::new_v4();
+        document.evidence.push(linguist_core::records::Evidence {
+            id: evidence,
+            field: "usage".into(),
+            provenance: Provenance::Generated,
+            source_id: None,
+            region_id: None,
+            target: None,
+            source_span: None,
+            language: linguist_core::Language::try_from("en".to_owned()).unwrap(),
+            claim: "A generated usage note.".into(),
+            source_url: None,
+            ambiguous: false,
+        });
+        if let linguist_core::LearningContent::Vocabulary(v) = &mut document.content {
+            v.usage = "A generated usage note.".into();
+        }
+        let bound = document.semantic_digest().unwrap();
+        for review in &mut document.reviews {
+            review.input_digest = bound.clone();
+        }
+        for decision in &mut drafted.review_decisions {
+            decision.input_digest = bound.clone();
+        }
+        let document = &drafted.documents[0];
+        let fact = validation::validate(document)
+            .into_iter()
+            .find(|i| i.code == "GENERATED_FACT_REVIEW")
+            .expect("a generated fact to review")
+            .id;
+        let rejected = review::resolve(
+            &drafted,
+            &review::ResolutionRequest {
+                schema_version: 2,
+                base_revision: drafted.revision,
+                base_digest: drafted.approval_digest().unwrap(),
+                document_id: document.id,
+                issue_id: fact,
+                input_digest: bound,
+                actor: "reviewer".into(),
+                choice: ReviewChoice::ContentRejected {
+                    evidence_id: evidence,
+                },
+            },
+            "unix-seconds:3".into(),
+        )
+        .unwrap()
+        .revision;
+        assert!(
+            validation::validate(&rejected.documents[0])
+                .iter()
+                .all(|i| i.stage != "ocr"),
+            "OCR reviews stay settled after a rejected generated fact"
+        );
     }
     // Without OCR evidence an inspect-policy image blocks generation.
     let mut bare = current.documents[0].clone();
