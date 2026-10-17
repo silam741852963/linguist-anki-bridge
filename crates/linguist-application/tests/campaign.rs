@@ -130,6 +130,9 @@ struct World {
     /// An apply that ends needing recovery, then reconcile attempts that
     /// stay unresolved (exit 4) this many times before one resolves it.
     recovery: Option<u32>,
+    /// The agent decides the hard notes right after the next policy pass,
+    /// while the review step is still running.
+    agent_edits_mid_review: bool,
 }
 
 #[derive(Clone, Default)]
@@ -277,9 +280,18 @@ impl FakeCli {
                 let undecided: Vec<Value> = p.notes.iter().filter(|n| !p.decided.contains(*n))
                     .map(|n| json!({"document_id": doc(n), "issue_id": format!("DICTIONARY_SENSE_REVIEW:{n}"), "reason": "SENSE_READING_UNMATCHED"})).collect();
                 let ready = undecided.is_empty();
+                let revision = p.revision;
+                if std::mem::take(&mut w.agent_edits_mid_review) {
+                    let p = w.plans.get_mut(*plan).unwrap();
+                    for n in &hard {
+                        p.decided.insert(n.clone());
+                    }
+                    p.revision += 1;
+                    w.agent_decided.extend(hard.iter().cloned());
+                }
                 Output {
                     code: if ready { 0 } else { 4 },
-                    json: json!({"ready": ready, "policy": {"decided": todo.len(), "undecided": undecided}}),
+                    json: json!({"revision": revision, "ready": ready, "policy": {"decided": todo.len(), "undecided": undecided}}),
                     stderr: String::new(),
                 }
             }
@@ -1079,6 +1091,31 @@ fn an_unresolved_reconcile_is_tried_again_before_it_pauses() {
             .contains("needs_recovery"),
         "{status}"
     );
+}
+
+#[test]
+fn an_agent_edit_during_a_review_is_reviewed_again() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-midreview-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.hard.insert("101".into());
+        w.agent_edits_mid_review = true;
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    // The needs were computed before the agent's decision: the batch is
+    // reviewed again on the newer revision instead of waiting for nothing.
+    assert_eq!(phases(&root, id), ["ready"]);
 }
 
 #[test]

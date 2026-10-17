@@ -569,6 +569,9 @@ impl Context<'_> {
             }
         };
         let mut undecided = Vec::new();
+        // The revision the undecided list describes: an agent's decision
+        // that lands while this step runs makes a newer one, reviewed again.
+        let mut evaluated: Option<u32> = None;
         for round in 0..self.definition.spec.limits.max_review_rounds {
             let out = self.cli(
                 &data,
@@ -584,6 +587,7 @@ impl Context<'_> {
                 .as_array()
                 .cloned()
                 .unwrap_or_default();
+            evaluated = out.json["revision"].as_u64().map(|r| r as u32);
             // The loop always ends on a policy pass: generation reopens the
             // reviews of every item it drafts.
             if round + 1 == self.definition.spec.limits.max_review_rounds {
@@ -721,7 +725,7 @@ impl Context<'_> {
             }
         }
         let head = self.plan_show(&data, true)?;
-        data.checked_revision = head["revision"].as_u64().map(|r| r as u32);
+        data.checked_revision = evaluated.or(head["revision"].as_u64().map(|r| r as u32));
         self.map_documents(&mut data)?;
         // Open issues left only on deferred notes do not hold the batch.
         let open_active = head["issues"].as_array().into_iter().flatten().any(|e| {
