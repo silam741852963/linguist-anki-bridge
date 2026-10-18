@@ -234,6 +234,18 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         validate_output(&doc, &request, &copied, 10000, 10000).unwrap_err(),
         "GENERATION_COLLOCATION_GLOSS"
     );
+    // 血脈: two phrases glossed alike name the word, not the phrases.
+    let shared = |second: &str| {
+        serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":"","nuance":[],"examples":[],
+            "collocations":[{"phrase":"ご飯を食べる","gloss":"eat a meal"},
+                            {"phrase":"ご飯を炊く","gloss":second}]}}))
+        .unwrap()
+    };
+    assert_eq!(
+        validate_output(&doc, &request, &shared("Eat a meal"), 10000, 10000).unwrap_err(),
+        "GENERATION_COLLOCATION_GLOSS"
+    );
+    assert!(validate_output(&doc, &request, &shared("cook rice"), 10000, 10000).is_ok());
 }
 #[test]
 fn grammar_fields_are_preserved_and_disabled_generation_is_explicit() {

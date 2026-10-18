@@ -1020,13 +1020,21 @@ pub fn validate_output(
         return Err("GENERATION_SCRIPT_MIXED".into());
     }
     // A collocation's gloss translates the phrase, not an example (整う got
-    // "All the necessary preparations are complete." as a gloss).
+    // "All the necessary preparations are complete." as a gloss), and two
+    // different phrases never share one gloss (血脈が通う and 血脈を流れる
+    // both drew "blood vessel", 多彩な色 and 多彩な色彩 both "colorful":
+    // the gloss named the word, not the phrase).
     if let Supplement::Vocabulary(v) = &output
-        && v.collocations.iter().any(|c| {
-            !c.gloss.trim().is_empty()
-                && v.examples
+        && v.collocations.iter().enumerate().any(|(i, c)| {
+            let gloss = c.gloss.trim().to_lowercase();
+            !gloss.is_empty()
+                && (v
+                    .examples
                     .iter()
-                    .any(|e| e.translation.trim() == c.gloss.trim())
+                    .any(|e| e.translation.trim().to_lowercase() == gloss)
+                    || v.collocations[..i].iter().any(|o| {
+                        o.gloss.trim().to_lowercase() == gloss && o.phrase.trim() != c.phrase.trim()
+                    }))
         })
     {
         return Err("GENERATION_COLLOCATION_GLOSS".into());
