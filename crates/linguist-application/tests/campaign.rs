@@ -1416,6 +1416,55 @@ fn deferred_notes_of_finished_batches_are_requeued_once() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+/// WP-24: a batch whose every note the agent deferred is finished by its
+/// approval (nothing to write), so requeue can send the notes round again.
+#[test]
+fn approving_a_batch_whose_every_note_is_deferred_finishes_it() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-alldeferred-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ready = |root: &std::path::Path| {
+        linguist_store::Store::read_only(root)
+            .unwrap()
+            .campaign_batches(id)
+            .unwrap()
+            .into_iter()
+            .find(|b| b.phase == "ready")
+    };
+    for _ in 0..10 {
+        if ready(&root).is_some() {
+            break;
+        }
+        context(&root, id, &cli, &anki, &clock).tick(600).unwrap();
+    }
+    let batch = ready(&root).expect("a ready batch");
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for note in BatchData::from_value(&batch.data).unwrap().notes {
+        ctx.item(batch.batch, &note, ItemAction::Defer("AGENT: test".into()))
+            .unwrap();
+    }
+    for _ in 0..10 {
+        if ready(&root).is_some() {
+            break;
+        }
+        context(&root, id, &cli, &anki, &clock).tick(600).unwrap();
+    }
+    let out = context(&root, id, &cli, &anki, &clock)
+        .approve(batch.batch, "claude-agent")
+        .unwrap();
+    assert_eq!(out["phase"], "done", "{out}");
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let requeued = campaign::engine::requeue(&mut store, id, &["AGENT:".to_owned()], 9).unwrap();
+    assert_eq!(requeued["requeued"][0]["from"], batch.batch, "{requeued}");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn a_ready_batch_reopened_fresh_is_prepared_again_from_scratch() {
     let root = std::env::temp_dir().join(format!("lab-campaign-fresh-{}", Uuid::new_v4()));

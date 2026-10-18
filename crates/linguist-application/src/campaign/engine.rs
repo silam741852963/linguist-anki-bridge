@@ -1662,6 +1662,18 @@ impl Context<'_> {
                 .is_none_or(|g| groups.contains(g))
         });
         if approved_docs.is_empty() {
+            // Every note deferred: nothing to write, and the batch is finished
+            // so `campaign requeue` can send its notes round again (WP-24: a
+            // batch whose whole sample failed sat in `ready` for good).
+            if !data.notes.is_empty() && data.notes.iter().all(|n| data.deferred.contains_key(n)) {
+                self.save(
+                    &record,
+                    "done",
+                    &data,
+                    json!({"approval": "every note deferred"}),
+                )?;
+                return Ok(json!({"batch": batch, "phase": "done", "approval": null}));
+            }
             return Err(format!("CAMPAIGN_NOTHING_TO_APPROVE: batch {batch}"));
         }
         let mut args = s(&[
