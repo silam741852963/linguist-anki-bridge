@@ -186,14 +186,14 @@ fn output_examples_respect_budget_and_cross_language_translation() {
     let output = |examples| {
         serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":"","examples":examples,"nuance":[],"collocations":[]}})).unwrap()
     };
-    let incomplete = output(json!([{"sentence":"食べる。","translation":""}]));
+    let incomplete = output(json!([{"sentence":"ご飯を食べる。","translation":""}]));
     assert_eq!(
         validate_output(&doc, &request, &incomplete, 10000, 10000).unwrap_err(),
         "GENERATION_INCOMPLETE_EXAMPLE"
     );
     let too_many = output(json!(
         (0..request.examples_requested + 1)
-            .map(|_| json!({"sentence":"食べる。","translation":"eat"}))
+            .map(|_| json!({"sentence":"ご飯を食べる。","translation":"eat"}))
             .collect::<Vec<_>>()
     ));
     assert_eq!(
@@ -936,6 +936,14 @@ fn examples_are_sentences_not_the_collocations_again() {
     .unwrap();
     assert_eq!(
         validate_output(&doc, &request, &output, 10000, 10000).unwrap_err(),
+        "GENERATION_EXAMPLE_NOT_SENTENCE"
+    );
+    // 白菜: the bare word is no example either.
+    let bare = serde_json::to_vec(&json!({"kind":"vocabulary","body":{"usage":"","nuance":[],
+        "collocations":[],"examples":[{"sentence":"食べる","translation":"to eat"}]}}))
+    .unwrap();
+    assert_eq!(
+        validate_output(&doc, &request, &bare, 10000, 10000).unwrap_err(),
         "GENERATION_EXAMPLE_NOT_SENTENCE"
     );
 }

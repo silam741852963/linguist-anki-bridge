@@ -882,7 +882,7 @@ pub fn validate_output(
     }
     let output = parse_output(bytes, max_bytes, max_chars)?;
     let (fields, examples): (Vec<(&str, &str)>, _) = match (&doc.content, &output) {
-        (LearningContent::Vocabulary(_), Supplement::Vocabulary(v)) => {
+        (LearningContent::Vocabulary(vocab), Supplement::Vocabulary(v)) => {
             let allowed = |name: &str| request.allowed_fields.iter().any(|field| field == name);
             if (!v.nuance.is_empty() && !allowed("nuance"))
                 || (!v.collocations.is_empty() && !allowed("collocations"))
@@ -912,11 +912,11 @@ pub fn validate_output(
             }
             // An example is a sentence, not one of the collocations again
             // (血液の流れ as both).
+            // Nor the bare word (白菜 drew the example 白菜 / "napa cabbage").
             if v.examples.iter().any(|e| {
-                v.collocations.iter().any(|c| {
-                    squash(&c.phrase)
-                        == squash(e.sentence.trim_end_matches(['。', '.', '！', '？']))
-                })
+                let sentence = squash(e.sentence.trim_end_matches(['。', '.', '！', '？']));
+                sentence == squash(&vocab.expression)
+                    || v.collocations.iter().any(|c| squash(&c.phrase) == sentence)
             }) {
                 return Err("GENERATION_EXAMPLE_NOT_SENTENCE".into());
             }
