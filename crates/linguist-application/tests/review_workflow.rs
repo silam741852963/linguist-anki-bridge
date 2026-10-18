@@ -1017,6 +1017,16 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
             language: Language::try_from("en".to_owned()).unwrap(),
         });
     assert_eq!(chosen(&plan), second);
+    // WP-24 (こらえる, やがて): a kana word with no reading or pronunciation
+    // is its own reading.
+    let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+        panic!()
+    };
+    vocab.expression = "たべる".into();
+    vocab.reading.clear();
+    vocab.pronunciation.clear();
+    plan.documents[0].regions.clear();
+    assert_eq!(chosen(&plan), first);
 }
 
 #[test]

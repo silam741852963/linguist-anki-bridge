@@ -494,10 +494,18 @@ fn decide(
             let LearningContent::Vocabulary(vocab) = &document.content else {
                 return Err("NOT_VOCABULARY".into());
             };
-            let raw = if vocab.reading.is_empty() {
-                &vocab.pronunciation
-            } else {
+            // A word written in kana alone is its own reading (WP-24: こらえる,
+            // やがて and レントゲン came with no reading or pronunciation).
+            let kana = |c: char| matches!(c, '\u{3041}'..='\u{309f}' | '\u{30a0}'..='\u{30ff}');
+            let expression = vocab.expression.trim();
+            let raw = if !vocab.reading.is_empty() {
                 &vocab.reading
+            } else if !vocab.pronunciation.trim().is_empty() {
+                &vocab.pronunciation
+            } else if !expression.is_empty() && expression.chars().all(kana) {
+                &vocab.expression
+            } else {
+                &vocab.pronunciation
             };
             // The sense whose reading is the note's own, in dictionary order
             // (common senses first); without a reading match only a single
