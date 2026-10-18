@@ -1095,6 +1095,23 @@ pub fn validate_output(
     {
         return Err("GENERATION_COLLOCATION_GLOSS".into());
     }
+    // A longer phrase is no gloss of the word alone: インスタントラーメンを食べる
+    // glossed "instant ramen" names the word, not the phrase (WP-24).
+    if let (Supplement::Vocabulary(v), LearningContent::Vocabulary(vocab)) = (&output, &doc.content)
+    {
+        let meanings: Vec<String> = vocab
+            .meaning
+            .split([';', '；'])
+            .map(|m| m.trim().to_lowercase())
+            .filter(|m| !m.is_empty())
+            .collect();
+        if v.collocations.iter().any(|c| {
+            c.phrase.trim() != vocab.expression.trim()
+                && meanings.contains(&c.gloss.trim().to_lowercase())
+        }) {
+            return Err("GENERATION_COLLOCATION_GLOSS".into());
+        }
+    }
     // A phrase ending in kanji or katakana is a noun phrase (計算ミス, 入力ミス):
     // a gloss "to make a mistake in calculation" translates a verb it does
     // not hold (WP-24: ミス).

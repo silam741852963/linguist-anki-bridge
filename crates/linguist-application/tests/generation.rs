@@ -248,6 +248,18 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         "GENERATION_COLLOCATION_GLOSS"
     );
     assert!(validate_output(&doc, &request, &shared("cook rice"), 10000, 10000).is_ok());
+    // インスタントラーメン: a phrase glossed with the word's own meaning.
+    let own = |gloss: &str| {
+        serde_json::to_vec(
+            &json!({"kind":"vocabulary","body":{"usage":"","nuance":[],"examples":[],
+            "collocations":[{"phrase":"ご飯を食べる","gloss":gloss}]}}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        validate_output(&doc, &request, &own("To eat"), 10000, 10000).unwrap_err(),
+        "GENERATION_COLLOCATION_GLOSS"
+    );
     // ミス: a noun phrase (計算ミス) is no "to ..." verb phrase.
     let noun = |gloss: &str| {
         serde_json::to_vec(
