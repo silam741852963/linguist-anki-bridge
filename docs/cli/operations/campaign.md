@@ -24,7 +24,7 @@ Inputs: none. Effects: local read. Result: campaigns, newest first, with status 
 
 Inputs: campaign ID (default the newest). Effects: local read.
 
-Result: status and pause code/detail; batches per phase and notes per phase; applied and deferred notes; `agent_needed` with one entry per batch that needs the agent (`needs_agent` notes and their open issues, `ready` batches with the notes to spot-check, batches with repeated step errors) and the commands that settle them; `user_needed` (paused); today's agent runs against the limit; the sync reminder.
+Result: status and pause code/detail; batches per phase and notes per phase; applied and deferred notes; `agent_needed` with one entry per batch that needs the agent (`needs_agent` notes and their open issues, `ready` batches with the notes to spot-check, batches with repeated step errors) and the commands that settle them; `user_needed` (paused); today's agent runs against the limit; `agent_cooldowns` (each provider of the drafting chain skipped now: its usage limit, its call budget or `llm.agents.codex.max_window_percent` of its five-hour window, with `until`) and `drafting_available` (false when every provider cools down; `scripts/campaign-session.sh` then wraps the session up); the sync reminder.
 
 ## OP-65 — `campaign batch CAMPAIGN BATCH`
 

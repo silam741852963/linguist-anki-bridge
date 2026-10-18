@@ -86,7 +86,7 @@
     {
       "name": "llm",
       "path": "settings/llm.json",
-      "count": 30
+      "count": 31
     },
     {
       "name": "logging",

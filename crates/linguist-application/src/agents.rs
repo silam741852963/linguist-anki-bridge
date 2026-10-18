@@ -218,7 +218,13 @@ pub fn cooling(
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Cooldown>(&bytes).ok())
         .filter(|cooldown| cooldown.until > now());
-    reported.or_else(|| budget_spent(provider, settings, environment))
+    reported
+        .or_else(|| budget_spent(provider, settings, environment))
+        .or_else(|| {
+            (provider == Provider::Codex)
+                .then(|| window_spent(settings, environment))
+                .flatten()
+        })
 }
 
 fn budget(settings: &Effective) -> Option<(u64, u64)> {
@@ -267,6 +273,125 @@ fn budget_spent(
         until: recent.iter().min().copied().unwrap_or_else(now) + window,
         said: format!(
             "its own usage limit: {calls} calls per {window} s (llm.agents.max_calls_per_window)"
+        ),
+    })
+}
+
+/// `llm.agents.codex.max_window_percent`, when set.
+fn window_limit(settings: &Effective) -> Option<f64> {
+    settings
+        .values
+        .get("llm.agents.codex.max_window_percent")
+        .and_then(Value::as_u64)
+        .filter(|percent| *percent > 0)
+        .map(|percent| percent as f64)
+}
+
+/// `<storage.state_dir>/agents/window-codex.json`: the share of Codex's
+/// five-hour window it last reported, and when that window resets.
+fn window_path(settings: &Effective, environment: &BTreeMap<String, String>) -> Option<PathBuf> {
+    cooldown_path(Provider::Codex, settings, environment)
+        .map(|path| path.with_file_name("window-codex.json"))
+}
+
+/// The rate limit a Codex run reported (`--json` names the thread; its
+/// session file under `$CODEX_HOME/sessions` holds `rate_limits`), kept in
+/// the window file. The session file is removed: the run is meant to leave
+/// nothing behind, as `--ephemeral` does.
+fn record_window(stdout: &[u8], settings: &Effective, environment: &BTreeMap<String, String>) {
+    let Some(thread) = String::from_utf8_lossy(stdout).lines().find_map(|line| {
+        serde_json::from_str::<Value>(line)
+            .ok()?
+            .get("thread_id")?
+            .as_str()
+            .map(str::to_owned)
+    }) else {
+        return;
+    };
+    let home = environment
+        .get("CODEX_HOME")
+        .map(PathBuf::from)
+        .or_else(|| environment.get("HOME").map(|h| Path::new(h).join(".codex")));
+    let Some(sessions) = home.map(|h| h.join("sessions")) else {
+        return;
+    };
+    // Sessions are filed by date (YYYY/MM/DD): the newest two days hold it.
+    let newest = |dir: &Path, n: usize| -> Vec<PathBuf> {
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        entries.sort();
+        entries.into_iter().rev().take(n).collect()
+    };
+    let days: Vec<PathBuf> = newest(&sessions, 1)
+        .iter()
+        .flat_map(|year| newest(year, 2))
+        .flat_map(|month| newest(&month, 2))
+        .collect();
+    let Some(file) = days.iter().find_map(|day| {
+        std::fs::read_dir(day)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.contains(&thread) && n.ends_with(".jsonl"))
+            })
+    }) else {
+        return;
+    };
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    let _ = std::fs::remove_file(&file);
+    fn find(value: &Value) -> Option<&Value> {
+        match value {
+            Value::Object(map) => map
+                .get("rate_limits")
+                .filter(|r| r.get("primary").is_some())
+                .or_else(|| map.values().find_map(find)),
+            Value::Array(items) => items.iter().find_map(find),
+            _ => None,
+        }
+    }
+    let Some(primary) = text
+        .lines()
+        .rev()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find_map(|v| find(&v).map(|r| r["primary"].clone()))
+    else {
+        return;
+    };
+    let (Some(used), Some(resets)) = (
+        primary["used_percent"].as_f64(),
+        primary["resets_at"].as_u64(),
+    ) else {
+        return;
+    };
+    if let Some(path) = window_path(settings, environment) {
+        let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new("/")));
+        let _ = std::fs::write(
+            &path,
+            json!({"used_percent": used, "resets_at": resets, "at": now()}).to_string(),
+        );
+    }
+}
+
+/// Codex's own window is as full as `llm.agents.codex.max_window_percent`
+/// allows: skipped until the window resets.
+fn window_spent(settings: &Effective, environment: &BTreeMap<String, String>) -> Option<Cooldown> {
+    let limit = window_limit(settings)?;
+    let window: Value =
+        serde_json::from_slice(&std::fs::read(window_path(settings, environment)?).ok()?).ok()?;
+    let used = window["used_percent"].as_f64()?;
+    let resets = window["resets_at"].as_u64()?;
+    (used >= limit && resets > now()).then(|| Cooldown {
+        until: resets,
+        said: format!(
+            "its own usage limit: {used}% of its five-hour window used (llm.agents.codex.max_window_percent {limit})"
         ),
     })
 }
@@ -649,15 +774,17 @@ fn codex(
         serde_json::to_vec(&agent_schema(&request.output_schema)).map_err(|e| e.to_string())?,
     )
     .map_err(|_| "AGENT_WORKDIR_UNAVAILABLE")?;
+    // Watching Codex's own five-hour window needs its session file, which
+    // holds the rate limit it reports; the file is removed once read.
+    let watch_window = window_limit(settings).is_some();
     let mut command = Command::new(&executable);
-    command.args([
-        "exec",
-        "--skip-git-repo-check",
-        "--ephemeral",
-        "--sandbox",
-        "read-only",
-        "--output-schema",
-    ]);
+    command.args(["exec", "--skip-git-repo-check"]);
+    if watch_window {
+        command.arg("--json");
+    } else {
+        command.arg("--ephemeral");
+    }
+    command.args(["--sandbox", "read-only", "--output-schema"]);
     command.arg(&schema_path).arg("-o").arg(&answer_path);
     if let Some(model) = model {
         command.args(["-m", model]);
@@ -676,6 +803,9 @@ fn codex(
         timeout,
         limit,
     )?;
+    if watch_window {
+        record_window(&output.stdout, settings, environment);
+    }
     let answer = std::fs::read(&answer_path).map_err(|_| "AGENT_OUTPUT_INVALID")?;
     let content: Value = serde_json::from_slice(&answer).map_err(|_| "AGENT_OUTPUT_INVALID")?;
     if !content.is_object() {
@@ -960,6 +1090,57 @@ mod tests {
         // Calls older than the window no longer count.
         let path = calls_path(Provider::Codex, &settings, &env).unwrap();
         std::fs::write(&path, "1\n2\n").unwrap();
+        assert!(cooling(Provider::Codex, &settings, &env).is_none());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn codex_cools_down_once_its_own_window_is_as_full_as_allowed() {
+        use linguist_config::{ConfigFile, Registry, ResolveOptions, resolve};
+        let directory = std::env::temp_dir().join(format!("lab-window-{}", uuid::Uuid::new_v4()));
+        let day = directory.join("codex/sessions/2026/10/18");
+        std::fs::create_dir_all(&day).unwrap();
+        let session = day.join("rollout-2026-10-18T18-15-26-thread-1.jsonl");
+        let resets = now() + 3600;
+        std::fs::write(
+            &session,
+            format!(
+                "{{\"type\":\"session_meta\"}}\n{{\"payload\":{{\"rate_limits\":{{\"primary\":{{\"used_percent\":80.0,\"window_minutes\":300,\"resets_at\":{resets}}}}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        let env = BTreeMap::from([(
+            "CODEX_HOME".to_owned(),
+            directory.join("codex").display().to_string(),
+        )]);
+        let mut settings = resolve(
+            &Registry::builtin(),
+            &ConfigFile::default(),
+            &ResolveOptions::default(),
+        )
+        .unwrap();
+        settings.values.insert(
+            "storage.state_dir".into(),
+            json!(directory.join("state").display().to_string()),
+        );
+        // No limit set: nothing is watched.
+        assert!(window_spent(&settings, &env).is_none());
+        settings
+            .values
+            .insert("llm.agents.codex.max_window_percent".into(), json!(75));
+        record_window(
+            b"{\"type\":\"thread.started\",\"thread_id\":\"thread-1\"}\n",
+            &settings,
+            &env,
+        );
+        assert!(!session.exists(), "the session file is removed");
+        let spent = cooling(Provider::Codex, &settings, &env).unwrap();
+        assert_eq!(spent.until, resets);
+        assert!(usage_limited(&spent.error(Provider::Codex)));
+        // Below the limit: Codex drafts.
+        settings
+            .values
+            .insert("llm.agents.codex.max_window_percent".into(), json!(90));
         assert!(cooling(Provider::Codex, &settings, &env).is_none());
         let _ = std::fs::remove_dir_all(&directory);
     }

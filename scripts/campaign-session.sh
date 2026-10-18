@@ -15,11 +15,12 @@
 #                                           record the handoff
 #
 # The driver runs ticks back to back. A generation provider at its usage
-# limit is skipped by the CLI for llm.quota_cooldown_seconds while
-# llm.fallback drafts. With no fallback configured, the driver pauses the
-# campaign when Codex reports its usage limit, probes every PROBE_SECONDS and
-# resumes once Codex answers (the user's standing authorization for quota
-# pauses, valid only while a session runs the driver). A pause because the
+# limit (or past llm.agents.max_calls_per_window, or past
+# llm.agents.codex.max_window_percent of its own five-hour window) is skipped
+# by the CLI while llm.fallback drafts. When no provider of the chain can
+# draft (`campaign status` drafting_available false), the session wraps up
+# by itself: the campaign is paused for the next `start` (checked every two
+# minutes during a tick and before each tick). A pause because the
 # local engine lost its certification (an upgraded Ollama) is certified
 # again with `doctor --ollama --certify` and resumed when that passes. Any
 # other stop ends the driver.
@@ -71,21 +72,19 @@ probe() {  # 0 = Codex answers, 1 = usage limit, 2 = other failure
   grep -qx "OK" <<<"$o" && return 0
   return 2
 }
-recent_failures() {  # the last 3 metered Codex calls all failed within 10 minutes
-  tail -3 "$USAGE" 2>/dev/null | python3 -c '
-import json,sys,time
-r=[json.loads(l) for l in sys.stdin if l.strip()]
-print(1 if len(r)==3 and all(x["exit"]!=0 and time.time()-x["at"]<600 for x in r) else 0)'
+drafting_available() {  # false only when every provider of the chain cools down
+  [ "$(cli campaign status "$1" | json 'd.get("drafting_available", True)')" != False ]
 }
-watchdog() {  # only without a fallback: pause the campaign at the usage limit
+auto_wrap_up() {  # in its own process group: wrap-up ends the driver's group
+  say "no provider can draft ($(cli campaign status "$1" | json 'd.get("agent_cooldowns")')); wrapping up"
+  setsid "$REPO/scripts/campaign-session.sh" wrap-up "$1" >> "$LOG" 2>&1 < /dev/null &
+}
+watchdog() {  # during a tick: wrap up once no provider can draft
   local C=$1
   while sleep 120; do
-    [ "$(recent_failures)" = 1 ] || continue
-    if probe; then continue; elif [ $? = 1 ]; then
-      say "watchdog: Codex usage limit; pausing"
-      cli campaign pause "$C" --reason "$QUOTA_REASON" >> "$LOG" 2>&1
-      return
-    fi
+    drafting_available "$C" && continue
+    auto_wrap_up "$C"
+    return
   done
 }
 drive() {
@@ -122,9 +121,8 @@ drive() {
       fi
       say "STOPPED ${s[*]}"; return
     fi
-    fallback=$(setting llm.fallback)
-    wd=""
-    if [ "$fallback" = "[]" ] || [ "$fallback" = null ]; then watchdog "$C" & wd=$!; fi
+    if ! drafting_available "$C"; then auto_wrap_up "$C"; return; fi
+    watchdog "$C" & wd=$!
     say "tick start"
     cli campaign run "$C" --max-seconds "$TICK_SECONDS" > "$SESSION/run-last.json" 2> "$SESSION/run-last.err"
     say "tick end rc=$? $(tail -c 300 "$SESSION/run-last.json" | tr '\n' ' ')"

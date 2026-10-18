@@ -580,6 +580,24 @@ fn set_status(
 const WRAPPED_UP: &str = "wrapped up at the end of a session; resume with `campaign resume`";
 
 /// `campaign wrap-up`: returns the handoff and whether the tick stopped.
+/// Each provider of the drafting chain that is skipped now (its usage
+/// limit, its own call budget or its window share), with when it frees.
+fn cooldowns(settings: &linguist_config::Effective) -> serde_json::Map<String, Value> {
+    let environment: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    linguist_application::agents::chain(settings)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|provider| {
+            linguist_application::agents::cooling(provider, settings, &environment).map(|c| {
+                (
+                    provider.name().to_owned(),
+                    json!({"until": c.until, "said": c.said}),
+                )
+            })
+        })
+        .collect()
+}
+
 fn wrap_up(
     root: &Path,
     id: Uuid,
@@ -623,19 +641,7 @@ fn wrap_up(
     if status["agent_active"] == true {
         store.append_campaign_event(id, None, "agent_done", &json!({"by": "wrap-up"}), now())?;
     }
-    let environment: std::collections::BTreeMap<String, String> = std::env::vars().collect();
-    let cooldowns: serde_json::Map<String, Value> = linguist_application::agents::chain(settings)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|provider| {
-            linguist_application::agents::cooling(provider, settings, &environment).map(|c| {
-                (
-                    provider.name().to_owned(),
-                    json!({"until": c.until, "said": c.said}),
-                )
-            })
-        })
-        .collect();
+    let cooldowns = cooldowns(settings);
     let handoff = json!({
         "campaign": id,
         "was": was,
@@ -738,7 +744,14 @@ pub(crate) fn handle(
                 None => newest(&root)?,
             };
             let store = linguist_store::Store::read_only(&root)?;
-            emit(&engine::status(&store, id, now())?)?;
+            let mut status = engine::status(&store, id, now())?;
+            // Whether any provider of the chain can draft now (a session
+            // wraps up when none can: `scripts/campaign-session.sh`).
+            let cooling = cooldowns(settings);
+            let chain = linguist_application::agents::chain(settings).unwrap_or_default();
+            status["agent_cooldowns"] = Value::Object(cooling.clone());
+            status["drafting_available"] = json!(chain.len() > cooling.len());
+            emit(&status)?;
         }
         CampaignCommand::Batch { campaign, batch } => {
             let store = linguist_store::Store::read_only(&root)?;

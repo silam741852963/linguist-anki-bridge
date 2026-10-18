@@ -289,6 +289,19 @@
       "sensitive": false
     },
     {
+      "key": "llm.agents.codex.max_window_percent",
+      "type": "integer",
+      "default": 0,
+      "constraints": {
+        "min": 0,
+        "max": 100
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Share of Codex's own five-hour usage window drafting may use (0 = no limit). Codex runs keep their session so its reported rate limit can be read (the session file is then removed); once the window is this full, Codex is skipped like one at its usage limit until the window resets.",
+      "sensitive": false
+    },
+    {
       "key": "llm.agents.claude_code.executable",
       "type": "string",
       "default": "claude",
