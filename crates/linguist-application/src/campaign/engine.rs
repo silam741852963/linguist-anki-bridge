@@ -600,6 +600,20 @@ impl Context<'_> {
             // The loop always ends on a policy pass: generation reopens the
             // reviews of every item it drafts.
             if round + 1 == self.definition.spec.limits.max_review_rounds {
+                // A companion without its collection session (Anki closed
+                // and reopened the collection, as for a checkpoint export)
+                // comes back by itself: wait, it is no step failure (WP-24:
+                // three such reviews paused the campaign).
+                if out.code == 5
+                    && out.json["outcome"]["conflict"]
+                        .to_string()
+                        .contains("CAPABILITY_UNAVAILABLE")
+                {
+                    return Ok(Step::Waiting(format!(
+                        "REVIEW_BATCH_CONFLICT: {}",
+                        out.json["outcome"]["conflict"]
+                    )));
+                }
                 if out.code == 5 {
                     return Err(format!(
                         "REVIEW_BATCH_CONFLICT: {}",

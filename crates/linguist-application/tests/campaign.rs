@@ -133,6 +133,9 @@ struct World {
     /// The agent decides the hard notes right after the next policy pass,
     /// while the review step is still running.
     agent_edits_mid_review: bool,
+    /// The next policy passes find the companion without its collection
+    /// session (Anki reopening the collection): conflict, exit 5.
+    no_session: u32,
 }
 
 #[derive(Clone, Default)]
@@ -261,6 +264,14 @@ impl FakeCli {
                 p.merged = merged;
                 p.revision += 1;
                 ok(json!({"revision": p.revision}))
+            }
+            ["plans", "resolve-batch", _, "--policy", _] if w.no_session > 0 => {
+                w.no_session -= 1;
+                Output {
+                    code: 5,
+                    json: json!({"outcome": {"conflict": {"error": "CAPABILITY_UNAVAILABLE: the companion declares no mutation variants (API key or collection session missing)"}}}),
+                    stderr: String::new(),
+                }
             }
             ["plans", "resolve-batch", plan, "--policy", _] => {
                 let hard = w.hard.clone();
@@ -1049,6 +1060,33 @@ fn an_uncertified_local_engine_pauses_the_campaign() {
         .filter(|c| c.starts_with("plans generate") && c.contains("--certified-engine-only"))
         .count();
     assert_eq!(generates, 1, "one refused generate, then the pause");
+}
+
+/// WP-24: Anki closing and reopening its collection leaves the companion
+/// without a session for a while; the review waits, it never fails.
+#[test]
+fn a_review_without_the_companion_session_waits_and_never_pauses() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-engine-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    cli.world.lock().unwrap().no_session = 40;
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    for _ in 0..4 {
+        let ctx = context(&root, id, &cli, &anki, &clock);
+        ctx.tick(600).unwrap();
+    }
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    assert_eq!(store.campaign(id).unwrap().status, "running");
+    for b in store.campaign_batches(id).unwrap() {
+        assert_eq!(BatchData::from_value(&b.data).unwrap().step_failures, 0);
+    }
+    cli.world.lock().unwrap().no_session = 0;
+    assert_eq!(drive(&root, id, &cli, None), 0);
 }
 
 #[test]
