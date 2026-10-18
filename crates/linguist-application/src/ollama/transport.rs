@@ -75,7 +75,17 @@ impl Client {
             &candidate.request,
             &candidate.completion.raw,
             &candidate.evidence.identity,
-        )?;
+        )
+        .inspect_err(|error| {
+            crate::agents::keep_rejected(
+                crate::agents::Provider::Ollama,
+                &self.settings,
+                &std::env::vars().collect(),
+                &document.id.to_string(),
+                error,
+                &candidate.completion.raw,
+            )
+        })?;
         let source = draft
             .document
             .sources

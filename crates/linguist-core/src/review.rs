@@ -1157,7 +1157,11 @@ pub fn dictionary_readings(
             }
         }
         Ok(readings)
-    } else if entry.readings.iter().any(|reading| same_spelling(reading, expression)) {
+    } else if entry
+        .readings
+        .iter()
+        .any(|reading| same_spelling(reading, expression))
+    {
         Ok(BTreeSet::from([expression.to_owned()]))
     } else {
         Ok(entry.readings.iter().cloned().collect())

@@ -271,6 +271,37 @@ fn budget_spent(
     })
 }
 
+/// Keep a draft the validation refused, with its error, in
+/// `<storage.state_dir>/agents/rejected-<provider>.jsonl` (WP-24: 素っ気ない
+/// failed GENERATION_EXAMPLE_LANGUAGE three times and nothing showed why).
+/// The file is moved to `.old` past 8 MB; a draft is cut at 64 KB.
+pub fn keep_rejected(
+    provider: Provider,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    document_id: &str,
+    error: &str,
+    content: &[u8],
+) {
+    let Some(path) = cooldown_path(provider, settings, environment)
+        .map(|path| path.with_file_name(format!("rejected-{}.jsonl", provider.name())))
+    else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new("/")));
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() > 8 * 1024 * 1024) {
+        let _ = std::fs::rename(&path, path.with_extension("jsonl.old"));
+    }
+    let text = String::from_utf8_lossy(&content[..content.len().min(64 * 1024)]).into_owned();
+    let line =
+        serde_json::json!({"at": now(), "document_id": document_id, "error": error, "draft": text});
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut file| file.write_all(format!("{line}\n").as_bytes()));
+}
+
 /// Count one call against the budget (only when a budget is set); the log
 /// keeps only the current window once it holds four budgets.
 fn count_call(provider: Provider, settings: &Effective, environment: &BTreeMap<String, String>) {
@@ -930,6 +961,38 @@ mod tests {
         let path = calls_path(Provider::Codex, &settings, &env).unwrap();
         std::fs::write(&path, "1\n2\n").unwrap();
         assert!(cooling(Provider::Codex, &settings, &env).is_none());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_refused_draft_is_kept_with_its_error() {
+        use linguist_config::{ConfigFile, Registry, ResolveOptions, resolve};
+        let directory = std::env::temp_dir().join(format!("lab-rejected-{}", uuid::Uuid::new_v4()));
+        let env = BTreeMap::new();
+        let mut settings = resolve(
+            &Registry::builtin(),
+            &ConfigFile::default(),
+            &ResolveOptions::default(),
+        )
+        .unwrap();
+        settings.values.insert(
+            "storage.state_dir".into(),
+            json!(directory.join("state").display().to_string()),
+        );
+        keep_rejected(
+            Provider::Codex,
+            &settings,
+            &env,
+            "doc-1",
+            "GENERATION_EXAMPLE_LANGUAGE",
+            b"{\"x\":1}",
+        );
+        let text =
+            std::fs::read_to_string(directory.join("state/agents/rejected-codex.jsonl")).unwrap();
+        let line: Value = serde_json::from_str(text.trim()).unwrap();
+        assert_eq!(line["document_id"], "doc-1");
+        assert_eq!(line["error"], "GENERATION_EXAMPLE_LANGUAGE");
+        assert_eq!(line["draft"], "{\"x\":1}");
         let _ = std::fs::remove_dir_all(&directory);
     }
 

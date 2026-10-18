@@ -308,7 +308,20 @@ fn produce(
             other => crate::agents::generate(other, &request, settings, environment).and_then(
                 |external| {
                     external
-                        .map(|e| merge_external_response(parent, settings, &request, &e))
+                        .map(|e| {
+                            merge_external_response(parent, settings, &request, &e).inspect_err(
+                                |error| {
+                                    crate::agents::keep_rejected(
+                                        other,
+                                        settings,
+                                        environment,
+                                        &parent.id.to_string(),
+                                        error,
+                                        e.content.as_bytes(),
+                                    )
+                                },
+                            )
+                        })
                         .transpose()
                 },
             ),
