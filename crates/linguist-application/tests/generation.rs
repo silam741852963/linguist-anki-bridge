@@ -248,6 +248,19 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         "GENERATION_COLLOCATION_GLOSS"
     );
     assert!(validate_output(&doc, &request, &shared("cook rice"), 10000, 10000).is_ok());
+    // ミス: a noun phrase (計算ミス) is no "to ..." verb phrase.
+    let noun = |gloss: &str| {
+        serde_json::to_vec(
+            &json!({"kind":"vocabulary","body":{"usage":"","nuance":[],"examples":[],
+            "collocations":[{"phrase":"食べる量","gloss":gloss}]}}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        validate_output(&doc, &request, &noun("to eat an amount"), 10000, 10000).unwrap_err(),
+        "GENERATION_COLLOCATION_GLOSS"
+    );
+    assert!(validate_output(&doc, &request, &noun("the amount one eats"), 10000, 10000).is_ok());
     // リセット: 食べる人 is "a person who eats", never "to eat a person".
     let relative = |gloss: &str| {
         serde_json::to_vec(

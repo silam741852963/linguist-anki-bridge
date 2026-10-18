@@ -1095,6 +1095,19 @@ pub fn validate_output(
     {
         return Err("GENERATION_COLLOCATION_GLOSS".into());
     }
+    // A phrase ending in kanji or katakana is a noun phrase (計算ミス, 入力ミス):
+    // a gloss "to make a mistake in calculation" translates a verb it does
+    // not hold (WP-24: ミス).
+    if let Supplement::Vocabulary(v) = &output
+        && doc.target_language.as_str().split('-').next() == Some("ja")
+        && v.collocations.iter().any(|c| {
+            c.phrase.trim().chars().last().is_some_and(|last| {
+                matches!(last, '\u{30a1}'..='\u{30fa}' | '\u{30fc}' | '\u{4e00}'..='\u{9fff}')
+            }) && c.gloss.trim().to_lowercase().starts_with("to ")
+        })
+    {
+        return Err("GENERATION_COLLOCATION_GLOSS".into());
+    }
     if examples.iter().any(|example| {
         example.sentence.trim().is_empty()
             || (translation_required && example.translation.trim().is_empty())
