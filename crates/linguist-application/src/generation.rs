@@ -1078,6 +1078,23 @@ pub fn validate_output(
     {
         return Err("GENERATION_COLLOCATION_GLOSS".into());
     }
+    // A する-verb phrase that goes on to a noun is a noun modified by the
+    // verb (リセットする機械, "a machine that resets"); glossed "to reset a
+    // machine" it was meant as the verb's object, which Japanese writes
+    // 機械をリセットする (WP-24: リセット, 拡大解釈).
+    if let (Supplement::Vocabulary(v), LearningContent::Vocabulary(vocab)) = (&output, &doc.content)
+        && doc.target_language.as_str().split('-').next() == Some("ja")
+        && v.collocations.iter().any(|c| {
+            c.phrase
+                .trim()
+                .strip_prefix(vocab.expression.trim())
+                .and_then(|rest| rest.strip_prefix("する"))
+                .is_some_and(|noun| !noun.is_empty())
+                && c.gloss.trim().to_lowercase().starts_with("to ")
+        })
+    {
+        return Err("GENERATION_COLLOCATION_GLOSS".into());
+    }
     if examples.iter().any(|example| {
         example.sentence.trim().is_empty()
             || (translation_required && example.translation.trim().is_empty())

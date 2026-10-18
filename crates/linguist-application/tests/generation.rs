@@ -248,6 +248,19 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         "GENERATION_COLLOCATION_GLOSS"
     );
     assert!(validate_output(&doc, &request, &shared("cook rice"), 10000, 10000).is_ok());
+    // リセット: 食べる人 is "a person who eats", never "to eat a person".
+    let relative = |gloss: &str| {
+        serde_json::to_vec(
+            &json!({"kind":"vocabulary","body":{"usage":"","nuance":[],"examples":[],
+            "collocations":[{"phrase":"食べるする人","gloss":gloss}]}}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        validate_output(&doc, &request, &relative("to eat a person"), 10000, 10000).unwrap_err(),
+        "GENERATION_COLLOCATION_GLOSS"
+    );
+    assert!(validate_output(&doc, &request, &relative("a person who eats"), 10000, 10000).is_ok());
 }
 #[test]
 fn grammar_fields_are_preserved_and_disabled_generation_is_explicit() {
