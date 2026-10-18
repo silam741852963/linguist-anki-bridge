@@ -1170,6 +1170,24 @@ fn only_an_exact_dictionary_entry_asks_for_a_sense() {
         .unwrap();
     assert!(!linguist_core::review::decision_templates(&doc, &issue).is_empty());
     assert!(linguist_core::review::same_spelling("ジャガ芋", "じゃが芋"));
+    // WP-24: メモします is looked up as メモ, a する verb; a stem whose entry
+    // is no する verb is not.
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.expression = "メモします".into();
+        v.reading.clear();
+        v.dictionary = vec![entry(&[], &["メモ"])];
+    }
+    assert!(!asks(&doc));
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.dictionary[0].senses[0].labels = vec!["Noun".into(), "Suru verb".into()];
+        assert_eq!(linguist_core::review::dictionary_form(v), "メモ");
+    }
+    assert!(asks(&doc));
+    let issue = validation::validate(&doc)
+        .into_iter()
+        .find(|i| i.code == "DICTIONARY_SENSE_REVIEW")
+        .unwrap();
+    assert!(!linguist_core::review::decision_templates(&doc, &issue).is_empty());
     assert!(!linguist_core::review::same_spelling("ジャガ芋", "馬鈴薯"));
 }
 

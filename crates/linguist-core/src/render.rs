@@ -641,7 +641,12 @@ pub fn render(
             fields.insert("Pronunciation".into(), escape(&compact_kana(spoken_cue(v))));
             fields.insert(
                 "Meaning".into(),
-                dictionary::meaning(&v.dictionary, &v.expression, &v.sense_key, &v.meaning),
+                dictionary::meaning(
+                    &v.dictionary,
+                    &crate::review::dictionary_form(v),
+                    &v.sense_key,
+                    &v.meaning,
+                ),
             );
             fields.insert("UsageExamples".into(), usage_examples(v) + &related(v));
             // Only the Japanese model has a Kanji section.

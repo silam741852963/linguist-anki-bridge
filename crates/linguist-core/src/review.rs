@@ -188,16 +188,17 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
         for sense in vocab.dictionary.iter().flat_map(|entry| &entry.senses) {
             *key_counts.entry(&sense.key).or_default() += 1;
         }
+        let word = dictionary_form(vocab);
         for entry in &vocab.dictionary {
             if !entry
                 .forms
                 .iter()
                 .chain(&entry.readings)
-                .any(|form| same_spelling(form, &vocab.expression))
+                .any(|form| same_spelling(form, &word))
             {
                 continue;
             }
-            let Ok(readings) = dictionary_readings(entry, &vocab.expression) else {
+            let Ok(readings) = dictionary_readings(entry, &word) else {
                 continue;
             };
             for sense in &entry.senses {
@@ -472,15 +473,16 @@ pub fn resolve(
                 return Err(ContractError("DICTIONARY_SENSE_CONFLICT".into()));
             }
             let (entry, sense) = choices[0];
+            let word = dictionary_form(vocab);
             if !entry
                 .forms
                 .iter()
                 .chain(&entry.readings)
-                .any(|form| same_spelling(form, &vocab.expression))
+                .any(|form| same_spelling(form, &word))
             {
                 return Err(ContractError("DICTIONARY_EXPRESSION_CONFLICT".into()));
             }
-            let readings = dictionary_readings(entry, &vocab.expression)?;
+            let readings = dictionary_readings(entry, &word)?;
             if let ReviewChoice::SenseWithReading { reading, .. } = &request.choice {
                 if !readings.contains(reading) {
                     return Err(ContractError("DICTIONARY_READING_CONFLICT".into()));
@@ -1129,6 +1131,56 @@ pub fn same_spelling(a: &str, b: &str) -> bool {
             .collect()
     };
     a == b || (!a.is_empty() && fold(a) == fold(b))
+}
+
+/// Endings of a する verb's common forms, longest first.
+const SURU_ENDINGS: [&str; 8] = [
+    "しました",
+    "しません",
+    "します",
+    "しない",
+    "させる",
+    "して",
+    "した",
+    "する",
+];
+
+/// The form a vocabulary note is looked up by in its dictionary entries: the
+/// expression itself, or, when no entry is written that way, the stem of a
+/// する verb form (メモします, 勉強した) whose entry is labelled a する verb
+/// (WP-24: メモします had no meaning and no sense).
+pub fn dictionary_form(vocab: &crate::Vocabulary) -> String {
+    let expression = vocab.expression.trim();
+    let listed = |form: &str| {
+        vocab.dictionary.iter().any(|entry| {
+            entry
+                .forms
+                .iter()
+                .chain(&entry.readings)
+                .any(|f| same_spelling(f, form))
+        })
+    };
+    if listed(expression) {
+        return expression.to_owned();
+    }
+    SURU_ENDINGS
+        .iter()
+        .filter_map(|ending| expression.strip_suffix(ending))
+        .find(|stem| {
+            !stem.is_empty()
+                && vocab.dictionary.iter().any(|entry| {
+                    entry
+                        .forms
+                        .iter()
+                        .chain(&entry.readings)
+                        .any(|f| same_spelling(f, stem))
+                        && entry
+                            .senses
+                            .iter()
+                            .any(|sense| sense.labels.iter().any(|l| l == "Suru verb"))
+                })
+        })
+        .map_or_else(|| expression.to_owned(), str::to_owned)
 }
 
 pub fn dictionary_readings(

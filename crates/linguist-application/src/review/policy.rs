@@ -505,7 +505,24 @@ fn decide(
             // Equal, never a prefix: だいどこ is not 台所's だいどころ.
             // The whole field first (`から だ` is からだ), then separated
             // readings, then space-separated words.
-            let own_readings = readings(raw);
+            let mut own_readings = readings(raw).to_vec();
+            // A する verb form looked up by its stem (メモします as メモ) is
+            // read without its ending too.
+            let word = linguist_core::review::dictionary_form(vocab);
+            if let Some(ending) = vocab.expression.trim().strip_prefix(word.as_str())
+                && !ending.is_empty()
+            {
+                let stems: Vec<Vec<String>> = own_readings
+                    .iter()
+                    .map(|tier| {
+                        tier.iter()
+                            .filter_map(|r| r.strip_suffix(ending).map(str::to_owned))
+                            .filter(|r| !r.is_empty())
+                            .collect()
+                    })
+                    .collect();
+                own_readings.extend(stems);
+            }
             let equal = |wanted: &[String]| -> Vec<&Value> {
                 templates
                     .iter()

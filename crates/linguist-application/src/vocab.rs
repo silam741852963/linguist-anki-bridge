@@ -97,11 +97,12 @@ fn exact_entries(vocab: &linguist_core::Vocabulary) -> Vec<&linguist_core::Dicti
         .dictionary
         .iter()
         .filter(|entry| {
-            entry
-                .forms
-                .iter()
-                .chain(&entry.readings)
-                .any(|form| linguist_core::review::same_spelling(form, &vocab.expression))
+            entry.forms.iter().chain(&entry.readings).any(|form| {
+                linguist_core::review::same_spelling(
+                    form,
+                    &linguist_core::review::dictionary_form(vocab),
+                )
+            })
         })
         .collect()
 }

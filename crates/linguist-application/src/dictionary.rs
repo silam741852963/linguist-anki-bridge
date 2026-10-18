@@ -343,10 +343,12 @@ pub fn enrich_document(
             // No entry for the word itself: the generation chain writes one in
             // the dictionary's style (`dictionary.generate_missing`).
             let listed = vocab.dictionary.iter().any(|e| {
-                e.forms
-                    .iter()
-                    .chain(&e.readings)
-                    .any(|form| linguist_core::review::same_spelling(form, &vocab.expression))
+                e.forms.iter().chain(&e.readings).any(|form| {
+                    linguist_core::review::same_spelling(
+                        form,
+                        &linguist_core::review::dictionary_form(vocab),
+                    )
+                })
             });
             if !listed
                 && japanese
