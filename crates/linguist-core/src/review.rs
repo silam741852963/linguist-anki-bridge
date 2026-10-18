@@ -193,7 +193,7 @@ pub fn decision_templates(document: &crate::LearningDocument, issue: &Issue) -> 
                 .forms
                 .iter()
                 .chain(&entry.readings)
-                .any(|form| form == &vocab.expression)
+                .any(|form| same_spelling(form, &vocab.expression))
             {
                 continue;
             }
@@ -476,7 +476,7 @@ pub fn resolve(
                 .forms
                 .iter()
                 .chain(&entry.readings)
-                .any(|form| form == &vocab.expression)
+                .any(|form| same_spelling(form, &vocab.expression))
             {
                 return Err(ContractError("DICTIONARY_EXPRESSION_CONFLICT".into()));
             }
@@ -1116,6 +1116,21 @@ pub(crate) fn source_content_verified(
 }
 
 /// Keep written-form/reading associations when a provider supplied them.
+/// One word in two spellings that differ only in katakana against hiragana
+/// (ジャガ芋 is the dictionary's じゃが芋, ハト its はと): a dictionary entry
+/// written either way is the word's own entry.
+pub fn same_spelling(a: &str, b: &str) -> bool {
+    let fold = |s: &str| -> String {
+        s.chars()
+            .map(|c| match c {
+                '\u{30a1}'..='\u{30f6}' => char::from_u32(c as u32 - 0x60).unwrap_or(c),
+                _ => c,
+            })
+            .collect()
+    };
+    a == b || (!a.is_empty() && fold(a) == fold(b))
+}
+
 pub fn dictionary_readings(
     entry: &crate::DictionaryEntry,
     expression: &str,
@@ -1135,12 +1150,14 @@ pub fn dictionary_readings(
                 .get("word")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("");
-            if (word == expression || reading == expression) && !reading.is_empty() {
+            if (same_spelling(word, expression) || same_spelling(reading, expression))
+                && !reading.is_empty()
+            {
                 readings.insert(reading.to_owned());
             }
         }
         Ok(readings)
-    } else if entry.readings.iter().any(|reading| reading == expression) {
+    } else if entry.readings.iter().any(|reading| same_spelling(reading, expression)) {
         Ok(BTreeSet::from([expression.to_owned()]))
     } else {
         Ok(entry.readings.iter().cloned().collect())

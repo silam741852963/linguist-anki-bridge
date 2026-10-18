@@ -659,7 +659,11 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
     // the author.
     if let LearningContent::Vocabulary(vocab) = &doc.content
         && vocab.dictionary.iter().any(|entry| {
-            entry.forms.contains(&vocab.expression) || entry.readings.contains(&vocab.expression)
+            entry
+                .forms
+                .iter()
+                .chain(&entry.readings)
+                .any(|form| crate::review::same_spelling(form, &vocab.expression))
         })
     {
         let mut issue = Issue::new(
@@ -784,7 +788,7 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                                 _ => true,
                             }
                             && matches!(&doc.content, LearningContent::Vocabulary(vocab) if vocab.sense_key == *key
-                                && vocab.dictionary.iter().any(|entry| entry.forms.iter().chain(&entry.readings).any(|form|form == &vocab.expression) && crate::review::dictionary_readings(entry,&vocab.expression).is_ok_and(|readings|readings.contains(&vocab.reading) || doc.target_language.as_str().split('-').next()==Some("en") && readings.is_empty() && vocab.reading.is_empty()) && entry.senses.iter().any(|sense| sense.key == *key && vocab.meaning == sense.definitions.join("; "))))
+                                && vocab.dictionary.iter().any(|entry| entry.forms.iter().chain(&entry.readings).any(|form|crate::review::same_spelling(form, &vocab.expression)) && crate::review::dictionary_readings(entry,&vocab.expression).is_ok_and(|readings|readings.contains(&vocab.reading) || doc.target_language.as_str().split('-').next()==Some("en") && readings.is_empty() && vocab.reading.is_empty()) && entry.senses.iter().any(|sense| sense.key == *key && vocab.meaning == sense.definitions.join("; "))))
                     }
                     _ => false,
                 }

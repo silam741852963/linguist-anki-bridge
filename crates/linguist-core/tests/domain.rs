@@ -1155,6 +1155,22 @@ fn only_an_exact_dictionary_entry_asks_for_a_sense() {
         v.dictionary = vec![entry(&[], &["ビタミン"])];
     }
     assert!(asks(&doc));
+    // WP-24: ジャガ芋 is listed only as じゃが芋 (and ジャガイモ); a spelling
+    // that differs only in katakana against hiragana is the word's own entry,
+    // and its sense is offered with the entry's reading.
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.expression = "ジャガ芋".into();
+        v.reading = "じゃがいも".into();
+        v.dictionary = vec![entry(&["じゃが芋"], &["じゃがいも", "ジャガイモ"])];
+    }
+    assert!(asks(&doc));
+    let issue = validation::validate(&doc)
+        .into_iter()
+        .find(|i| i.code == "DICTIONARY_SENSE_REVIEW")
+        .unwrap();
+    assert!(!linguist_core::review::decision_templates(&doc, &issue).is_empty());
+    assert!(linguist_core::review::same_spelling("ジャガ芋", "じゃが芋"));
+    assert!(!linguist_core::review::same_spelling("ジャガ芋", "馬鈴薯"));
 }
 
 fn grammar(pattern: &str) -> Grammar {

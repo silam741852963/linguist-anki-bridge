@@ -30,7 +30,7 @@ pub(super) fn meaning(
                 .forms
                 .iter()
                 .chain(&entry.readings)
-                .any(|form| form == expression)
+                .any(|form| crate::review::same_spelling(form, expression))
     });
     let Some(entry) = entry else {
         return if selected_meaning.trim().is_empty() {

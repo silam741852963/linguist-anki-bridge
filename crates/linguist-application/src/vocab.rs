@@ -97,7 +97,11 @@ fn exact_entries(vocab: &linguist_core::Vocabulary) -> Vec<&linguist_core::Dicti
         .dictionary
         .iter()
         .filter(|entry| {
-            entry.forms.contains(&vocab.expression) || entry.readings.contains(&vocab.expression)
+            entry
+                .forms
+                .iter()
+                .chain(&entry.readings)
+                .any(|form| linguist_core::review::same_spelling(form, &vocab.expression))
         })
         .collect()
 }
@@ -1339,7 +1343,12 @@ fn stage_recording(
     let exact: BTreeSet<&str> = vocab
         .dictionary
         .iter()
-        .filter(|entry| entry.forms.contains(&expression))
+        .filter(|entry| {
+            entry
+                .forms
+                .iter()
+                .any(|form| linguist_core::review::same_spelling(form, &expression))
+        })
         .flat_map(|entry| entry.readings.iter().map(String::as_str))
         .filter(|reading| kana_only(reading))
         .collect();
