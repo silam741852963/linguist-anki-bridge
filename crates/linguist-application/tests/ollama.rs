@@ -684,7 +684,7 @@ fn inference_draft_archives_wire_and_model_evidence_and_recovers_after_restart()
     use linguist_core::{LearningContent, records::*, validation};
     let mut output = completion_response();
     output["message"]["content"] = json!(
-        r#"{"kind":"vocabulary","body":{"usage":"Candidate usage.","examples":[],"nuance":[],"collocations":[]}}"#
+        r#"{"kind":"vocabulary","body":{"usage":"Candidate usage.","examples":[{"sentence":"ご飯を食べます。","translation":"I eat a meal."},{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#
     );
     let response = reply(output);
     let raw = response.2.as_bytes().to_vec();
@@ -780,7 +780,7 @@ fn inference_draft_rejects_schema_invalid_and_protected_field_output() {
     for (content, expected) in [
         ("malformed", "GENERATION_OUTPUT_SCHEMA_INVALID"),
         (
-            r#"{"kind":"vocabulary","body":{"usage":"Changed authored usage","examples":[],"nuance":[],"collocations":[]}}"#,
+            r#"{"kind":"vocabulary","body":{"usage":"Changed authored usage","examples":[{"sentence":"ご飯を食べます。","translation":"I eat a meal."},{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#,
             "GENERATION_FIELD_NOT_ALLOWED",
         ),
     ] {
@@ -812,7 +812,7 @@ fn candidate_publication_freezes_current_settings_and_keeps_engine_blocker() {
     use linguist_core::{LearningContent, records::PlanRevision};
     let mut output = completion_response();
     output["message"]["content"] = json!(
-        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[{"sentence":"ご飯を食べます。","translation":"I eat a meal."},{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#
     );
     let server = FixtureServer::new(vec![
         reply(inventory()),
@@ -971,7 +971,7 @@ fn pending_generation_runs_eligible_items_and_reports_the_rest() {
     use linguist_core::{LearningContent, records::PlanRevision};
     let mut output = completion_response();
     output["message"]["content"] = json!(
-        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[{"sentence":"ご飯を食べます。","translation":"I eat a meal."},{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#
     );
     let server = FixtureServer::new(vec![
         reply(inventory()),
@@ -1047,7 +1047,7 @@ fn generation_regeneration_replaces_generated_usage_and_keeps_authored_fields() 
     let output = |usage: &str| {
         let mut output = completion_response();
         output["message"]["content"] = json!(format!(
-            r#"{{"kind":"vocabulary","body":{{"usage":"{usage}","examples":[],"nuance":[],"collocations":[]}}}}"#
+            r#"{{"kind":"vocabulary","body":{{"usage":"{usage}","examples":[{{"sentence":"ご飯を食べます。","translation":"I eat a meal."}},{{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}}],"nuance":[],"collocations":[]}}}}"#
         ));
         output
     };
@@ -1125,7 +1125,7 @@ fn generation_regeneration_replaces_generated_usage_and_keeps_authored_fields() 
     )
     .unwrap();
     assert_eq!(result["revision"], 3);
-    assert_eq!(preview.cleared, ["usage"]);
+    assert_eq!(preview.cleared, ["usage", "examples"]);
     let regenerated = store.revision(plan.id, 3).unwrap();
     let LearningContent::Vocabulary(after) = &regenerated.documents[0].content else {
         panic!()
@@ -1147,7 +1147,7 @@ fn passed_engine_certification_replaces_the_blocker_for_that_identity_only() {
     let run = |certified_version: Option<&str>, live_version: &str| {
         let mut output = completion_response();
         output["message"]["content"] = json!(
-            r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
+            r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[{"sentence":"ご飯を食べます。","translation":"I eat a meal."},{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#
         );
         let mut replies = vec![
             reply(inventory()),
@@ -1275,7 +1275,7 @@ fn a_failed_local_generation_falls_back_to_an_agent() {
     std::fs::create_dir_all(&bin).unwrap();
     let seen = bin.join("prompt.txt");
     let reply_json = json!({"type":"result","subtype":"success","is_error":false,
-        "structured_output":{"kind":"vocabulary","body":{"usage":"Agent usage.","examples":[],"nuance":[],"collocations":[]}},
+        "structured_output":{"kind":"vocabulary","body":{"usage":"Agent usage.","examples":[{"sentence":"ご飯を食べます。","translation":"I eat a meal."},{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}},
         "modelUsage":{"fake-model":{}}});
     std::fs::write(
         bin.join("claude"),
@@ -1378,7 +1378,7 @@ fn chained_pending_generation_publishes_one_revision_per_chunk_and_resumes() {
     use linguist_core::{LearningContent, records::PlanRevision};
     let mut output = completion_response();
     output["message"]["content"] = json!(
-        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[{"sentence":"ご飯を食べます。","translation":"I eat a meal."},{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#
     );
     let mut replies = Vec::new();
     for _ in 0..3 {
@@ -1475,13 +1475,23 @@ fn chained_pending_generation_drafts_a_window_from_an_agent_at_once() {
         std::env::temp_dir().join(format!("lab-parallel-generation-{}", uuid::Uuid::new_v4()));
     let bin = root.with_extension("bin");
     std::fs::create_dir_all(&bin).unwrap();
-    let reply = json!({"type":"result","subtype":"success","is_error":false,
-        "structured_output":{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}},
-        "modelUsage":{"fake-model":{}}});
-    // Each call takes one second; four in one window take about one.
+    let reply = |examples: Value| {
+        json!({"type":"result","subtype":"success","is_error":false,
+        "structured_output":{"kind":"vocabulary","body":{"usage":"Meal context.","examples":examples,"nuance":[],"collocations":[]}},
+        "modelUsage":{"fake-model":{}}})
+    };
+    let (with, without) = (
+        reply(
+            json!([{"sentence":"ご飯を食べます。","translation":"I eat a meal."},
+                     {"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}]),
+        ),
+        reply(json!([])),
+    );
+    // Each call takes one second; four in one window take about one. The
+    // fake writes examples only when the request allows them.
     std::fs::write(
         bin.join("claude"),
-        format!("#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '9.9.9'; exit 0; }}\ncat > /dev/null\nsleep 1\nprintf '%s' '{reply}'\n"),
+        format!("#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '9.9.9'; exit 0; }}\nif cat | grep -q 'allowed_fields[^]]*examples'; then r='{with}'; else r='{without}'; fi\nsleep 1\nprintf '%s' \"$r\"\n"),
     )
     .unwrap();
     std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -1599,7 +1609,7 @@ fn a_campaign_never_drafts_with_an_engine_no_certification_covers() {
     use linguist_core::records::PlanRevision;
     let mut output = completion_response();
     output["message"]["content"] = json!(
-        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[],"nuance":[],"collocations":[]}}"#
+        r#"{"kind":"vocabulary","body":{"usage":"Meal context.","examples":[{"sentence":"ご飯を食べます。","translation":"I eat a meal."},{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#
     );
     // Uncertified: the identity check reads the model, nothing is drafted.
     // Certified (an upgraded engine certified again): the check, then a draft.

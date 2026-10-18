@@ -326,6 +326,16 @@ fn produce(
                 },
             ),
         };
+        // A vocabulary draft asked for examples adds at least two (or all
+        // it was asked for): one sentence is too thin a card, so the next
+        // provider tries (WP-24: local drafts of 代替, 再帰 and 相乗 had
+        // one each).
+        let result = result.and_then(|draft| match draft {
+            Some(draft) if thin(parent, &draft.document, &request) => {
+                Err("GENERATION_FEW_EXAMPLES".to_owned())
+            }
+            other => Ok(other),
+        });
         match result {
             Ok(Some(draft)) => {
                 attempts.push(json!({"provider": provider.name(), "result": "generated"}));
@@ -354,6 +364,22 @@ fn produce(
         });
     };
     Ok((draft, provider, attempts))
+}
+
+/// True when a vocabulary draft that was asked for examples added fewer than
+/// `min(2, examples_requested)` of them.
+fn thin(parent: &LearningDocument, draft: &LearningDocument, request: &GenerationRequest) -> bool {
+    let (LearningContent::Vocabulary(before), LearningContent::Vocabulary(after)) =
+        (&parent.content, &draft.content)
+    else {
+        return false;
+    };
+    request
+        .allowed_fields
+        .iter()
+        .any(|field| field == "examples")
+        && after.examples.len().saturating_sub(before.examples.len())
+            < request.examples_requested.min(2)
 }
 
 /// Generate one item's draft on `base` without publishing the revision (its
