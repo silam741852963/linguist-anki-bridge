@@ -1159,6 +1159,31 @@ fn campaign_policy_reinforces_the_agents_findings() {
     );
 }
 
+/// WP-24 (一人っ子): one sense offered under several readings is taken even
+/// when the note's own reading matches none of them.
+#[test]
+fn one_sense_under_several_readings_is_no_choice() {
+    use linguist_application::review::policy;
+    let f = Fixture::new();
+    let mut plan = two_sense_plan(&f);
+    let LearningContent::Vocabulary(v) = &mut plan.documents[0].content else {
+        panic!()
+    };
+    v.reading.clear();
+    v.pronunciation = "一人っ こ".into();
+    let sense = |reading: &str| json!({"decision": "sense_with_reading", "value": {"key": "only", "reading": reading}});
+    let batch = json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": [
+        {"document_id": plan.documents[0].id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
+         "options": {"issue": {"code": "DICTIONARY_SENSE_REVIEW"}, "templates": [
+            {"reading": "ひとりっこ", "choice": sense("ひとりっこ")},
+            {"reading": "ひとりっこ", "choice": sense("ひとりっこ")}]}}]});
+    let filled = policy::fill(&policy::Policy::builtin(), &plan, &batch).unwrap();
+    assert_eq!(
+        filled.batch.unwrap()["decisions"][0]["choice"]["value"]["key"],
+        "only"
+    );
+}
+
 /// WP-24 (ほうとう): a note written in kana is used in sentences in its
 /// dictionary spelling (宝刀); those examples use the word.
 #[test]

@@ -570,7 +570,10 @@ fn decide(
             if templates.iter().all(|t| t["reading"].is_null()) {
                 return Ok(choice(templates[0]));
             }
-            if templates.len() == 1 {
+            // One sense offered under several readings (一人っ子: ひとりっこ three
+            // times) is no choice to make.
+            let key = |t: &Value| t["choice"]["value"]["key"].clone();
+            if templates.len() == 1 || templates.iter().all(|t| key(t) == key(templates[0])) {
                 return Ok(choice(templates[0]));
             }
             Err("SENSE_READING_UNMATCHED: no candidate reading equals the note's reading".into())
