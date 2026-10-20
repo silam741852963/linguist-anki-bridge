@@ -351,12 +351,23 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
             }
         };
         let reading = spoken(&vocab.reading);
-        let forms = [
+        let mut forms = vec![
             expression.clone(),
             reading.clone(),
             stem(&expression),
             stem(&reading),
         ];
+        // The written forms of the entry holding the selected sense count too:
+        // a note written in kana (ほうとう) is used in kanji (宝刀) in a sentence.
+        for form in vocab
+            .dictionary
+            .iter()
+            .filter(|entry| entry.senses.iter().any(|s| s.key == vocab.sense_key))
+            .flat_map(|entry| &entry.forms)
+        {
+            forms.push(spoken(form));
+            forms.push(stem(&spoken(form)));
+        }
         // A single kana (た from たま) matches anything: it does not count.
         let telling = |f: &String| f.chars().count() > 1 || f.chars().any(is_kanji);
         if !forms

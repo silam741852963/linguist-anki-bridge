@@ -1158,3 +1158,57 @@ fn campaign_policy_reinforces_the_agents_findings() {
         "a collocation that is one of its own forms (遠慮する)"
     );
 }
+
+/// WP-24 (ほうとう): a note written in kana is used in sentences in its
+/// dictionary spelling (宝刀); those examples use the word.
+#[test]
+fn an_example_in_the_entrys_kanji_spelling_uses_the_word() {
+    use linguist_application::review::policy;
+    let f = Fixture::new();
+    let mut plan = two_sense_plan(&f);
+    let document = &mut plan.documents[0];
+    let LearningContent::Vocabulary(vocab) = &mut document.content else {
+        panic!()
+    };
+    vocab.expression = "ほうとう".into();
+    vocab.reading = "ほうとう".into();
+    vocab.dictionary[0].forms = vec!["宝刀".into()];
+    vocab.dictionary[0].readings = vec!["ほうとう".into()];
+    vocab.sense_key = vocab.dictionary[0].senses[0].key.clone();
+    let mut entries = Vec::new();
+    for (index, sentence) in ["博物館で古い宝刀を見た。", "博物館で古い刀を見た。"]
+        .iter()
+        .enumerate()
+    {
+        let id = uuid::Uuid::new_v4();
+        document.evidence.push(Evidence {
+            id,
+            field: "examples".into(),
+            provenance: Provenance::Generated,
+            source_id: None,
+            region_id: None,
+            target: None,
+            source_span: None,
+            language: Language::try_from("ja".to_owned()).unwrap(),
+            claim: json!({"sentence": sentence, "translation": "x"}).to_string(),
+            source_url: None,
+            ambiguous: false,
+        });
+        entries.push(json!({"document_id": document.id, "issue_id": format!("GENERATED_FACT_REVIEW:{index}"), "input_digest": "d", "choice": null,
+            "options": {"issue": {"code": "GENERATED_FACT_REVIEW", "source_refs": [id]}, "templates": [
+                {"choice": {"decision": "content_verified", "value": {"evidence_ids": [id]}}},
+                {"choice": {"decision": "content_rejected", "value": {"evidence_id": id}}}]}}));
+    }
+    let template =
+        json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": entries});
+    let filled = policy::fill(&policy::Policy::builtin(), &plan, &template).unwrap();
+    let decisions = filled.batch.unwrap()["decisions"].clone();
+    assert_eq!(
+        decisions[0]["choice"]["decision"], "content_verified",
+        "{decisions}"
+    );
+    assert_eq!(
+        decisions[1]["choice"]["decision"], "content_rejected",
+        "{decisions}"
+    );
+}
