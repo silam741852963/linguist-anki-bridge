@@ -120,6 +120,10 @@ struct World {
     /// enrichment runs it takes until it is back.
     outage: BTreeMap<String, u32>,
     reenriched: Vec<String>,
+    /// Notes whose missing dictionary entry was not written (provider error),
+    /// and how many dictionary runs fail the same way.
+    dictionary_outage: BTreeMap<String, (u32, String)>,
+    redictionaried: Vec<String>,
     /// Notes whose read fails (Anki busy) this many more times.
     read_fail: BTreeMap<String, u32>,
     read_retries: u32,
@@ -182,7 +186,10 @@ impl FakeCli {
             let mut v = json!({"revision": p.revision, "digest": format!("d{}", p.revision), "issues": open, "grammar_groups": []});
             if !issues_only {
                 v["documents"] = p.notes.iter().map(|n| json!({"id": doc(n),
-                    "issues": if w.outage.get(n).is_some_and(|left| *left > 0) { json!([{"code": "AUDIO_SYNTHESIS_FAILED", "message": "VOICEVOX_UNAVAILABLE: engine down; no audio candidate was staged. Audio is optional."}]) } else { json!([]) },
+                    "issues": if w.outage.get(n).is_some_and(|left| *left > 0) { json!([{"code": "AUDIO_SYNTHESIS_FAILED", "message": "VOICEVOX_UNAVAILABLE: engine down; no audio candidate was staged. Audio is optional."}]) }
+                        else if let Some((left, error)) = w.dictionary_outage.get(n).filter(|(left, _)| *left > 0) { let _ = left; json!([{"code": "DICTIONARY_ENTRY_GENERATION_FAILED", "message": format!("DICTIONARY_ENTRY_FAILED: codex: {error}; author the meaning instead.")}]) }
+                        else { json!([]) },
+                    "content": {"kind": "vocabulary", "body": {"meaning": if w.dictionary_outage.get(n).is_some_and(|(left, _)| *left > 0) { "" } else { "meaning" }}},
                     "media": [],
                     "sources": [{"location": format!("anki_note:{n}")}],
                     "reviews": if p.decided.contains(n) { json!([{"actor": if w.agent_decided.contains(n) { "claude-agent" } else { "campaign-policy" }}]) } else { json!([]) }})).collect();
@@ -324,6 +331,29 @@ impl FakeCli {
                     .unwrap();
                 w.reenriched.push(note.clone());
                 if let Some(left) = w.outage.get_mut(&note) {
+                    *left = left.saturating_sub(1);
+                }
+                w.plans.get_mut(*plan).unwrap().revision += 1;
+                ok(json!({"revision": 0}))
+            }
+            [
+                "plans",
+                "regenerate",
+                plan,
+                "--stage",
+                "dictionary",
+                "--item-id",
+                item,
+                ..,
+            ] => {
+                let note = w.plans[*plan]
+                    .notes
+                    .iter()
+                    .find(|n| doc(n) == *item)
+                    .cloned()
+                    .unwrap();
+                w.redictionaried.push(note.clone());
+                if let Some((left, _)) = w.dictionary_outage.get_mut(&note) {
                     *left = left.saturating_sub(1);
                 }
                 w.plans.get_mut(*plan).unwrap().revision += 1;
@@ -1256,6 +1286,43 @@ fn audio_lost_to_a_service_outage_is_enriched_again_then_left_to_the_agent() {
             .unwrap()
             .starts_with("AUDIO_SYNTHESIS_UNAVAILABLE")
     );
+}
+
+#[test]
+fn a_dictionary_entry_lost_to_a_usage_limit_is_written_again() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-dictionary-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..3].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    let limit = "AGENT_QUOTA_COOLDOWN: codex reported its usage limit; skipped until 1".to_owned();
+    {
+        let mut w = cli.world.lock().unwrap();
+        // Still at the limit for one more run: the batch waits, no try spent.
+        w.dictionary_outage.insert("101".into(), (2, limit));
+        w.dictionary_outage
+            .insert("102".into(), (9, "AGENT_TIMEOUT: no answer".into()));
+        // A refused entry is no outage: it stays with the agent.
+        w.dictionary_outage
+            .insert("103".into(), (9, "DICTIONARY_ENTRY_INVALID: x".into()));
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..6 {
+        ctx.tick(600).unwrap();
+    }
+    let w = cli.world.lock().unwrap();
+    assert_eq!(w.redictionaried.iter().filter(|n| *n == "101").count(), 2);
+    assert_eq!(w.dictionary_outage["101"].0, 0);
+    assert_eq!(
+        w.redictionaried.iter().filter(|n| *n == "102").count(),
+        3,
+        "three runs, then the agent"
+    );
+    assert!(!w.redictionaried.contains(&"103".to_owned()));
 }
 
 #[test]

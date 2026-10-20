@@ -358,17 +358,25 @@ impl Context<'_> {
                 continue;
             };
             if outage && !has_audio {
-                targets.push(id.to_owned());
+                targets.push((id.to_owned(), "enrichment"));
+            }
+            // A dictionary entry the generation chain could not write while
+            // its provider was at a usage limit or down (WP-24: notes prepared
+            // during a Codex cooldown kept no meaning) is written again.
+            if dictionary_outage(document) && meaning_empty(document) {
+                targets.push((id.to_owned(), "dictionary"));
             }
         }
-        for id in targets {
-            let tries = data
-                .settled
-                .iter()
-                .filter(|s| *s == &format!("reenrich:{id}"))
-                .count();
+        for (id, stage) in targets {
+            let marker = match stage {
+                "enrichment" => format!("reenrich:{id}"),
+                _ => format!("re{stage}:{id}"),
+            };
+            let tries = data.settled.iter().filter(|s| **s == marker).count();
             if tries >= 3 {
-                if let Some(note) = self.note_of(data, &id) {
+                if stage == "enrichment"
+                    && let Some(note) = self.note_of(data, &id)
+                {
                     exhausted.push(note);
                 }
                 continue;
@@ -383,7 +391,7 @@ impl Context<'_> {
                     "regenerate",
                     plan,
                     "--stage",
-                    "enrichment",
+                    stage,
                     "--item-id",
                     &id,
                     "--base-revision",
@@ -399,15 +407,35 @@ impl Context<'_> {
                 }
                 return Err(out.error());
             }
-            data.settled.push(format!("reenrich:{id}"));
+            // Still at the usage limit: wait for the provider, like drafting,
+            // without spending a try.
+            if stage == "dictionary" {
+                let again = self.plan_show(data, false)?;
+                let limited = again["documents"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|d| d["id"] == id.as_str())
+                    .flat_map(|d| d["issues"].as_array().into_iter().flatten())
+                    .filter(|i| i["code"] == "DICTIONARY_ENTRY_GENERATION_FAILED")
+                    .filter_map(|i| i["message"].as_str())
+                    .find(|m| crate::agents::usage_limited(m));
+                if let Some(message) = limited {
+                    return Ok(Err(Step::Waiting(format!(
+                        "DICTIONARY_ENTRY_UNAVAILABLE: {}",
+                        message.chars().take(200).collect::<String>()
+                    ))));
+                }
+            }
+            data.settled.push(marker);
             self.save(
                 record,
                 &record.phase,
                 data,
-                json!("enrichment run again after a service outage"),
+                json!(format!("{stage} run again after a service outage")),
             )?;
             return Ok(Err(Step::Moved(format!(
-                "batch {}: item {id} enriched again after a service outage",
+                "batch {}: item {id}: {stage} run again after a service outage",
                 record.batch
             ))));
         }
@@ -2038,4 +2066,28 @@ fn needs_met(data: &BatchData, head: &Value) -> bool {
         any = true;
     }
     any
+}
+
+/// The generation chain could not write a missing dictionary entry because
+/// its provider was at a usage limit, down or timed out: a retry may succeed.
+fn dictionary_outage(document: &Value) -> bool {
+    document["issues"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|i| i["code"] == "DICTIONARY_ENTRY_GENERATION_FAILED")
+        .filter_map(|i| i["message"].as_str())
+        .any(|m| {
+            crate::agents::usage_limited(m)
+                || ["UNAVAILABLE", "AGENT_TIMEOUT", "AGENT_API_HTTP_FAILED"]
+                    .iter()
+                    .any(|code| m.contains(code))
+        })
+}
+
+fn meaning_empty(document: &Value) -> bool {
+    document["content"]["kind"] == "vocabulary"
+        && document["content"]["body"]["meaning"]
+            .as_str()
+            .is_some_and(|m| m.trim().is_empty())
 }

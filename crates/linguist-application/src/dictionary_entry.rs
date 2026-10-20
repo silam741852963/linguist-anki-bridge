@@ -176,12 +176,15 @@ pub fn entry_from(
                 | ("ru", 'る')
         )
     };
-    if written.senses.iter().any(|s| {
-        s.parts_of_speech
-            .iter()
-            .filter_map(|p| ending(p.trim(), last))
-            .any(|e| !godan_matches(e))
-    }) {
+    // A phrase that ends in a particle (正直に言うと) is labelled by its verb:
+    // the wrong label goes, and only a sense left without one is refused.
+    let mut written = written;
+    for sense in &mut written.senses {
+        sense
+            .parts_of_speech
+            .retain(|p| ending(p.trim(), last).is_none_or(godan_matches));
+    }
+    if written.senses.iter().any(|s| s.parts_of_speech.is_empty()) {
         return Err("DICTIONARY_ENTRY_INVALID: the Godan ending does not match the word".into());
     }
     let senses = written
@@ -339,8 +342,19 @@ mod tests {
         }
         let phrase = r#"{"readings":["めいわくがかかる"],"senses":[{"definitions":["to be troubled"],"parts_of_speech":["Expressions (phrases, clauses, etc.)","Godan verb with 'ru' ending"]}]}"#;
         assert!(entry_from("迷惑がかかる", &ja, phrase, "x").is_ok());
+        // A wrong Godan label is dropped; the sense keeps its other labels.
         let wrong = phrase.replace("'ru'", "'u'");
-        assert!(entry_from("迷惑がかかる", &ja, &wrong, "x").is_err());
+        let entry = entry_from("迷惑がかかる", &ja, &wrong, "x").unwrap();
+        assert_eq!(
+            entry.senses[0].labels,
+            ["Expressions (phrases, clauses, etc.)"]
+        );
+        let particle = r#"{"readings":["しょうじきにいうと"],"senses":[{"definitions":["to be honest"],"parts_of_speech":["Expressions (phrases, clauses, etc.)","Godan verb with 'u' ending"]}]}"#;
+        let entry = entry_from("正直に言うと", &ja, particle, "x").unwrap();
+        assert_eq!(
+            entry.senses[0].labels,
+            ["Expressions (phrases, clauses, etc.)"]
+        );
         let engine = r#"{"readings":["えんじんがかかる"],"senses":[{"definitions":["the engine starts"],"parts_of_speech":["Expressions (phrases, clauses, etc.)"]}]}"#;
         assert!(entry_from("エンジンがかかる", &ja, engine, "x").is_err());
         let engine = engine.replace("えんじん", "エンジン");
