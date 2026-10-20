@@ -18,9 +18,10 @@
 # limit (or past llm.agents.max_calls_per_window, or past
 # llm.agents.codex.max_window_percent of its own five-hour window) is skipped
 # by the CLI while llm.fallback drafts. When no provider of the chain can
-# draft (`campaign status` drafting_available false), the session wraps up
-# by itself: the campaign is paused for the next `start` (checked every two
-# minutes during a tick and before each tick). A pause because the
+# draft (`campaign status` drafting_available false) and no batch is left to
+# write (ready for the agent's approval, approved, applying, verifying or
+# merging), the session wraps up by itself: the campaign is paused for the
+# next `start` (checked every two minutes during a tick and before each tick). A pause because the
 # local engine lost its certification (an upgraded Ollama) is certified
 # again with `doctor --ollama --certify` and resumed when that passes. Any
 # other stop ends the driver.
@@ -75,6 +76,12 @@ probe() {  # 0 = Codex answers, 1 = usage limit, 2 = other failure
 drafting_available() {  # false only when every provider of the chain cools down
   [ "$(cli campaign status "$1" | json 'd.get("drafting_available", True)')" != False ]
 }
+writes_pending() {  # batches that still reach Anki without drafting (or wait for the agent's approval)
+  [ "$(cli campaign status "$1" | json 'sum(d["phases"].get(p, 0) for p in ("ready", "approved", "applying", "verifying", "merging"))')" != 0 ]
+}
+time_to_wrap_up() {  # nothing can draft and nothing is left to write
+  ! drafting_available "$1" && ! writes_pending "$1"
+}
 auto_wrap_up() {  # in its own process group: wrap-up ends the driver's group
   say "no provider can draft ($(cli campaign status "$1" | json 'd.get("agent_cooldowns")')); wrapping up"
   setsid "$REPO/scripts/campaign-session.sh" wrap-up "$1" >> "$LOG" 2>&1 < /dev/null &
@@ -82,7 +89,7 @@ auto_wrap_up() {  # in its own process group: wrap-up ends the driver's group
 watchdog() {  # during a tick: wrap up once no provider can draft
   local C=$1
   while sleep 120; do
-    drafting_available "$C" && continue
+    time_to_wrap_up "$C" || continue
     auto_wrap_up "$C"
     return
   done
@@ -121,7 +128,7 @@ drive() {
       fi
       say "STOPPED ${s[*]}"; return
     fi
-    if ! drafting_available "$C"; then auto_wrap_up "$C"; return; fi
+    if time_to_wrap_up "$C"; then auto_wrap_up "$C"; return; fi
     watchdog "$C" & wd=$!
     say "tick start"
     cli campaign run "$C" --max-seconds "$TICK_SECONDS" > "$SESSION/run-last.json" 2> "$SESSION/run-last.err"
