@@ -1326,6 +1326,50 @@ fn a_dictionary_entry_lost_to_a_usage_limit_is_written_again() {
 }
 
 #[test]
+fn an_agent_step_on_a_waiting_batch_writes_a_lost_dictionary_entry_again_except_for_deferred_notes()
+{
+    let root =
+        std::env::temp_dir().join(format!("lab-campaign-dictionary-wait-{}", Uuid::new_v4()));
+    let mut spec = spec(false);
+    spec.batch_size = 3;
+    let id = create(&root, spec, world_notes()[..3].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    cli.world.lock().unwrap().hard.insert("101".into());
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    assert_eq!(phases(&root, id), ["needs_agent"]);
+    // Prepared while the provider was at its limit (before the retry existed).
+    let limit = "AGENT_QUOTA_COOLDOWN: codex reported its usage limit; skipped until 1".to_owned();
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.dictionary_outage.insert("102".into(), (1, limit.clone()));
+        w.dictionary_outage.insert("103".into(), (1, limit));
+    }
+    let batch = linguist_store::Store::read_only(&root)
+        .unwrap()
+        .campaign_batches(id)
+        .unwrap()[0]
+        .batch;
+    // The agent's step reviews the batch again; the deferred note is left
+    // as it is.
+    ctx.item(batch, "103", ItemAction::Defer("AGENT: x".into()))
+        .unwrap();
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    let w = cli.world.lock().unwrap();
+    assert_eq!(w.redictionaried, ["102"]);
+}
+
+#[test]
 fn tuned_prep_workers_prepare_batches_at_once_and_the_agent_holds_its_batches() {
     let root = std::env::temp_dir().join(format!("lab-campaign-parallel-{}", Uuid::new_v4()));
     let mut spec = spec(false);

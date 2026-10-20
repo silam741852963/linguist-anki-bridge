@@ -368,6 +368,13 @@ impl Context<'_> {
             }
         }
         for (id, stage) in targets {
+            // A deferred note stays as it is in Anki: nothing to redo.
+            if self
+                .note_of(data, &id)
+                .is_some_and(|n| data.deferred.contains_key(&n))
+            {
+                continue;
+            }
             let marker = match stage {
                 "enrichment" => format!("reenrich:{id}"),
                 _ => format!("re{stage}:{id}"),
