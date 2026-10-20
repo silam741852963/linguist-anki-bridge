@@ -570,11 +570,27 @@ fn decide(
             if templates.iter().all(|t| t["reading"].is_null()) {
                 return Ok(choice(templates[0]));
             }
-            // One sense offered under several readings (一人っ子: ひとりっこ three
-            // times) is no choice to make.
-            let key = |t: &Value| t["choice"]["value"]["key"].clone();
-            if templates.len() == 1 || templates.iter().all(|t| key(t) == key(templates[0])) {
-                return Ok(choice(templates[0]));
+            // Every candidate under one reading (一人っ子: ひとりっこ, with a
+            // pronunciation field in kanji): no reading is left to decide, so
+            // dictionary order chooses, as among equal readings.
+            let reading = |t: &Value| t["reading"].as_str().map(|r| hiragana(&spoken(r)));
+            // The field is there but holds no kana reading (whole, or between
+            // separators; a lone syllable split off by a space does not count).
+            let unusable = !raw.trim().is_empty()
+                && !own_readings.iter().take(2).flatten().any(|r| {
+                    !r.is_empty()
+                        && r.chars()
+                            .all(|c| matches!(c, '\u{3041}'..='\u{309f}' | 'ー'))
+                });
+            if templates.len() == 1
+                || unusable
+                    && templates
+                        .iter()
+                        .all(|t| reading(t).is_some() && reading(t) == reading(templates[0]))
+            {
+                return Ok(choice(
+                    screenshot_sense(vocab, document, &templates).unwrap_or(templates[0]),
+                ));
             }
             Err("SENSE_READING_UNMATCHED: no candidate reading equals the note's reading".into())
         }

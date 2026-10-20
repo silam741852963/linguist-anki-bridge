@@ -1159,10 +1159,10 @@ fn campaign_policy_reinforces_the_agents_findings() {
     );
 }
 
-/// WP-24 (一人っ子): one sense offered under several readings is taken even
-/// when the note's own reading matches none of them.
+/// WP-24 (一人っ子): a note with no kana reading (its pronunciation field in
+/// kanji) whose candidates all have one reading follows dictionary order.
 #[test]
-fn one_sense_under_several_readings_is_no_choice() {
+fn candidates_under_one_reading_follow_dictionary_order() {
     use linguist_application::review::policy;
     let f = Fixture::new();
     let mut plan = two_sense_plan(&f);
@@ -1171,12 +1171,12 @@ fn one_sense_under_several_readings_is_no_choice() {
     };
     v.reading.clear();
     v.pronunciation = "一人っ こ".into();
-    let sense = |reading: &str| json!({"decision": "sense_with_reading", "value": {"key": "only", "reading": reading}});
+    let sense = |key: &str| json!({"decision": "sense_with_reading", "value": {"key": key, "reading": "ひとりっこ"}});
     let batch = json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": [
         {"document_id": plan.documents[0].id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
          "options": {"issue": {"code": "DICTIONARY_SENSE_REVIEW"}, "templates": [
-            {"reading": "ひとりっこ", "choice": sense("ひとりっこ")},
-            {"reading": "ひとりっこ", "choice": sense("ひとりっこ")}]}}]});
+            {"reading": "ひとりっこ", "choice": sense("only")},
+            {"reading": "ひとりっこ", "choice": sense("other")}]}}]});
     let filled = policy::fill(&policy::Policy::builtin(), &plan, &batch).unwrap();
     assert_eq!(
         filled.batch.unwrap()["decisions"][0]["choice"]["value"]["key"],
