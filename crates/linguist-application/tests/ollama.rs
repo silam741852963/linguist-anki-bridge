@@ -1036,6 +1036,25 @@ fn pending_generation_runs_eligible_items_and_reports_the_rest() {
     let store = linguist_store::Store::read_only(&root).unwrap();
     assert_eq!(store.latest_revision(plan.id).unwrap(), 2);
     drop(store);
+    // WP-24: the draft left nuance and collocations empty, which answers
+    // them; the item is not drafted again for them (no model call).
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let drafted = store.revision(plan.id, 2).unwrap();
+    let (items, _) = linguist_application::generation::generate_pending_chained(
+        &mut store,
+        &drafted,
+        &current,
+        &environment,
+        &client,
+        10,
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        items[0]["skipped"], "GENERATION_NOTHING_TO_FILL",
+        "{items:?}"
+    );
+    drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]

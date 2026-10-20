@@ -187,6 +187,19 @@ pub fn generate_pending_chained(
             Ok(request) if request.allowed_fields.is_empty() => {
                 items.push(json!({"document_id": id, "skipped": "GENERATION_NOTHING_TO_FILL"}))
             }
+            // Nuance, collocations and grammar forms may rightly be empty
+            // (ポーランド has no near-synonym): a draft that left them empty
+            // answered, and is not asked again (WP-24: 20 of 25 notes of a
+            // batch were drafted three times for an empty nuance).
+            Ok(request)
+                if drafts(parent) > 0
+                    && request
+                        .allowed_fields
+                        .iter()
+                        .all(|f| matches!(f.as_str(), "nuance" | "collocations" | "forms")) =>
+            {
+                items.push(json!({"document_id": id, "skipped": "GENERATION_NOTHING_TO_FILL"}))
+            }
             // A field the review keeps rejecting is not drafted forever.
             Ok(_) if drafts(parent) >= MAX_DRAFTS_PER_ITEM => {
                 items.push(json!({"document_id": id, "skipped": "GENERATION_ATTEMPTS_EXHAUSTED"}))
@@ -374,12 +387,15 @@ fn thin(parent: &LearningDocument, draft: &LearningDocument, request: &Generatio
     else {
         return false;
     };
+    let added = after.examples.len().saturating_sub(before.examples.len());
+    // A full draft whose examples were dropped asks for them alone next.
+    let salvaged = added == 0 && request.allowed_fields.iter().any(|f| f != "examples");
     request
         .allowed_fields
         .iter()
         .any(|field| field == "examples")
-        && after.examples.len().saturating_sub(before.examples.len())
-            < request.examples_requested.min(2)
+        && !salvaged
+        && added < request.examples_requested.min(2)
 }
 
 /// Generate one item's draft on `base` without publishing the revision (its
@@ -1134,6 +1150,14 @@ pub fn validate_output(
     Ok(output)
 }
 
+/// Refusals that concern only a draft's examples.
+const EXAMPLE_FAULTS: [&str; 4] = [
+    "GENERATION_EXAMPLE_LANGUAGE",
+    "GENERATION_INCOMPLETE_EXAMPLE",
+    "GENERATION_EXAMPLE_NOT_SENTENCE",
+    "GENERATION_SCRIPT_MIXED",
+];
+
 /// Stage an immutable child document; callers must prove installed model capabilities separately.
 /// Never mutates the parent or publishes assets/state/Anki effects.
 pub fn merge_output(
@@ -1280,13 +1304,27 @@ fn merge_checked_output(
                 .ok_or("GENERATION_SETTING_MISSING")?,
         )?;
     }
-    let output = validate_output(
-        doc,
-        request,
-        bytes,
-        settings.values["network.max_response_mb"].as_u64().unwrap() * 1024 * 1024,
-        settings.values["input.max_record_chars"].as_u64().unwrap() as usize,
-    )?;
+    let max_bytes = settings.values["network.max_response_mb"].as_u64().unwrap() * 1024 * 1024;
+    let max_chars = settings.values["input.max_record_chars"].as_u64().unwrap() as usize;
+    // A full vocabulary draft whose only fault is its examples keeps its other
+    // fields; the examples are asked for alone in the next round (WP-24:
+    // Codex wrote {"sentence": "translation"} in about a third of full drafts
+    // and in none of the examples-only ones).
+    let output = match validate_output(doc, request, bytes, max_bytes, max_chars) {
+        Err(error)
+            if EXAMPLE_FAULTS.contains(&error.as_str())
+                && request.allowed_fields.iter().any(|f| f != "examples") =>
+        {
+            let mut value: Value = serde_json::from_slice(bytes).map_err(|_| error.clone())?;
+            if value["kind"] != "vocabulary" {
+                return Err(error);
+            }
+            value["body"]["examples"] = json!([]);
+            let without = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
+            validate_output(doc, request, &without, max_bytes, max_chars).map_err(|_| error)?
+        }
+        result => result?,
+    };
     let mut child = doc.clone();
     let source_id = uuid::Uuid::new_v4();
     let mut claims = Vec::new();

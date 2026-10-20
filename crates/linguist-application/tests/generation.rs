@@ -985,3 +985,51 @@ fn examples_are_sentences_not_the_collocations_again() {
         "GENERATION_EXAMPLE_NOT_SENTENCE"
     );
 }
+
+/// WP-24: Codex wrote {"sentence": "translation"} in about a third of full
+/// drafts and in none of the examples-only ones. A full draft whose only fault
+/// is its examples keeps its other fields; an examples-only draft is refused.
+#[test]
+fn a_full_draft_with_broken_examples_keeps_its_other_fields() {
+    let doc = document();
+    let config = settings();
+    let request = build_request(&doc, &config).unwrap();
+    assert!(request.allowed_fields.len() > 1);
+    let broken = json!([{"sentence":"translation","translation":"sentence"},
+                        {"sentence":"translation","translation":"sentence"}]);
+    let bytes = serde_json::to_vec(&json!({"kind":"vocabulary","body":{
+        "usage":"Used for eating meals.","nuance":[],"collocations":[],"examples":broken}}))
+    .unwrap();
+    let draft = merge_output(&doc, &config, &request, &bytes, &identity(&config)).unwrap();
+    let (LearningContent::Vocabulary(before), LearningContent::Vocabulary(after)) =
+        (&doc.content, &draft.document.content)
+    else {
+        panic!()
+    };
+    assert_eq!(after.usage, "Used for eating meals.");
+    assert_eq!(after.examples, before.examples, "no broken example is kept");
+    // Asked for examples alone, broken ones are refused.
+    let mut only = doc.clone();
+    if let LearningContent::Vocabulary(v) = &mut only.content {
+        v.usage = "Used for eating meals.".into();
+        v.collocations = vec![linguist_core::Collocation {
+            phrase: "ご飯を食べる".into(),
+            gloss: "eat a meal".into(),
+        }];
+        v.nuance = vec![linguist_core::Contrast {
+            expression: "召し上がる".into(),
+            difference: "More honorific than 食べる.".into(),
+        }];
+    }
+    let request = build_request(&only, &config).unwrap();
+    assert_eq!(request.allowed_fields, ["examples"]);
+    let bytes = serde_json::to_vec(&json!({"kind":"vocabulary","body":{
+        "usage":"","nuance":[],"collocations":[],"examples":broken}}))
+    .unwrap();
+    assert_eq!(
+        merge_output(&only, &config, &request, &bytes, &identity(&config))
+            .err()
+            .unwrap(),
+        "GENERATION_EXAMPLE_LANGUAGE"
+    );
+}
