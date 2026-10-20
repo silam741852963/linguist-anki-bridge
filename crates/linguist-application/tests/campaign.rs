@@ -204,13 +204,6 @@ impl FakeCli {
             }
             ["jobs", "run", job] => {
                 let notes = w.prepare_jobs[*job].clone();
-                if w.max_notes.is_some_and(|max| notes.len() > max) {
-                    return Output {
-                        code: 2,
-                        json: Value::Null,
-                        stderr: json!({"error": "REVAMP_BATCH_ARCHIVE_LIMIT"}).to_string(),
-                    };
-                }
                 let failing: Vec<String> = notes
                     .iter()
                     .filter(|n| w.read_fail.get(*n).is_some_and(|left| *left > 0))
@@ -220,6 +213,13 @@ impl FakeCli {
                     return ok(json!({"plan": null, "captured_this_run": 0,
                         "item_counts": {"captured": notes.len() - failing.len(), "failed": failing.len(), "pending": 0},
                         "error_counts": {"SOURCE_READ_CONNECTION_FAILED": failing.len()}}));
+                }
+                if w.max_notes.is_some_and(|max| notes.len() > max) {
+                    return Output {
+                        code: 2,
+                        json: Value::Null,
+                        stderr: json!({"error": "REVAMP_BATCH_ARCHIVE_LIMIT"}).to_string(),
+                    };
                 }
                 w.plans.entry((*job).to_owned()).or_insert(Plan {
                     revision: 1,
@@ -250,6 +250,13 @@ impl FakeCli {
                 let (bad, good): (Vec<String>, Vec<String>) = notes
                     .into_iter()
                     .partition(|n| w.read_fail.get(n).is_some_and(|left| *left > 0));
+                if w.max_notes.is_some_and(|max| good.len() > max) {
+                    return Output {
+                        code: 2,
+                        json: Value::Null,
+                        stderr: json!({"error": "REVAMP_BATCH_ARCHIVE_LIMIT"}).to_string(),
+                    };
+                }
                 w.plans.insert(
                     (*job).to_owned(),
                     Plan {
@@ -1247,6 +1254,39 @@ fn a_batch_over_the_size_limit_is_split_until_it_fits() {
     let w = cli.world.lock().unwrap();
     assert_eq!(w.applied.len(), 4);
     assert!(w.applied.values().all(|n| *n == 1));
+}
+
+#[test]
+fn a_batch_over_the_size_limit_after_a_failed_read_is_split_not_paused() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-split-read-{}", Uuid::new_v4()));
+    let mut spec = spec(false);
+    spec.batch_size = 4;
+    let notes: Vec<NoteInfo> = (0..4)
+        .map(|i| note(&format!("20{i}"), &format!("語{i}"), &format!("ご{i}"), 1))
+        .collect();
+    let id = create(&root, spec, notes);
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.max_notes = Some(2);
+        // One note never reads, and the job has no retry left: the notes
+        // read are published, which is over the size limit (WP-24 batch 128).
+        w.read_fail.insert("200".into(), 99);
+        w.retry_budget = Some(0);
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..4 {
+        ctx.tick(600).unwrap();
+    }
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    assert_eq!(store.campaign(id).unwrap().status, "running");
+    assert!(store.campaign_batches(id).unwrap().len() >= 2, "split");
 }
 
 #[test]

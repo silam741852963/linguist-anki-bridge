@@ -292,6 +292,10 @@ impl Context<'_> {
             || plan.is_none() && data.prepare_runs >= self.definition.spec.limits.max_prepare_runs
         {
             let published = self.cli(&data, s(&["jobs", "publish", &job, "--skip-failed"]))?;
+            // Publishing what was read can be over the size limit too.
+            if published.json.is_null() && Self::too_big(&published) {
+                return self.split(record, data, &published.code_name());
+            }
             for item in published.json["skipped"].as_array().into_iter().flatten() {
                 if let Some(note) = item["note_id"].as_str() {
                     data.deferred.insert(
