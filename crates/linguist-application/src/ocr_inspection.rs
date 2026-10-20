@@ -45,7 +45,139 @@ pub struct Classification {
     pub lines: usize,
     pub characters: usize,
     pub method: &'static str,
+    /// The dictionary marker found in the OCR text, when it decided the class.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub marker: Option<&'static str>,
     pub needs_review: bool,
+}
+
+/// Substrings only dictionary sites print (Kotobank's heading, Jisho's
+/// badges, Mazii's comment and photo links, also as OCR reads them without
+/// Vietnamese diacritics).
+const DICTIONARY_MARKERS: [(&str, &str); 8] = [
+    ("の解説", "kotobank-heading"),
+    ("wanikani", "jisho-badges"),
+    ("đóng góp", "mazii"),
+    ("dong gop", "mazii"),
+    ("xem thêm ảnh", "mazii"),
+    ("xem them anh", "mazii"),
+    ("động từ nhóm", "mazii"),
+    ("dong tir nhom", "mazii"),
+];
+
+/// Jisho's part-of-speech line heads ("Noun", "Godan verb with su ending,
+/// Transitive verb").
+const JISHO_LABELS: [&str; 20] = [
+    "Noun",
+    "Na-adjective",
+    "I-adjective",
+    "No-adjective",
+    "Taru-adjective",
+    "Pre-noun adjectival",
+    "Godan verb",
+    "Ichidan verb",
+    "Suru verb",
+    "Kuru verb",
+    "Transitive verb",
+    "Intransitive verb",
+    "Adverb",
+    "Adverbial noun",
+    "Expressions",
+    "Pronoun",
+    "Conjunction",
+    "Interjection",
+    "Counter",
+    "Wikipedia definition",
+];
+
+/// Cambridge's part-of-speech line ("noun [C]", "verb | UK").
+const ENGLISH_LABELS: [&str; 6] = [
+    "noun",
+    "verb",
+    "adjective",
+    "adverb",
+    "phrasal verb",
+    "idiom",
+];
+
+/// What makes OCR text a dictionary screenshot whatever its layout: a dark
+/// Jisho or Kotobank capture holds one or two short lines, so the layout
+/// score calls it an illustration (WP-24: 39 kept as pictures).
+fn dictionary_marker(result: &OcrResult) -> Option<&'static str> {
+    let lines: Vec<&str> = result
+        .regions
+        .iter()
+        .map(|r| r.text.trim())
+        .filter(|t| !t.is_empty())
+        .collect();
+    let characters: usize = lines.iter().map(|l| l.chars().count()).sum();
+    // A strip of text cut from a page (one definition line); no picture
+    // in the collection is four times wider than tall and holds text.
+    if characters >= 4
+        && result.source_height > 0
+        && result.source_width >= 4 * result.source_height
+    {
+        return Some("text-strip");
+    }
+    for line in lines {
+        let lower = line.to_lowercase();
+        if let Some((_, name)) = DICTIONARY_MARKERS.iter().find(|(m, _)| lower.contains(m)) {
+            return Some(name);
+        }
+        let short = line.chars().count() <= 80;
+        if short
+            && JISHO_LABELS.iter().any(|label| {
+                line.strip_prefix(label).is_some_and(|rest| {
+                    rest.is_empty() || [",", " (", " with"].iter().any(|s| rest.starts_with(s))
+                })
+            })
+        {
+            return Some("jisho-part-of-speech");
+        }
+        if line.chars().count() <= 40
+            && (line.contains('[') || line.contains('|'))
+            && ENGLISH_LABELS.iter().any(|label| {
+                line.strip_prefix(label)
+                    .is_some_and(|rest| rest.starts_with([' ', '|', '[']))
+            })
+        {
+            return Some("english-part-of-speech");
+        }
+        if numbered_sense(line) {
+            return Some("numbered-sense");
+        }
+        if line.contains('」') && headword_dash(line) {
+            return Some("headword-dash-example");
+        }
+    }
+    None
+}
+
+/// "1. to till; to plow" (OCR may read the digit as a circled one).
+fn numbered_sense(line: &str) -> bool {
+    let mut chars = line.chars();
+    let digit = chars
+        .next()
+        .is_some_and(|c| c.is_ascii_digit() || ('①'..='⑨').contains(&c));
+    let dot = chars.next().is_some_and(|c| c == '.' || c == '．');
+    let rest = chars.as_str().trim_start();
+    digit
+        && dot
+        && rest.starts_with(|c: char| c.is_ascii_alphabetic() || c == '(')
+        && (rest.contains(';') || line.chars().count() > 15)
+}
+
+/// A Kotobank example names its headword with a dash: 「―込めて作り上げる」.
+fn headword_dash(line: &str) -> bool {
+    let chars: Vec<char> = line.chars().collect();
+    chars.iter().enumerate().any(|(i, c)| {
+        if !matches!(c, '「' | '`' | '‘') {
+            return false;
+        }
+        let mut next = chars[i + 1..].iter().skip_while(|c| c.is_whitespace());
+        next.next().is_some_and(|c| matches!(c, '一' | '―' | 'ー'))
+            && next.next().is_some_and(|c| !c.is_whitespace())
+    })
 }
 
 /// Text-likeness from OCR coverage, line count and confidence. Near-threshold
@@ -76,7 +208,15 @@ pub fn classify(
         LearningContent::Vocabulary(_) => ImageClass::Dictionary,
         LearningContent::Grammar(_) => ImageClass::Grammar,
     };
-    let class = if text_score >= threshold + margin {
+    // On a vocabulary note a dictionary marker decides: the screenshot is
+    // archived whatever its layout score.
+    let marker = match document.content {
+        LearningContent::Vocabulary(_) => dictionary_marker(result),
+        LearningContent::Grammar(_) => None,
+    };
+    let class = if marker.is_some() {
+        text_class
+    } else if text_score >= threshold + margin {
         if coverage < 0.15 && lines < 4 {
             ImageClass::Mixed
         } else {
@@ -95,7 +235,12 @@ pub fn classify(
         coverage,
         lines,
         characters,
-        method: "ocr-layout-heuristic-v1",
+        method: if marker.is_some() {
+            "ocr-text-markers-v1"
+        } else {
+            "ocr-layout-heuristic-v1"
+        },
+        marker,
         needs_review: matches!(class, ImageClass::Mixed | ImageClass::Uncertain),
     }
 }
@@ -573,5 +718,80 @@ mod tests {
         assert_eq!(near.class, ImageClass::Uncertain);
         assert!(near.needs_review);
         assert!(!classify(&dense, &vocab, 0.3, 0.0).needs_review);
+    }
+
+    fn lines(texts: &[&str], width: u32, height: u32) -> OcrResult {
+        let mut found = result(texts.len() as u32, 10, 0.9);
+        for (region, text) in found.regions.iter_mut().zip(texts) {
+            region.text = (*text).into();
+        }
+        (found.source_width, found.source_height) = (width, height);
+        found
+    }
+
+    #[test]
+    fn dictionary_text_is_a_dictionary_screenshot_whatever_its_layout() {
+        // OCR text of screenshots WP-24 kept as pictures (layout score low).
+        for (texts, size, marker) in [
+            (
+                &[
+                    "Godan verb with su ending, Transitive verb",
+                    "1. to till; to plow",
+                ][..],
+                (589, 293),
+                "jisho-part-of-speech",
+            ),
+            (
+                &["Noun", "①. celebrity; famous person"][..],
+                (400, 175),
+                "jisho-part-of-speech",
+            ),
+            (
+                &["jlptn3 wanikani level 46", "1. cotton"][..],
+                (423, 175),
+                "jisho-badges",
+            ),
+            (
+                &["ざつ - こく【雛袴】の解説", "米・麦以外の穀類の総称。"][..],
+                (700, 300),
+                "kotobank-heading",
+            ),
+            (
+                &["-_ wy 2 ニム", "たましい。精神。 ` 一込めて作り上げる」"][..],
+                (790, 69 * 3),
+                "headword-dash-example",
+            ),
+            (&["[ たいまつ」に同じ。"][..], (768, 69), "text-strip"),
+            (&["C6 10 y kién dong gop", "JinZz"][..], (584, 300), "mazii"),
+            (
+                &["noun |[C]", "a small container with medicine"][..],
+                (600, 300),
+                "english-part-of-speech",
+            ),
+        ] {
+            let found = classify(&lines(texts, size.0, size.1), &document(false), 0.46, 0.03);
+            assert_eq!(found.class, ImageClass::Dictionary, "{texts:?}");
+            assert_eq!(found.marker, Some(marker), "{texts:?}");
+            assert!(!found.needs_review);
+        }
+        // Text in real pictures is no marker.
+        for (texts, size) in [
+            (&["Placenta", "Incision through the skin"][..], (600, 400)),
+            (&["FRENCH HORN", "SNARE DRUM"][..], (500, 500)),
+            (
+                &["| お行儀の悪い人 | と言われないために一一"][..],
+                (400, 600),
+            ),
+            (
+                &["Download from 50884824", "Dreamstime.com"][..],
+                (800, 400),
+            ),
+        ] {
+            let found = classify(&lines(texts, size.0, size.1), &document(false), 0.46, 0.03);
+            assert_eq!(found.marker, None, "{texts:?}");
+        }
+        // A grammar page keeps the layout heuristic.
+        let page = lines(&["Noun", "1. to till; to plow"], 600, 300);
+        assert_eq!(classify(&page, &document(true), 0.46, 0.03).marker, None);
     }
 }
