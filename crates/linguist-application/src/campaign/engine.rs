@@ -996,6 +996,19 @@ impl Context<'_> {
                     "session ended; follow-up job intent recorded",
                 );
             }
+            // A companion without its collection session (Anki reopening the
+            // collection, as for a checkpoint export) comes back by itself:
+            // the job is resumed on a later tick (WP-24: paused the campaign).
+            if run["stop"] == "halted"
+                && ["CAPABILITY_UNAVAILABLE", "ANKI_DEPENDENCY_UNAVAILABLE"]
+                    .iter()
+                    .any(|code| stop_code.contains(code))
+            {
+                return Ok(Step::Waiting(format!(
+                    "batch {}: apply job {job} halted ({stop_code}); resumed later",
+                    record.batch
+                )));
+            }
             if run["stop"] == "halted" {
                 return Ok(Step::Pause {
                     code: "CAMPAIGN_PAUSED_IDENTITY".into(),

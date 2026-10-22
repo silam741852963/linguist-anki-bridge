@@ -140,6 +140,9 @@ struct World {
     /// The next policy passes find the companion without its collection
     /// session (Anki reopening the collection): conflict, exit 5.
     no_session: u32,
+    /// The next apply runs halt because the companion lost its collection
+    /// session, before writing anything.
+    apply_halts: u32,
 }
 
 #[derive(Clone, Default)]
@@ -459,6 +462,12 @@ impl FakeCli {
                     ok(json!({"reconcile": {"state": "committed"}}))
                 }
             },
+            ["jobs", "run" | "resume", _, "--apply"] if w.apply_halts > 0 => {
+                w.apply_halts -= 1;
+                ok(
+                    json!({"run": {"stop": "halted", "stop_code": "CAPABILITY_UNAVAILABLE", "status": {"counts": {}}}}),
+                )
+            }
             ["jobs", verb @ ("run" | "resume"), job, "--apply"] => {
                 let _ = verb;
                 let (plan, items, ran) = w.apply_jobs[*job].clone();
@@ -1124,6 +1133,36 @@ fn a_review_without_the_companion_session_waits_and_never_pauses() {
     }
     cli.world.lock().unwrap().no_session = 0;
     assert_eq!(drive(&root, id, &cli, None), 0);
+}
+
+#[test]
+fn an_apply_halted_by_a_lost_collection_session_waits_and_never_pauses() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-halt-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    cli.world.lock().unwrap().apply_halts = 2;
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..40 {
+        ctx.tick(600).unwrap();
+        let store = linguist_store::Store::read_only(&root).unwrap();
+        assert_eq!(store.campaign(id).unwrap().status, "running");
+        for b in store.campaign_batches(id).unwrap() {
+            if b.phase == "ready" {
+                ctx.approve(b.batch, "claude-agent").unwrap();
+            }
+        }
+        if phases(&root, id).iter().all(|p| p == "done") {
+            break;
+        }
+    }
+    assert!(phases(&root, id).iter().all(|p| p == "done"));
+    assert_eq!(cli.world.lock().unwrap().apply_halts, 0);
 }
 
 #[test]
