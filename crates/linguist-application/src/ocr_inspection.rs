@@ -258,7 +258,18 @@ pub fn classify(
     // On a vocabulary note a dictionary marker decides: the screenshot is
     // archived whatever its layout score.
     let marker = match document.content {
-        LearningContent::Vocabulary(_) => dictionary_marker(result),
+        LearningContent::Vocabulary(_) => dictionary_marker(result).or_else(|| {
+            // An English card's capture of a Cambridge picture carries its
+            // photo credit: the screenshot goes, and the dictionary's own
+            // picture (staged first among candidates) takes its place.
+            let english = document.target_language.as_str().split('-').next() == Some("en");
+            (english
+                && result
+                    .regions
+                    .iter()
+                    .any(|r| r.text.to_lowercase().contains("getty")))
+            .then_some("dictionary-photo-credit")
+        }),
         LearningContent::Grammar(_) => None,
     };
     let class = if marker.is_some() {
@@ -855,5 +866,14 @@ mod tests {
         // A grammar page keeps the layout heuristic.
         let page = lines(&["Noun", "1. to till; to plow"], 600, 300);
         assert_eq!(classify(&page, &document(true), 0.46, 0.03).marker, None);
+        // A Cambridge picture captured with its credit, on an English card
+        // only (a Japanese card's stock photo keeps the layout heuristic).
+        let shoe = lines(&["a running shoe", "xxmmx/E+/GettyImages"], 370, 140);
+        let english = classify(&shoe, &document(false), 0.46, 0.03);
+        assert_eq!(english.class, ImageClass::Dictionary);
+        assert_eq!(english.marker, Some("dictionary-photo-credit"));
+        let mut japanese = document(false);
+        japanese.target_language = "ja".to_owned().try_into().unwrap();
+        assert_eq!(classify(&shoe, &japanese, 0.46, 0.03).marker, None);
     }
 }
