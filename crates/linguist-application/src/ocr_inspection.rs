@@ -53,8 +53,10 @@ pub struct Classification {
 
 /// Substrings only dictionary sites print (Kotobank's heading, Jisho's
 /// badges, Mazii's comment and photo links, also as OCR reads them without
-/// Vietnamese diacritics).
-const DICTIONARY_MARKERS: [(&str, &str); 8] = [
+/// Vietnamese diacritics, Cambridge's word-list links).
+const DICTIONARY_MARKERS: [(&str, &str); 10] = [
+    ("smart vocabulary", "cambridge-links"),
+    ("thesaurus: synonyms", "cambridge-links"),
     ("の解説", "kotobank-heading"),
     ("wanikani", "jisho-badges"),
     ("đóng góp", "mazii"),
@@ -143,6 +145,18 @@ fn dictionary_marker(result: &OcrResult) -> Option<&'static str> {
         {
             return Some("english-part-of-speech");
         }
+        // Cambridge's headword line ("trap noun (MUSIC)").
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if line.chars().count() <= 40
+            && words.len() >= 2
+            && ENGLISH_LABELS.contains(&words[1])
+            && (words.len() == 2 || words[2].starts_with('('))
+        {
+            return Some("english-headword");
+        }
+        if grammar_code(line) {
+            return Some("grammar-code");
+        }
         if numbered_sense(line) {
             return Some("numbered-sense");
         }
@@ -151,6 +165,39 @@ fn dictionary_marker(result: &OcrResult) -> Option<&'static str> {
         }
     }
     None
+}
+
+/// A Cambridge grammar code on its own line, with an optional CEFR level:
+/// "[C]", "B2 [S]", "[C] slang" (OCR may read "[U]" as "[Ul]").
+fn grammar_code(line: &str) -> bool {
+    let rest = match line.split_once(' ') {
+        Some((level, rest))
+            if level.len() == 2
+                && matches!(level.as_bytes()[0], b'A' | b'B' | b'C')
+                && matches!(level.as_bytes()[1], b'1' | b'2') =>
+        {
+            rest.trim_start()
+        }
+        _ => line,
+    };
+    let Some(inner) = rest
+        .strip_prefix('[')
+        .and_then(|r| r.split_once(']'))
+        .map(|(code, after)| (code, after.trim()))
+    else {
+        return false;
+    };
+    let (code, after) = inner;
+    !code.is_empty()
+        && code.len() <= 6
+        && code
+            .chars()
+            .all(|c| c.is_ascii_alphabetic() || c == ' ' || c == ',')
+        && code
+            .chars()
+            .next()
+            .is_some_and(|c| "CUTISLcutisl".contains(c))
+        && after.chars().count() <= 10
 }
 
 /// "1. to till; to plow" (OCR may read the digit as a circled one).
@@ -767,6 +814,21 @@ mod tests {
                 &["noun |[C]", "a small container with medicine"][..],
                 (600, 300),
                 "english-part-of-speech",
+            ),
+            (
+                &["trap noun (MUSIC)", "[Ul]", "short for trap music"][..],
+                (400, 200),
+                "english-headword",
+            ),
+            (
+                &["certain of your beliefs:", "B2 [S]"][..],
+                (430, 130),
+                "grammar-code",
+            ),
+            (
+                &["a device", "+ SMART Vocabulary: related words"][..],
+                (400, 300),
+                "cambridge-links",
             ),
         ] {
             let found = classify(&lines(texts, size.0, size.1), &document(false), 0.46, 0.03);
