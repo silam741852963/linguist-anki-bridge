@@ -145,22 +145,31 @@ fn dictionary_marker(result: &OcrResult) -> Option<&'static str> {
         {
             return Some("english-part-of-speech");
         }
-        // The same line as OCR often reads it: "nouni[C]", "nounic]".
-        if line.chars().count() <= 12
-            && line.contains(']')
-            && ENGLISH_LABELS.iter().any(|label| line.starts_with(label))
+        // The same line as OCR often reads it: "nouni[C]", "nounic]", or
+        // with a register label, "adjective = formal".
+        if line.chars().count() <= 25
+            && ENGLISH_LABELS.iter().any(|label| {
+                line.strip_prefix(label).is_some_and(|rest| {
+                    (rest.chars().count() <= 6 && rest.contains(']'))
+                        || rest
+                            .trim_start()
+                            .starts_with(['=', '•', '·', '[', '|', '('])
+                })
+            })
         {
             return Some("english-part-of-speech");
         }
-        // Cambridge's pronunciation line: "us /ˈswɪft/ uk /swɪft/".
+        // Cambridge's pronunciation line: "us /ˈswɪft/ uk /swɪft/" (OCR may
+        // read "us" as "use"): a UK/US label and two transcriptions.
         let tokens: Vec<String> = lower
             .split(|c: char| !c.is_ascii_alphabetic())
             .map(str::to_owned)
             .collect();
+        let uk = tokens.iter().any(|t| t == "uk");
+        let us = tokens.iter().any(|t| t == "us" || t == "use");
+        let slashes = line.matches('/').count();
         if line.chars().count() <= 60
-            && line.matches('/').count() >= 2
-            && tokens.iter().any(|t| t == "us")
-            && tokens.iter().any(|t| t == "uk")
+            && ((uk && us && slashes >= 2) || ((uk || us) && slashes >= 4))
         {
             return Some("pronunciation-line");
         }
@@ -869,6 +878,19 @@ mod tests {
                 &["us) /swit/ uk) /swift/", "a small bird"][..],
                 (520, 240),
                 "pronunciation-line",
+            ),
+            (
+                &[
+                    "unable to be removed:",
+                    "uk¥) /rneriianab?l/ use) /rneLlia.na.b?/",
+                ][..],
+                (480, 260),
+                "pronunciation-line",
+            ),
+            (
+                &["adjective = formal", "unable to be removed:"][..],
+                (480, 260),
+                "english-part-of-speech",
             ),
         ] {
             let found = classify(&lines(texts, size.0, size.1), &document(false), 0.46, 0.03);
