@@ -167,6 +167,13 @@ fn dictionary_marker(result: &OcrResult) -> Option<&'static str> {
             .collect();
         let uk = tokens.iter().any(|t| t == "uk");
         let us = tokens.iter().any(|t| t == "us" || t == "use");
+        // A label followed by the UK/US audio buttons: "adjective us) uk §)".
+        if line.chars().count() <= 30
+            && (uk || us)
+            && ENGLISH_LABELS.iter().any(|label| lower.starts_with(label))
+        {
+            return Some("english-part-of-speech");
+        }
         let slashes = line.matches('/').count();
         if line.chars().count() <= 60
             && ((uk && us && slashes >= 2) || ((uk || us) && slashes >= 4))
@@ -890,6 +897,11 @@ mod tests {
             (
                 &["adjective = formal", "unable to be removed:"][..],
                 (480, 260),
+                "english-part-of-speech",
+            ),
+            (
+                &["crescent", "adjective us) uk §)", "* the crescent moon"][..],
+                (480, 160),
                 "english-part-of-speech",
             ),
         ] {
