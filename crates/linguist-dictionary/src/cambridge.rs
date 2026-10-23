@@ -26,6 +26,24 @@ fn text(node: ElementRef) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+/// A definition's own words: its register labels ("infml disapproving")
+/// sit inside it and would run into the first word.
+fn definition_text(node: ElementRef) -> String {
+    node.descendants()
+        .filter_map(|n| n.value().as_text().map(|t| (n, t)))
+        .filter(|(n, _)| {
+            !n.ancestors().any(|a| {
+                a.value()
+                    .as_element()
+                    .is_some_and(|e| e.classes().any(|c| c == "lab"))
+            })
+        })
+        .map(|(_, t)| t.to_string())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 fn first(node: ElementRef, css: &str) -> Option<String> {
     node.select(&select(css))
         .next()
@@ -183,13 +201,24 @@ pub fn parse_page(
                         .to_lowercase()
                 });
                 for def in sense.select(&select(".def-block")) {
-                    let Some(definition) = first(def, ".ddef_h .def") else {
+                    let Some(definition) = def
+                        .select(&select(".ddef_h .def"))
+                        .next()
+                        .map(definition_text)
+                        .filter(|t| !t.is_empty())
+                    else {
                         continue;
                     };
                     let definition = definition.trim_end_matches(':').trim().to_owned();
                     let mut labels = vec![];
                     if !pos.is_empty() {
                         labels.push(pos.clone());
+                    }
+                    // Register labels ("informal", "disapproving") are labels.
+                    for label in def.select(&select(".ddef_h .def .lab .usage")).map(text) {
+                        if !label.is_empty() && !labels.contains(&label) {
+                            labels.push(label);
+                        }
                     }
                     if let Some(guideword) = &guideword {
                         labels.push(guideword.clone());

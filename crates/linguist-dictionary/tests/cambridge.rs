@@ -166,3 +166,24 @@ fn a_part_of_speech_missing_from_the_american_block_comes_from_another() {
     assert!(parts.contains(&("noun", "cald4")), "{parts:?}");
     assert_eq!(parts.len(), 2, "{parts:?}");
 }
+
+#[test]
+fn register_labels_inside_a_definition_are_labels_not_its_first_word() {
+    let html = include_str!("fixtures/cambridge-tenacious.html").replacen(
+        r#"<div class="def ddef_d db"><a class="query" href="https://dictionary.cambridge.org/dictionary/english/unwilling""#,
+        r#"<div class="def ddef_d db"><span class="lab dlab"><span class="usage dusage">infml</span><span class="usage dusage">disapproving</span></span> <a class="query" href="https://dictionary.cambridge.org/dictionary/english/unwilling""#,
+        1,
+    );
+    let page = page("tenacious", &html);
+    let sense = &page.entries[0].senses[0];
+    assert_eq!(
+        sense.definitions,
+        ["unwilling to accept defeat or stop doing or having something"]
+    );
+    assert!(
+        sense.labels.contains(&"infml".to_string()),
+        "{:?}",
+        sense.labels
+    );
+    assert!(sense.labels.contains(&"disapproving".to_string()));
+}
