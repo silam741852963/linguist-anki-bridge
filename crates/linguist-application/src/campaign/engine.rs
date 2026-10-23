@@ -1918,7 +1918,9 @@ fn requeue_locked(
 ) -> Result<Value, String> {
     let mut created = Vec::new();
     for record in store.campaign_batches(id)? {
-        if record.phase != "done" {
+        // A batch whose every note failed to prepare ends skipped: its
+        // deferred notes come back too (WP-24: 60 notes of five batches).
+        if record.phase != "done" && record.phase != "skipped" {
             continue;
         }
         let mut data = BatchData::from_value(&record.data)?;

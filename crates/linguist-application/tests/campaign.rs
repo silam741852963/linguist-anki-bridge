@@ -1606,6 +1606,39 @@ fn deferred_notes_of_finished_batches_are_requeued_once() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn notes_of_a_batch_skipped_because_none_prepared_are_requeued() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-requeue-skip-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let batch = store.campaign_batches(id).unwrap()[0].clone();
+    let mut data = BatchData::from_value(&batch.data).unwrap();
+    for note in data.notes.clone() {
+        data.deferred.insert(
+            note,
+            "PREPARE_FAILED: SOURCE_CAPTURE_REVIEW_REQUIRED (ANKI_ACTION_REJECTED: notesInfo)"
+                .into(),
+        );
+    }
+    store
+        .update_campaign_batch(
+            id,
+            batch.batch,
+            batch.version,
+            "skipped",
+            &data.to_value(),
+            "batch",
+            &json!("test"),
+            5,
+        )
+        .unwrap();
+    let reasons = ["PREPARE_FAILED:".to_owned()];
+    let out = campaign::engine::requeue(&mut store, id, &reasons, 6).unwrap();
+    assert_eq!(out["requeued"][0]["from"], batch.batch, "{out}");
+    assert_eq!(out["requeued"][0]["notes"], 2, "{out}");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 /// WP-24: a batch whose every note the agent deferred is finished by its
 /// approval (nothing to write), so requeue can send the notes round again.
 #[test]
