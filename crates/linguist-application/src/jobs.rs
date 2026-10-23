@@ -740,6 +740,13 @@ mod tests {
 /// unavailable or busy service, a locked store, a usage limit), which a
 /// later attempt can pass, as opposed to one about the note itself.
 fn capture_transient(error: &str) -> bool {
+    // A capture only reads: AnkiConnect refuses a read while the collection
+    // is closed (a checkpoint export), and answers it again a moment later
+    // (WP-24: five whole batches left out). A companion refusal keeps its
+    // `BRIDGE_*` code and stays a review.
+    if error.starts_with("ANKI_ACTION_REJECTED: ") && !error.contains(": BRIDGE_") {
+        return true;
+    }
     let upper = error.to_ascii_uppercase();
     [
         "TIMEOUT",
@@ -767,6 +774,8 @@ mod capture_tests {
             "database is locked",
             "AGENT_FAILED: exit Some(1): You've hit your usage limit.",
             "PROVIDER_HTTP_FAILURE: 503",
+            "ANKI_ACTION_REJECTED: notesInfo",
+            "ANKI_ACTION_REJECTED: modelNamesAndIds",
         ] {
             assert!(super::capture_transient(error), "{error}");
         }
@@ -774,6 +783,7 @@ mod capture_tests {
             "SOURCE_FIELD_MISSING",
             "MEDIA_ASSET_INVALID",
             "PROVIDER_HTTP_FAILURE: 404",
+            "ANKI_ACTION_REJECTED: labRead: BRIDGE_NOTE_MISSING",
         ] {
             assert!(!super::capture_transient(error), "{error}");
         }
