@@ -145,6 +145,25 @@ fn dictionary_marker(result: &OcrResult) -> Option<&'static str> {
         {
             return Some("english-part-of-speech");
         }
+        // The same line as OCR often reads it: "nouni[C]", "nounic]".
+        if line.chars().count() <= 12
+            && line.contains(']')
+            && ENGLISH_LABELS.iter().any(|label| line.starts_with(label))
+        {
+            return Some("english-part-of-speech");
+        }
+        // Cambridge's pronunciation line: "us /ˈswɪft/ uk /swɪft/".
+        let tokens: Vec<String> = lower
+            .split(|c: char| !c.is_ascii_alphabetic())
+            .map(str::to_owned)
+            .collect();
+        if line.chars().count() <= 60
+            && line.matches('/').count() >= 2
+            && tokens.iter().any(|t| t == "us")
+            && tokens.iter().any(|t| t == "uk")
+        {
+            return Some("pronunciation-line");
+        }
         // Cambridge's headword line ("trap noun (MUSIC)").
         let words: Vec<&str> = line.split_whitespace().collect();
         if line.chars().count() <= 40
@@ -840,6 +859,16 @@ mod tests {
                 &["a device", "+ SMART Vocabulary: related words"][..],
                 (400, 300),
                 "cambridge-links",
+            ),
+            (
+                &["nouni[C]", "a shish kebab"][..],
+                (300, 400),
+                "english-part-of-speech",
+            ),
+            (
+                &["us) /swit/ uk) /swift/", "a small bird"][..],
+                (520, 240),
+                "pronunciation-line",
             ),
         ] {
             let found = classify(&lines(texts, size.0, size.1), &document(false), 0.46, 0.03);
