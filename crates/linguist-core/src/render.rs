@@ -134,19 +134,23 @@ fn related(v: &Vocabulary) -> String {
             })
             .collect::<String>()
     };
-    if let Some(index) = selected {
-        let entry = &v.dictionary[index];
-        let spellings: Vec<_> = entry
-            .forms
-            .iter()
-            .filter(|form| **form != v.expression)
-            .collect();
-        if !spellings.is_empty() {
-            html.push_str(&format!(
-                "<h4>Also written</h4><ul class=\"lab-collocations\">{}</ul>",
-                chips(spellings)
-            ));
+    // The entry's other forms, then the spellings the learner's note listed.
+    let mut spellings: Vec<&String> = Vec::new();
+    for form in selected
+        .map(|index| &v.dictionary[index].forms)
+        .into_iter()
+        .flatten()
+        .chain(&v.spellings)
+    {
+        if *form != v.expression && !spellings.contains(&form) {
+            spellings.push(form);
         }
+    }
+    if !spellings.is_empty() {
+        html.push_str(&format!(
+            "<h4>Also written</h4><ul class=\"lab-collocations\">{}</ul>",
+            chips(spellings)
+        ));
     }
     let cambridge = selected.is_some_and(|i| v.dictionary[i].provider == "cambridge-html-v1");
     let others: Vec<_> = v

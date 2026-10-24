@@ -1267,3 +1267,78 @@ fn a_grammar_notes_history_maps_to_recognition() {
     );
     assert_eq!(decisions[1]["history_map"], json!(["0=recognition"]));
 }
+
+#[test]
+fn spellings_of_one_word_are_one_note_and_separate_words_still_split() {
+    struct Dictionary;
+    impl DictionaryPort for Dictionary {
+        fn lookup(
+            &self,
+            query: &str,
+            target: &Language,
+        ) -> Result<linguist_dictionary::JishoPage, String> {
+            let body = r#"{"meta":{"status":200},"data":[
+                {"slug":"お勧め","japanese":[{"word":"お勧め","reading":"おすすめ"},{"word":"お薦め","reading":"おすすめ"},{"word":"お奨め","reading":"おすすめ"}],"senses":[{"english_definitions":["recommendation"],"parts_of_speech":["Noun"]}]},
+                {"slug":"祖父","japanese":[{"word":"祖父","reading":"そふ"}],"senses":[{"english_definitions":["grandfather"],"parts_of_speech":["Noun"]}]}]}"#;
+            linguist_dictionary::parse_jisho(query, target, body.as_bytes(), 8192, 10)
+                .map_err(|e| e.to_string())
+        }
+    }
+    let f = Fixture::new();
+    let mut settings = f.settings.clone();
+    settings
+        .values
+        .insert("dictionary.provider".into(), json!("jisho"));
+    settings.values.insert("kanji.enabled".into(), json!(false));
+    let prepare = |expression: &str, pronunciation: &str| {
+        let bytes = serde_json::to_vec(
+            &json!({"schema_version":2,"kind":"vocabulary","target_language":"ja",
+            "explanation_language":"en","requested_tasks":["comprehension"],
+            "body":{"expression":expression,"pronunciation":pronunciation}}),
+        )
+        .unwrap();
+        let result = prepare_with_providers(
+            &bytes,
+            Kind::Vocabulary,
+            &settings,
+            &f.environment,
+            Providers {
+                dictionary: Some(&Dictionary),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        latest(&f, result.plan_id).documents[0].clone()
+    };
+    let document = prepare("お勧め\nお奨め\nおすすめ\nオススメ", "おすすめ");
+    let LearningContent::Vocabulary(vocab) = &document.content else {
+        panic!()
+    };
+    assert_eq!(vocab.expression, "お勧め");
+    assert_eq!(vocab.spellings, ["お奨め", "おすすめ", "オススメ"]);
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|i| i.code == "VOCAB_SPELLINGS_MERGED")
+    );
+    assert!(
+        !document
+            .issues
+            .iter()
+            .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
+    );
+    // Two words with their own entries stay one note per word.
+    let document = prepare("祖父\nお祖父さん", "そふ\nおじいさん");
+    let LearningContent::Vocabulary(vocab) = &document.content else {
+        panic!()
+    };
+    assert_eq!(vocab.expression, "祖父\nお祖父さん");
+    assert!(vocab.spellings.is_empty());
+    assert!(
+        document
+            .issues
+            .iter()
+            .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
+    );
+}

@@ -62,6 +62,7 @@ Faster campaigns.
 - **A slash separates words**: `plans split-vocab` refused `とにかく/ともかく` (an ASCII slash) as one word; a slash inside brackets still separates a frame's alternatives.
 - **Wiktionary examples stay with their sense**: the definition response repeats a sense's examples under the sense before it (`put him on ice`, meaning kill, under "on hold"); an example listed under several senses stays under the last one only. Definitions lose the space an empty usage label leaves.
 - **Image decisions survive a regenerate**: `plans regenerate --stage dictionary|enrichment` cleared every decision, so the agent's image roles and classifications went back to it; decisions about the source alone are rebound to the regenerated item while they still settle their issue.
+- **Spellings of one word are one note**: a Japanese note listing several spellings of one word (`お勧め お奨め おすすめ オススメ`) was a split candidate, and a split would make four near-identical notes. When one dictionary entry lists every unit as a form or reading, the dictionary stage keeps one note: the first unit is the word, the others its spellings (new `spellings` field, shown under "Also written" with the entry's own forms; `VOCAB_SPELLINGS_MERGED`). Separate words (祖父, お祖父さん) still split.
 
 ## 0.3.0 — 2026-10-11
 

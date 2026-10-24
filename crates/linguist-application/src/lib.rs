@@ -47,6 +47,7 @@ impl From<VocabularyInput> for Vocabulary {
             nuance: vec![],
             collocations: vec![],
             kanji_details: vec![],
+            spellings: vec![],
         }
     }
 }

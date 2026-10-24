@@ -97,7 +97,7 @@ Synthesized audio (WP-20): with `audio.provider=dictionary`, a Japanese word who
 Vocabulary split (WP-20): a Japanese vocabulary item whose expression lists
 several words (one per line: 私 / 僕 / 俺) or whose pronunciation lists several
 kana readings (one per line, or separated by `／` or `/`: ふし／せつ, とにかく/ともかく; a slash inside brackets separates a frame's alternatives) is not ready
-(`VOCAB_SPLIT_REQUIRED`). `plans split-vocab PLAN --template ITEM` prints a
+(`VOCAB_SPLIT_REQUIRED`), unless they are spellings of one word: when one dictionary entry lists every unit as a form or reading (お勧め, お奨め, おすすめ, オススメ), the dictionary stage keeps one note with the first unit as the word and the others as its spellings (`spellings`, shown under "Also written"; `VOCAB_SPELLINGS_MERGED` warning). `plans split-vocab PLAN --template ITEM` prints a
 detected request: one unit per word, paired with the listed readings when the
 counts agree, or one unit per reading of a single word. Recordings go to units
 in order when their count matches; pictures stay with the anchor (the first

@@ -2186,6 +2186,13 @@
           "type": "string",
           "default": ""
         },
+        "spellings": {
+          "description": "Other spellings of this word that the learner's note listed (お奨め,\nおすすめ, オススメ for お勧め), shown under \"Also written\".",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "usage": {
           "type": "string",
           "default": ""

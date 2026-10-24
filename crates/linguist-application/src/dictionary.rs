@@ -219,10 +219,14 @@ pub fn enrich_document(
                 return Err("VOCAB_EXPRESSION_REQUIRED".into());
             }
             // A Japanese note with a bracketed frame (費用(がかかる)) is looked
-            // up by its head word; the frame is a collocation.
+            // up by its head word; the frame is a collocation. A note listing
+            // several spellings or words is looked up by the first.
+            let units = linguist_core::validation::vocabulary_units(&vocab.expression);
             let term = if japanese {
                 lookup_term(
-                    &linguist_core::review::head_word(&vocab.expression),
+                    &linguist_core::review::head_word(
+                        units.first().map_or(&vocab.expression, |unit| unit),
+                    ),
                     settings,
                 )?
             } else {
@@ -281,6 +285,44 @@ pub fn enrich_document(
                 return Err("DICTIONARY_RESPONSE_CONFLICT".into());
             }
             vocab.dictionary = page.entries;
+            // Spellings of one word (お勧め, お奨め, おすすめ, オススメ) are one
+            // note when one entry lists them all: the first is the word, the
+            // others its spellings. Separate words (祖父, お祖父さん) still split.
+            if japanese
+                && units.len() > 1
+                && vocab.dictionary.iter().any(|entry| {
+                    units.iter().all(|unit| {
+                        entry
+                            .forms
+                            .iter()
+                            .chain(&entry.readings)
+                            .any(|form| linguist_core::review::same_spelling(form, unit))
+                    })
+                })
+            {
+                vocab.expression = units[0].clone();
+                vocab.spellings = units[1..].to_vec();
+                let readings = linguist_core::validation::vocabulary_units(&vocab.pronunciation);
+                if readings.len() > 1
+                    && readings
+                        .iter()
+                        .all(|r| linguist_core::review::same_spelling(r, &readings[0]))
+                {
+                    vocab.pronunciation = readings[0].clone();
+                }
+                let mut issue = Issue::new(
+                    "VOCAB_SPELLINGS_MERGED",
+                    Severity::Warning,
+                    Some("expression"),
+                    format!(
+                        "The note listed spellings of one word; {} is the word, {} its other spellings.",
+                        vocab.expression,
+                        vocab.spellings.join(", ")
+                    ),
+                );
+                issue.stage = "dictionary".into();
+                document.issues.push(issue);
+            }
             let source_id = uuid::Uuid::new_v4();
             // The raw response is archived as an asset by its digest; the plan
             // keeps only the reference (WP-24: a Cambridge page inlined four

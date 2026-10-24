@@ -396,6 +396,7 @@ pub fn split(
                 nuance: vec![],
                 collocations: vec![],
                 kanji_details: vec![],
+                spellings: vec![],
             }),
             sibling_tasks: if unit.tasks.is_empty() {
                 original.requested_tasks.clone()

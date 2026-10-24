@@ -214,6 +214,10 @@ pub struct Vocabulary {
     /// v3: structured per-character kanji facts; replaces the plain `kanji` text.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kanji_details: Vec<KanjiDetail>,
+    /// Other spellings of this word that the learner's note listed (お奨め,
+    /// おすすめ, オススメ for お勧め), shown under "Also written".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spellings: Vec<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

@@ -1088,6 +1088,15 @@ fn v3_related_dictionary_words_render_on_the_back_only() {
     // Fronts show Meaning, which never lists neighbours.
     assert!(!rendered.fields["Meaning"].contains("食べ物"));
     assert!(!rendered.fields["Meaning"].contains("召し上がる"));
+    // Spellings the note listed join the entry's, each once.
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.spellings = vec!["喰べる".into(), "たべる".into()];
+    }
+    doc.reviews[0].input_digest = doc.semantic_digest().unwrap();
+    let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
+    assert!(rendered.fields["UsageExamples"].contains(
+        "<h4>Also written</h4><ul class=\"lab-collocations\"><li><span class=\"lab-target\">喰べる</span></li><li><span class=\"lab-target\">たべる</span></li></ul>"
+    ));
 }
 
 #[test]
