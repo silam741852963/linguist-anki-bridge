@@ -801,7 +801,7 @@ pub fn ready(doc: &LearningDocument) -> bool {
 }
 
 /// The units of a field that lists several words or readings: one per line,
-/// or separated by a full-width slash (ふし／せつ). Whitespace inside a unit
+/// or separated by a slash (ふし／せつ, とにかく/ともかく). Whitespace inside a unit
 /// is dropped (older notes space kana at kanji boundaries). A slash inside
 /// brackets separates a frame's alternatives (体重(が増える／を減らす)), not
 /// words.
@@ -812,7 +812,7 @@ pub fn vocabulary_units(text: &str) -> Vec<String> {
         match c {
             '(' | '（' => depth += 1,
             ')' | '）' => depth = depth.saturating_sub(1),
-            '\n' | '／' if depth == 0 => {
+            '\n' | '／' | '/' if depth == 0 => {
                 units.push(String::new());
                 continue;
             }

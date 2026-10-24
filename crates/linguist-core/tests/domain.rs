@@ -1215,6 +1215,14 @@ fn a_bracketed_frame_is_a_collocation_not_the_word() {
         ["体重(が増える／を減らす)"]
     );
     assert_eq!(validation::vocabulary_units("ふし／せつ"), ["ふし", "せつ"]);
+    assert_eq!(
+        validation::vocabulary_units("とにかく/ともかく"),
+        ["とにかく", "ともかく"]
+    );
+    assert_eq!(
+        validation::vocabulary_units("体重(が増える/を減らす)"),
+        ["体重(が増える/を減らす)"]
+    );
 }
 
 fn grammar(pattern: &str) -> Grammar {
