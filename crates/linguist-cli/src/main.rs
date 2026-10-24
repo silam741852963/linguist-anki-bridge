@@ -855,6 +855,15 @@ enum ModelCommand {
         #[arg(long)]
         apply: bool,
     },
+    /// Preview rewriting a managed note type's templates and CSS in place
+    /// (same fields); --apply writes them through the companion add-on.
+    Update {
+        /// Purpose whose managed model to update.
+        purpose: String,
+        /// Update through the verified companion add-on (0.6.0 or later).
+        #[arg(long)]
+        apply: bool,
+    },
     /// Print builtin manifests without contacting Anki.
     Builtin,
 }
@@ -3315,6 +3324,17 @@ fn run(cli: Cli) -> Result<u8, String> {
             let client = anki_client(&settings)?;
             emit(&client.inspect_model(&model)?)?;
             Ok(0)
+        }
+        Command::Models {
+            command: Some(ModelCommand::Update { purpose, apply }),
+        } => {
+            let target = match purpose.as_str() {
+                "japanese_vocab" => model::vocabulary(),
+                "english_vocab" => model::english_vocabulary(),
+                "japanese_grammar" | "english_grammar" => model::grammar(),
+                _ => return Err("MODEL_PURPOSE_UNSUPPORTED".into()),
+            };
+            native_writes::models_update(&settings, target, apply)
         }
         Command::Models {
             command: Some(ModelCommand::Install { purpose, apply }),

@@ -289,6 +289,23 @@ pub fn managed() -> Vec<ManagedModel> {
 pub fn by_name(name: &str) -> Option<ManagedModel> {
     managed().into_iter().find(|model| model.name == name)
 }
+/// Earlier manifests of a managed model that `models update` may rewrite in
+/// place (WP-27: the part-of-speech colours). A note type that matches none
+/// of them was edited outside the bridge and is never overwritten.
+pub fn prior_manifests(name: &str) -> &'static [&'static str] {
+    match name {
+        "Linguist Vocabulary v3" => {
+            &["408d2e36f0eda5d34711ed84d64a499d0c99bb637c80d664cb2cce0ef3ee17d6"]
+        }
+        "Linguist English Vocabulary v1" => {
+            &["9549fd6ed48d20e566bcae151adac8837023a09ac026d2a3e35e8bdd9f9b5cc9"]
+        }
+        "Linguist Grammar v4" => {
+            &["1cc7761facf6088c15071bd7409163f1f4b82bb472da5ed6bf0bb914d2cb62c8"]
+        }
+        _ => &[],
+    }
+}
 /// WP-23 grammar model. Example lists every example with its own play
 /// button, and Usage and Nuance have their own fields. The Recognition front
 /// shows the pattern only: an example there would bring its sound with it.

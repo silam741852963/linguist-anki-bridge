@@ -9,7 +9,7 @@ fn operation_coverage_lists_existing_tests_for_all_86_operations() {
     let text =
         std::fs::read_to_string(repo.join("docs/cli/implementation/op-coverage.md")).unwrap();
     let rows: Vec<&str> = text.lines().filter(|l| l.starts_with("| OP-")).collect();
-    assert_eq!(rows.len(), 86);
+    assert_eq!(rows.len(), 87);
     for (index, row) in rows.iter().enumerate() {
         assert!(
             row.starts_with(&format!("| OP-{:02} |", index + 1)),

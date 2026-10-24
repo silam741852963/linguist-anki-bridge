@@ -48,6 +48,18 @@ pub struct ModelInstallRequest {
     pub expected_absent: bool,
 }
 
+/// WP-27: rewrite the templates and CSS of one managed note type in place.
+/// Fields and template names stay; the prior manifest must be a known one.
+#[derive(Clone, Debug, Serialize)]
+pub struct ModelUpdateRequest {
+    pub operation_id: Uuid,
+    pub binding: CollectionBinding,
+    pub model_id: i64,
+    pub manifest: ManagedModel,
+    pub manifest_digest: String,
+    pub expected_prior_digest: String,
+}
+
 pub trait ModelPort {
     /// Every note type whose name is exactly `name`.
     fn models_named(&mut self, name: &str) -> Result<Vec<ObservedModel>>;
@@ -55,6 +67,15 @@ pub trait ModelPort {
         &mut self,
         request: &ModelInstallRequest,
     ) -> std::result::Result<i64, PortFailure>;
+    /// A port without the companion's `update_model` refuses before writing.
+    fn update_model(
+        &mut self,
+        _request: &ModelUpdateRequest,
+    ) -> std::result::Result<i64, PortFailure> {
+        Err(PortFailure::Rejected(
+            "BRIDGE_OPERATION_VARIANT_UNAVAILABLE".into(),
+        ))
+    }
     fn operation_evidence(&mut self, operation_id: Uuid) -> Result<OperationEvidence>;
 }
 
@@ -208,7 +229,7 @@ fn outcome(
         operation_id: journal.map(|j| j.id),
         journal_state: state,
         checkpoint_id,
-        verified: matches!(action, "reused" | "created"),
+        verified: matches!(action, "reused" | "created" | "updated" | "current"),
         needs_recovery: state == Some(OperationState::NeedsRecovery),
         issues: journal.map(|j| j.issues.clone()).unwrap_or_default(),
     }
@@ -337,6 +358,7 @@ pub fn install(
                 Some(model_id),
                 actual,
                 request.checkpoint_id,
+                "created",
             )
         }
         Err(PortFailure::Rejected(reason)) => {
@@ -387,6 +409,208 @@ pub fn install(
     }
 }
 
+/// Same fields, and the same template names at the same ordinals: only the
+/// template text and the CSS may change in place.
+fn same_shape(observed: &ObservedModel, target: &ManagedModel) -> bool {
+    let mut templates = target.templates.clone();
+    templates.sort_by_key(|template| template.ordinal);
+    observed.fields == target.fields
+        && observed.templates.len() == templates.len()
+        && observed
+            .templates
+            .iter()
+            .zip(&templates)
+            .all(|(a, b)| a.name == b.name && a.ordinal == b.ordinal)
+}
+
+/// WP-27 `models update`: rewrites the templates and CSS of the one managed
+/// note type named `target.name` in place, under a verified checkpoint and a
+/// journal written before the call. Refused, with no collection effect, when
+/// the note type is absent, its fields or template names differ, or its
+/// manifest is not one of `prior` (it was edited outside the bridge).
+pub fn update(
+    store: &mut Store,
+    lease: &LeaseToken,
+    port: &mut dyn ModelPort,
+    request: InstallRequest,
+    prior: &[&str],
+) -> Result<ModelInstallOutcome> {
+    store.validate_lease(lease)?;
+    let target = &request.target;
+    let digest = manifest_digest(target)?;
+    if let Some(operation) = unresolved_for(store, &target.name)? {
+        return Err(format!(
+            "MODEL_INSTALL_RECOVERY_REQUIRED: reconcile operation {operation} first"
+        ));
+    }
+    let observed = port.models_named(&target.name)?;
+    let current = match observed.as_slice() {
+        [] => return Err("MODEL_UPDATE_ABSENT: install the model first".into()),
+        [one] => one,
+        _ => return Err("MODEL_NAME_AMBIGUOUS".into()),
+    };
+    if exact_match(current, target) {
+        return Ok(outcome(
+            target,
+            &digest,
+            "current",
+            Some(current.id),
+            None,
+            None,
+        ));
+    }
+    if !same_shape(current, target) {
+        return Err(
+            "MODEL_UPDATE_SHAPE_CHANGED: fields or template names differ; never overwritten".into(),
+        );
+    }
+    let prior_digest = observed_digest(current)?;
+    if !prior.contains(&prior_digest.as_str()) {
+        return Err(format!(
+            "MODEL_UPDATE_UNKNOWN_PRIOR: {} {prior_digest} is not a known managed manifest; never overwritten",
+            target.name
+        ));
+    }
+    let authorization = require_checkpoint(
+        store,
+        request.checkpoint_id,
+        &DependentScope {
+            binding: &request.binding,
+            requirement: CoverageRequirement {
+                scheduling: true,
+                media: true,
+                schema: true,
+            },
+            note_ids: &[],
+            card_ids: &[],
+            model_ids: &[],
+            media_names: &[],
+            group_id: request.group_id,
+            protected_manifest_digest: request.protected_manifest_digest,
+            now_ms: request.now_ms,
+            reuse_max_age_seconds: request.reuse_max_age_seconds,
+            max_package_bytes: request.max_package_bytes,
+        },
+    )?;
+    let operation = Uuid::new_v4();
+    let update = ModelUpdateRequest {
+        operation_id: operation,
+        binding: request.binding.clone(),
+        model_id: current.id,
+        manifest: target.clone(),
+        manifest_digest: digest.clone(),
+        expected_prior_digest: prior_digest.clone(),
+    };
+    store.publish_model_operation(&ModelOperationRecord {
+        operation_id: operation,
+        model_name: target.name.clone(),
+        manifest_digest: digest.clone(),
+        created_ms: request.now_ms,
+        evidence: serde_json::json!({
+            "schema_version": 1,
+            "observed_same_name": observed,
+            "binding_digest": binding_digest(&request.binding)?,
+            "checkpoint": authorization,
+            "manifest": target,
+            "update_of": {"model_id": current.id, "prior_digest": prior_digest},
+        }),
+    })?;
+    let journal = OperationJournal {
+        id: operation,
+        group_id: request.group_id,
+        approval_digest: format!("lab-model-v1:{digest}"),
+        binding: request.binding.clone(),
+        snapshot_id: operation,
+        backup_id: request.checkpoint_id,
+        state: OperationState::Prepared,
+        steps: vec![JournalStep {
+            id: Uuid::new_v4(),
+            action: "update_model".into(),
+            payload_digest: canonical::digest("lab-model-update-request-v1", &update)
+                .map_err(|e| e.to_string())?,
+            precondition_digest: canonical::digest(
+                "lab-model-prior-v1",
+                &(&prior_digest, binding_digest(&request.binding)?),
+            )
+            .map_err(|e| e.to_string())?,
+            expected_post_digest: digest.clone(),
+            state: StepState::IntentRecorded,
+            observed_digest: None,
+        }],
+        issues: vec![],
+    };
+    let version = store.append_journal(&journal, None)?;
+    let mut journal = Journal { store, version };
+    journal.advance(|j| j.state = OperationState::Preflight)?;
+    journal.advance(|j| j.state = OperationState::Checkpointed)?;
+    journal.advance(|j| {
+        j.state = OperationState::Mutating;
+        j.steps[0].state = StepState::RequestStarted;
+    })?;
+    match port.update_model(&update) {
+        Ok(model_id) => {
+            let actual = port.models_named(&target.name);
+            settle_observed(
+                &mut journal,
+                target,
+                &digest,
+                Some(model_id),
+                actual,
+                request.checkpoint_id,
+                "updated",
+            )
+        }
+        Err(PortFailure::Rejected(reason)) => {
+            // A rejection counts as no effect only if the prior manifest is
+            // still there.
+            let unchanged = port.models_named(&target.name).is_ok_and(|models| {
+                matches!(models.as_slice(), [one] if observed_digest(one).as_deref() == Ok(prior_digest.as_str()))
+            });
+            if unchanged {
+                let observed = canonical::digest("lab-model-failure-v1", &reason).ok();
+                journal.advance(|j| {
+                    j.steps[0].state = StepState::ObservedFailure;
+                    j.steps[0].observed_digest = observed;
+                    j.state = OperationState::FailedBeforeWrite;
+                    j.issues
+                        .push(issue("MODEL_UPDATE_REJECTED", reason.clone()));
+                })?;
+                return Err(format!("MODEL_UPDATE_REJECTED: {reason}"));
+            }
+            mark_unknown(
+                &mut journal,
+                "MODEL_UPDATE_REJECTED_WITH_EFFECT",
+                &format!(
+                    "adapter rejected the request ({reason}) but the note type changed or could not be read"
+                ),
+            )?;
+            Ok(outcome(
+                target,
+                &digest,
+                "needs_recovery",
+                None,
+                Some(&journal.version.journal),
+                Some(request.checkpoint_id),
+            ))
+        }
+        Err(PortFailure::Unknown(reason)) => {
+            mark_unknown(
+                &mut journal,
+                "MODEL_UPDATE_OUTCOME_UNKNOWN",
+                &format!("update response lost: {reason}"),
+            )?;
+            Ok(outcome(
+                target,
+                &digest,
+                "needs_recovery",
+                None,
+                Some(&journal.version.journal),
+                Some(request.checkpoint_id),
+            ))
+        }
+    }
+}
+
 fn mark_unknown(journal: &mut Journal, code: &str, detail: &str) -> Result<()> {
     journal.advance(|j| {
         j.steps[0].state = StepState::Unknown;
@@ -409,6 +633,7 @@ fn settle_observed(
     claimed_id: Option<i64>,
     actual: Result<Vec<ObservedModel>>,
     checkpoint_id: Uuid,
+    done: &'static str,
 ) -> Result<ModelInstallOutcome> {
     let models = match actual {
         Ok(models) => models,
@@ -450,7 +675,7 @@ fn settle_observed(
             Ok(outcome(
                 target,
                 digest,
-                "created",
+                done,
                 Some(model.id),
                 Some(&journal.version.journal),
                 Some(checkpoint_id),
@@ -492,6 +717,15 @@ pub fn reconcile(
     if manifest_digest(&target)? != record.manifest_digest {
         return Err("MODEL_OPERATION_CORRUPT".into());
     }
+    // WP-27: an update names the note type it rewrote and its prior manifest.
+    let prior = record.evidence["update_of"]["prior_digest"]
+        .as_str()
+        .map(str::to_owned);
+    let (done, not_done) = if prior.is_some() {
+        ("updated", "not_updated")
+    } else {
+        ("created", "not_created")
+    };
     let version = store.journal(operation_id)?;
     let checkpoint_id = version.journal.backup_id;
     let digest = record.manifest_digest.clone();
@@ -503,7 +737,7 @@ pub fn reconcile(
             return Ok(outcome(
                 &target,
                 &digest,
-                "created",
+                done,
                 id,
                 Some(&journal.version.journal),
                 Some(checkpoint_id),
@@ -513,7 +747,7 @@ pub fn reconcile(
             return Ok(outcome(
                 &target,
                 &digest,
-                "not_created",
+                not_done,
                 None,
                 Some(&journal.version.journal),
                 Some(checkpoint_id),
@@ -539,7 +773,7 @@ pub fn reconcile(
             return Ok(outcome(
                 &target,
                 &digest,
-                "not_created",
+                not_done,
                 None,
                 Some(&journal.version.journal),
                 Some(checkpoint_id),
@@ -576,14 +810,38 @@ pub fn reconcile(
             Ok(outcome(
                 &target,
                 &digest,
-                "created",
+                done,
                 Some(model_id),
                 Some(&journal.version.journal),
                 Some(checkpoint_id),
             ))
         }
+        (OperationEvidence::FailedBeforeWrite, [one], _)
+            if journal.version.journal.steps[0].state == StepState::Unknown
+                && prior.is_some()
+                && observed_digest(one).ok() == prior =>
+        {
+            let observed = canonical::digest("lab-model-failure-v1", "reconciled_unchanged").ok();
+            journal.advance(|j| {
+                j.steps[0].state = StepState::ObservedFailure;
+                j.steps[0].observed_digest = observed;
+                j.state = OperationState::FailedBeforeWrite;
+                j.issues.push(issue(
+                    "MODEL_UPDATE_RECONCILED_UNCHANGED",
+                    "companion evidence and read-back both show the prior manifest unchanged",
+                ));
+            })?;
+            Ok(outcome(
+                &target,
+                &digest,
+                not_done,
+                None,
+                Some(&journal.version.journal),
+                Some(checkpoint_id),
+            ))
+        }
         (OperationEvidence::FailedBeforeWrite, [], _)
-            if journal.version.journal.steps[0].state == StepState::Unknown =>
+            if journal.version.journal.steps[0].state == StepState::Unknown && prior.is_none() =>
         {
             let observed = canonical::digest("lab-model-failure-v1", "reconciled_absent").ok();
             journal.advance(|j| {
@@ -598,7 +856,7 @@ pub fn reconcile(
             Ok(outcome(
                 &target,
                 &digest,
-                "not_created",
+                not_done,
                 None,
                 Some(&journal.version.journal),
                 Some(checkpoint_id),

@@ -111,6 +111,20 @@ companion evidence naming that model agree; it closes an uncertain request as
 not created only when the name is absent and the companion reports
 `failed_before_write`. It never re-sends.
 
+## OP-87 — `models update PURPOSE`
+
+Inputs: Purpose; optional --apply.
+
+Effects: Preview by default; with --apply, the managed note type's templates and CSS change in place. Fields, template names and ordinals stay, so no full sync is needed.
+
+1. Read the one note type named like the purpose's managed model, through the verified companion.
+2. Preview `current` (it matches the manifest), `update` (it matches a known earlier manifest), `unknown_prior` (edited outside the bridge), `absent` or `ambiguous`, and whether the companion declares `update_model` (0.6.0).
+3. With --apply: lease, collection-scope checkpoint, model-operation record (with `update_of`: model id and prior manifest digest), journal `update_model` intent, the companion call, read-back.
+
+Result/failure: `updated` or `current` with the model id; `MODEL_UPDATE_ABSENT`, `MODEL_UPDATE_SHAPE_CHANGED`, `MODEL_UPDATE_UNKNOWN_PRIOR` or `MODEL_NAME_AMBIGUOUS` before any lease or write; `CAPABILITY_UNAVAILABLE` without companion 0.6.0. A lost response enters `needs_recovery`; `recover reconcile` adopts the update only with the companion's receipt and an exact read-back, and closes it as `not_updated` when the companion reports `failed_before_write` and the prior manifest is still there. A note type the user edited is never overwritten.
+
+WP-27 uses it to ship the part-of-speech colours: `prior_manifests` in `linguist_core::model` lists the manifests each managed model may be updated from.
+
 ## OP-18 — `notes list`
 
 Inputs: Exactly one selector family: IDs, query, deck/purpose; limit/cursor.

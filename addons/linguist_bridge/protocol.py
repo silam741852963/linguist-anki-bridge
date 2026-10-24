@@ -3,7 +3,7 @@
 from uuid import UUID
 
 PROTOCOL = "lab-native-v1"
-COMPANION_VERSION = "0.5.0"
+COMPANION_VERSION = "0.6.0"
 
 
 def _label(value, limit):
@@ -53,7 +53,7 @@ ACTIONS = ("labCapabilities", "labBegin", "labInspect", "labMutate", "labOperati
            "labRebind", "labEnd")
 VARIANTS = ("install_model", "export_checkpoint", "store_media", "create_note",
             "update_note", "restore_note", "delete_unstudied_created_note",
-            "delete_merged_note", "recreate_deleted_note")
+            "delete_merged_note", "recreate_deleted_note", "update_model")
 
 
 def build_capabilities(*, bridge_id, anki_version, anki_connect_source_digest,

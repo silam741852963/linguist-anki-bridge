@@ -6,8 +6,8 @@ use linguist_application::{
     },
     checkpoint::{CoverageRequirement, PackageLimits, ScopeCard, ScopeManifest, ScopeMedia},
     model_install::{
-        InstallRequest, ModelInstallRequest, ModelPort, ObservedModel, OperationEvidence, install,
-        manifest_digest, reconcile,
+        InstallRequest, ModelInstallRequest, ModelPort, ModelUpdateRequest, ObservedModel,
+        OperationEvidence, install, manifest_digest, reconcile, update,
     },
 };
 use linguist_core::{
@@ -968,4 +968,182 @@ fn crash_after_request_started_reconciles_as_unknown() {
         StepState::Unknown
     );
     assert_eq!(port.installs, 0);
+}
+
+/// WP-27 `models update`: the managed note type's templates and CSS change in
+/// place, from a known prior manifest only.
+struct Updates {
+    existing: Vec<ObservedModel>,
+    lost: Option<bool>,
+    updates: usize,
+    evidence: OperationEvidence,
+}
+impl ModelPort for Updates {
+    fn models_named(&mut self, name: &str) -> Result<Vec<ObservedModel>, String> {
+        Ok(self
+            .existing
+            .iter()
+            .filter(|m| m.name == name)
+            .cloned()
+            .collect())
+    }
+    fn install_model(&mut self, _: &ModelInstallRequest) -> Result<i64, PortFailure> {
+        panic!("an update never installs")
+    }
+    fn update_model(&mut self, request: &ModelUpdateRequest) -> Result<i64, PortFailure> {
+        self.updates += 1;
+        let written = observed(&request.manifest, request.model_id);
+        match self.lost {
+            None => {
+                self.existing = vec![written];
+                Ok(request.model_id)
+            }
+            Some(effect) => {
+                if effect {
+                    self.existing = vec![written];
+                }
+                Err(PortFailure::Unknown("response lost".into()))
+            }
+        }
+    }
+    fn operation_evidence(&mut self, _: Uuid) -> Result<OperationEvidence, String> {
+        Ok(self.evidence.clone())
+    }
+}
+
+fn old_grammar() -> (ObservedModel, String) {
+    let mut old = observed(&model::grammar(), 77);
+    old.css = ".lab-card { color: pink; }".into();
+    let digest = model::ManifestProjection::new(&old.name, &old.fields, &old.templates, &old.css)
+        .digest()
+        .unwrap();
+    (old, digest)
+}
+
+fn updates(existing: Vec<ObservedModel>, lost: Option<bool>) -> Updates {
+    Updates {
+        existing,
+        lost,
+        updates: 0,
+        evidence: OperationEvidence::Absent,
+    }
+}
+
+#[test]
+fn a_known_prior_model_is_updated_in_place_and_verified() {
+    let mut s = with_checkpoint();
+    let (old, prior) = old_grammar();
+    let mut port = updates(vec![old], None);
+    let done = update(
+        &mut s.store,
+        &s.token,
+        &mut port,
+        request(s.checkpoint),
+        &[&prior],
+    )
+    .unwrap();
+    assert_eq!((done.action, done.model_id), ("updated", Some(77)));
+    assert_eq!(done.journal_state, Some(OperationState::Committed));
+    let record = s.store.model_operation(done.operation_id.unwrap()).unwrap();
+    assert_eq!(record.evidence["update_of"]["prior_digest"], prior.as_str());
+    let again = update(
+        &mut s.store,
+        &s.token,
+        &mut port,
+        request(s.checkpoint),
+        &[&prior],
+    )
+    .unwrap();
+    assert_eq!(again.action, "current");
+    assert_eq!(port.updates, 1);
+}
+
+#[test]
+fn an_unknown_reshaped_or_absent_model_is_never_overwritten() {
+    let mut s = with_checkpoint();
+    let (old, prior) = old_grammar();
+    let mut edited = old.clone();
+    edited.css.push_str("/* user */");
+    let mut port = updates(vec![edited], None);
+    let error = update(
+        &mut s.store,
+        &s.token,
+        &mut port,
+        request(s.checkpoint),
+        &[&prior],
+    )
+    .unwrap_err();
+    assert!(error.starts_with("MODEL_UPDATE_UNKNOWN_PRIOR"), "{error}");
+    let mut reshaped = old.clone();
+    reshaped.fields.push("Extra".into());
+    let mut port2 = updates(vec![reshaped], None);
+    let error = update(
+        &mut s.store,
+        &s.token,
+        &mut port2,
+        request(s.checkpoint),
+        &[&prior],
+    )
+    .unwrap_err();
+    assert!(error.starts_with("MODEL_UPDATE_SHAPE_CHANGED"), "{error}");
+    let mut port3 = updates(vec![], None);
+    let error = update(
+        &mut s.store,
+        &s.token,
+        &mut port3,
+        request(s.checkpoint),
+        &[&prior],
+    )
+    .unwrap_err();
+    assert!(error.starts_with("MODEL_UPDATE_ABSENT"), "{error}");
+    assert_eq!(port.updates + port2.updates + port3.updates, 0);
+    assert_eq!(s.store.pending_journal_count().unwrap(), 0);
+}
+
+#[test]
+fn a_lost_update_is_reconciled_from_evidence_and_read_back() {
+    let mut s = with_checkpoint();
+    let (old, prior) = old_grammar();
+    let digest = manifest_digest(&model::grammar()).unwrap();
+    // Written, response lost: the companion's receipt proves the update.
+    let mut port = updates(vec![old.clone()], Some(true));
+    let lost = update(
+        &mut s.store,
+        &s.token,
+        &mut port,
+        request(s.checkpoint),
+        &[&prior],
+    )
+    .unwrap();
+    assert!(lost.needs_recovery);
+    let operation = lost.operation_id.unwrap();
+    port.evidence = OperationEvidence::Created {
+        model_id: 77,
+        manifest_digest: digest.clone(),
+    };
+    let settled = reconcile(&mut s.store, &s.token, &mut port, operation).unwrap();
+    assert_eq!((settled.action, settled.verified), ("updated", true));
+    // Not written: the prior manifest is still there.
+    let mut port = updates(vec![old], Some(false));
+    let lost = update(
+        &mut s.store,
+        &s.token,
+        &mut port,
+        request(s.checkpoint),
+        &[&prior],
+    )
+    .unwrap();
+    port.evidence = OperationEvidence::FailedBeforeWrite;
+    let settled = reconcile(
+        &mut s.store,
+        &s.token,
+        &mut port,
+        lost.operation_id.unwrap(),
+    )
+    .unwrap();
+    assert_eq!(settled.action, "not_updated");
+    assert_eq!(
+        settled.journal_state,
+        Some(OperationState::FailedBeforeWrite)
+    );
 }

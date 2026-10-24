@@ -112,3 +112,4 @@ Aliases `inject`/`modernize` may map to add/revamp with deprecation messages; th
 | OP-84 | [`campaign agent-done CAMPAIGN`](campaign.md#op-84-campaign-agent-done-campaign) |
 | OP-85 | [`campaign requeue CAMPAIGN [--reason PREFIX]...`](campaign.md#op-85-campaign-requeue-campaign---reason-prefix) |
 | OP-86 | [`campaign wrap-up CAMPAIGN [--wait-seconds N]`](campaign.md#op-86-campaign-wrap-up-campaign---wait-seconds-n) |
+| OP-87 | [`models update PURPOSE`](collection.md#op-87-models-update-purpose) |

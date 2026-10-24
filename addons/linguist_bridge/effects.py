@@ -542,6 +542,43 @@ def perform_install_model(col, body, _prepared):
     return created["id"]
 
 
+# ------------------------------------------------------------------ update_model
+def preflight_update_model(col, body):
+    """The note type is the named managed one, still at the expected prior
+    manifest, with the manifest's fields and template names."""
+    manifest = body["manifest"]
+    if canonical_manifest.managed_digest(manifest) != body["manifest_digest"]:
+        raise EffectError("BRIDGE_MANIFEST_DIGEST_MISMATCH")
+    model = col.models.get(body["model_id"])
+    if model is None or model["name"] != manifest["name"]:
+        raise EffectError("BRIDGE_MODEL_ABSENT")
+    if canonical_manifest.model_digest(model) != body["expected_prior_digest"]:
+        raise EffectError("BRIDGE_MODEL_CHANGED")
+    current = canonical_manifest.projection_of_model(model)
+    templates = sorted(manifest["templates"], key=lambda t: t["ordinal"])
+    if current["fields"] != list(manifest["fields"]) \
+            or [(t["name"], t["ordinal"]) for t in current["templates"]] \
+            != [(t["name"], t["ordinal"]) for t in templates]:
+        raise EffectError("BRIDGE_MODEL_SHAPE_CHANGED")
+    return None
+
+
+def perform_update_model(col, body, _prepared):
+    manifest = body["manifest"]
+    model = col.models.get(body["model_id"])
+    model["css"] = manifest["css"]
+    by_ordinal = {t["ordinal"]: t for t in manifest["templates"]}
+    for item in model["tmpls"]:
+        template = by_ordinal[item["ord"]]
+        item["qfmt"] = template["front"]
+        item["afmt"] = template["back"]
+    col.models.update_dict(model)
+    updated = col.models.get(body["model_id"])
+    if updated is None or canonical_manifest.model_digest(updated) != body["manifest_digest"]:
+        raise EffectError("BRIDGE_MODEL_UPDATE_UNVERIFIED")
+    return updated["id"]
+
+
 # ------------------------------------------------------------------ reads
 def models_named(col, name):
     out = []

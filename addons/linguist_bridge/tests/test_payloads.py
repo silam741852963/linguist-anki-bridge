@@ -16,6 +16,7 @@ OPERATION = "00000000-0000-4000-8000-000000000001"
 
 
 KIND = {"export_checkpoint": "checkpoint", "install_model": "model-install",
+        "update_model": "model-install",
         "restore_note": "lab-restore-decision-v1",
         "delete_unstudied_created_note": "lab-restore-decision-v1"}
 
@@ -125,6 +126,12 @@ class PayloadTest(unittest.TestCase):
         self.assertInvalid("install_model", dict(install, manifest=dict(
             model, templates=[dict(model["templates"][0], ordinal=1)])))
         self.assertInvalid("install_model", dict(install, expected_absent=False))
+        update = {"manifest": model, "manifest_digest": install["manifest_digest"],
+                  "model_id": 5, "expected_prior_digest": "e" * 64}
+        check("update_model", update)
+        self.assertInvalid("update_model", dict(update, model_id=0))
+        self.assertInvalid("update_model", dict(update, expected_prior_digest=update["manifest_digest"]))
+        self.assertInvalid("update_model", dict(update, expected_absent=True))
         check("export_checkpoint", {"include_media": True, "include_scheduling": True})
         self.assertInvalid("export_checkpoint", {"include_media": True,
                                                  "include_scheduling": False})

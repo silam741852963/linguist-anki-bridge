@@ -93,6 +93,7 @@ VARIANT_APPROVAL = {
     "recreate_deleted_note": (MERGE,),
     "export_checkpoint": ("checkpoint",),
     "install_model": ("model-install",),
+    "update_model": ("model-install",),
 }
 
 
@@ -388,9 +389,8 @@ def _store_media(body, *_):
         raise _invalid()
 
 
-def _install_model(body, *_):
-    _exact(body, {"manifest", "manifest_digest", "expected_absent"})
-    manifest = body["manifest"]
+def _manifest(manifest):
+    """A managed manifest: a known name, its exact field set and 1-16 templates."""
     _exact(manifest, {"name", "version", "fields", "templates", "css"})
     if manifest["name"] not in FIELDS:
         raise _invalid()
@@ -413,8 +413,24 @@ def _install_model(body, *_):
     if ordinals != set(range(len(templates))) or len(names) != len(templates):
         raise _invalid()
     _text(manifest["css"], MAX_FIELD_BYTES)
+
+
+def _install_model(body, *_):
+    _exact(body, {"manifest", "manifest_digest", "expected_absent"})
+    _manifest(body["manifest"])
     _hash(body["manifest_digest"])
     if body["expected_absent"] is not True:
+        raise _invalid()
+
+
+def _update_model(body, *_):
+    """WP-27: templates and CSS of an existing managed note type, in place."""
+    _exact(body, {"manifest", "manifest_digest", "model_id", "expected_prior_digest"})
+    _manifest(body["manifest"])
+    _hash(body["manifest_digest"])
+    _hash(body["expected_prior_digest"])
+    if type(body["model_id"]) is not int or body["model_id"] <= 0 \
+            or body["expected_prior_digest"] == body["manifest_digest"]:
         raise _invalid()
 
 
@@ -433,6 +449,7 @@ VALIDATORS = {
     "recreate_deleted_note": _recreate,
     "store_media": _store_media,
     "install_model": _install_model,
+    "update_model": _update_model,
     "export_checkpoint": _export_checkpoint,
 }
 

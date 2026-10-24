@@ -16,6 +16,9 @@ pub enum MutationVariant {
     /// an older verified companion declares neither and refuses them.
     DeleteMergedNote,
     RecreateDeletedNote,
+    /// WP-27 (companion 0.6.0): rewrite a managed note type's templates and
+    /// CSS in place. Optional like the merge variants.
+    UpdateModel,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -314,7 +317,7 @@ pub fn inspect_native_manifest(value: Value) -> Result<NativeInspection> {
     {
         return Err("ANKI_NATIVE_ACTIONS_INVALID".into());
     }
-    if declaration.mutation_variants.len() > 9
+    if declaration.mutation_variants.len() > 10
         || declaration
             .mutation_variants
             .iter()
@@ -474,6 +477,11 @@ pub const VERIFIED_COMPANIONS: &[(&str, &str, &str)] = &[
     ),
     (
         "0.5.0",
+        "25.09.2",
+        "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
+    ),
+    (
+        "0.6.0",
         "25.09.2",
         "629566e8eea59f3d67abf1b2339d5c0c621b2d894139e8335db030d022582873",
     ),

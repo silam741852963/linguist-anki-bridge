@@ -742,6 +742,114 @@ pub(crate) fn models_install(
     result
 }
 
+/// WP-27 `models update PURPOSE [--apply]`: the managed note type's templates
+/// and CSS rewritten in place. The preview reads the note type and says what
+/// apply would do; apply needs companion 0.6.0 (`update_model`).
+pub(crate) fn models_update(
+    settings: &linguist_config::Effective,
+    target: linguist_core::model::ManagedModel,
+    apply: bool,
+) -> Result<u8, String> {
+    use linguist_application::model_install::ModelPort;
+    let client = crate::anki_client(settings)?;
+    let prior = linguist_core::model::prior_manifests(&target.name);
+    let digest = target.manifest_digest().map_err(|e| e.to_string())?;
+    if !apply {
+        let mut port = connect(&client, settings)?;
+        let observed = port.models_named(&target.name)?;
+        let (proposal, current) = match observed.as_slice() {
+            [] => ("absent", None),
+            [one] if model_install::exact_match(one, &target) => ("current", Some(one)),
+            [one] => {
+                let current = linguist_core::model::ManifestProjection::new(
+                    &one.name,
+                    &one.fields,
+                    &one.templates,
+                    &one.css,
+                )
+                .digest()
+                .map_err(|e| e.to_string())?;
+                if prior.contains(&current.as_str()) {
+                    ("update", Some(one))
+                } else {
+                    ("unknown_prior", Some(one))
+                }
+            }
+            _ => ("ambiguous", None),
+        };
+        let variant = client
+            .native_capabilities()?
+            .declaration
+            .mutation_variants
+            .contains(&linguist_anki::native::MutationVariant::UpdateModel);
+        emit(&json!({
+            "schema_version": 2, "mode": "preview", "model_name": target.name,
+            "proposal": proposal, "model_id": current.map(|m| m.id),
+            "manifest_digest": digest, "prior_manifests": prior,
+            "companion_update_model": variant,
+            "apply_requires": {"checkpoint": "collection", "journal_before_call": true},
+        }))?;
+        return Ok(if matches!(proposal, "current" | "update") {
+            0
+        } else {
+            4
+        });
+    }
+    // A companion that is not verified is refused first, then one without
+    // `update_model`, before any lease or checkpoint.
+    let port = connect(&client, settings)?;
+    if !client
+        .native_capabilities()?
+        .declaration
+        .mutation_variants
+        .contains(&linguist_anki::native::MutationVariant::UpdateModel)
+    {
+        return Err("CAPABILITY_UNAVAILABLE: models update needs companion 0.6.0 (update_model); install it and restart Anki".into());
+    }
+    let mut writer = Writer::open(port, settings)?;
+    let result = (|| {
+        let observed = writer.port.models_named(&target.name)?;
+        if let [one] = observed.as_slice()
+            && model_install::exact_match(one, &target)
+        {
+            emit(&json!({
+                "schema_version": 2, "mode": "apply",
+                "model_update": {"model_name": target.name, "action": "current", "model_id": one.id,
+                                 "manifest_digest": digest, "verified": true},
+                "collection_writes_enabled": true,
+            }))?;
+            return Ok(0);
+        }
+        let group = Uuid::new_v4();
+        let (checkpoint, protected) = writer.checkpoint(settings, &[], &[], Some(group))?;
+        let binding = writer.port.binding();
+        let outcome = model_install::update(
+            &mut writer.store,
+            &writer.lease,
+            &mut writer.port,
+            model_install::InstallRequest {
+                binding,
+                target,
+                checkpoint_id: checkpoint,
+                group_id: Some(group),
+                protected_manifest_digest: &protected,
+                reuse_max_age_seconds: reuse_seconds(settings),
+                max_package_bytes: max_package(settings),
+                now_ms: now_ms()?,
+            },
+            prior,
+        )?;
+        let verified = outcome.verified;
+        emit(&json!({
+            "schema_version": 2, "mode": "apply", "model_update": outcome,
+            "checkpoint_id": checkpoint, "collection_writes_enabled": true,
+        }))?;
+        Ok(if verified { 0 } else { 4 })
+    })();
+    writer.finish();
+    result
+}
+
 /// RI-03 explicit binding: a child revision bound to the verified live
 /// session's stable identity (endpoint, profile, path, bridge, lineage).
 /// Approval then covers the binding; apply compares it with the execution

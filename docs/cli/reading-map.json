@@ -688,6 +688,16 @@
         "recovery/models.md"
       ]
     },
+    "OP-87": {
+      "path": "operations/collection.md",
+      "heading": "## OP-87 \u2014 `models update PURPOSE`",
+      "title": "OP-87 \u2014 `models update PURPOSE`",
+      "words": 194,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
     "OP-18": {
       "path": "operations/collection.md",
       "heading": "## OP-18 \u2014 `notes list`",

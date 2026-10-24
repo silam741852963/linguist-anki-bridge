@@ -391,6 +391,8 @@ class NativeActions:
             return effects.preflight_recreate_deleted_note(col, body)
         if variant == "install_model":
             return effects.preflight_install_model(col, body)
+        if variant == "update_model":
+            return effects.preflight_update_model(col, body)
         if variant == "store_media":
             data = self._staged(body["sha256"], body["size_bytes"])
             return data, effects.preflight_store_media(col, body["filename"], data,
@@ -436,6 +438,8 @@ class NativeActions:
             return effects.perform_recreate_deleted_note(col, body, prepared)
         if variant == "install_model":
             return effects.perform_install_model(col, body, prepared)
+        if variant == "update_model":
+            return effects.perform_update_model(col, body, prepared)
         if variant == "store_media":
             data, present = prepared
             return effects.perform_store_media(col, body["filename"], data, body["sha256"],
@@ -469,7 +473,7 @@ class NativeActions:
                      "BRIDGE_READBACK_MISMATCH")
             return {"note_id": observed["id"], "content_digest": effects.content_digest(observed),
                     "card_ids": [card["id"] for card in observed["cards"]]}
-        if variant == "install_model":
+        if variant in ("install_model", "update_model"):
             model = col.models.get(result)
             _require(model is not None
                      and canonical_manifest.model_digest(model) == body["manifest_digest"],

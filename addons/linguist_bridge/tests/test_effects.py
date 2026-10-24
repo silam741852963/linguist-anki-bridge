@@ -189,3 +189,61 @@ class EffectTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeModelStore:
+    """`col.models` for one note type: get returns a copy, update_dict saves."""
+
+    def __init__(self, model):
+        self.model = model
+
+    def get(self, mid):
+        import copy
+        return copy.deepcopy(self.model) if mid == self.model["id"] else None
+
+    def update_dict(self, model):
+        self.model = model
+
+
+class UpdateModelTests(unittest.TestCase):
+    def setUp(self):
+        from linguist_bridge import manifest
+        self.manifest = manifest
+        self.model = {"id": 5, "name": "Linguist Vocabulary v3", "css": "old",
+                      "flds": [{"name": "Expression", "ord": 0}, {"name": "Meaning", "ord": 1}],
+                      "tmpls": [{"name": "Comprehension", "ord": 0, "qfmt": "{{Expression}}",
+                                 "afmt": "{{Meaning}}"}]}
+        self.target = {"name": "Linguist Vocabulary v3", "version": 3,
+                       "fields": ["Expression", "Meaning"], "css": "new",
+                       "templates": [{"name": "Comprehension", "ordinal": 0,
+                                      "front": '<div data-tags="{{Tags}}">{{Expression}}</div>',
+                                      "back": "{{Meaning}}"}]}
+
+    def body(self, **change):
+        body = {"manifest": self.target,
+                "manifest_digest": self.manifest.managed_digest(self.target),
+                "model_id": 5,
+                "expected_prior_digest": self.manifest.model_digest(self.model)}
+        body.update(change)
+        return body
+
+    def test_rewrites_templates_and_css_in_place(self):
+        col = FakeCollection(tempfile.mkdtemp())
+        col.models = FakeModelStore(self.model)
+        body = self.body()
+        effects.preflight_update_model(col, body)
+        self.assertEqual(effects.perform_update_model(col, body, None), 5)
+        self.assertEqual(col.models.model["css"], "new")
+        self.assertEqual(self.manifest.model_digest(col.models.model), body["manifest_digest"])
+
+    def test_refuses_a_changed_or_reshaped_note_type(self):
+        col = FakeCollection(tempfile.mkdtemp())
+        col.models = FakeModelStore(dict(self.model, css="edited by the user"))
+        with self.assertRaisesRegex(effects.EffectError, "BRIDGE_MODEL_CHANGED"):
+            effects.preflight_update_model(col, self.body())
+        col.models = FakeModelStore(self.model)
+        with self.assertRaisesRegex(effects.EffectError, "BRIDGE_MODEL_ABSENT"):
+            effects.preflight_update_model(col, self.body(model_id=6))
+        self.target["fields"] = ["Expression", "Meaning", "Extra"]
+        with self.assertRaisesRegex(effects.EffectError, "BRIDGE_MODEL_SHAPE_CHANGED"):
+            effects.preflight_update_model(col, self.body())

@@ -17,7 +17,9 @@ use crate::{
     },
     backup::{CheckpointExporter, ExportClaim, ExportRequest, PortFailure, Result},
     checkpoint::{CoverageRequirement, ScopeManifest},
-    model_install::{ModelInstallRequest, ModelPort, ObservedModel, OperationEvidence},
+    model_install::{
+        ModelInstallRequest, ModelPort, ModelUpdateRequest, ObservedModel, OperationEvidence,
+    },
 };
 use base64::Engine;
 use linguist_anki::{
@@ -599,6 +601,55 @@ impl ModelPort for NativePort<'_> {
                 .filter(|r| r["manifest_digest"] == request.manifest_digest.as_str())
                 .and_then(|r| r["model_id"].as_i64())
                 .ok_or_else(|| PortFailure::Unknown("MODEL_INSTALL_RECEIPT_INVALID".into())),
+            NativeOperationState::FailedBeforeWrite => {
+                Err(PortFailure::Rejected(native_status(&status).reason()))
+            }
+            _ => Err(PortFailure::Unknown(native_status(&status).reason())),
+        }
+    }
+    fn update_model(
+        &mut self,
+        request: &ModelUpdateRequest,
+    ) -> std::result::Result<i64, PortFailure> {
+        let binding = self.refresh().map_err(PortFailure::Rejected)?;
+        if !crate::apply::same_collection(&binding, &request.binding) {
+            return Err(PortFailure::Rejected(
+                "MODEL_INSTALL_BINDING_MISMATCH".into(),
+            ));
+        }
+        let approval = model_install_approval(request.operation_id, &request.manifest_digest)
+            .map_err(PortFailure::Rejected)?;
+        let owner = self
+            .owner_for(&binding, &approval)
+            .map_err(PortFailure::Rejected)?;
+        let payload = canonical::bytes(&json!({
+            "schema_version": 1, "variant": "update_model",
+            "body": {"manifest": request.manifest, "manifest_digest": request.manifest_digest,
+                     "model_id": request.model_id,
+                     "expected_prior_digest": request.expected_prior_digest},
+        }))
+        .map_err(|e| PortFailure::Rejected(e.to_string()))?;
+        let result = self.submit(
+            binding.lineage_id,
+            request.operation_id,
+            binding.session_epoch,
+            &owner,
+            &approval,
+            "update_model",
+            &payload,
+            self.deadlines.operation,
+        );
+        let _ = self.client.native_end(owner.owner_token, owner.fence);
+        self.owner = None;
+        let status = result?;
+        match status.state {
+            NativeOperationState::Verified => status
+                .receipt
+                .as_ref()
+                .filter(|r| r["manifest_digest"] == request.manifest_digest.as_str())
+                .and_then(|r| r["model_id"].as_i64())
+                .filter(|id| *id == request.model_id)
+                .ok_or_else(|| PortFailure::Unknown("MODEL_UPDATE_RECEIPT_INVALID".into())),
             NativeOperationState::FailedBeforeWrite => {
                 Err(PortFailure::Rejected(native_status(&status).reason()))
             }
