@@ -60,6 +60,7 @@ Faster campaigns.
 - **Cambridge idioms and phrasal verbs are found**: pages for `be pressed for time`, `on ice` (idioms) and `go back on something` (phrasal verbs) parsed to no entry, because their headword has no `.hw` and an idiom sits in `.idiom-block`; they are read like word pages, and a phrasal verb's header recording (its verb alone, `go`) is not taken as the phrase's. Lookups go through Cambridge's search, which lands a phrase on the entry that holds it (`palm something off` on `palm off`, `be (all) the rage` on `be all the rage`); the entry's source is the page's canonical link. An English word with no entry at all (`have the time of your life`) gets a generated entry in Cambridge's style (`dictionary.generate_missing`).
 - **A non-breaking space in a field is a space**: Anki's editor writes `&nbsp;`, so `go back on something` never matched its dictionary headword.
 - **A slash separates words**: `plans split-vocab` refused `とにかく/ともかく` (an ASCII slash) as one word; a slash inside brackets still separates a frame's alternatives.
+- **Wiktionary examples stay with their sense**: the definition response repeats a sense's examples under the sense before it (`put him on ice`, meaning kill, under "on hold"); an example listed under several senses stays under the last one only. Definitions lose the space an empty usage label leaves.
 
 ## 0.3.0 — 2026-10-11
 

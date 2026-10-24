@@ -20,7 +20,7 @@ fn english_sections_senses_examples_and_raw_foreign_data_survive() {
     assert_eq!(page.entries.len(), 2);
     assert_eq!(page.entries[0].senses.len(), 2);
     let sense = &page.entries[0].senses[0];
-    assert_eq!(sense.definitions, vec!["Eat & drink\n<slowly>\n"]);
+    assert_eq!(sense.definitions, vec!["Eat & drink\n<slowly>"]);
     assert!(!sense.definitions[0].contains("execute()"));
     assert_eq!(sense.examples[0].sentence, "I eat & drink.");
     assert_eq!(sense.examples[0].translation, "Translation");
@@ -115,4 +115,25 @@ fn source_titles_are_encoded_with_a_fixed_origin() {
         parse_definition("..", &en(), &body(), 10000, 10).unwrap_err(),
         Error::InvalidQuery
     );
+}
+
+#[test]
+fn an_example_repeated_under_the_sense_before_stays_with_its_own_sense() {
+    let bytes = serde_json::to_vec(&serde_json::json!({"en":[{"language":"English","partOfSpeech":"Prepositional phrase","definitions":[
+        {"definition":"<span class=\"usage-label-sense\"></span> Not being used; on hold.",
+         "examples":["We're putting the new features <b>on ice</b>.","Find him and put him <b>on ice</b>."]},
+        {"definition":"Dead, especially from murder.","examples":["Find him and put him <b>on ice</b>."]}]}]}))
+    .unwrap();
+    let page = parse_definition("on ice", &en(), &bytes, 10000, 10).unwrap();
+    let senses = &page.entries[0].senses;
+    assert_eq!(senses[0].definitions, ["Not being used; on hold."]);
+    let sentences = |i: usize| -> Vec<&str> {
+        senses[i]
+            .examples
+            .iter()
+            .map(|e| e.sentence.as_str())
+            .collect()
+    };
+    assert_eq!(sentences(0), ["We're putting the new features on ice."]);
+    assert_eq!(sentences(1), ["Find him and put him on ice."]);
 }

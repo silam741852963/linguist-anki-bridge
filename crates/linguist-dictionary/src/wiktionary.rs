@@ -189,9 +189,24 @@ pub fn parse_definition(
             }
             senses.push(Sense {
                 key,
-                definitions: vec![text],
+                // An empty usage label leaves a leading space (" Not being used").
+                definitions: vec![text.trim().to_owned()],
                 labels: vec![section.part_of_speech.clone()],
                 examples,
+            });
+        }
+        // The definition response repeats a sense's examples under the sense
+        // before it ("put him on ice" = kill, under "on hold" too); an example
+        // listed under several senses stays under the last one only.
+        for index in 0..senses.len() {
+            let (current, later) = senses.split_at_mut(index + 1);
+            current[index].examples.retain(|example| {
+                !later.iter().any(|sense| {
+                    sense
+                        .examples
+                        .iter()
+                        .any(|other| other.sentence == example.sentence)
+                })
             });
         }
         entries.push(DictionaryEntry {
