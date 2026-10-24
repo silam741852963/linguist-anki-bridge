@@ -8,6 +8,7 @@ pub mod inspection;
 pub mod legacy;
 pub mod model;
 pub mod plan_validation;
+pub mod profile;
 pub mod records;
 pub mod render;
 pub mod review;

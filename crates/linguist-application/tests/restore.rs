@@ -843,6 +843,7 @@ fn local_preview_reports_apply_changes_without_live_reads() {
             "lab::explain::en",
             "lab::kind::vocabulary",
             "lab::lang::ja",
+            "lab::pos::unknown",
             "lab::task::comprehension",
             "linguist",
         ]

@@ -1168,7 +1168,17 @@ fn desired_projection(
         .iter()
         .map(|task| task_ordinal(target, *task).ok_or_else(|| "APPLY_TASK_UNMAPPED".to_owned()))
         .collect::<Result<_>>()?;
-    let mut tags = item.document.tags.clone();
+    // WP-27: apply owns the `lab::` namespace. A tag there that the current
+    // renderer no longer derives (a raw `lab::pos::<label>`) is dropped; the
+    // user's own tags are kept.
+    let user_tag = |tag: &&String| !tag.starts_with("lab::");
+    let mut tags: Vec<String> = item
+        .document
+        .tags
+        .iter()
+        .filter(user_tag)
+        .cloned()
+        .collect();
     // WP-19: language, kind, task and dictionary facts travel as tags.
     tags.extend(linguist_core::render::tags(&item.document));
     let mut cards = Vec::new();
@@ -1193,7 +1203,7 @@ fn desired_projection(
             }
         }
         Some(note) => {
-            tags.extend(note.tags.iter().cloned());
+            tags.extend(note.tags.iter().filter(user_tag).cloned());
             let all: BTreeSet<i64> = note.cards.iter().map(|c| c.id).collect();
             pre_state = Some(project(note, &all, None));
             let mut covered = BTreeSet::new();

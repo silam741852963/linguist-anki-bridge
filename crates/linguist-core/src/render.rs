@@ -536,7 +536,8 @@ fn slug(value: &str) -> String {
     out.trim_end_matches('-').to_owned()
 }
 /// WP-19 derived tags: language, explanation language, kind, tasks, and the
-/// selected entry's JLPT level, commonness and parts of speech.
+/// selected entry's JLPT level and commonness; WP-27 adds the derived profile
+/// (part-of-speech class, register, region, field, script, origin, forms).
 pub fn tags(doc: &LearningDocument) -> Vec<String> {
     let mut tags = vec![
         format!("lab::lang::{}", slug(doc.target_language.as_str())),
@@ -567,15 +568,10 @@ pub fn tags(doc: &LearningDocument) -> Vec<String> {
                 {
                     tags.push("lab::common".into());
                 }
-                if let Some(sense) = entry.senses.iter().find(|s| s.key == v.sense_key) {
-                    for label in &sense.labels {
-                        let label = slug(label);
-                        if !label.is_empty() {
-                            tags.push(format!("lab::pos::{label}"));
-                        }
-                    }
-                }
             }
+            // WP-27: part of speech and the other label facts, through the
+            // label table; never the raw label.
+            tags.extend(crate::profile::vocabulary(doc.target_language.as_str(), v).tags());
             if !v.kanji_details.is_empty() {
                 tags.push("lab::has::kanji".into());
             }
@@ -588,6 +584,7 @@ pub fn tags(doc: &LearningDocument) -> Vec<String> {
                     tags.push(format!("lab::{prefix}::{value}"));
                 }
             }
+            tags.extend(crate::profile::grammar(g).tags());
         }
     }
     for task in &doc.requested_tasks {

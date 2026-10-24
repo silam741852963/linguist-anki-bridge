@@ -196,7 +196,8 @@ pub fn document(kind: Kind, store: &mut Store) -> LearningDocument {
         "../../../../contracts/v2/fixtures/vocabulary.json"
     ))
     .unwrap();
-    doc.tags = vec!["linguist".into()];
+    // A raw WP-19 part-of-speech tag: apply owns `lab::` and drops it (WP-27).
+    doc.tags = vec!["linguist".into(), "lab::pos::wikipedia-definition".into()];
     if kind == Kind::CreateWithMedia {
         let digest = store.publish_asset(AUDIO, 1024 * 1024).unwrap();
         doc.media.push(MediaAsset {

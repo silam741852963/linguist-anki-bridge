@@ -1,0 +1,226 @@
+# WP-27 label table v1: each dictionary label maps to one role.
+# Columns: language, label (exact provider text), role, value.
+# Roles: pos (value = class or class::subclass), register, region, field,
+# script, origin, note (value empty = no tag), name (proper-noun senses, no tag).
+# Only pos rows make lab::pos::* tags. A Japanese label with no row is
+# reported and never tagged; an English label with no row is a Cambridge
+# guide word (the sense's short meaning) and is ignored.
+# Classes: noun verb adjective adverb pronoun function number expression affix interjection
+ja	Noun	pos	noun
+ja	Noun which may take the genitive case particle 'no'	pos	noun::no
+ja	Noun, used as a suffix	pos	noun::suffix
+ja	Noun, used as a prefix	pos	noun::prefix
+ja	Adverbial noun (fukushitekimeishi)	pos	noun::adverbial
+ja	Temporal noun (jisoumeishi)	pos	noun::temporal
+ja	Proper noun	pos	noun::proper
+ja	Godan verb with 'u' ending	pos	verb::godan-u
+ja	Godan verb with 'u' ending (special class)	pos	verb::godan-u
+ja	Godan verb with 'ku' ending	pos	verb::godan-ku
+ja	Godan verb - Iku/Yuku special class	pos	verb::godan-ku
+ja	Godan verb with 'gu' ending	pos	verb::godan-gu
+ja	Godan verb with 'su' ending	pos	verb::godan-su
+ja	Godan verb with 'tsu' ending	pos	verb::godan-tsu
+ja	Godan verb with 'nu' ending	pos	verb::godan-nu
+ja	Godan verb with 'bu' ending	pos	verb::godan-bu
+ja	Godan verb with 'mu' ending	pos	verb::godan-mu
+ja	Godan verb with 'ru' ending	pos	verb::godan-ru
+ja	Godan verb with 'ru' ending (irregular verb)	pos	verb::godan-ru
+ja	Godan verb - -aru special class	pos	verb::godan-aru
+ja	Ichidan verb	pos	verb::ichidan
+ja	Ichidan verb - kureru special class	pos	verb::ichidan
+ja	Ichidan verb - zuru verb (alternative form of -jiru verbs)	pos	verb::ichidan
+ja	Suru verb	pos	verb::suru
+ja	Suru verb - included	pos	verb::suru
+ja	Suru verb - special class	pos	verb::suru
+ja	Kuru verb - special class	pos	verb::kuru
+ja	Yodan verb with 'su' ending (archaic)	pos	verb::archaic
+ja	Nidan verb (lower class) with 'ru' ending (archaic)	pos	verb::archaic
+ja	Transitive verb	pos	verb::transitive
+ja	Intransitive verb	pos	verb::intransitive
+ja	Auxiliary verb	pos	verb::auxiliary
+ja	Auxiliary	pos	verb::auxiliary
+ja	I-adjective (keiyoushi)	pos	adjective::i
+ja	I-Adjective (keiyoushi) - yoi/ii class	pos	adjective::i
+ja	Na-adjective (keiyodoshi)	pos	adjective::na
+ja	Archaic/formal form of na-adjective	pos	adjective::na
+ja	'taru' adjective	pos	adjective::taru
+ja	Noun or verb acting prenominally	pos	adjective::prenominal
+ja	Pre-noun adjectival (rentaishi)	pos	adjective::rentaishi
+ja	Auxiliary adjective	pos	adjective::auxiliary
+ja	Adverb (fukushi)	pos	adverb
+ja	Adverb taking the 'to' particle	pos	adverb::to
+ja	Pronoun	pos	pronoun
+ja	Particle	pos	function::particle
+ja	Conjunction	pos	function::conjunction
+ja	Copula	pos	function::copula
+ja	Numeric	pos	number
+ja	Counter	pos	number::counter
+ja	Expressions (phrases, clauses, etc.)	pos	expression
+ja	Idiomatic expression	pos	expression::idiom
+ja	Proverb	pos	expression::proverb
+ja	Yojijukugo (four character compound)	pos	expression::yojijukugo
+ja	Prefix	pos	affix::prefix
+ja	Suffix	pos	affix::suffix
+ja	Interjection (kandoushi)	pos	interjection
+ja	Archaic	register	archaic
+ja	Colloquial	register	colloquial
+ja	Honorific or respectful (sonkeigo) language	register	honorific
+ja	Humble (kenjougo) language	register	humble
+ja	Polite (teineigo) language	register	polite
+ja	Formal or literary term	register	formal
+ja	Familiar language	register	familiar
+ja	Slang	register	slang
+ja	Internet slang	register	slang
+ja	Manga slang	register	slang
+ja	Male term or language	register	male
+ja	Female term or language	register	female
+ja	Children's language	register	children
+ja	Derogatory	register	derogatory
+ja	Vulgar expression or word	register	vulgar
+ja	Sensitive	register	sensitive
+ja	Euphemistic	register	euphemistic
+ja	Jocular, humorous term	register	humorous
+ja	Poetical term	register	poetic
+ja	Dated term	register	dated
+ja	Rare term	register	rare
+ja	Obsolete term	register	obsolete
+ja	Historical term	register	historical
+ja	Kansai dialect	region	kansai
+ja	Osaka dialect	region	kansai
+ja	Kantou dialect	region	kantou
+ja	Kyuushuu dialect	region	kyuushuu
+ja	Nagano dialect	region	nagano
+ja	Brazilian	region	brazil
+ja	Usually written using kana alone	script	kana
+ja	Wasei, word made in Japan	origin	wasei
+ja	Onomatopoeic or mimetic word	note	onomatopoeia
+ja	Abbreviation	note	abbreviation
+ja	Trademark	note	trademark
+ja	Wikipedia definition	note	
+ja	Unclassified	note	
+ja	Place	name	
+ja	Place name	name	
+ja	Organization name	name	
+ja	Organization	name	
+ja	Company name	name	
+ja	Company	name	
+ja	Product name	name	
+ja	Product	name	
+ja	Full name	name	
+ja	Family or surname	name	
+ja	Given name or forename, gender not specified	name	
+ja	Work of art, literature, music, etc. name	name	
+ja	Event	name	
+ja	Service	name	
+ja	Legend	name	
+ja	Computing	field	computing
+ja	Networking, WWW	field	computing
+ja	Video games	field	video-games
+ja	Medicine	field	medicine
+ja	Anatomy	field	anatomy
+ja	Physiology	field	physiology
+ja	Pharmacology	field	pharmacology
+ja	Psychiatry	field	psychiatry
+ja	Psychology	field	psychology
+ja	Psychoanalysis	field	psychology
+ja	Food, cooking	field	food
+ja	Grammar	field	grammar
+ja	Linguistics	field	linguistics
+ja	Law	field	law
+ja	Mathematics	field	mathematics
+ja	Geometry	field	mathematics
+ja	Logic	field	logic
+ja	Physics	field	physics
+ja	Chemistry	field	chemistry
+ja	Biochemistry	field	biology
+ja	Biology	field	biology
+ja	Genetics	field	biology
+ja	Botany	field	botany
+ja	Zoology	field	zoology
+ja	Entomology	field	zoology
+ja	Ecology	field	ecology
+ja	Astronomy	field	astronomy
+ja	Geology	field	geology
+ja	Meteorology	field	meteorology
+ja	Archeology	field	archaeology
+ja	Buddhism	field	buddhism
+ja	Shinto	field	shinto
+ja	Christianity	field	christianity
+ja	Greek mythology	field	mythology
+ja	Philosophy	field	philosophy
+ja	Music	field	music
+ja	Art, aesthetics	field	art
+ja	Architecture	field	architecture
+ja	Printing	field	printing
+ja	Photography	field	photography
+ja	Film	field	film
+ja	Audiovisual	field	audiovisual
+ja	Noh	field	theatre
+ja	Kabuki	field	theatre
+ja	Sumo	field	sports
+ja	Sports	field	sports
+ja	Baseball	field	sports
+ja	Golf	field	sports
+ja	Boxing	field	sports
+ja	Martial arts	field	sports
+ja	Horse racing	field	sports
+ja	Fishing	field	fishing
+ja	Go (game)	field	games
+ja	Shogi	field	games
+ja	Mahjong	field	games
+ja	Card games	field	games
+ja	Hanafuda	field	games
+ja	Finance	field	finance
+ja	Stock market	field	finance
+ja	Economics	field	economics
+ja	Business	field	business
+ja	Politics	field	politics
+ja	Military	field	military
+ja	Railway	field	railway
+ja	Aviation	field	aviation
+ja	Clothing	field	clothing
+ja	Electricity, elec. eng.	field	engineering
+ja	Electronics	field	engineering
+ja	Engineering	field	engineering
+ja	Civil engineering	field	engineering
+ja	Mechanical engineering	field	engineering
+ja	Mining	field	mining
+ja	Telecommunications	field	telecommunications
+en	noun	pos	noun
+en	Noun	pos	noun
+en	plural noun	pos	noun::plural
+en	verb	pos	verb
+en	Verb	pos	verb
+en	phrasal verb	pos	verb::phrasal
+en	auxiliary verb	pos	verb::auxiliary
+en	modal verb	pos	verb::modal
+en	adjective	pos	adjective
+en	Adjective	pos	adjective
+en	adverb	pos	adverb
+en	Adverb	pos	adverb
+en	pronoun	pos	pronoun
+en	Pronoun	pos	pronoun
+en	determiner	pos	pronoun::determiner
+en	predeterminer	pos	pronoun::determiner
+en	preposition	pos	function::preposition
+en	Preposition	pos	function::preposition
+en	conjunction	pos	function::conjunction
+en	Conjunction	pos	function::conjunction
+en	number	pos	number
+en	ordinal number	pos	number::ordinal
+en	exclamation	pos	interjection
+en	Interjection	pos	interjection
+en	idiom	pos	expression::idiom
+en	Idiom	pos	expression::idiom
+en	phrase	pos	expression
+en	Phrase	pos	expression
+en	Prepositional phrase	pos	expression::prepositional
+en	collocation	pos	expression::collocation
+en	prefix	pos	affix::prefix
+en	Prefix	pos	affix::prefix
+en	suffix	pos	affix::suffix
+en	Suffix	pos	affix::suffix
+en	combining form	pos	affix::combining
+en	abbreviation	note	abbreviation
+en	short form of	note	abbreviation
+en	abbreviation for	note	abbreviation
