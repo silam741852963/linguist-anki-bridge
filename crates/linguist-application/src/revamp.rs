@@ -70,7 +70,12 @@ fn visible_text(raw: &str) -> String {
             .replace(&format!("<{tag}>"), " ")
             .replace(&format!("</{tag}>"), " ");
     }
-    html_escape::decode_html_entities(&text).trim().to_owned()
+    // Anki's editor writes `&nbsp;` for a typed space; it is a space
+    // (`go back on&nbsp;something` is looked up and matched as written).
+    html_escape::decode_html_entities(&text)
+        .replace('\u{a0}', " ")
+        .trim()
+        .to_owned()
 }
 fn issue(code: &str, field: Option<&str>, source: uuid::Uuid) -> Issue {
     let mut result = Issue::new(
