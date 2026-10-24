@@ -318,6 +318,37 @@
         "operations/campaign.md"
       ]
     },
+    "WP-25": {
+      "path": "implementation/wp-25.md",
+      "heading": "## WP-25 \u2014 word harvester: unknown words met in the deck's own examples",
+      "title": "WP-25 \u2014 word harvester: unknown words met in the deck's own examples",
+      "words": 1218,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md",
+        "operations/preparation.md"
+      ]
+    },
+    "WP-26": {
+      "path": "implementation/wp-26.md",
+      "heading": "## WP-26 \u2014 offline writing drills: tap, arrange and type, graded on the phone without an LLM",
+      "title": "WP-26 \u2014 offline writing drills: tap, arrange and type, graded on the phone without an LLM",
+      "words": 2044,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md"
+      ]
+    },
+    "WP-27": {
+      "path": "implementation/wp-27.md",
+      "heading": "## WP-27 \u2014 card profiles: part-of-speech colours, normalized tags and a three-level domain taxonomy",
+      "title": "WP-27 \u2014 card profiles: part-of-speech colours, normalized tags and a three-level domain taxonomy",
+      "words": 3035,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md"
+      ]
+    },
     "OP-34": {
       "path": "operations/apply.md",
       "heading": "## OP-34 \u2014 `apply PLAN`",
@@ -357,7 +388,7 @@
       "path": "operations/campaign.md",
       "heading": "## OP-64 \u2014 `campaign status [CAMPAIGN]`",
       "title": "OP-64 \u2014 `campaign status [CAMPAIGN]`",
-      "words": 76,
+      "words": 113,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -1143,7 +1174,7 @@
       "path": "operations/plans.md",
       "heading": "## OP-30 \u2014 `plans regenerate PLAN`",
       "title": "OP-30 \u2014 `plans regenerate PLAN`",
-      "words": 570,
+      "words": 597,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"
@@ -1221,7 +1252,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-24 \u2014 `grammar revamp`",
       "title": "OP-24 \u2014 `grammar revamp`",
-      "words": 1735,
+      "words": 1891,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
