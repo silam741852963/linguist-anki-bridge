@@ -12,7 +12,7 @@ pub(crate) use media::source_media_matches;
 /// verified source or OCR text): a sense choice changes the selected facts,
 /// never the source. The kept ones are rebound to the new document while they
 /// still settle their issue.
-fn keep_source_decisions(
+pub fn keep_source_decisions(
     document: &mut crate::LearningDocument,
     decisions: &mut Vec<ReviewDecision>,
 ) -> Result<(), ContractError> {

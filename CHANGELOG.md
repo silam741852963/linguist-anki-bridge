@@ -61,6 +61,7 @@ Faster campaigns.
 - **A non-breaking space in a field is a space**: Anki's editor writes `&nbsp;`, so `go back on something` never matched its dictionary headword.
 - **A slash separates words**: `plans split-vocab` refused `とにかく/ともかく` (an ASCII slash) as one word; a slash inside brackets still separates a frame's alternatives.
 - **Wiktionary examples stay with their sense**: the definition response repeats a sense's examples under the sense before it (`put him on ice`, meaning kill, under "on hold"); an example listed under several senses stays under the last one only. Definitions lose the space an empty usage label leaves.
+- **Image decisions survive a regenerate**: `plans regenerate --stage dictionary|enrichment` cleared every decision, so the agent's image roles and classifications went back to it; decisions about the source alone are rebound to the regenerated item while they still settle their issue.
 
 ## 0.3.0 — 2026-10-11
 

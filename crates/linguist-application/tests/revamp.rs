@@ -2333,3 +2333,131 @@ fn without_uuids(text: &str) -> String {
     }
     out
 }
+
+#[test]
+fn an_image_role_survives_a_dictionary_regeneration() {
+    use linguist_core::{
+        records::{MediaRole, ReviewChoice},
+        review::ResolutionRequest,
+    };
+    struct Empty;
+    impl linguist_application::DictionaryPort for Empty {
+        fn lookup(
+            &self,
+            query: &str,
+            target: &linguist_core::Language,
+        ) -> std::result::Result<linguist_dictionary::JishoPage, String> {
+            linguist_dictionary::cambridge::parse_page(query, target, b"<html></html>", 4096, 10)
+                .map_err(|e| e.to_string())
+        }
+    }
+    let (mut capture, mut settings) = setup(
+        "english_vocab",
+        &[("Word", "cat"), ("Media", "<img src=\"cat.png\">")],
+        &[("expression", "Word")],
+    );
+    let bytes = vec![1, 2, 3];
+    let digest = linguist_core::canonical::asset_digest(&bytes);
+    linguist_application::source_archive::media::attach_original_media(
+        &mut capture.captured,
+        BTreeMap::from([("cat.png".into(), Some(bytes))]),
+        10 * 1024 * 1024,
+        10 * 1024 * 1024,
+    )
+    .unwrap();
+    let root = std::env::temp_dir().join(format!("lab-role-regen-{}", uuid::Uuid::new_v4()));
+    for (key, value) in [
+        ("storage.state_dir", json!(root)),
+        ("dictionary.provider", json!("cambridge")),
+        ("llm.enabled", json!(false)),
+    ] {
+        settings.values.insert(key.into(), value);
+    }
+    let environment = BTreeMap::from([("HOME".into(), "/tmp/lab-role-regen".into())]);
+    let prepared =
+        publish_capture_draft(&capture, &settings, "english_vocab", &environment).unwrap();
+    let mut store = linguist_store::Store::open(&root).unwrap();
+    let mut plan = store.revision(prepared.plan_id, 1).unwrap();
+    for code in ["SOURCE_MEDIA_CONTENT_REVIEW", "SOURCE_MEDIA_FORMAT_REVIEW"] {
+        let doc = &plan.documents[0];
+        let issue = doc.issues.iter().find(|i| i.code == code).unwrap();
+        let evidence = doc
+            .evidence
+            .iter()
+            .find(|e| e.field == "media_format")
+            .unwrap();
+        let request = ResolutionRequest {
+            schema_version: 2,
+            base_revision: plan.revision,
+            base_digest: plan.approval_digest().unwrap(),
+            document_id: doc.id,
+            issue_id: issue.id.clone(),
+            input_digest: doc.semantic_digest().unwrap(),
+            actor: "agent".into(),
+            choice: ReviewChoice::SourceMediaRole {
+                source_id: doc.sources[0].id,
+                asset_digest: digest.clone(),
+                original_filename: "cat.png".into(),
+                evidence_id: evidence.id,
+                role: MediaRole::Archive,
+                attribution: "A dictionary screenshot".into(),
+                license: None,
+            },
+        };
+        let result =
+            linguist_application::review::resolve(&store, &plan, &request, "now".into()).unwrap();
+        store.publish_revision(&result.revision).unwrap();
+        plan = result.revision;
+    }
+    let (child, _) = linguist_application::regenerate::regenerate(
+        &mut store,
+        &plan,
+        &plan.approval_digest().unwrap(),
+        &[],
+        linguist_application::regenerate::Stage::Dictionary,
+        &Default::default(),
+        &settings,
+        &environment,
+        linguist_application::vocab::Providers {
+            dictionary: Some(&Empty),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    // New dictionary facts leave the agent's image decisions standing.
+    let doc = &child.documents[0];
+    assert_eq!(doc.media[0].role, MediaRole::Archive);
+    assert_eq!(doc.reviews.len(), 2);
+    assert!(
+        doc.reviews
+            .iter()
+            .all(|r| r.input_digest == doc.semantic_digest().unwrap())
+    );
+    assert!(
+        !validation::validate(doc)
+            .iter()
+            .any(|i| i.code == "SOURCE_MEDIA_CONTENT_REVIEW"
+                || i.code == "SOURCE_MEDIA_FORMAT_REVIEW")
+    );
+    assert_eq!(
+        child.review_decisions.len(),
+        plan.review_decisions.len(),
+        "the plan keeps the decisions too"
+    );
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_non_breaking_space_in_a_field_is_a_space() {
+    let (capture, settings) = setup(
+        "english_vocab",
+        &[("Word", "go back on&nbsp;something")],
+        &[("expression", "Word")],
+    );
+    let document = stage_document(&capture, &settings, "english_vocab").unwrap();
+    let LearningContent::Vocabulary(vocab) = &document.content else {
+        panic!()
+    };
+    assert_eq!(vocab.expression, "go back on something");
+}

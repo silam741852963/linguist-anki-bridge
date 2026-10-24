@@ -410,7 +410,17 @@ pub fn prepare_item(
             review.input_digest = current.clone();
         }
     } else {
-        prepared.reviews.clear();
+        // Decisions about the source alone (an image's role, verified source
+        // or OCR text) hold through new dictionary facts and enrichment; the
+        // caller rebinds them to the regenerated document (WP-24: every
+        // regenerate sent the agent's image decisions back to it).
+        prepared.reviews.retain(|review| {
+            matches!(
+                review.choice,
+                linguist_core::records::ReviewChoice::SourceMediaRole { .. }
+                    | linguist_core::records::ReviewChoice::SourceContentVerified { .. }
+            )
+        });
     }
     prepared.issues = validation::validate(&prepared);
     Ok((prepared, preview))
@@ -503,12 +513,18 @@ pub fn regenerate(
             Stage::Generation => unreachable!(),
         };
         assets.extend(bytes);
+        let kept: BTreeSet<_> = prepared.reviews.iter().map(|r| r.id).collect();
         let removed: BTreeSet<_> = child.documents[index]
             .reviews
             .iter()
             .map(|r| r.id)
+            .filter(|id| !kept.contains(id))
             .collect();
         child.review_decisions.retain(|d| !removed.contains(&d.id));
+        let mut enriched = enriched;
+        linguist_core::review::keep_source_decisions(&mut enriched, &mut child.review_decisions)
+            .map_err(|e| e.to_string())?;
+        enriched.issues = validation::validate(&enriched);
         child.documents[index] = enriched;
         previews.push(preview);
     }
