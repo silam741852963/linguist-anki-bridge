@@ -719,7 +719,18 @@ pub fn fill(policy: &Policy, plan: &PlanRevision, template: &Value) -> Result<Fi
             "input_digest": entry["input_digest"],
         });
         if entry.get("history_map").is_some() {
-            out["history_map"] = json!(policy.history_map);
+            // The map names vocabulary tasks; a grammar note's single card
+            // is its Recognition card (Grammar v4 has no other task).
+            let grammar = plan
+                .documents
+                .iter()
+                .find(|d| d.id == document_id)
+                .is_some_and(|d| matches!(d.content, LearningContent::Grammar(_)));
+            out["history_map"] = if grammar {
+                json!(["0=recognition"])
+            } else {
+                json!(policy.history_map)
+            };
             decided.push(out);
             continue;
         }

@@ -1237,3 +1237,33 @@ fn an_example_in_the_entrys_kanji_spelling_uses_the_word() {
         "{decisions}"
     );
 }
+
+/// WP-24 (grammar cohort): a grammar note's history goes to its Recognition
+/// card, not through the vocabulary task map (which named a task Grammar v4
+/// does not have and failed the whole review).
+#[test]
+fn a_grammar_notes_history_maps_to_recognition() {
+    use linguist_application::review::policy;
+    let f = Fixture::new();
+    let mut plan = two_sense_plan(&f);
+    let mut grammar = plan.documents[0].clone();
+    grammar.id = uuid::Uuid::new_v4();
+    grammar.content = serde_json::from_value(json!({"kind": "grammar", "body": {
+        "pattern": "〜ば", "use_key": "u", "meaning": "", "formation": "", "recognition_prompt": "",
+        "examples": [], "usage": "", "exercise_prompt": "", "exercise_answer": ""}}))
+    .unwrap();
+    plan.documents.push(grammar.clone());
+    let entry = |id: uuid::Uuid| {
+        json!({"document_id": id, "issue_id": "SOURCE_NATIVE_HISTORY_REVIEW:document",
+               "input_digest": "d", "history_map": []})
+    };
+    let template = json!({"schema_version": 2, "base_revision": 1, "base_digest": "x",
+        "decisions": [entry(plan.documents[0].id), entry(grammar.id)]});
+    let filled = policy::fill(&policy::Policy::builtin(), &plan, &template).unwrap();
+    let decisions = filled.batch.unwrap()["decisions"].clone();
+    assert_eq!(
+        decisions[0]["history_map"],
+        json!(policy::Policy::builtin().history_map)
+    );
+    assert_eq!(decisions[1]["history_map"], json!(["0=recognition"]));
+}
