@@ -13,6 +13,25 @@ pub mod repair;
 pub const VOCABULARY_PROMPT_V3: &str = include_str!("../../../resources/prompts/vocabulary-v3.txt");
 pub const GRAMMAR_PROMPT_V3: &str = include_str!("../../../resources/prompts/grammar-v3.txt");
 
+/// The system prompt sent for a kind: the prompt file followed by the
+/// `domains-v1` list it refers to (WP-27), so the list has one source.
+pub fn system_prompt(kind: &str) -> &'static str {
+    static VOCABULARY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static GRAMMAR: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let (cell, prompt, grammar) = if kind == "grammar" {
+        (&GRAMMAR, GRAMMAR_PROMPT_V3, true)
+    } else {
+        (&VOCABULARY, VOCABULARY_PROMPT_V3, false)
+    };
+    cell.get_or_init(|| {
+        format!(
+            "{prompt}\nThe {} list of leaf paths:\n{}",
+            linguist_core::profile::TAXONOMY,
+            linguist_core::profile::prompt_list(grammar)
+        )
+    })
+}
+
 #[derive(Debug, Serialize)]
 pub struct ModelIdentity {
     pub name: String,
@@ -184,7 +203,7 @@ pub fn generate_pending_chained(
             .ok_or("PLAN_ITEM_NOT_FOUND")?;
         match build_request(parent, settings) {
             Err(reason) => items.push(json!({"document_id": id, "skipped": reason})),
-            Ok(request) if request.allowed_fields.is_empty() => {
+            Ok(request) if nothing_to_fill(&request) => {
                 items.push(json!({"document_id": id, "skipped": "GENERATION_NOTHING_TO_FILL"}))
             }
             // Nuance, collocations and grammar forms may rightly be empty
@@ -193,10 +212,9 @@ pub fn generate_pending_chained(
             // batch were drafted three times for an empty nuance).
             Ok(request)
                 if drafts(parent) > 0
-                    && request
-                        .allowed_fields
-                        .iter()
-                        .all(|f| matches!(f.as_str(), "nuance" | "collocations" | "forms")) =>
+                    && request.allowed_fields.iter().all(|f| {
+                        matches!(f.as_str(), "nuance" | "collocations" | "forms" | "domain")
+                    }) =>
             {
                 items.push(json!({"document_id": id, "skipped": "GENERATION_NOTHING_TO_FILL"}))
             }
@@ -290,6 +308,21 @@ pub fn generate_pending_chained(
 
 /// Drafts `plans generate --all-items --pending` makes of one item at most.
 pub const MAX_DRAFTS_PER_ITEM: usize = 3;
+
+/// No field to draft. The WP-27 domain rides along with a draft that is made
+/// anyway; it never makes one on its own (a later classify pass fills it).
+fn nothing_to_fill(request: &GenerationRequest) -> bool {
+    request.allowed_fields.iter().all(|f| f == "domain")
+}
+
+/// The request asks for more than examples (the domain riding along does not
+/// count): an examples-only round keeps its own retry rules.
+fn full_draft(request: &GenerationRequest) -> bool {
+    request
+        .allowed_fields
+        .iter()
+        .any(|f| f != "examples" && f != "domain")
+}
 
 fn drafts(document: &LearningDocument) -> usize {
     document
@@ -389,7 +422,7 @@ fn thin(parent: &LearningDocument, draft: &LearningDocument, request: &Generatio
     };
     let added = after.examples.len().saturating_sub(before.examples.len());
     // A full draft whose examples were dropped asks for them alone next.
-    let salvaged = added == 0 && request.allowed_fields.iter().any(|f| f != "examples");
+    let salvaged = added == 0 && full_draft(request);
     request
         .allowed_fields
         .iter()
@@ -593,6 +626,12 @@ pub struct VocabularySupplement {
     pub nuance: Vec<GeneratedContrast>,
     pub collocations: Vec<GeneratedCollocation>,
     pub examples: Vec<GeneratedExample>,
+    /// WP-27 judged profile: a `domains-v1` leaf path and up to two more.
+    /// Absent in replies drafted before WP-27.
+    #[serde(default)]
+    pub domain: String,
+    #[serde(default)]
+    pub domains_secondary: Vec<String>,
 }
 /// Bounds on the v3 list fields; the request schema enforces them.
 pub const NUANCE_MAX: usize = 3;
@@ -611,6 +650,13 @@ pub struct GrammarSupplement {
     pub exercise_prompt: String,
     pub exercise_answer: String,
     pub jlpt: String,
+    #[serde(default)]
+    pub domain: String,
+    #[serde(default)]
+    pub domains_secondary: Vec<String>,
+    /// Communicative functions, `group::function`.
+    #[serde(default)]
+    pub functions: Vec<String>,
 }
 /// Bound on generated highlight forms.
 pub const FORMS_MAX: usize = 6;
@@ -700,11 +746,14 @@ pub fn build_request(
             if v.collocations.is_empty() {
                 allowed.push("collocations".into());
             }
+            if v.profile.is_none() {
+                allowed.push("domain".into());
+            }
             (
                 "vocabulary",
                 "llm.prompts.vocabulary",
                 "builtin:vocabulary-v3",
-                VOCABULARY_PROMPT_V3,
+                system_prompt("vocabulary"),
                 v.examples.len(),
             )
         }
@@ -726,11 +775,14 @@ pub fn build_request(
             if g.forms.is_empty() {
                 allowed.push("forms".into());
             }
+            if g.profile.is_none() {
+                allowed.push("domain".into());
+            }
             (
                 "grammar",
                 "llm.prompts.grammar",
                 "builtin:grammar-v3",
-                GRAMMAR_PROMPT_V3,
+                system_prompt("grammar"),
                 g.examples.len(),
             )
         }
@@ -818,7 +870,14 @@ pub fn build_request(
             .collect::<Result<_, _>>()?;
         content["body"]["dictionary"] = Value::Array(exact);
     }
-    let user = json!({"schema_version":2,"kind":kind,"target_language":doc.target_language,"explanation_language":doc.explanation_language,
+    // WP-27: the dictionary's field labels and topic, as domain hints.
+    let domain_hints = match &doc.content {
+        LearningContent::Vocabulary(v) if allowed.iter().any(|f| f == "domain") => {
+            linguist_core::profile::domain_hints(doc.target_language.as_str(), v)
+        }
+        _ => Vec::new(),
+    };
+    let user = json!({"schema_version":2,"kind":kind,"domain_hints":domain_hints,"target_language":doc.target_language,"explanation_language":doc.explanation_language,
         "accepted_content":content,"context":doc.context,"sources":sources,"regions":doc.regions,"evidence":evidence,
         "allowed_fields":allowed,"examples_requested":examples_requested});
     let output_schema = constrained_schema(kind, &allowed, examples_requested)?;
@@ -861,6 +920,9 @@ fn constrained_schema(kind: &str, allowed: &[String], examples: usize) -> Result
     let properties = schema["$defs"][definition]["properties"]
         .as_object_mut()
         .ok_or("GENERATION_SCHEMA_INVALID")?;
+    // Fields with a serde default are still required: strict structured
+    // output wants every property listed.
+    let names: Vec<Value> = properties.keys().map(|name| json!(name)).collect();
     for (name, property) in properties.iter_mut() {
         if name == "examples" {
             // Requested examples are required: a model left free returns none.
@@ -877,10 +939,22 @@ fn constrained_schema(kind: &str, allowed: &[String], examples: usize) -> Result
                 COLLOCATIONS_MAX
             };
             property["maxItems"] = json!(max);
+        } else if name == "domains_secondary" || name == "functions" {
+            // Paths are checked on merge, not enumerated here: 459 leaves
+            // twice would pass the structured-output enum limits.
+            let max = if !allowed.iter().any(|field| field == "domain") {
+                0
+            } else if name == "functions" {
+                linguist_core::profile::FUNCTIONS_MAX
+            } else {
+                linguist_core::profile::SECONDARY_MAX
+            };
+            property["maxItems"] = json!(max);
         } else if !allowed.iter().any(|field| field == name) {
             property["enum"] = json!([""]);
         }
     }
+    schema["$defs"][definition]["required"] = Value::Array(names);
     Ok(schema)
 }
 
@@ -930,6 +1004,7 @@ pub fn validate_output(
                 || (!v.collocations.is_empty() && !allowed("collocations"))
                 || v.nuance.len() > NUANCE_MAX
                 || v.collocations.len() > COLLOCATIONS_MAX
+                || (!allowed("domain") && !v.domains_secondary.is_empty())
             {
                 return Err("GENERATION_FIELD_NOT_ALLOWED".into());
             }
@@ -962,7 +1037,10 @@ pub fn validate_output(
             }) {
                 return Err("GENERATION_EXAMPLE_NOT_SENTENCE".into());
             }
-            (vec![("usage", &v.usage)], &v.examples)
+            (
+                vec![("usage", &v.usage), ("domain", &v.domain)],
+                &v.examples,
+            )
         }
         (LearningContent::Grammar(_), Supplement::Grammar(g)) => {
             let allowed = |name: &str| request.allowed_fields.iter().any(|field| field == name);
@@ -970,6 +1048,8 @@ pub fn validate_output(
                 || (!g.forms.is_empty() && !allowed("forms"))
                 || g.nuance.len() > NUANCE_MAX
                 || g.forms.len() > FORMS_MAX
+                || (!allowed("domain")
+                    && !(g.domains_secondary.is_empty() && g.functions.is_empty()))
             {
                 return Err("GENERATION_FIELD_NOT_ALLOWED".into());
             }
@@ -991,6 +1071,7 @@ pub fn validate_output(
                     ("exercise_prompt", &g.exercise_prompt),
                     ("exercise_answer", &g.exercise_answer),
                     ("jlpt", &g.jlpt),
+                    ("domain", &g.domain),
                 ],
                 &g.examples,
             )
@@ -1269,6 +1350,50 @@ pub fn merge_external_response(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// A reply's judged profile (WP-27), kept only when its primary domain is a
+/// `domains-v1` leaf. Unknown or repeated secondary paths and functions are
+/// dropped, not refused: a slip costs no draft, and a note without a profile
+/// is found and filled later.
+fn judged(
+    domain: String,
+    secondary: Vec<String>,
+    functions: Vec<String>,
+    grammar: bool,
+) -> Option<linguist_core::document::JudgedProfile> {
+    use linguist_core::profile::{FUNCTIONS_MAX, SECONDARY_MAX, TAXONOMY, taxonomy};
+    let taxonomy = taxonomy();
+    let domain = domain.trim().to_owned();
+    if !taxonomy.leaves.contains(&domain) {
+        return None;
+    }
+    let mut seen = vec![domain.clone()];
+    let secondary = secondary
+        .into_iter()
+        .map(|path| path.trim().to_owned())
+        .filter(|path| {
+            let new = taxonomy.leaves.contains(path) && !seen.contains(path);
+            if new {
+                seen.push(path.clone());
+            }
+            new
+        })
+        .take(SECONDARY_MAX)
+        .collect();
+    let mut functions: Vec<String> = functions
+        .into_iter()
+        .map(|function| function.trim().to_owned())
+        .filter(|function| grammar && taxonomy.functions.contains(function))
+        .collect();
+    functions.dedup();
+    functions.truncate(FUNCTIONS_MAX);
+    Some(linguist_core::document::JudgedProfile {
+        taxonomy: TAXONOMY.into(),
+        domain,
+        secondary,
+        functions,
+    })
+}
+
 fn merge_checked_output(
     doc: &LearningDocument,
     settings: &Effective,
@@ -1311,10 +1436,7 @@ fn merge_checked_output(
     // Codex wrote {"sentence": "translation"} in about a third of full drafts
     // and in none of the examples-only ones).
     let output = match validate_output(doc, request, bytes, max_bytes, max_chars) {
-        Err(error)
-            if EXAMPLE_FAULTS.contains(&error.as_str())
-                && request.allowed_fields.iter().any(|f| f != "examples") =>
-        {
+        Err(error) if EXAMPLE_FAULTS.contains(&error.as_str()) && full_draft(request) => {
             let mut value: Value = serde_json::from_slice(bytes).map_err(|_| error.clone())?;
             if value["kind"] != "vocabulary" {
                 return Err(error);
@@ -1414,6 +1536,16 @@ fn merge_checked_output(
                     serde_json::to_string(&v.collocations).map_err(|_| "GENERATION_ENCODING")?,
                 ));
             }
+            if let Some(profile) = judged(s.domain, s.domains_secondary, vec![], false) {
+                if v.profile.is_some() {
+                    return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
+                }
+                claims.push((
+                    "profile".into(),
+                    serde_json::to_string(&profile).map_err(|_| "GENERATION_ENCODING")?,
+                ));
+                v.profile = Some(profile);
+            }
             s.examples
         }
         (LearningContent::Grammar(g), Supplement::Grammar(s)) => {
@@ -1465,6 +1597,16 @@ fn merge_checked_output(
                     "forms".into(),
                     serde_json::to_string(&g.forms).map_err(|_| "GENERATION_ENCODING")?,
                 ));
+            }
+            if let Some(profile) = judged(s.domain, s.domains_secondary, s.functions, true) {
+                if g.profile.is_some() {
+                    return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
+                }
+                claims.push((
+                    "profile".into(),
+                    serde_json::to_string(&profile).map_err(|_| "GENERATION_ENCODING")?,
+                ));
+                g.profile = Some(profile);
             }
             s.examples
         }
@@ -1682,7 +1824,7 @@ pub fn generate_pending(
                 results.push(json!({"document_id":id,"generated":false,"skipped":reason}));
                 continue;
             }
-            Ok(request) if request.allowed_fields.is_empty() => {
+            Ok(request) if nothing_to_fill(&request) => {
                 results.push(json!({"document_id":id,"generated":false,"skipped":"GENERATION_NOTHING_TO_FILL"}));
                 continue;
             }

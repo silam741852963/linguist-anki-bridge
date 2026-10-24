@@ -1,0 +1,3527 @@
+{
+ "version": "domains-v1",
+ "sources": {
+  "A": "Council of Europe, van Ek and Trim, Threshold 1990 (1991), chapter 6 specific notions",
+  "B": "UNESCO Institute for Statistics, ISCED Fields of Education and Training 2013 (ISCED-F 2013)",
+  "C": "Threshold 1990 (1991), chapter 7 general notions"
+ },
+ "trees": [
+  {
+   "tree": "A",
+   "nodes": [
+    {
+     "id": "person",
+     "label": "personal identity",
+     "source": "Threshold 1990 ch. 6, Threshold theme 1",
+     "scope": "Who someone is, how they look, feel and behave.",
+     "children": [
+      {
+       "id": "identity",
+       "label": "identity",
+       "source": "",
+       "children": [
+        {
+         "id": "names-titles",
+         "label": "names titles",
+         "source": ""
+        },
+        {
+         "id": "age-birthday",
+         "label": "age birthday",
+         "source": ""
+        },
+        {
+         "id": "nationality-origin",
+         "label": "nationality origin",
+         "source": ""
+        },
+        {
+         "id": "personal-documents",
+         "label": "personal documents",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "appearance",
+       "label": "appearance",
+       "source": "",
+       "children": [
+        {
+         "id": "build-height",
+         "label": "build height",
+         "source": ""
+        },
+        {
+         "id": "face-features",
+         "label": "face features",
+         "source": ""
+        },
+        {
+         "id": "hair",
+         "label": "hair",
+         "source": ""
+        },
+        {
+         "id": "looks-impression",
+         "label": "looks impression",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "character",
+       "label": "character",
+       "source": "",
+       "children": [
+        {
+         "id": "personality-positive",
+         "label": "personality positive",
+         "source": ""
+        },
+        {
+         "id": "personality-negative",
+         "label": "personality negative",
+         "source": ""
+        },
+        {
+         "id": "temperament",
+         "label": "temperament",
+         "source": ""
+        },
+        {
+         "id": "values-beliefs",
+         "label": "values beliefs",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "feelings",
+       "label": "feelings",
+       "source": "",
+       "children": [
+        {
+         "id": "joy",
+         "label": "joy",
+         "source": ""
+        },
+        {
+         "id": "sadness",
+         "label": "sadness",
+         "source": ""
+        },
+        {
+         "id": "anger",
+         "label": "anger",
+         "source": ""
+        },
+        {
+         "id": "fear-anxiety",
+         "label": "fear anxiety",
+         "source": ""
+        },
+        {
+         "id": "surprise",
+         "label": "surprise",
+         "source": ""
+        },
+        {
+         "id": "love-affection",
+         "label": "love affection",
+         "source": ""
+        },
+        {
+         "id": "shame-embarrassment",
+         "label": "shame embarrassment",
+         "source": ""
+        },
+        {
+         "id": "gratitude-relief",
+         "label": "gratitude relief",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "likes",
+       "label": "likes",
+       "source": "",
+       "children": [
+        {
+         "id": "likes-dislikes",
+         "label": "likes dislikes",
+         "source": ""
+        },
+        {
+         "id": "preferences",
+         "label": "preferences",
+         "source": ""
+        },
+        {
+         "id": "wishes-dreams",
+         "label": "wishes dreams",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "life-stages",
+       "label": "life stages",
+       "source": "",
+       "children": [
+        {
+         "id": "birth-childhood",
+         "label": "birth childhood",
+         "source": ""
+        },
+        {
+         "id": "youth",
+         "label": "youth",
+         "source": ""
+        },
+        {
+         "id": "adulthood",
+         "label": "adulthood",
+         "source": ""
+        },
+        {
+         "id": "old-age",
+         "label": "old age",
+         "source": ""
+        },
+        {
+         "id": "death",
+         "label": "death",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "home",
+     "label": "house, home and surroundings",
+     "source": "Threshold 1990 ch. 6, theme 2",
+     "scope": "",
+     "children": [
+      {
+       "id": "dwelling",
+       "label": "dwelling",
+       "source": "",
+       "children": [
+        {
+         "id": "house-types",
+         "label": "house types",
+         "source": ""
+        },
+        {
+         "id": "rooms",
+         "label": "rooms",
+         "source": ""
+        },
+        {
+         "id": "parts-of-building",
+         "label": "parts of building",
+         "source": ""
+        },
+        {
+         "id": "moving-renting",
+         "label": "moving renting",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "furniture",
+       "label": "furniture",
+       "source": "",
+       "children": [
+        {
+         "id": "furniture",
+         "label": "furniture",
+         "source": ""
+        },
+        {
+         "id": "bedding-textiles",
+         "label": "bedding textiles",
+         "source": ""
+        },
+        {
+         "id": "fixtures-fittings",
+         "label": "fixtures fittings",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "household-items",
+       "label": "household items",
+       "source": "",
+       "children": [
+        {
+         "id": "kitchenware",
+         "label": "kitchenware",
+         "source": ""
+        },
+        {
+         "id": "appliances",
+         "label": "appliances",
+         "source": ""
+        },
+        {
+         "id": "tools-diy",
+         "label": "tools diy",
+         "source": ""
+        },
+        {
+         "id": "containers-storage",
+         "label": "containers storage",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "housework",
+       "label": "housework",
+       "source": "",
+       "children": [
+        {
+         "id": "cleaning",
+         "label": "cleaning",
+         "source": ""
+        },
+        {
+         "id": "laundry",
+         "label": "laundry",
+         "source": ""
+        },
+        {
+         "id": "tidying",
+         "label": "tidying",
+         "source": ""
+        },
+        {
+         "id": "home-repairs",
+         "label": "home repairs",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "utilities",
+       "label": "utilities",
+       "source": "",
+       "children": [
+        {
+         "id": "water",
+         "label": "water",
+         "source": ""
+        },
+        {
+         "id": "electricity-gas",
+         "label": "electricity gas",
+         "source": ""
+        },
+        {
+         "id": "heating-cooling",
+         "label": "heating cooling",
+         "source": ""
+        },
+        {
+         "id": "rubbish-recycling",
+         "label": "rubbish recycling",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "surroundings",
+       "label": "surroundings",
+       "source": "",
+       "children": [
+        {
+         "id": "neighbours",
+         "label": "neighbours",
+         "source": ""
+        },
+        {
+         "id": "local-area",
+         "label": "local area",
+         "source": ""
+        },
+        {
+         "id": "town-country",
+         "label": "town country",
+         "source": ""
+        },
+        {
+         "id": "garden",
+         "label": "garden",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "daily",
+     "label": "daily life",
+     "source": "Threshold 1990 ch. 6, theme 3",
+     "scope": "",
+     "children": [
+      {
+       "id": "routine",
+       "label": "routine",
+       "source": "",
+       "children": [
+        {
+         "id": "waking-sleeping",
+         "label": "waking sleeping",
+         "source": ""
+        },
+        {
+         "id": "washing-dressing",
+         "label": "washing dressing",
+         "source": ""
+        },
+        {
+         "id": "mealtimes",
+         "label": "mealtimes",
+         "source": ""
+        },
+        {
+         "id": "commuting",
+         "label": "commuting",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "time-calendar",
+       "label": "time calendar",
+       "source": "",
+       "children": [
+        {
+         "id": "clock-time",
+         "label": "clock time",
+         "source": ""
+        },
+        {
+         "id": "days-dates",
+         "label": "days dates",
+         "source": ""
+        },
+        {
+         "id": "calendar-events",
+         "label": "calendar events",
+         "source": ""
+        },
+        {
+         "id": "schedules-appointments",
+         "label": "schedules appointments",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "planning",
+       "label": "planning",
+       "source": "",
+       "children": [
+        {
+         "id": "plans-arrangements",
+         "label": "plans arrangements",
+         "source": ""
+        },
+        {
+         "id": "punctuality-delay",
+         "label": "punctuality delay",
+         "source": ""
+        },
+        {
+         "id": "busy-free",
+         "label": "busy free",
+         "source": ""
+        },
+        {
+         "id": "habits",
+         "label": "habits",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "work",
+     "label": "work and occupations",
+     "source": "Threshold 1990 ch. 6, theme 3 \"at work\"; CEFR occupational domain",
+     "scope": "",
+     "children": [
+      {
+       "id": "jobs",
+       "label": "jobs",
+       "source": "",
+       "children": [
+        {
+         "id": "occupations",
+         "label": "occupations",
+         "source": ""
+        },
+        {
+         "id": "job-hunting",
+         "label": "job hunting",
+         "source": ""
+        },
+        {
+         "id": "employment-contracts",
+         "label": "employment contracts",
+         "source": ""
+        },
+        {
+         "id": "retirement",
+         "label": "retirement",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "workplace",
+       "label": "workplace",
+       "source": "",
+       "children": [
+        {
+         "id": "office",
+         "label": "office",
+         "source": ""
+        },
+        {
+         "id": "colleagues-hierarchy",
+         "label": "colleagues hierarchy",
+         "source": ""
+        },
+        {
+         "id": "meetings",
+         "label": "meetings",
+         "source": ""
+        },
+        {
+         "id": "business-trips",
+         "label": "business trips",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "tasks",
+       "label": "tasks",
+       "source": "",
+       "children": [
+        {
+         "id": "office-tasks",
+         "label": "office tasks",
+         "source": ""
+        },
+        {
+         "id": "documents-forms",
+         "label": "documents forms",
+         "source": ""
+        },
+        {
+         "id": "deadlines",
+         "label": "deadlines",
+         "source": ""
+        },
+        {
+         "id": "performance-evaluation",
+         "label": "performance evaluation",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "conditions",
+       "label": "conditions",
+       "source": "",
+       "children": [
+        {
+         "id": "wages-salary",
+         "label": "wages salary",
+         "source": ""
+        },
+        {
+         "id": "working-hours",
+         "label": "working hours",
+         "source": ""
+        },
+        {
+         "id": "leave",
+         "label": "leave",
+         "source": ""
+        },
+        {
+         "id": "labour-issues",
+         "label": "labour issues",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "leisure",
+     "label": "free time and entertainment",
+     "source": "Threshold 1990 ch. 6, theme 4",
+     "scope": "",
+     "children": [
+      {
+       "id": "hobbies",
+       "label": "hobbies",
+       "source": "",
+       "children": [
+        {
+         "id": "collecting",
+         "label": "collecting",
+         "source": ""
+        },
+        {
+         "id": "crafts",
+         "label": "crafts",
+         "source": ""
+        },
+        {
+         "id": "games-puzzles",
+         "label": "games puzzles",
+         "source": ""
+        },
+        {
+         "id": "outdoor-activities",
+         "label": "outdoor activities",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "sport",
+       "label": "sport",
+       "source": "",
+       "children": [
+        {
+         "id": "ball-sports",
+         "label": "ball sports",
+         "source": ""
+        },
+        {
+         "id": "martial-arts-sumo",
+         "label": "martial arts sumo",
+         "source": ""
+        },
+        {
+         "id": "athletics-fitness",
+         "label": "athletics fitness",
+         "source": ""
+        },
+        {
+         "id": "water-winter-sports",
+         "label": "water winter sports",
+         "source": ""
+        },
+        {
+         "id": "watching-sport",
+         "label": "watching sport",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "media",
+       "label": "media",
+       "source": "",
+       "children": [
+        {
+         "id": "tv-radio",
+         "label": "tv radio",
+         "source": ""
+        },
+        {
+         "id": "press-magazines",
+         "label": "press magazines",
+         "source": ""
+        },
+        {
+         "id": "internet-social-media",
+         "label": "internet social media",
+         "source": ""
+        },
+        {
+         "id": "film",
+         "label": "film",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "performing",
+       "label": "performing",
+       "source": "",
+       "children": [
+        {
+         "id": "music",
+         "label": "music",
+         "source": ""
+        },
+        {
+         "id": "theatre-stage",
+         "label": "theatre stage",
+         "source": ""
+        },
+        {
+         "id": "concerts-festivals",
+         "label": "concerts festivals",
+         "source": ""
+        },
+        {
+         "id": "dance",
+         "label": "dance",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "culture",
+       "label": "culture",
+       "source": "",
+       "children": [
+        {
+         "id": "museums-exhibitions",
+         "label": "museums exhibitions",
+         "source": ""
+        },
+        {
+         "id": "books-reading",
+         "label": "books reading",
+         "source": ""
+        },
+        {
+         "id": "visual-arts",
+         "label": "visual arts",
+         "source": ""
+        },
+        {
+         "id": "traditional-arts",
+         "label": "traditional arts",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "celebrations",
+       "label": "celebrations",
+       "source": "",
+       "children": [
+        {
+         "id": "parties",
+         "label": "parties",
+         "source": ""
+        },
+        {
+         "id": "festivals",
+         "label": "festivals",
+         "source": ""
+        },
+        {
+         "id": "seasonal-customs",
+         "label": "seasonal customs",
+         "source": ""
+        },
+        {
+         "id": "gifts",
+         "label": "gifts",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "travel",
+     "label": "travel and transport",
+     "source": "Threshold 1990 ch. 6, theme 5",
+     "scope": "",
+     "children": [
+      {
+       "id": "public-transport",
+       "label": "public transport",
+       "source": "",
+       "children": [
+        {
+         "id": "train-rail",
+         "label": "train rail",
+         "source": ""
+        },
+        {
+         "id": "bus",
+         "label": "bus",
+         "source": ""
+        },
+        {
+         "id": "air",
+         "label": "air",
+         "source": ""
+        },
+        {
+         "id": "ship-ferry",
+         "label": "ship ferry",
+         "source": ""
+        },
+        {
+         "id": "tickets-fares",
+         "label": "tickets fares",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "private-transport",
+       "label": "private transport",
+       "source": "",
+       "children": [
+        {
+         "id": "car-driving",
+         "label": "car driving",
+         "source": ""
+        },
+        {
+         "id": "bicycle",
+         "label": "bicycle",
+         "source": ""
+        },
+        {
+         "id": "walking",
+         "label": "walking",
+         "source": ""
+        },
+        {
+         "id": "taxi",
+         "label": "taxi",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "traffic",
+       "label": "traffic",
+       "source": "",
+       "children": [
+        {
+         "id": "roads",
+         "label": "roads",
+         "source": ""
+        },
+        {
+         "id": "traffic-rules",
+         "label": "traffic rules",
+         "source": ""
+        },
+        {
+         "id": "traffic-accidents",
+         "label": "traffic accidents",
+         "source": ""
+        },
+        {
+         "id": "parking",
+         "label": "parking",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "holidays",
+       "label": "holidays",
+       "source": "",
+       "children": [
+        {
+         "id": "sightseeing",
+         "label": "sightseeing",
+         "source": ""
+        },
+        {
+         "id": "accommodation",
+         "label": "accommodation",
+         "source": ""
+        },
+        {
+         "id": "luggage-packing",
+         "label": "luggage packing",
+         "source": ""
+        },
+        {
+         "id": "trip-planning",
+         "label": "trip planning",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "abroad",
+       "label": "abroad",
+       "source": "",
+       "children": [
+        {
+         "id": "passport-visa",
+         "label": "passport visa",
+         "source": ""
+        },
+        {
+         "id": "customs-immigration",
+         "label": "customs immigration",
+         "source": ""
+        },
+        {
+         "id": "currency-exchange",
+         "label": "currency exchange",
+         "source": ""
+        },
+        {
+         "id": "living-abroad",
+         "label": "living abroad",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "relations",
+     "label": "relations with other people",
+     "source": "Threshold 1990 ch. 6, theme 6",
+     "scope": "",
+     "children": [
+      {
+       "id": "family",
+       "label": "family",
+       "source": "",
+       "children": [
+        {
+         "id": "parents-children",
+         "label": "parents children",
+         "source": ""
+        },
+        {
+         "id": "siblings",
+         "label": "siblings",
+         "source": ""
+        },
+        {
+         "id": "extended-family",
+         "label": "extended family",
+         "source": ""
+        },
+        {
+         "id": "marriage-divorce",
+         "label": "marriage divorce",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "friends",
+       "label": "friends",
+       "source": "",
+       "children": [
+        {
+         "id": "friendship",
+         "label": "friendship",
+         "source": ""
+        },
+        {
+         "id": "quarrels-reconciliation",
+         "label": "quarrels reconciliation",
+         "source": ""
+        },
+        {
+         "id": "love-dating",
+         "label": "love dating",
+         "source": ""
+        },
+        {
+         "id": "acquaintances",
+         "label": "acquaintances",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "social-contact",
+       "label": "social contact",
+       "source": "",
+       "children": [
+        {
+         "id": "invitations-visits",
+         "label": "invitations visits",
+         "source": ""
+        },
+        {
+         "id": "greetings-manners",
+         "label": "greetings manners",
+         "source": ""
+        },
+        {
+         "id": "gifts-thanks",
+         "label": "gifts thanks",
+         "source": ""
+        },
+        {
+         "id": "correspondence",
+         "label": "correspondence",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "community",
+       "label": "community",
+       "source": "",
+       "children": [
+        {
+         "id": "clubs-groups",
+         "label": "clubs groups",
+         "source": ""
+        },
+        {
+         "id": "volunteering",
+         "label": "volunteering",
+         "source": ""
+        },
+        {
+         "id": "social-roles",
+         "label": "social roles",
+         "source": ""
+        },
+        {
+         "id": "neighbourhood-life",
+         "label": "neighbourhood life",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "society",
+       "label": "society",
+       "source": "",
+       "children": [
+        {
+         "id": "politics-opinions",
+         "label": "politics opinions",
+         "source": ""
+        },
+        {
+         "id": "social-issues",
+         "label": "social issues",
+         "source": ""
+        },
+        {
+         "id": "customs-traditions",
+         "label": "customs traditions",
+         "source": ""
+        },
+        {
+         "id": "religion-everyday",
+         "label": "religion everyday",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "health",
+     "label": "health and body care",
+     "source": "Threshold 1990 ch. 6, theme 7",
+     "scope": "",
+     "children": [
+      {
+       "id": "body",
+       "label": "body",
+       "source": "",
+       "children": [
+        {
+         "id": "body-parts",
+         "label": "body parts",
+         "source": ""
+        },
+        {
+         "id": "internal-organs",
+         "label": "internal organs",
+         "source": ""
+        },
+        {
+         "id": "senses",
+         "label": "senses",
+         "source": ""
+        },
+        {
+         "id": "body-positions",
+         "label": "body positions",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "illness",
+       "label": "illness",
+       "source": "",
+       "children": [
+        {
+         "id": "common-illness",
+         "label": "common illness",
+         "source": ""
+        },
+        {
+         "id": "injuries",
+         "label": "injuries",
+         "source": ""
+        },
+        {
+         "id": "symptoms",
+         "label": "symptoms",
+         "source": ""
+        },
+        {
+         "id": "chronic-conditions",
+         "label": "chronic conditions",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "medical-care",
+       "label": "medical care",
+       "source": "",
+       "children": [
+        {
+         "id": "doctor-hospital",
+         "label": "doctor hospital",
+         "source": ""
+        },
+        {
+         "id": "medicine-pharmacy",
+         "label": "medicine pharmacy",
+         "source": ""
+        },
+        {
+         "id": "dentist",
+         "label": "dentist",
+         "source": ""
+        },
+        {
+         "id": "health-insurance",
+         "label": "health insurance",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "wellbeing",
+       "label": "wellbeing",
+       "source": "",
+       "children": [
+        {
+         "id": "diet-exercise",
+         "label": "diet exercise",
+         "source": ""
+        },
+        {
+         "id": "sleep-rest",
+         "label": "sleep rest",
+         "source": ""
+        },
+        {
+         "id": "stress-mental-health",
+         "label": "stress mental health",
+         "source": ""
+        },
+        {
+         "id": "hygiene-grooming",
+         "label": "hygiene grooming",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "emergency",
+       "label": "emergency",
+       "source": "",
+       "children": [
+        {
+         "id": "emergency-services",
+         "label": "emergency services",
+         "source": ""
+        },
+        {
+         "id": "first-aid",
+         "label": "first aid",
+         "source": ""
+        },
+        {
+         "id": "disasters-safety",
+         "label": "disasters safety",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "school",
+     "label": "education and learning",
+     "source": "Threshold 1990 ch. 6, theme 8; CEFR educational domain",
+     "scope": "",
+     "children": [
+      {
+       "id": "schooling",
+       "label": "schooling",
+       "source": "",
+       "children": [
+        {
+         "id": "school-types",
+         "label": "school types",
+         "source": ""
+        },
+        {
+         "id": "school-life",
+         "label": "school life",
+         "source": ""
+        },
+        {
+         "id": "university",
+         "label": "university",
+         "source": ""
+        },
+        {
+         "id": "exams-qualifications",
+         "label": "exams qualifications",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "subjects",
+       "label": "subjects",
+       "source": "",
+       "children": [
+        {
+         "id": "language-subjects",
+         "label": "language subjects",
+         "source": ""
+        },
+        {
+         "id": "maths-science-subjects",
+         "label": "maths science subjects",
+         "source": ""
+        },
+        {
+         "id": "humanities-subjects",
+         "label": "humanities subjects",
+         "source": ""
+        },
+        {
+         "id": "arts-pe",
+         "label": "arts pe",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "study",
+       "label": "study",
+       "source": "",
+       "children": [
+        {
+         "id": "study-methods",
+         "label": "study methods",
+         "source": ""
+        },
+        {
+         "id": "homework-assignments",
+         "label": "homework assignments",
+         "source": ""
+        },
+        {
+         "id": "reading-writing",
+         "label": "reading writing",
+         "source": ""
+        },
+        {
+         "id": "grades-results",
+         "label": "grades results",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "classroom",
+       "label": "classroom",
+       "source": "",
+       "children": [
+        {
+         "id": "classroom-objects",
+         "label": "classroom objects",
+         "source": ""
+        },
+        {
+         "id": "teachers-students",
+         "label": "teachers students",
+         "source": ""
+        },
+        {
+         "id": "lessons-timetable",
+         "label": "lessons timetable",
+         "source": ""
+        },
+        {
+         "id": "rules-discipline",
+         "label": "rules discipline",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "shopping",
+     "label": "shopping and money",
+     "source": "Threshold 1990 ch. 6, theme 9",
+     "scope": "",
+     "children": [
+      {
+       "id": "shops",
+       "label": "shops",
+       "source": "",
+       "children": [
+        {
+         "id": "shop-types",
+         "label": "shop types",
+         "source": ""
+        },
+        {
+         "id": "markets",
+         "label": "markets",
+         "source": ""
+        },
+        {
+         "id": "online-shopping",
+         "label": "online shopping",
+         "source": ""
+        },
+        {
+         "id": "opening-hours",
+         "label": "opening hours",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "buying",
+       "label": "buying",
+       "source": "",
+       "children": [
+        {
+         "id": "prices-discounts",
+         "label": "prices discounts",
+         "source": ""
+        },
+        {
+         "id": "payment",
+         "label": "payment",
+         "source": ""
+        },
+        {
+         "id": "returns-complaints",
+         "label": "returns complaints",
+         "source": ""
+        },
+        {
+         "id": "receipts-wrapping",
+         "label": "receipts wrapping",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "goods",
+       "label": "goods",
+       "source": "",
+       "children": [
+        {
+         "id": "clothes-fashion",
+         "label": "clothes fashion",
+         "source": ""
+        },
+        {
+         "id": "shoes-accessories",
+         "label": "shoes accessories",
+         "source": ""
+        },
+        {
+         "id": "household-goods",
+         "label": "household goods",
+         "source": ""
+        },
+        {
+         "id": "electronics",
+         "label": "electronics",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "money",
+       "label": "money",
+       "source": "",
+       "children": [
+        {
+         "id": "cash-coins",
+         "label": "cash coins",
+         "source": ""
+        },
+        {
+         "id": "saving-spending",
+         "label": "saving spending",
+         "source": ""
+        },
+        {
+         "id": "everyday-banking",
+         "label": "everyday banking",
+         "source": ""
+        },
+        {
+         "id": "debts-loans",
+         "label": "debts loans",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "measures",
+       "label": "measures",
+       "source": "",
+       "children": [
+        {
+         "id": "weights-sizes",
+         "label": "weights sizes",
+         "source": ""
+        },
+        {
+         "id": "quantities-packaging",
+         "label": "quantities packaging",
+         "source": ""
+        },
+        {
+         "id": "quality",
+         "label": "quality",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "food",
+     "label": "food and drink",
+     "source": "Threshold 1990 ch. 6, theme 10",
+     "scope": "",
+     "children": [
+      {
+       "id": "foodstuffs",
+       "label": "foodstuffs",
+       "source": "",
+       "children": [
+        {
+         "id": "vegetables-fruit",
+         "label": "vegetables fruit",
+         "source": ""
+        },
+        {
+         "id": "meat-fish",
+         "label": "meat fish",
+         "source": ""
+        },
+        {
+         "id": "grains-staples",
+         "label": "grains staples",
+         "source": ""
+        },
+        {
+         "id": "dairy-eggs",
+         "label": "dairy eggs",
+         "source": ""
+        },
+        {
+         "id": "seasonings",
+         "label": "seasonings",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "dishes",
+       "label": "dishes",
+       "source": "",
+       "children": [
+        {
+         "id": "japanese-dishes",
+         "label": "japanese dishes",
+         "source": ""
+        },
+        {
+         "id": "western-dishes",
+         "label": "western dishes",
+         "source": ""
+        },
+        {
+         "id": "noodles-rice-dishes",
+         "label": "noodles rice dishes",
+         "source": ""
+        },
+        {
+         "id": "snacks-sweets",
+         "label": "snacks sweets",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "drinks",
+       "label": "drinks",
+       "source": "",
+       "children": [
+        {
+         "id": "soft-drinks",
+         "label": "soft drinks",
+         "source": ""
+        },
+        {
+         "id": "tea-coffee",
+         "label": "tea coffee",
+         "source": ""
+        },
+        {
+         "id": "alcohol",
+         "label": "alcohol",
+         "source": ""
+        },
+        {
+         "id": "water",
+         "label": "water",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "cooking",
+       "label": "cooking",
+       "source": "",
+       "children": [
+        {
+         "id": "preparation",
+         "label": "preparation",
+         "source": ""
+        },
+        {
+         "id": "cooking-methods",
+         "label": "cooking methods",
+         "source": ""
+        },
+        {
+         "id": "recipes-measuring",
+         "label": "recipes measuring",
+         "source": ""
+        },
+        {
+         "id": "taste-texture",
+         "label": "taste texture",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "meals",
+       "label": "meals",
+       "source": "",
+       "children": [
+        {
+         "id": "breakfast",
+         "label": "breakfast",
+         "source": ""
+        },
+        {
+         "id": "lunch",
+         "label": "lunch",
+         "source": ""
+        },
+        {
+         "id": "dinner",
+         "label": "dinner",
+         "source": ""
+        },
+        {
+         "id": "diet-nutrition",
+         "label": "diet nutrition",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "eating-out",
+       "label": "eating out",
+       "source": "",
+       "children": [
+        {
+         "id": "restaurants",
+         "label": "restaurants",
+         "source": ""
+        },
+        {
+         "id": "ordering-paying",
+         "label": "ordering paying",
+         "source": ""
+        },
+        {
+         "id": "table-manners",
+         "label": "table manners",
+         "source": ""
+        },
+        {
+         "id": "takeaway-delivery",
+         "label": "takeaway delivery",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "services",
+     "label": "public and commercial services",
+     "source": "Threshold 1990 ch. 6, theme 11",
+     "scope": "",
+     "children": [
+      {
+       "id": "post-telecom",
+       "label": "post telecom",
+       "source": "",
+       "children": [
+        {
+         "id": "post",
+         "label": "post",
+         "source": ""
+        },
+        {
+         "id": "telephone",
+         "label": "telephone",
+         "source": ""
+        },
+        {
+         "id": "internet-service",
+         "label": "internet service",
+         "source": ""
+        },
+        {
+         "id": "parcel-delivery",
+         "label": "parcel delivery",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "public-office",
+       "label": "public office",
+       "source": "",
+       "children": [
+        {
+         "id": "city-office",
+         "label": "city office",
+         "source": ""
+        },
+        {
+         "id": "registration-documents",
+         "label": "registration documents",
+         "source": ""
+        },
+        {
+         "id": "police",
+         "label": "police",
+         "source": ""
+        },
+        {
+         "id": "embassy",
+         "label": "embassy",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "repairs",
+       "label": "repairs",
+       "source": "",
+       "children": [
+        {
+         "id": "repair-shops",
+         "label": "repair shops",
+         "source": ""
+        },
+        {
+         "id": "garage-petrol",
+         "label": "garage petrol",
+         "source": ""
+        },
+        {
+         "id": "utility-service",
+         "label": "utility service",
+         "source": ""
+        },
+        {
+         "id": "cleaning-services",
+         "label": "cleaning services",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "personal-services",
+       "label": "personal services",
+       "source": "",
+       "children": [
+        {
+         "id": "hairdresser-beauty",
+         "label": "hairdresser beauty",
+         "source": ""
+        },
+        {
+         "id": "laundry-service",
+         "label": "laundry service",
+         "source": ""
+        },
+        {
+         "id": "childcare",
+         "label": "childcare",
+         "source": ""
+        },
+        {
+         "id": "elderly-care",
+         "label": "elderly care",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "places",
+     "label": "places and directions",
+     "source": "Threshold 1990 ch. 6, theme 12",
+     "scope": "",
+     "children": [
+      {
+       "id": "buildings",
+       "label": "buildings",
+       "source": "",
+       "children": [
+        {
+         "id": "public-buildings",
+         "label": "public buildings",
+         "source": ""
+        },
+        {
+         "id": "commercial-buildings",
+         "label": "commercial buildings",
+         "source": ""
+        },
+        {
+         "id": "religious-buildings",
+         "label": "religious buildings",
+         "source": ""
+        },
+        {
+         "id": "landmarks",
+         "label": "landmarks",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "town",
+       "label": "town",
+       "source": "",
+       "children": [
+        {
+         "id": "streets-blocks",
+         "label": "streets blocks",
+         "source": ""
+        },
+        {
+         "id": "stations-stops",
+         "label": "stations stops",
+         "source": ""
+        },
+        {
+         "id": "parks-squares",
+         "label": "parks squares",
+         "source": ""
+        },
+        {
+         "id": "districts",
+         "label": "districts",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "geography",
+       "label": "geography",
+       "source": "",
+       "children": [
+        {
+         "id": "countries",
+         "label": "countries",
+         "source": ""
+        },
+        {
+         "id": "regions-prefectures",
+         "label": "regions prefectures",
+         "source": ""
+        },
+        {
+         "id": "cities",
+         "label": "cities",
+         "source": ""
+        },
+        {
+         "id": "natural-features",
+         "label": "natural features",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "directions",
+       "label": "directions",
+       "source": "",
+       "children": [
+        {
+         "id": "asking-directions",
+         "label": "asking directions",
+         "source": ""
+        },
+        {
+         "id": "maps-addresses",
+         "label": "maps addresses",
+         "source": ""
+        },
+        {
+         "id": "orientation",
+         "label": "orientation",
+         "source": ""
+        },
+        {
+         "id": "distance-routes",
+         "label": "distance routes",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "language",
+     "label": "language and communication",
+     "source": "Threshold 1990 ch. 6, theme 13",
+     "scope": "",
+     "children": [
+      {
+       "id": "languages",
+       "label": "languages",
+       "source": "",
+       "children": [
+        {
+         "id": "language-names",
+         "label": "language names",
+         "source": ""
+        },
+        {
+         "id": "language-learning",
+         "label": "language learning",
+         "source": ""
+        },
+        {
+         "id": "dialects",
+         "label": "dialects",
+         "source": ""
+        },
+        {
+         "id": "writing-systems",
+         "label": "writing systems",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "communication",
+       "label": "communication",
+       "source": "",
+       "children": [
+        {
+         "id": "conversation",
+         "label": "conversation",
+         "source": ""
+        },
+        {
+         "id": "listening-understanding",
+         "label": "listening understanding",
+         "source": ""
+        },
+        {
+         "id": "misunderstanding-repair",
+         "label": "misunderstanding repair",
+         "source": ""
+        },
+        {
+         "id": "politeness-honorifics",
+         "label": "politeness honorifics",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "writing",
+       "label": "writing",
+       "source": "",
+       "children": [
+        {
+         "id": "letters-email",
+         "label": "letters email",
+         "source": ""
+        },
+        {
+         "id": "spelling-script",
+         "label": "spelling script",
+         "source": ""
+        },
+        {
+         "id": "punctuation",
+         "label": "punctuation",
+         "source": ""
+        },
+        {
+         "id": "texts-documents",
+         "label": "texts documents",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "words",
+       "label": "words",
+       "source": "",
+       "children": [
+        {
+         "id": "vocabulary-meaning",
+         "label": "vocabulary meaning",
+         "source": ""
+        },
+        {
+         "id": "grammar-terms",
+         "label": "grammar terms",
+         "source": ""
+        },
+        {
+         "id": "translation",
+         "label": "translation",
+         "source": ""
+        },
+        {
+         "id": "idioms-sayings",
+         "label": "idioms sayings",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "nature",
+     "label": "weather, climate and nature",
+     "source": "Threshold 1990 ch. 6, themes 14 and 2",
+     "scope": "",
+     "children": [
+      {
+       "id": "weather",
+       "label": "weather",
+       "source": "",
+       "children": [
+        {
+         "id": "sun-clouds",
+         "label": "sun clouds",
+         "source": ""
+        },
+        {
+         "id": "rain-snow",
+         "label": "rain snow",
+         "source": ""
+        },
+        {
+         "id": "wind-storms",
+         "label": "wind storms",
+         "source": ""
+        },
+        {
+         "id": "temperature",
+         "label": "temperature",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "climate",
+       "label": "climate",
+       "source": "",
+       "children": [
+        {
+         "id": "seasons",
+         "label": "seasons",
+         "source": ""
+        },
+        {
+         "id": "climate-types",
+         "label": "climate types",
+         "source": ""
+        },
+        {
+         "id": "forecasts",
+         "label": "forecasts",
+         "source": ""
+        },
+        {
+         "id": "natural-disasters",
+         "label": "natural disasters",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "animals",
+       "label": "animals",
+       "source": "",
+       "children": [
+        {
+         "id": "pets",
+         "label": "pets",
+         "source": ""
+        },
+        {
+         "id": "wild-animals",
+         "label": "wild animals",
+         "source": ""
+        },
+        {
+         "id": "birds",
+         "label": "birds",
+         "source": ""
+        },
+        {
+         "id": "insects",
+         "label": "insects",
+         "source": ""
+        },
+        {
+         "id": "sea-life",
+         "label": "sea life",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "plants",
+       "label": "plants",
+       "source": "",
+       "children": [
+        {
+         "id": "flowers",
+         "label": "flowers",
+         "source": ""
+        },
+        {
+         "id": "trees",
+         "label": "trees",
+         "source": ""
+        },
+        {
+         "id": "garden-plants",
+         "label": "garden plants",
+         "source": ""
+        },
+        {
+         "id": "wild-plants",
+         "label": "wild plants",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "landscape",
+       "label": "landscape",
+       "source": "",
+       "children": [
+        {
+         "id": "mountains",
+         "label": "mountains",
+         "source": ""
+        },
+        {
+         "id": "rivers-lakes",
+         "label": "rivers lakes",
+         "source": ""
+        },
+        {
+         "id": "sea-coast",
+         "label": "sea coast",
+         "source": ""
+        },
+        {
+         "id": "sky-space",
+         "label": "sky space",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tree": "B",
+   "nodes": [
+    {
+     "id": "education-science",
+     "label": "education",
+     "source": "ISCED-F 2013, 01",
+     "scope": "",
+     "children": [
+      {
+       "id": "education",
+       "label": "education",
+       "source": "ISCED-F 011",
+       "children": [
+        {
+         "id": "education-science",
+         "label": "education science",
+         "source": "ISCED-F 0111"
+        },
+        {
+         "id": "preschool-teaching",
+         "label": "preschool teaching",
+         "source": "ISCED-F 0112"
+        },
+        {
+         "id": "teacher-training",
+         "label": "teacher training",
+         "source": "ISCED-F 0113"
+        },
+        {
+         "id": "subject-teaching",
+         "label": "subject teaching",
+         "source": "ISCED-F 0114"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "arts-humanities",
+     "label": "arts and humanities",
+     "source": "ISCED-F 2013, 02",
+     "scope": "",
+     "children": [
+      {
+       "id": "arts",
+       "label": "arts",
+       "source": "ISCED-F 021",
+       "children": [
+        {
+         "id": "media-production",
+         "label": "media production",
+         "source": "ISCED-F 0211"
+        },
+        {
+         "id": "design",
+         "label": "design",
+         "source": "ISCED-F 0212"
+        },
+        {
+         "id": "fine-arts",
+         "label": "fine arts",
+         "source": "ISCED-F 0213"
+        },
+        {
+         "id": "handicrafts",
+         "label": "handicrafts",
+         "source": "ISCED-F 0214"
+        },
+        {
+         "id": "music-performing-arts",
+         "label": "music performing arts",
+         "source": "ISCED-F 0215"
+        }
+       ]
+      },
+      {
+       "id": "humanities",
+       "label": "humanities",
+       "source": "ISCED-F 022",
+       "children": [
+        {
+         "id": "religion-theology",
+         "label": "religion theology",
+         "source": "ISCED-F 0221"
+        },
+        {
+         "id": "history-archaeology",
+         "label": "history archaeology",
+         "source": "ISCED-F 0222"
+        },
+        {
+         "id": "philosophy-ethics",
+         "label": "philosophy ethics",
+         "source": "ISCED-F 0223"
+        }
+       ]
+      },
+      {
+       "id": "languages",
+       "label": "languages",
+       "source": "ISCED-F 023",
+       "children": [
+        {
+         "id": "language-acquisition",
+         "label": "language acquisition",
+         "source": "ISCED-F 0231"
+        },
+        {
+         "id": "literature-linguistics",
+         "label": "literature linguistics",
+         "source": "ISCED-F 0232"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "social-sciences",
+     "label": "social sciences, journalism and information",
+     "source": "ISCED-F 2013, 03",
+     "scope": "",
+     "children": [
+      {
+       "id": "social-behavioural",
+       "label": "social behavioural",
+       "source": "ISCED-F 031",
+       "children": [
+        {
+         "id": "economics",
+         "label": "economics",
+         "source": "ISCED-F 0311"
+        },
+        {
+         "id": "political-science",
+         "label": "political science",
+         "source": "ISCED-F 0312"
+        },
+        {
+         "id": "psychology",
+         "label": "psychology",
+         "source": "ISCED-F 0313"
+        },
+        {
+         "id": "sociology-cultural-studies",
+         "label": "sociology cultural studies",
+         "source": "ISCED-F 0314"
+        }
+       ]
+      },
+      {
+       "id": "journalism-information",
+       "label": "journalism information",
+       "source": "ISCED-F 032",
+       "children": [
+        {
+         "id": "journalism",
+         "label": "journalism",
+         "source": "ISCED-F 0321"
+        },
+        {
+         "id": "library-archives",
+         "label": "library archives",
+         "source": "ISCED-F 0322"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "business-law",
+     "label": "business, administration and law",
+     "source": "ISCED-F 2013, 04",
+     "scope": "",
+     "children": [
+      {
+       "id": "business-admin",
+       "label": "business admin",
+       "source": "ISCED-F 041",
+       "children": [
+        {
+         "id": "accounting-tax",
+         "label": "accounting tax",
+         "source": "ISCED-F 0411"
+        },
+        {
+         "id": "finance-banking-insurance",
+         "label": "finance banking insurance",
+         "source": "ISCED-F 0412"
+        },
+        {
+         "id": "management",
+         "label": "management",
+         "source": "ISCED-F 0413"
+        },
+        {
+         "id": "marketing-advertising",
+         "label": "marketing advertising",
+         "source": "ISCED-F 0414"
+        },
+        {
+         "id": "office-work",
+         "label": "office work",
+         "source": "ISCED-F 0415"
+        },
+        {
+         "id": "sales-retail",
+         "label": "sales retail",
+         "source": "ISCED-F 0416"
+        },
+        {
+         "id": "work-skills",
+         "label": "work skills",
+         "source": "ISCED-F 0417"
+        }
+       ]
+      },
+      {
+       "id": "law",
+       "label": "law",
+       "source": "ISCED-F 042",
+       "children": [
+        {
+         "id": "law",
+         "label": "law",
+         "source": "ISCED-F 0421"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "natural-sciences",
+     "label": "natural sciences, mathematics and statistics",
+     "source": "ISCED-F 2013, 05",
+     "scope": "",
+     "children": [
+      {
+       "id": "biology",
+       "label": "biology",
+       "source": "ISCED-F 051",
+       "children": [
+        {
+         "id": "biology",
+         "label": "biology",
+         "source": "ISCED-F 0511"
+        },
+        {
+         "id": "biochemistry",
+         "label": "biochemistry",
+         "source": "ISCED-F 0512"
+        }
+       ]
+      },
+      {
+       "id": "environment",
+       "label": "environment",
+       "source": "ISCED-F 052",
+       "children": [
+        {
+         "id": "environmental-science",
+         "label": "environmental science",
+         "source": "ISCED-F 0521"
+        },
+        {
+         "id": "wildlife-natural-environments",
+         "label": "wildlife natural environments",
+         "source": "ISCED-F 0522"
+        }
+       ]
+      },
+      {
+       "id": "physical-sciences",
+       "label": "physical sciences",
+       "source": "ISCED-F 053",
+       "children": [
+        {
+         "id": "chemistry",
+         "label": "chemistry",
+         "source": "ISCED-F 0531"
+        },
+        {
+         "id": "earth-sciences",
+         "label": "earth sciences",
+         "source": "ISCED-F 0532"
+        },
+        {
+         "id": "physics",
+         "label": "physics",
+         "source": "ISCED-F 0533"
+        }
+       ]
+      },
+      {
+       "id": "mathematics-statistics",
+       "label": "mathematics statistics",
+       "source": "ISCED-F 054",
+       "children": [
+        {
+         "id": "mathematics",
+         "label": "mathematics",
+         "source": "ISCED-F 0541"
+        },
+        {
+         "id": "statistics",
+         "label": "statistics",
+         "source": "ISCED-F 0542"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "ict",
+     "label": "information and communication technologies",
+     "source": "ISCED-F 2013, 06",
+     "scope": "",
+     "children": [
+      {
+       "id": "ict",
+       "label": "ict",
+       "source": "ISCED-F 061",
+       "children": [
+        {
+         "id": "computer-use",
+         "label": "computer use",
+         "source": "ISCED-F 0611"
+        },
+        {
+         "id": "databases-networks",
+         "label": "databases networks",
+         "source": "ISCED-F 0612"
+        },
+        {
+         "id": "software-development",
+         "label": "software development",
+         "source": "ISCED-F 0613"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "engineering",
+     "label": "engineering, manufacturing and construction",
+     "source": "ISCED-F 2013, 07",
+     "scope": "",
+     "children": [
+      {
+       "id": "engineering-trades",
+       "label": "engineering trades",
+       "source": "ISCED-F 071",
+       "children": [
+        {
+         "id": "chemical-engineering",
+         "label": "chemical engineering",
+         "source": "ISCED-F 0711"
+        },
+        {
+         "id": "environmental-technology",
+         "label": "environmental technology",
+         "source": "ISCED-F 0712"
+        },
+        {
+         "id": "electricity-energy",
+         "label": "electricity energy",
+         "source": "ISCED-F 0713"
+        },
+        {
+         "id": "electronics-automation",
+         "label": "electronics automation",
+         "source": "ISCED-F 0714"
+        },
+        {
+         "id": "mechanics-metal",
+         "label": "mechanics metal",
+         "source": "ISCED-F 0715"
+        },
+        {
+         "id": "vehicles-ships-aircraft",
+         "label": "vehicles ships aircraft",
+         "source": "ISCED-F 0716"
+        }
+       ]
+      },
+      {
+       "id": "manufacturing",
+       "label": "manufacturing",
+       "source": "ISCED-F 072",
+       "children": [
+        {
+         "id": "food-processing",
+         "label": "food processing",
+         "source": "ISCED-F 0721"
+        },
+        {
+         "id": "materials",
+         "label": "materials",
+         "source": "ISCED-F 0722"
+        },
+        {
+         "id": "textiles-clothing",
+         "label": "textiles clothing",
+         "source": "ISCED-F 0723"
+        },
+        {
+         "id": "mining",
+         "label": "mining",
+         "source": "ISCED-F 0724"
+        }
+       ]
+      },
+      {
+       "id": "architecture-construction",
+       "label": "architecture construction",
+       "source": "ISCED-F 073",
+       "children": [
+        {
+         "id": "architecture-planning",
+         "label": "architecture planning",
+         "source": "ISCED-F 0731"
+        },
+        {
+         "id": "building-civil-engineering",
+         "label": "building civil engineering",
+         "source": "ISCED-F 0732"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "agriculture",
+     "label": "agriculture, forestry, fisheries and veterinary",
+     "source": "ISCED-F 2013, 08",
+     "scope": "",
+     "children": [
+      {
+       "id": "agriculture",
+       "label": "agriculture",
+       "source": "ISCED-F 081",
+       "children": [
+        {
+         "id": "crops-livestock",
+         "label": "crops livestock",
+         "source": "ISCED-F 0811"
+        },
+        {
+         "id": "horticulture",
+         "label": "horticulture",
+         "source": "ISCED-F 0812"
+        }
+       ]
+      },
+      {
+       "id": "forestry",
+       "label": "forestry",
+       "source": "ISCED-F 082",
+       "children": [
+        {
+         "id": "forestry",
+         "label": "forestry",
+         "source": "ISCED-F 0821"
+        }
+       ]
+      },
+      {
+       "id": "fisheries",
+       "label": "fisheries",
+       "source": "ISCED-F 083",
+       "children": [
+        {
+         "id": "fisheries",
+         "label": "fisheries",
+         "source": "ISCED-F 0831"
+        }
+       ]
+      },
+      {
+       "id": "veterinary",
+       "label": "veterinary",
+       "source": "ISCED-F 084",
+       "children": [
+        {
+         "id": "veterinary",
+         "label": "veterinary",
+         "source": "ISCED-F 0841"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "health-welfare",
+     "label": "health and welfare",
+     "source": "ISCED-F 2013, 09",
+     "scope": "",
+     "children": [
+      {
+       "id": "health",
+       "label": "health",
+       "source": "ISCED-F 091",
+       "children": [
+        {
+         "id": "dentistry",
+         "label": "dentistry",
+         "source": "ISCED-F 0911"
+        },
+        {
+         "id": "medicine",
+         "label": "medicine",
+         "source": "ISCED-F 0912"
+        },
+        {
+         "id": "nursing-midwifery",
+         "label": "nursing midwifery",
+         "source": "ISCED-F 0913"
+        },
+        {
+         "id": "diagnostics-treatment-technology",
+         "label": "diagnostics treatment technology",
+         "source": "ISCED-F 0914"
+        },
+        {
+         "id": "therapy-rehabilitation",
+         "label": "therapy rehabilitation",
+         "source": "ISCED-F 0915"
+        },
+        {
+         "id": "pharmacy",
+         "label": "pharmacy",
+         "source": "ISCED-F 0916"
+        },
+        {
+         "id": "traditional-medicine",
+         "label": "traditional medicine",
+         "source": "ISCED-F 0917"
+        }
+       ]
+      },
+      {
+       "id": "welfare",
+       "label": "welfare",
+       "source": "ISCED-F 092",
+       "children": [
+        {
+         "id": "elderly-disabled-care",
+         "label": "elderly disabled care",
+         "source": "ISCED-F 0921"
+        },
+        {
+         "id": "childcare-youth",
+         "label": "childcare youth",
+         "source": "ISCED-F 0922"
+        },
+        {
+         "id": "social-work-counselling",
+         "label": "social work counselling",
+         "source": "ISCED-F 0923"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "service-sector",
+     "label": "services",
+     "source": "ISCED-F 2013, 10",
+     "scope": "",
+     "children": [
+      {
+       "id": "personal-services",
+       "label": "personal services",
+       "source": "ISCED-F 101",
+       "children": [
+        {
+         "id": "domestic-services",
+         "label": "domestic services",
+         "source": "ISCED-F 1011"
+        },
+        {
+         "id": "hair-beauty",
+         "label": "hair beauty",
+         "source": "ISCED-F 1012"
+        },
+        {
+         "id": "hospitality-catering",
+         "label": "hospitality catering",
+         "source": "ISCED-F 1013"
+        },
+        {
+         "id": "sports",
+         "label": "sports",
+         "source": "ISCED-F 1014"
+        },
+        {
+         "id": "travel-tourism-leisure",
+         "label": "travel tourism leisure",
+         "source": "ISCED-F 1015"
+        }
+       ]
+      },
+      {
+       "id": "hygiene-safety",
+       "label": "hygiene safety",
+       "source": "ISCED-F 102",
+       "children": [
+        {
+         "id": "sanitation",
+         "label": "sanitation",
+         "source": "ISCED-F 1021"
+        },
+        {
+         "id": "occupational-safety",
+         "label": "occupational safety",
+         "source": "ISCED-F 1022"
+        }
+       ]
+      },
+      {
+       "id": "security",
+       "label": "security",
+       "source": "ISCED-F 103",
+       "children": [
+        {
+         "id": "military-defence",
+         "label": "military defence",
+         "source": "ISCED-F 1031"
+        },
+        {
+         "id": "protection-policing",
+         "label": "protection policing",
+         "source": "ISCED-F 1032"
+        }
+       ]
+      },
+      {
+       "id": "transport",
+       "label": "transport",
+       "source": "ISCED-F 104",
+       "children": [
+        {
+         "id": "transport-services",
+         "label": "transport services",
+         "source": "ISCED-F 1041"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "tree": "C",
+   "nodes": [
+    {
+     "id": "existential",
+     "label": "existence and occurrence",
+     "source": "Threshold 1990 ch. 7",
+     "scope": "",
+     "children": [
+      {
+       "id": "being",
+       "label": "being",
+       "source": "",
+       "children": [
+        {
+         "id": "existence",
+         "label": "existence",
+         "source": ""
+        },
+        {
+         "id": "presence-absence",
+         "label": "presence absence",
+         "source": ""
+        },
+        {
+         "id": "availability",
+         "label": "availability",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "happening",
+       "label": "happening",
+       "source": "",
+       "children": [
+        {
+         "id": "occurrence",
+         "label": "occurrence",
+         "source": ""
+        },
+        {
+         "id": "change-of-state",
+         "label": "change of state",
+         "source": ""
+        },
+        {
+         "id": "possibility-impossibility",
+         "label": "possibility impossibility",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "spatial",
+     "label": "space",
+     "source": "Threshold 1990 ch. 7",
+     "scope": "",
+     "children": [
+      {
+       "id": "location",
+       "label": "location",
+       "source": "",
+       "children": [
+        {
+         "id": "position",
+         "label": "position",
+         "source": ""
+        },
+        {
+         "id": "here-there",
+         "label": "here there",
+         "source": ""
+        },
+        {
+         "id": "inside-outside",
+         "label": "inside outside",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "relative-position",
+       "label": "relative position",
+       "source": "",
+       "children": [
+        {
+         "id": "above-below",
+         "label": "above below",
+         "source": ""
+        },
+        {
+         "id": "front-back",
+         "label": "front back",
+         "source": ""
+        },
+        {
+         "id": "beside-between",
+         "label": "beside between",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "size-distance",
+       "label": "size distance",
+       "source": "",
+       "children": [
+        {
+         "id": "distance",
+         "label": "distance",
+         "source": ""
+        },
+        {
+         "id": "dimensions-size",
+         "label": "dimensions size",
+         "source": ""
+        },
+        {
+         "id": "length-width-height",
+         "label": "length width height",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "motion",
+       "label": "motion",
+       "source": "",
+       "children": [
+        {
+         "id": "movement",
+         "label": "movement",
+         "source": ""
+        },
+        {
+         "id": "direction",
+         "label": "direction",
+         "source": ""
+        },
+        {
+         "id": "origin-destination",
+         "label": "origin destination",
+         "source": ""
+        },
+        {
+         "id": "arrangement-order",
+         "label": "arrangement order",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "temporal",
+     "label": "time",
+     "source": "Threshold 1990 ch. 7",
+     "scope": "",
+     "children": [
+      {
+       "id": "time-points",
+       "label": "time points",
+       "source": "",
+       "children": [
+        {
+         "id": "points-of-time",
+         "label": "points of time",
+         "source": ""
+        },
+        {
+         "id": "divisions-of-time",
+         "label": "divisions of time",
+         "source": ""
+        },
+        {
+         "id": "earliness-lateness",
+         "label": "earliness lateness",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "time-relations",
+       "label": "time relations",
+       "source": "",
+       "children": [
+        {
+         "id": "before-after",
+         "label": "before after",
+         "source": ""
+        },
+        {
+         "id": "sequence",
+         "label": "sequence",
+         "source": ""
+        },
+        {
+         "id": "simultaneity",
+         "label": "simultaneity",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "time-reference",
+       "label": "time reference",
+       "source": "",
+       "children": [
+        {
+         "id": "past",
+         "label": "past",
+         "source": ""
+        },
+        {
+         "id": "present",
+         "label": "present",
+         "source": ""
+        },
+        {
+         "id": "future",
+         "label": "future",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "aspect",
+       "label": "aspect",
+       "source": "",
+       "children": [
+        {
+         "id": "duration",
+         "label": "duration",
+         "source": ""
+        },
+        {
+         "id": "frequency",
+         "label": "frequency",
+         "source": ""
+        },
+        {
+         "id": "continuity-repetition",
+         "label": "continuity repetition",
+         "source": ""
+        },
+        {
+         "id": "beginning-ending",
+         "label": "beginning ending",
+         "source": ""
+        },
+        {
+         "id": "change-permanence",
+         "label": "change permanence",
+         "source": ""
+        },
+        {
+         "id": "speed",
+         "label": "speed",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "quantitative",
+     "label": "quantity",
+     "source": "Threshold 1990 ch. 7",
+     "scope": "",
+     "children": [
+      {
+       "id": "number",
+       "label": "number",
+       "source": "",
+       "children": [
+        {
+         "id": "counting",
+         "label": "counting",
+         "source": ""
+        },
+        {
+         "id": "ordinal-rank",
+         "label": "ordinal rank",
+         "source": ""
+        },
+        {
+         "id": "fractions-ratio",
+         "label": "fractions ratio",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "quantity",
+       "label": "quantity",
+       "source": "",
+       "children": [
+        {
+         "id": "amount",
+         "label": "amount",
+         "source": ""
+        },
+        {
+         "id": "increase-decrease",
+         "label": "increase decrease",
+         "source": ""
+        },
+        {
+         "id": "more-less",
+         "label": "more less",
+         "source": ""
+        },
+        {
+         "id": "degree-intensity",
+         "label": "degree intensity",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "qualitative",
+     "label": "qualities",
+     "source": "Threshold 1990 ch. 7",
+     "scope": "",
+     "children": [
+      {
+       "id": "physical",
+       "label": "physical",
+       "source": "",
+       "children": [
+        {
+         "id": "shape",
+         "label": "shape",
+         "source": ""
+        },
+        {
+         "id": "colour",
+         "label": "colour",
+         "source": ""
+        },
+        {
+         "id": "texture-material",
+         "label": "texture material",
+         "source": ""
+        },
+        {
+         "id": "taste-smell",
+         "label": "taste smell",
+         "source": ""
+        },
+        {
+         "id": "sound-light",
+         "label": "sound light",
+         "source": ""
+        },
+        {
+         "id": "temperature-moisture",
+         "label": "temperature moisture",
+         "source": ""
+        },
+        {
+         "id": "age-newness",
+         "label": "age newness",
+         "source": ""
+        },
+        {
+         "id": "condition-cleanliness",
+         "label": "condition cleanliness",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "evaluative",
+       "label": "evaluative",
+       "source": "",
+       "children": [
+        {
+         "id": "value-price",
+         "label": "value price",
+         "source": ""
+        },
+        {
+         "id": "good-bad",
+         "label": "good bad",
+         "source": ""
+        },
+        {
+         "id": "correctness",
+         "label": "correctness",
+         "source": ""
+        },
+        {
+         "id": "importance",
+         "label": "importance",
+         "source": ""
+        },
+        {
+         "id": "normality-strangeness",
+         "label": "normality strangeness",
+         "source": ""
+        },
+        {
+         "id": "ease-difficulty",
+         "label": "ease difficulty",
+         "source": ""
+        },
+        {
+         "id": "desirability",
+         "label": "desirability",
+         "source": ""
+        },
+        {
+         "id": "acceptability",
+         "label": "acceptability",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "mental",
+     "label": "thinking and expressing",
+     "source": "Threshold 1990 ch. 7",
+     "scope": "",
+     "children": [
+      {
+       "id": "reflection",
+       "label": "reflection",
+       "source": "",
+       "children": [
+        {
+         "id": "thinking-belief",
+         "label": "thinking belief",
+         "source": ""
+        },
+        {
+         "id": "knowledge-memory",
+         "label": "knowledge memory",
+         "source": ""
+        },
+        {
+         "id": "opinion-judgement",
+         "label": "opinion judgement",
+         "source": ""
+        },
+        {
+         "id": "expectation-intention",
+         "label": "expectation intention",
+         "source": ""
+        },
+        {
+         "id": "certainty-doubt",
+         "label": "certainty doubt",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "expression",
+       "label": "expression",
+       "source": "",
+       "children": [
+        {
+         "id": "saying-telling",
+         "label": "saying telling",
+         "source": ""
+        },
+        {
+         "id": "asking-answering",
+         "label": "asking answering",
+         "source": ""
+        },
+        {
+         "id": "describing-explaining",
+         "label": "describing explaining",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "relational",
+     "label": "relations",
+     "source": "Threshold 1990 ch. 7",
+     "scope": "",
+     "children": [
+      {
+       "id": "action-event",
+       "label": "action event",
+       "source": "",
+       "children": [
+        {
+         "id": "agent",
+         "label": "agent",
+         "source": ""
+        },
+        {
+         "id": "recipient-beneficiary",
+         "label": "recipient beneficiary",
+         "source": ""
+        },
+        {
+         "id": "instrument-means",
+         "label": "instrument means",
+         "source": ""
+        },
+        {
+         "id": "cause-effect",
+         "label": "cause effect",
+         "source": ""
+        },
+        {
+         "id": "purpose",
+         "label": "purpose",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "comparison",
+       "label": "comparison",
+       "source": "",
+       "children": [
+        {
+         "id": "sameness",
+         "label": "sameness",
+         "source": ""
+        },
+        {
+         "id": "similarity-difference",
+         "label": "similarity difference",
+         "source": ""
+        },
+        {
+         "id": "comparative-superlative",
+         "label": "comparative superlative",
+         "source": ""
+        },
+        {
+         "id": "correspondence",
+         "label": "correspondence",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "possession",
+       "label": "possession",
+       "source": "",
+       "children": [
+        {
+         "id": "ownership",
+         "label": "ownership",
+         "source": ""
+        },
+        {
+         "id": "giving-receiving",
+         "label": "giving receiving",
+         "source": ""
+        },
+        {
+         "id": "belonging",
+         "label": "belonging",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "logic",
+       "label": "logic",
+       "source": "",
+       "children": [
+        {
+         "id": "addition",
+         "label": "addition",
+         "source": ""
+        },
+        {
+         "id": "alternatives",
+         "label": "alternatives",
+         "source": ""
+        },
+        {
+         "id": "contrast-concession",
+         "label": "contrast concession",
+         "source": ""
+        },
+        {
+         "id": "condition",
+         "label": "condition",
+         "source": ""
+        },
+        {
+         "id": "reason",
+         "label": "reason",
+         "source": ""
+        },
+        {
+         "id": "result",
+         "label": "result",
+         "source": ""
+        },
+        {
+         "id": "inclusion-exclusion",
+         "label": "inclusion exclusion",
+         "source": ""
+        },
+        {
+         "id": "focus-emphasis",
+         "label": "focus emphasis",
+         "source": ""
+        },
+        {
+         "id": "examples-listing",
+         "label": "examples listing",
+         "source": ""
+        }
+       ]
+      },
+      {
+       "id": "reference",
+       "label": "reference",
+       "source": "",
+       "children": [
+        {
+         "id": "demonstratives-deixis",
+         "label": "demonstratives deixis",
+         "source": ""
+        },
+        {
+         "id": "persons-pronouns",
+         "label": "persons pronouns",
+         "source": ""
+        },
+        {
+         "id": "question-words",
+         "label": "question words",
+         "source": ""
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "functions": {
+  "information": [
+   "identifying",
+   "reporting-describing",
+   "correcting",
+   "asking"
+  ],
+  "attitudes": [
+   "agreement-disagreement",
+   "knowledge",
+   "certainty-probability",
+   "necessity-obligation",
+   "ability",
+   "permission-prohibition",
+   "wants-desires",
+   "intention",
+   "preference",
+   "emotions",
+   "apology",
+   "approval-disapproval",
+   "regret",
+   "gratitude"
+  ],
+  "suasion": [
+   "suggesting",
+   "requesting",
+   "advising",
+   "warning",
+   "encouraging",
+   "instructing",
+   "inviting",
+   "offering",
+   "asking-permission"
+  ],
+  "socialising": [
+   "greeting",
+   "introducing",
+   "attracting-attention",
+   "congratulating",
+   "leave-taking",
+   "addressing"
+  ],
+  "discourse": [
+   "opening",
+   "enumerating-sequencing",
+   "exemplifying",
+   "emphasising",
+   "summarising",
+   "changing-topic",
+   "hesitating",
+   "quoting-reported-speech",
+   "closing"
+  ],
+  "repair": [
+   "checking-understanding",
+   "asking-repetition",
+   "spelling-out",
+   "paraphrasing"
+  ]
+ },
+ "field_hints": {
+  "computing": "ict::ict::computer-use",
+  "telecommunications": "ict::ict::databases-networks",
+  "video-games": "leisure::hobbies::games-puzzles",
+  "games": "leisure::hobbies::games-puzzles",
+  "medicine": "health-welfare::health::medicine",
+  "anatomy": "health-welfare::health::medicine",
+  "physiology": "health-welfare::health::medicine",
+  "psychiatry": "health-welfare::health::medicine",
+  "pharmacology": "health-welfare::health::pharmacy",
+  "psychology": "social-sciences::social-behavioural::psychology",
+  "food": "food::cooking::cooking-methods",
+  "grammar": "arts-humanities::languages::literature-linguistics",
+  "linguistics": "arts-humanities::languages::literature-linguistics",
+  "law": "business-law::law::law",
+  "finance": "business-law::business-admin::finance-banking-insurance",
+  "business": "business-law::business-admin::finance-banking-insurance",
+  "economics": "social-sciences::social-behavioural::economics",
+  "politics": "social-sciences::social-behavioural::political-science",
+  "mathematics": "natural-sciences::mathematics-statistics::mathematics",
+  "logic": "arts-humanities::humanities::philosophy-ethics",
+  "philosophy": "arts-humanities::humanities::philosophy-ethics",
+  "physics": "natural-sciences::physical-sciences::physics",
+  "astronomy": "natural-sciences::physical-sciences::physics",
+  "chemistry": "natural-sciences::physical-sciences::chemistry",
+  "geology": "natural-sciences::physical-sciences::earth-sciences",
+  "meteorology": "natural-sciences::physical-sciences::earth-sciences",
+  "biology": "natural-sciences::biology::biology",
+  "botany": "natural-sciences::biology::biology",
+  "zoology": "natural-sciences::biology::biology",
+  "biochemistry": "natural-sciences::biology::biochemistry",
+  "ecology": "natural-sciences::environment::environmental-science",
+  "archaeology": "arts-humanities::humanities::history-archaeology",
+  "buddhism": "arts-humanities::humanities::religion-theology",
+  "shinto": "arts-humanities::humanities::religion-theology",
+  "christianity": "arts-humanities::humanities::religion-theology",
+  "mythology": "arts-humanities::humanities::religion-theology",
+  "art": "arts-humanities::arts::fine-arts",
+  "photography": "arts-humanities::arts::media-production",
+  "film": "arts-humanities::arts::media-production",
+  "audiovisual": "arts-humanities::arts::media-production",
+  "printing": "arts-humanities::arts::media-production",
+  "theatre": "arts-humanities::arts::music-performing-arts",
+  "music": "leisure::performing::music",
+  "sumo": "leisure::sport::martial-arts-sumo",
+  "martial-arts": "leisure::sport::martial-arts-sumo",
+  "sports": "leisure::sport::ball-sports",
+  "fishing": "agriculture::fisheries::fisheries",
+  "military": "service-sector::security::military-defence",
+  "architecture": "engineering::architecture-construction::architecture-planning",
+  "civil-engineering": "engineering::architecture-construction::building-civil-engineering",
+  "electronics": "engineering::engineering-trades::electronics-automation",
+  "engineering": "engineering::engineering-trades::mechanics-metal",
+  "mining": "engineering::manufacturing::mining",
+  "railway": "travel::public-transport::train-rail",
+  "aviation": "travel::public-transport::air",
+  "clothing": "shopping::goods::clothes-fashion"
+ }
+}

@@ -987,6 +987,7 @@ fn reject_generated(
         (crate::LearningContent::Vocabulary(v), "usage") => v.usage.clear(),
         (crate::LearningContent::Vocabulary(v), "nuance") => v.nuance.clear(),
         (crate::LearningContent::Vocabulary(v), "collocations") => v.collocations.clear(),
+        (crate::LearningContent::Vocabulary(v), "profile") => v.profile = None,
         // A rejected generated dictionary entry goes, with any sense chosen from it.
         (crate::LearningContent::Vocabulary(v), "dictionary") => {
             let chosen = v.dictionary.iter().any(|e| {
@@ -1007,6 +1008,7 @@ fn reject_generated(
         (crate::LearningContent::Grammar(g), "nuance") => g.nuance.clear(),
         (crate::LearningContent::Grammar(g), "forms") => g.forms.clear(),
         (crate::LearningContent::Grammar(g), "jlpt") => g.jlpt.clear(),
+        (crate::LearningContent::Grammar(g), "profile") => g.profile = None,
         // An exercise is a pair: rejecting either half removes both, with
         // the other half's generated evidence.
         (crate::LearningContent::Grammar(g), "exercise_prompt" | "exercise_answer") => {

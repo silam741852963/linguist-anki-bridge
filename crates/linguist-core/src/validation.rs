@@ -683,6 +683,21 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             }
         }
     }
+    // WP-27: a judged profile names leaves of the taxonomy version it records.
+    let judged = match &doc.content {
+        LearningContent::Vocabulary(v) => v.profile.as_ref().map(|p| (p, false)),
+        LearningContent::Grammar(g) => g.profile.as_ref().map(|p| (p, true)),
+    };
+    if let Some(problem) =
+        judged.and_then(|(profile, grammar)| crate::profile::judged_problem(profile, grammar))
+    {
+        issues.push(Issue::new(
+            "PROFILE_INVALID",
+            Severity::Error,
+            Some("profile"),
+            format!("The judged profile does not fit the taxonomy: {problem}."),
+        ));
+    }
     // A reviewed multi-unit segmentation must be carried out by a split.
     if doc.reviews.iter().any(|review| {
         matches!(&review.choice, ReviewChoice::Segmentation(ids) if ids.len() > 1)

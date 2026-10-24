@@ -218,6 +218,23 @@ pub struct Vocabulary {
     /// おすすめ, オススメ for お勧め), shown under "Also written".
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub spellings: Vec<String>,
+    /// WP-27: the domains an LLM chose from the shipped taxonomy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<JudgedProfile>,
+}
+/// WP-27 judged profile: chosen by the LLM from closed lists
+/// (`resources/taxonomy/domains-v1.json`), validated against the version it
+/// names. Paths are `level1::level2::level3` leaves.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct JudgedProfile {
+    pub taxonomy: String,
+    pub domain: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secondary: Vec<String>,
+    /// Grammar: communicative functions, `group::function`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub functions: Vec<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -284,6 +301,9 @@ pub struct Grammar {
     pub jlpt: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub lesson: String,
+    /// WP-27: the domain and functions an LLM chose from the shipped taxonomy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<JudgedProfile>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(

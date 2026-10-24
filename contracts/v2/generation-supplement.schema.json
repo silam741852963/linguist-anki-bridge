@@ -90,6 +90,17 @@
       "description": "v3 grammar supplement: no recognition text cue (the v3 front shows the\npattern and an example); nuance, highlight forms and a JLPT level added.",
       "type": "object",
       "properties": {
+        "domain": {
+          "type": "string",
+          "default": ""
+        },
+        "domains_secondary": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
         "examples": {
           "type": "array",
           "items": {
@@ -107,6 +118,14 @@
         },
         "forms": {
           "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "functions": {
+          "description": "Communicative functions, `group::function`.",
+          "type": "array",
+          "default": [],
           "items": {
             "type": "string"
           }
@@ -148,6 +167,18 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/GeneratedCollocation"
+          }
+        },
+        "domain": {
+          "description": "WP-27 judged profile: a `domains-v1` leaf path and up to two more.\nAbsent in replies drafted before WP-27.",
+          "type": "string",
+          "default": ""
+        },
+        "domains_secondary": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
           }
         },
         "examples": {

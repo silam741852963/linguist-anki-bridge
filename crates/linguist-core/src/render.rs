@@ -572,6 +572,7 @@ pub fn tags(doc: &LearningDocument) -> Vec<String> {
             // WP-27: part of speech and the other label facts, through the
             // label table; never the raw label.
             tags.extend(crate::profile::vocabulary(doc.target_language.as_str(), v).tags());
+            tags.extend(crate::profile::judged_tags(v.profile.as_ref(), false));
             if !v.kanji_details.is_empty() {
                 tags.push("lab::has::kanji".into());
             }
@@ -585,6 +586,7 @@ pub fn tags(doc: &LearningDocument) -> Vec<String> {
                 }
             }
             tags.extend(crate::profile::grammar(g).tags());
+            tags.extend(crate::profile::judged_tags(g.profile.as_ref(), true));
         }
     }
     for task in &doc.requested_tasks {

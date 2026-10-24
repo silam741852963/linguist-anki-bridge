@@ -534,6 +534,17 @@
         "pattern": {
           "type": "string"
         },
+        "profile": {
+          "description": "WP-27: the domain and functions an LLM chose from the shipped taxonomy.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JudgedProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "recognition_prompt": {
           "type": "string"
         },
@@ -638,6 +649,36 @@
         "stage",
         "source_refs",
         "message"
+      ]
+    },
+    "JudgedProfile": {
+      "description": "WP-27 judged profile: chosen by the LLM from closed lists\n(`resources/taxonomy/domains-v1.json`), validated against the version it\nnames. Paths are `level1::level2::level3` leaves.",
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "functions": {
+          "description": "Grammar: communicative functions, `group::function`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "secondary": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "taxonomy": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "taxonomy",
+        "domain"
       ]
     },
     "KanjiDetail": {
@@ -2261,6 +2302,17 @@
           "type": "string",
           "default": ""
         },
+        "profile": {
+          "description": "WP-27: the domains an LLM chose from the shipped taxonomy.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JudgedProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "pronunciation": {
           "type": "string",
           "default": ""
@@ -2275,6 +2327,13 @@
         "spelling_prompt": {
           "type": "string",
           "default": ""
+        },
+        "spellings": {
+          "description": "Other spellings of this word that the learner's note listed (お奨め,\nおすすめ, オススメ for お勧め), shown under \"Also written\".",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "usage": {
           "type": "string",

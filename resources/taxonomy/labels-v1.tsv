@@ -132,7 +132,7 @@ ja	Geometry	field	mathematics
 ja	Logic	field	logic
 ja	Physics	field	physics
 ja	Chemistry	field	chemistry
-ja	Biochemistry	field	biology
+ja	Biochemistry	field	biochemistry
 ja	Biology	field	biology
 ja	Genetics	field	biology
 ja	Botany	field	botany
@@ -157,12 +157,12 @@ ja	Film	field	film
 ja	Audiovisual	field	audiovisual
 ja	Noh	field	theatre
 ja	Kabuki	field	theatre
-ja	Sumo	field	sports
+ja	Sumo	field	sumo
 ja	Sports	field	sports
 ja	Baseball	field	sports
 ja	Golf	field	sports
-ja	Boxing	field	sports
-ja	Martial arts	field	sports
+ja	Boxing	field	martial-arts
+ja	Martial arts	field	martial-arts
 ja	Horse racing	field	sports
 ja	Fishing	field	fishing
 ja	Go (game)	field	games
@@ -179,10 +179,10 @@ ja	Military	field	military
 ja	Railway	field	railway
 ja	Aviation	field	aviation
 ja	Clothing	field	clothing
-ja	Electricity, elec. eng.	field	engineering
-ja	Electronics	field	engineering
+ja	Electricity, elec. eng.	field	electronics
+ja	Electronics	field	electronics
 ja	Engineering	field	engineering
-ja	Civil engineering	field	engineering
+ja	Civil engineering	field	civil-engineering
 ja	Mechanical engineering	field	engineering
 ja	Mining	field	mining
 ja	Telecommunications	field	telecommunications

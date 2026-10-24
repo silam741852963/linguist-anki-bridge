@@ -411,6 +411,198 @@ pub fn grammar(g: &Grammar) -> Derived {
     derived
 }
 
+const DOMAINS: &str = include_str!("../../../resources/taxonomy/domains-v1.json");
+/// The taxonomy version a judged profile is checked against.
+pub const TAXONOMY: &str = "domains-v1";
+/// At most this many secondary domains, and grammar functions.
+pub const SECONDARY_MAX: usize = 2;
+pub const FUNCTIONS_MAX: usize = 2;
+
+/// The shipped domain taxonomy: three-level leaf paths, grammar communicative
+/// functions (`group::function`) and the JMdict field hints, keyed by the
+/// `field` value of the label table.
+#[derive(Debug)]
+pub struct Taxonomy {
+    pub leaves: Vec<String>,
+    pub functions: Vec<String>,
+    pub hints: std::collections::BTreeMap<String, String>,
+}
+
+pub fn taxonomy() -> &'static Taxonomy {
+    static TAXONOMY_CELL: OnceLock<Taxonomy> = OnceLock::new();
+    TAXONOMY_CELL.get_or_init(|| {
+        let value: serde_json::Value = serde_json::from_str(DOMAINS).expect("domains-v1.json");
+        let ids = |node: &serde_json::Value| node["id"].as_str().unwrap_or_default().to_owned();
+        let children =
+            |node: &serde_json::Value| node["children"].as_array().cloned().unwrap_or_default();
+        let mut leaves = Vec::new();
+        for tree in value["trees"].as_array().into_iter().flatten() {
+            for l1 in tree["nodes"].as_array().into_iter().flatten() {
+                for l2 in children(l1) {
+                    for l3 in children(&l2) {
+                        leaves.push(format!("{}::{}::{}", ids(l1), ids(&l2), ids(&l3)));
+                    }
+                }
+            }
+        }
+        let functions = value["functions"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .flat_map(|(group, list)| {
+                list.as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|f| f.as_str())
+                    .map(move |f| format!("{group}::{f}"))
+            })
+            .collect();
+        let hints = value["field_hints"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
+            .collect();
+        Taxonomy {
+            leaves,
+            functions,
+            hints,
+        }
+    })
+}
+
+/// Why a judged profile is not valid for the shipped taxonomy, if it is not.
+pub fn judged_problem(profile: &crate::document::JudgedProfile, grammar: bool) -> Option<String> {
+    let t = taxonomy();
+    let leaf = |path: &String| t.leaves.contains(path);
+    if profile.taxonomy != TAXONOMY {
+        return Some(format!("taxonomy {} is not {TAXONOMY}", profile.taxonomy));
+    }
+    if !leaf(&profile.domain) {
+        return Some(format!(
+            "domain {} is not a {TAXONOMY} leaf",
+            profile.domain
+        ));
+    }
+    if profile.secondary.len() > SECONDARY_MAX {
+        return Some("more than two secondary domains".into());
+    }
+    let mut seen = BTreeSet::from([&profile.domain]);
+    if let Some(path) = profile
+        .secondary
+        .iter()
+        .find(|p| !leaf(p) || !seen.insert(p))
+    {
+        return Some(format!("secondary domain {path} is unknown or repeated"));
+    }
+    if !grammar && !profile.functions.is_empty() {
+        return Some("functions are for grammar only".into());
+    }
+    if profile.functions.len() > FUNCTIONS_MAX
+        || profile.functions.iter().any(|f| !t.functions.contains(f))
+    {
+        return Some("unknown or too many functions".into());
+    }
+    None
+}
+
+/// Tags of a judged profile: `lab::domain::<path>`, `lab::domain2::<path>`
+/// and `lab::function::<group>::<function>`. An invalid profile gives none.
+pub fn judged_tags(profile: Option<&crate::document::JudgedProfile>, grammar: bool) -> Vec<String> {
+    let Some(profile) = profile.filter(|p| judged_problem(p, grammar).is_none()) else {
+        return Vec::new();
+    };
+    std::iter::once(format!("lab::domain::{}", profile.domain))
+        .chain(
+            profile
+                .secondary
+                .iter()
+                .map(|p| format!("lab::domain2::{p}")),
+        )
+        .chain(
+            profile
+                .functions
+                .iter()
+                .map(|f| format!("lab::function::{f}")),
+        )
+        .collect()
+}
+
+/// The `domains-v1` list as the enrichment prompt gives it: by tree, one
+/// line per level-2 node (`l1::l2: l3, l3, …`), each level-1 node with its
+/// scope note; grammar also gets the closed function list.
+pub fn prompt_list(grammar: bool) -> String {
+    let value: serde_json::Value = serde_json::from_str(DOMAINS).expect("domains-v1.json");
+    let text =
+        |node: &serde_json::Value, key: &str| node[key].as_str().unwrap_or_default().to_owned();
+    let list = |node: &serde_json::Value| node["children"].as_array().cloned().unwrap_or_default();
+    let mut out = String::new();
+    for tree in value["trees"].as_array().into_iter().flatten() {
+        let name = match tree["tree"].as_str() {
+            Some("A") => "A, everyday life",
+            Some("B") => "B, specialist fields",
+            _ => "C, general notions",
+        };
+        out.push_str(&format!("Tree {name}:\n"));
+        for l1 in tree["nodes"].as_array().into_iter().flatten() {
+            let scope = text(l1, "scope");
+            if !scope.is_empty() {
+                out.push_str(&format!("# {}: {scope}\n", text(l1, "id")));
+            }
+            for l2 in list(l1) {
+                let leaves: Vec<String> = list(&l2).iter().map(|l3| text(l3, "id")).collect();
+                out.push_str(&format!(
+                    "{}::{}: {}\n",
+                    text(l1, "id"),
+                    text(&l2, "id"),
+                    leaves.join(", ")
+                ));
+            }
+        }
+    }
+    if grammar {
+        out.push_str("Functions:\n");
+        for (group, functions) in value["functions"].as_object().into_iter().flatten() {
+            let names: Vec<&str> = functions
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|f| f.as_str())
+                .collect();
+            out.push_str(&format!("{group}: {}\n", names.join(", ")));
+        }
+    }
+    out
+}
+
+/// Domain hints for one vocabulary card: the taxonomy leaf of each field label
+/// of the selected sense, and Cambridge's SMART Vocabulary topic as written.
+pub fn domain_hints(language: &str, v: &Vocabulary) -> Vec<String> {
+    let mut hints = Vec::new();
+    for field in vocabulary(language, v).field {
+        if let Some(leaf) = taxonomy().hints.get(field)
+            && !hints.contains(leaf)
+        {
+            hints.push(leaf.clone());
+        }
+    }
+    let selected = v
+        .dictionary
+        .iter()
+        .find(|entry| entry.senses.iter().any(|s| s.key == v.sense_key));
+    for topic in selected
+        .and_then(|entry| entry.metadata.get("smart_vocabulary_topic"))
+        .into_iter()
+        .flatten()
+    {
+        let topic = format!("topic: {}", topic.trim());
+        if !hints.contains(&topic) {
+            hints.push(topic);
+        }
+    }
+    hints
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,6 +633,91 @@ mod tests {
             );
         }
         assert!(!table().is_empty());
+    }
+
+    #[test]
+    fn taxonomy_has_the_documented_size_and_every_hint_is_a_leaf() {
+        let t = taxonomy();
+        assert_eq!(t.leaves.len(), 293 + 77 + 89);
+        let unique: BTreeSet<_> = t.leaves.iter().collect();
+        assert_eq!(unique.len(), t.leaves.len());
+        assert!(t.leaves.iter().all(|p| p.split("::").count() == 3));
+        let value: serde_json::Value = serde_json::from_str(DOMAINS).unwrap();
+        let sizes: Vec<(usize, usize)> = value["trees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tree| {
+                let nodes = tree["nodes"].as_array().unwrap();
+                let l2 = nodes
+                    .iter()
+                    .map(|n| n["children"].as_array().unwrap().len())
+                    .sum();
+                (nodes.len(), l2)
+            })
+            .collect();
+        assert_eq!(sizes, [(15, 72), (10, 26), (7, 21)]);
+        for leaf in t.hints.values() {
+            assert!(t.leaves.contains(leaf), "hint {leaf}");
+        }
+        for row in table().iter().filter(|r| r.role == Role::Field) {
+            assert!(
+                t.hints.contains_key(row.value),
+                "no hint for field {}",
+                row.value
+            );
+        }
+        assert!(t.functions.contains(&"suasion::requesting".to_owned()));
+    }
+
+    #[test]
+    fn judged_profiles_are_checked_against_the_taxonomy() {
+        let profile =
+            |domain: &str, secondary: &[&str], functions: &[&str]| crate::document::JudgedProfile {
+                taxonomy: TAXONOMY.into(),
+                domain: domain.into(),
+                secondary: secondary.iter().map(|s| s.to_string()).collect(),
+                functions: functions.iter().map(|s| s.to_string()).collect(),
+            };
+        let good = profile(
+            "food::meals::breakfast",
+            &["health::wellbeing::diet-exercise"],
+            &[],
+        );
+        assert_eq!(judged_problem(&good, false), None);
+        assert_eq!(
+            judged_tags(Some(&good), false),
+            [
+                "lab::domain::food::meals::breakfast",
+                "lab::domain2::health::wellbeing::diet-exercise"
+            ]
+        );
+        assert!(judged_problem(&profile("food::meals", &[], &[]), false).is_some());
+        assert!(
+            judged_problem(
+                &profile("food::meals::breakfast", &["food::meals::breakfast"], &[]),
+                false
+            )
+            .is_some()
+        );
+        assert!(
+            judged_problem(
+                &profile(
+                    "relational::logic::condition",
+                    &[],
+                    &["suasion::requesting"]
+                ),
+                false
+            )
+            .is_some()
+        );
+        let grammar = profile(
+            "relational::logic::condition",
+            &[],
+            &["suasion::requesting"],
+        );
+        assert_eq!(judged_problem(&grammar, true), None);
+        assert!(judged_tags(Some(&profile("x::y::z", &[], &[])), false).is_empty());
     }
 
     #[test]

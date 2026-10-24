@@ -48,6 +48,7 @@ impl From<VocabularyInput> for Vocabulary {
             collocations: vec![],
             kanji_details: vec![],
             spellings: vec![],
+            profile: None,
         }
     }
 }
@@ -217,12 +218,12 @@ pub fn freeze_settings(
             (
                 "llm.prompts.vocabulary",
                 "builtin:vocabulary-v3",
-                generation::VOCABULARY_PROMPT_V3,
+                generation::system_prompt("vocabulary"),
             ),
             (
                 "llm.prompts.grammar",
                 "builtin:grammar-v3",
-                generation::GRAMMAR_PROMPT_V3,
+                generation::system_prompt("grammar"),
             ),
         ] {
             if values[key] == reference {

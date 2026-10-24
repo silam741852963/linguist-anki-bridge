@@ -25,8 +25,8 @@ fn frozen_generation_settings_bind_the_exact_builtin_prompt_bytes() {
     )]);
     let frozen = linguist_application::freeze_settings(&config, &environment).unwrap();
     for (reference, prompt) in [
-        ("builtin:vocabulary-v3", VOCABULARY_PROMPT_V3),
-        ("builtin:grammar-v3", GRAMMAR_PROMPT_V3),
+        ("builtin:vocabulary-v3", system_prompt("vocabulary")),
+        ("builtin:grammar-v3", system_prompt("grammar")),
     ] {
         assert_eq!(
             frozen.resource_hashes[reference],
@@ -1022,7 +1022,8 @@ fn a_full_draft_with_broken_examples_keeps_its_other_fields() {
         }];
     }
     let request = build_request(&only, &config).unwrap();
-    assert_eq!(request.allowed_fields, ["examples"]);
+    // The WP-27 domain rides along; it does not make this a full draft.
+    assert_eq!(request.allowed_fields, ["domain", "examples"]);
     let bytes = serde_json::to_vec(&json!({"kind":"vocabulary","body":{
         "usage":"","nuance":[],"collocations":[],"examples":broken}}))
     .unwrap();
@@ -1031,5 +1032,92 @@ fn a_full_draft_with_broken_examples_keeps_its_other_fields() {
             .err()
             .unwrap(),
         "GENERATION_EXAMPLE_LANGUAGE"
+    );
+}
+
+/// WP-27: the enrichment call also judges the domain. A valid primary leaf
+/// is kept with its valid secondary paths; a slip loses the profile, not the
+/// draft; a domain that was not asked for is refused.
+#[test]
+fn a_draft_carries_the_judged_domain() {
+    let doc = document();
+    let config = settings();
+    let request = build_request(&doc, &config).unwrap();
+    assert!(request.allowed_fields.iter().any(|f| f == "domain"));
+    assert!(request.system_prompt.contains("food::"));
+    assert!(!request.system_prompt.contains("Functions:"));
+    let definition = &request.output_schema["$defs"]["VocabularySupplement"];
+    for name in ["domain", "domains_secondary"] {
+        assert!(
+            definition["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(name))
+        );
+    }
+    let grammar = LearningDocument::from_json(include_bytes!(
+        "../../../contracts/v2/fixtures/grammar.json"
+    ))
+    .unwrap();
+    let grammar = build_request(&grammar, &config).unwrap();
+    assert!(grammar.system_prompt.contains("Functions:"));
+    assert_eq!(
+        grammar.output_schema["$defs"]["GrammarSupplement"]["properties"]["functions"]["maxItems"],
+        2
+    );
+    let leaf = linguist_core::profile::taxonomy().leaves[0].clone();
+    let reply = |domain: &str, secondary: Vec<&str>| {
+        serde_json::to_vec(&json!({"kind":"vocabulary","body":{
+            "usage":"Used for eating meals.","nuance":[],"collocations":[],"examples":[],
+            "domain":domain,"domains_secondary":secondary}}))
+        .unwrap()
+    };
+    let draft = merge_output(
+        &doc,
+        &config,
+        &request,
+        &reply("food::meals::dinner", vec![&leaf, "no::such::leaf", &leaf]),
+        &identity(&config),
+    )
+    .unwrap();
+    let LearningContent::Vocabulary(v) = &draft.document.content else {
+        panic!()
+    };
+    let profile = v.profile.as_ref().expect("a judged profile");
+    assert_eq!(profile.taxonomy, "domains-v1");
+    assert_eq!(profile.secondary, std::slice::from_ref(&leaf));
+    assert!(draft.document.evidence.iter().any(|e| e.field == "profile"));
+    assert!(
+        linguist_core::render::tags(&draft.document).contains(&format!("lab::domain2::{leaf}"))
+    );
+    let slip = merge_output(
+        &doc,
+        &config,
+        &request,
+        &reply("food", vec![]),
+        &identity(&config),
+    )
+    .unwrap();
+    let LearningContent::Vocabulary(v) = &slip.document.content else {
+        panic!()
+    };
+    assert!(v.profile.is_none());
+    let mut judged = doc.clone();
+    if let LearningContent::Vocabulary(v) = &mut judged.content {
+        v.profile = profile.clone().into();
+    }
+    let request = build_request(&judged, &config).unwrap();
+    assert!(!request.allowed_fields.iter().any(|f| f == "domain"));
+    assert_eq!(
+        merge_output(
+            &judged,
+            &config,
+            &request,
+            &reply(&leaf, vec![]),
+            &identity(&config)
+        )
+        .err()
+        .unwrap(),
+        "GENERATION_FIELD_NOT_ALLOWED"
     );
 }
