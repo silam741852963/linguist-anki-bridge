@@ -218,7 +218,16 @@ pub fn enrich_document(
             if vocab.expression.trim().is_empty() {
                 return Err("VOCAB_EXPRESSION_REQUIRED".into());
             }
-            let term = lookup_term(&vocab.expression, settings)?;
+            // A Japanese note with a bracketed frame (費用(がかかる)) is looked
+            // up by its head word; the frame is a collocation.
+            let term = if japanese {
+                lookup_term(
+                    &linguist_core::review::head_word(&vocab.expression),
+                    settings,
+                )?
+            } else {
+                lookup_term(&vocab.expression, settings)?
+            };
             let page = if let Some(provider) = dictionary {
                 provider.lookup(&term, &document.target_language)?
             } else {
@@ -367,7 +376,7 @@ pub fn enrich_document(
                 .collect::<Vec<_>>()
                 .join("\n");
                 match crate::dictionary_entry::write(
-                    &vocab.expression,
+                    &linguist_core::review::head_word(&vocab.expression),
                     &hint,
                     &note,
                     &document.target_language,

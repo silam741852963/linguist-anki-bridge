@@ -802,12 +802,28 @@ pub fn ready(doc: &LearningDocument) -> bool {
 
 /// The units of a field that lists several words or readings: one per line,
 /// or separated by a full-width slash (ふし／せつ). Whitespace inside a unit
-/// is dropped (older notes space kana at kanji boundaries).
+/// is dropped (older notes space kana at kanji boundaries). A slash inside
+/// brackets separates a frame's alternatives (体重(が増える／を減らす)), not
+/// words.
 pub fn vocabulary_units(text: &str) -> Vec<String> {
-    text.split(['\n', '／'])
-        .map(|unit| unit.split_whitespace().collect::<String>())
-        .filter(|unit| !unit.is_empty())
-        .collect()
+    let mut units = vec![String::new()];
+    let mut depth = 0usize;
+    for c in text.chars() {
+        match c {
+            '(' | '（' => depth += 1,
+            ')' | '）' => depth = depth.saturating_sub(1),
+            '\n' | '／' if depth == 0 => {
+                units.push(String::new());
+                continue;
+            }
+            _ => {}
+        }
+        if !c.is_whitespace() {
+            units.last_mut().unwrap().push(c);
+        }
+    }
+    units.retain(|unit| !unit.is_empty());
+    units
 }
 
 fn is_kana(text: &str) -> bool {

@@ -1191,6 +1191,32 @@ fn only_an_exact_dictionary_entry_asks_for_a_sense() {
     assert!(!linguist_core::review::same_spelling("ジャガ芋", "馬鈴薯"));
 }
 
+#[test]
+fn a_bracketed_frame_is_a_collocation_not_the_word() {
+    use linguist_core::review::head_word;
+    for (expression, word) in [
+        ("費用(がかかる)", "費用"),
+        ("(を)専攻(する)", "専攻"),
+        ("(世界中と)繋がる", "繋がる"),
+        ("時給(1200円)", "時給"),
+        ("め まい（がする)", "めまい"),
+        ("オークション（に参加する）", "オークション"),
+        ("体重(が増える／を増やす／が減る／を減らす)", "体重"),
+        // Optional words of an English phrase stay.
+        ("be (all) the rage", "be (all) the rage"),
+        ("費用", "費用"),
+        ("費用(がかかる", "費用(がかかる"),
+    ] {
+        assert_eq!(head_word(expression), word, "{expression}");
+    }
+    // A slash inside the frame separates its alternatives, not words.
+    assert_eq!(
+        validation::vocabulary_units("体重(が増える／を減らす)"),
+        ["体重(が増える／を減らす)"]
+    );
+    assert_eq!(validation::vocabulary_units("ふし／せつ"), ["ふし", "せつ"]);
+}
+
 fn grammar(pattern: &str) -> Grammar {
     Grammar {
         pattern: pattern.into(),

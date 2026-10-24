@@ -1145,12 +1145,56 @@ const SURU_ENDINGS: [&str; 8] = [
     "する",
 ];
 
+/// The word a note teaches when its expression adds a usage frame in
+/// brackets (費用(がかかる), (世界中と)繋がる, 時給(1200円)): the text outside
+/// the brackets, without the spaces older notes put between kana. The frame
+/// is a collocation of the word, never the word (WP-24: 費用(がかかる) was
+/// drafted as ひようがかかる, "to cost money"). Brackets holding no Japanese
+/// are optional words of a phrase (be (all) the rage) and stay.
+pub fn head_word(expression: &str) -> String {
+    let japanese = |c: char| matches!(c, '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}');
+    let mut out = String::new();
+    let mut framed = false;
+    // The bracketed text read so far, with its opening bracket.
+    let mut bracket: Option<String> = None;
+    for c in expression.trim().chars() {
+        match (&mut bracket, c) {
+            (None, '(' | '（') => bracket = Some(c.to_string()),
+            (Some(inner), ')' | '）') => {
+                if inner.chars().any(japanese) {
+                    framed = true;
+                } else {
+                    out.push_str(inner);
+                    out.push(c);
+                }
+                bracket = None;
+            }
+            (Some(inner), _) => inner.push(c),
+            (None, _) => out.push(c),
+        }
+    }
+    // An unclosed bracket is text, not a frame.
+    out.push_str(&bracket.unwrap_or_default());
+    let word: String = if framed {
+        out.split_whitespace().collect()
+    } else {
+        out.trim().to_owned()
+    };
+    if word.is_empty() {
+        expression.trim().to_owned()
+    } else {
+        word
+    }
+}
+
 /// The form a vocabulary note is looked up by in its dictionary entries: the
-/// expression itself, or, when no entry is written that way, the stem of a
-/// する verb form (メモします, 勉強した) whose entry is labelled a する verb
-/// (WP-24: メモします had no meaning and no sense).
+/// expression itself (its head word when it adds a bracketed frame), or,
+/// when no entry is written that way, the stem of a する verb form
+/// (メモします, 勉強した) whose entry is labelled a する verb (WP-24:
+/// メモします had no meaning and no sense).
 pub fn dictionary_form(vocab: &crate::Vocabulary) -> String {
-    let expression = vocab.expression.trim();
+    let head = head_word(&vocab.expression);
+    let expression = head.as_str();
     let listed = |form: &str| {
         vocab.dictionary.iter().any(|entry| {
             entry
