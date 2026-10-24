@@ -359,8 +359,15 @@ pub fn enrich_document(
                     )
                 })
             });
-            if !listed
-                && japanese
+            // English: Cambridge's search lands on the entry holding a phrase
+            // (`palm something off` on `palm off`), so only no entry at all
+            // is missing (`have the time of your life`).
+            let missing = if japanese {
+                !listed
+            } else {
+                english && vocab.dictionary.is_empty()
+            };
+            if missing
                 && settings.values.get("dictionary.generate_missing")
                     == Some(&serde_json::json!(true))
                 && settings.values.get("llm.enabled") == Some(&serde_json::json!(true))
@@ -375,8 +382,13 @@ pub fn enrich_document(
                 .copied()
                 .collect::<Vec<_>>()
                 .join("\n");
+                let word = if japanese {
+                    linguist_core::review::head_word(&vocab.expression)
+                } else {
+                    term.clone()
+                };
                 match crate::dictionary_entry::write(
-                    &linguist_core::review::head_word(&vocab.expression),
+                    &word,
                     &hint,
                     &note,
                     &document.target_language,

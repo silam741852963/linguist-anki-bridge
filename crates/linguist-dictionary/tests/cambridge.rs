@@ -187,3 +187,50 @@ fn register_labels_inside_a_definition_are_labels_not_its_first_word() {
     );
     assert!(sense.labels.contains(&"disapproving".to_string()));
 }
+
+#[test]
+fn idioms_and_phrasal_verbs_are_entries() {
+    let idiom = page(
+        "be pressed for time",
+        include_str!("fixtures/cambridge-be-pressed-for-time.html"),
+    );
+    assert_eq!(idiom.entries.len(), 1);
+    let entry = &idiom.entries[0];
+    assert_eq!(entry.forms, ["be pressed for time"]);
+    assert_eq!(entry.metadata["part_of_speech"], ["idiom"]);
+    assert_eq!(entry.senses[0].definitions, ["to be in a hurry"]);
+    assert!(
+        entry.senses[0].examples[0]
+            .sentence
+            .ends_with("but I'm pressed for time.")
+    );
+    assert_eq!(idiom.exact_matches, [0]);
+    // The search request; the source is the entry the search landed on.
+    assert!(
+        idiom
+            .request_url
+            .starts_with("https://dictionary.cambridge.org/search/direct/?datasetsearch=english&q=be+pressed+for+time")
+    );
+    assert_eq!(
+        entry.source_url,
+        "https://dictionary.cambridge.org/dictionary/english/be-pressed-for-time"
+    );
+    let phrasal = page(
+        "go back on something",
+        include_str!("fixtures/cambridge-go-back-on.html"),
+    );
+    let entry = &phrasal.entries[0];
+    assert_eq!(entry.forms, ["go back on something"]);
+    assert_eq!(entry.metadata["part_of_speech"], ["phrasal verb"]);
+    assert_eq!(
+        entry.senses[0].definitions,
+        ["to fail to keep a promise, or to change a decision or agreement"]
+    );
+    assert_eq!(
+        entry.source_url,
+        "https://dictionary.cambridge.org/dictionary/english/go-back-on"
+    );
+    // Its header pronounces "go" alone, which is no cue for the phrase.
+    assert!(!entry.metadata.contains_key("audio_us"));
+    assert!(!entry.metadata.contains_key("ipa_us"));
+}

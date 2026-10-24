@@ -1,5 +1,6 @@
 //! A dictionary-style entry for a word or phrase the dictionary does not list
-//! (WP-20: 副委員長, 折り目をつける, 太陽に雲がかかる). The generation provider
+//! (WP-20: 副委員長, 折り目をつける, 太陽に雲がかかる; WP-24: an English idiom
+//! Cambridge lacks, such as `have the time of your life`). The generation provider
 //! chain (`llm.provider`, `llm.fallback`) writes readings, parts of speech and
 //! numbered senses in the dictionary's own style, so the card's Meaning renders
 //! like every other card. The entry is labelled generated, archived with the
@@ -20,6 +21,33 @@ Each sense has 1 to 6 short English definitions, as JMdict writes them (\"to mak
 and its parts of speech, chosen exactly from the allowed labels, as Jisho lists them: a phrase gets \"Expressions (phrases, clauses, etc.)\" \
 followed by the conjugation class and transitivity of its final verb (for example \"Godan verb with 'ru' ending\", \"Intransitive verb\"); \
 a compound noun gets \"Noun\". Use the reading hint and the learner's own note text when they are given; never invent rare meanings.";
+
+const ENGLISH_PROMPT: &str = "You write one dictionary entry in the style of the Cambridge Dictionary for an English word or phrase that the dictionary does not list. \
+Give 1 to 5 senses, most common first. Each sense has 1 to 3 definitions written as Cambridge writes them, in plain English for a learner \
+(\"to be in a hurry\", \"to enjoy yourself very much\"; no examples, no quotation marks), and its part of speech, chosen exactly from the allowed labels: \
+a fixed phrase such as an idiom gets \"idiom\", a verb with an adverb or preposition gets \"phrasal verb\". \
+Use the learner's own note text when it is given; never invent rare meanings.";
+
+/// Cambridge's part-of-speech labels, so a generated English entry renders
+/// like a Cambridge one.
+pub const ENGLISH_PARTS_OF_SPEECH: &[&str] = &[
+    "noun",
+    "verb",
+    "adjective",
+    "adverb",
+    "phrasal verb",
+    "idiom",
+    "exclamation",
+    "preposition",
+    "conjunction",
+    "pronoun",
+    "determiner",
+    "prefix",
+    "suffix",
+    "modal verb",
+    "auxiliary verb",
+    "number",
+];
 
 /// The part-of-speech labels Jisho.org shows (JMdict entities), so a generated
 /// entry renders like a dictionary one.
@@ -90,6 +118,32 @@ pub struct GeneratedEntry {
     pub senses: Vec<GeneratedSense>,
 }
 
+fn english_parts_of_speech_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 2,
+        "items": {"type": "string", "enum": ENGLISH_PARTS_OF_SPEECH},
+    })
+}
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GeneratedEnglishSense {
+    pub definitions: Vec<String>,
+    #[schemars(schema_with = "english_parts_of_speech_schema")]
+    pub parts_of_speech: Vec<String>,
+}
+/// English has no readings: the Cambridge-style entry is senses alone.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GeneratedEnglishEntry {
+    pub senses: Vec<GeneratedEnglishSense>,
+}
+
+fn english(target: &Language) -> bool {
+    target.as_str().split('-').next() == Some("en")
+}
+
 /// The written entry and the evidence to archive with it.
 #[derive(Debug)]
 pub struct Written {
@@ -115,6 +169,9 @@ pub fn entry_from(
     provider: &str,
 ) -> Result<DictionaryEntry, String> {
     let invalid = || "DICTIONARY_ENTRY_INVALID".to_owned();
+    if english(target) {
+        return english_entry_from(expression, target, content, provider);
+    }
     let written: GeneratedEntry = serde_json::from_str(content).map_err(|_| invalid())?;
     let readings: Vec<String> = written
         .readings
@@ -225,6 +282,66 @@ pub fn entry_from(
     })
 }
 
+fn english_entry_from(
+    expression: &str,
+    target: &Language,
+    content: &str,
+    provider: &str,
+) -> Result<DictionaryEntry, String> {
+    let invalid = || "DICTIONARY_ENTRY_INVALID".to_owned();
+    let written: GeneratedEnglishEntry = serde_json::from_str(content).map_err(|_| invalid())?;
+    let line =
+        |s: &String| !s.trim().is_empty() && s.chars().count() <= 160 && !s.contains(['\n', '\r']);
+    if !(1..=5).contains(&written.senses.len())
+        || written.senses.iter().any(|s| {
+            !(1..=3).contains(&s.definitions.len())
+                || s.definitions.iter().any(|d| !line(d))
+                || !(1..=2).contains(&s.parts_of_speech.len())
+                || s.parts_of_speech
+                    .iter()
+                    .any(|p| !ENGLISH_PARTS_OF_SPEECH.contains(&p.trim()))
+        })
+    {
+        return Err(invalid());
+    }
+    let senses = written
+        .senses
+        .into_iter()
+        .enumerate()
+        .map(|(index, sense)| {
+            let definitions: Vec<String> = sense
+                .definitions
+                .iter()
+                .map(|d| d.trim().to_owned())
+                .collect();
+            Ok(Sense {
+                key: canonical::digest(
+                    "generated-dictionary-sense",
+                    &(expression, index, &definitions),
+                )
+                .map_err(|e| e.to_string())?,
+                definitions,
+                labels: sense
+                    .parts_of_speech
+                    .iter()
+                    .map(|p| p.trim().to_owned())
+                    .collect(),
+                examples: vec![],
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(DictionaryEntry {
+        provider: PROVIDER.into(),
+        source_url: String::new(),
+        language: target.clone(),
+        forms: vec![expression.to_owned()],
+        readings: vec![],
+        senses,
+        metadata: BTreeMap::from([("generated_by".into(), vec![provider.to_owned()])]),
+        related_entries: vec![],
+    })
+}
+
 /// Write the entry with the first provider of the chain that succeeds.
 pub fn write(
     expression: &str,
@@ -234,8 +351,18 @@ pub fn write(
     settings: &Effective,
     environment: &BTreeMap<String, String>,
 ) -> Result<Written, String> {
-    let schema =
-        serde_json::to_value(schemars::schema_for!(GeneratedEntry)).map_err(|e| e.to_string())?;
+    let (prompt, schema) = if english(target) {
+        (
+            ENGLISH_PROMPT,
+            serde_json::to_value(schemars::schema_for!(GeneratedEnglishEntry)),
+        )
+    } else {
+        (
+            PROMPT,
+            serde_json::to_value(schemars::schema_for!(GeneratedEntry)),
+        )
+    };
+    let schema = schema.map_err(|e| e.to_string())?;
     let user = json!({
         "expression": expression,
         "reading_hint": reading_hint,
@@ -246,10 +373,10 @@ pub fn write(
     let user_json = String::from_utf8(canonical::bytes(&user).map_err(|e| e.to_string())?)
         .map_err(|_| "DICTIONARY_ENTRY_ENCODING")?;
     let request = GenerationRequest {
-        system_prompt: PROMPT.into(),
+        system_prompt: prompt.into(),
         user_json: user_json.clone(),
         output_schema: schema.clone(),
-        prompt_digest: canonical::asset_digest(PROMPT.as_bytes()),
+        prompt_digest: canonical::asset_digest(prompt.as_bytes()),
         schema_digest: canonical::asset_digest(
             &canonical::bytes(&schema).map_err(|e| e.to_string())?,
         ),
@@ -258,7 +385,7 @@ pub fn write(
         examples_requested: 0,
     };
     let recorded =
-        json!({"system_prompt": PROMPT, "user_json": user_json, "output_schema": schema});
+        json!({"system_prompt": prompt, "user_json": user_json, "output_schema": schema});
     let mut errors = Vec::new();
     for provider in agents::chain(settings)? {
         let attempt = match provider {
@@ -359,5 +486,24 @@ mod tests {
         assert!(entry_from("エンジンがかかる", &ja, engine, "x").is_err());
         let engine = engine.replace("えんじん", "エンジン");
         assert!(entry_from("エンジンがかかる", &ja, &engine, "x").is_ok());
+    }
+
+    #[test]
+    fn an_english_entry_has_senses_and_cambridge_labels_but_no_readings() {
+        let en: Language = "en".to_owned().try_into().unwrap();
+        let content = r#"{"senses":[{"definitions":["to enjoy yourself very much"],"parts_of_speech":["idiom"]}]}"#;
+        let entry = entry_from("have the time of your life", &en, content, "codex").unwrap();
+        assert_eq!(entry.forms, ["have the time of your life"]);
+        assert!(entry.readings.is_empty());
+        assert_eq!(entry.senses[0].labels, ["idiom"]);
+        assert_eq!(entry.senses[0].definitions, ["to enjoy yourself very much"]);
+        for bad in [
+            r#"{"readings":[],"senses":[{"definitions":["x"],"parts_of_speech":["idiom"]}]}"#,
+            r#"{"senses":[{"definitions":["x"],"parts_of_speech":["Noun"]}]}"#,
+            r#"{"senses":[]}"#,
+            r#"{"senses":[{"definitions":["two\nlines"],"parts_of_speech":["idiom"]}]}"#,
+        ] {
+            assert!(entry_from("x", &en, bad, "codex").is_err(), "{bad}");
+        }
     }
 }

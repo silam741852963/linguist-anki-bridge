@@ -13,6 +13,13 @@ use std::collections::BTreeMap;
 pub const PROVIDER: &str = "cambridge-html-v1";
 pub const ORIGIN: &str = "https://dictionary.cambridge.org";
 pub const PAGE: &str = "https://dictionary.cambridge.org/dictionary/english/";
+/// Cambridge's own search: it redirects a phrase to the entry that holds it
+/// (`palm something off` to `palm-off`, `be (all) the rage` to
+/// `be-all-the-rage`), and an unknown one to its spelling suggestions.
+pub const SEARCH: &str = "https://dictionary.cambridge.org/search/direct/";
+/// A word's entry, a phrasal verb's (`go back on something`) and an idiom's
+/// (`be pressed for time`, which has no word entry around it).
+const ENTRY: &str = ".entry-body__el, .pr.idiom-block";
 /// Bounds on word-level extras kept per entry.
 const MAX_WORDS: usize = 24;
 
@@ -59,6 +66,12 @@ fn all(node: ElementRef, css: &str) -> Vec<String> {
     }
     out
 }
+/// A word's part of speech, or a phrase's ("phrasal verb", "idiom").
+fn part_of_speech(entry: ElementRef) -> String {
+    first(entry, ".posgram .pos")
+        .or_else(|| first(entry, ".pos-header .pos, .di-info .pos"))
+        .unwrap_or_default()
+}
 fn absolute(path: &str) -> Option<String> {
     let path = path.trim();
     if path.starts_with('/') && !path.starts_with("//") {
@@ -92,11 +105,10 @@ fn merge(into: &mut Vec<String>, values: Vec<String>) {
 }
 
 pub fn request_url(query: &str) -> Result<url::Url, Error> {
-    let mut url = url::Url::parse(PAGE).map_err(|_| Error::Schema)?;
-    url.path_segments_mut()
-        .map_err(|_| Error::Schema)?
-        .pop_if_empty()
-        .push(&query.replace(' ', "-"));
+    let mut url = url::Url::parse(SEARCH).map_err(|_| Error::Schema)?;
+    url.query_pairs_mut()
+        .append_pair("datasetsearch", "english")
+        .append_pair("q", query);
     Ok(url)
 }
 
@@ -134,8 +146,8 @@ pub fn parse_page(
     // Extras by part of speech across all blocks.
     let mut extras: BTreeMap<String, Extras> = BTreeMap::new();
     for block in &blocks {
-        for entry in block.select(&select(".entry-body__el")) {
-            let pos = first(entry, ".posgram .pos").unwrap_or_default();
+        for entry in block.select(&select(ENTRY)) {
+            let pos = part_of_speech(entry);
             let slot = extras.entry(pos).or_default();
             merge(&mut slot.synonyms, all(entry, ".xref.synonyms .x-h"));
             merge(&mut slot.related, all(entry, ".xref.related_word .x-h"));
@@ -164,7 +176,13 @@ pub fn parse_page(
                 .map(|src| src.replacen("/images/thumb/", "/images/full/", 1))
                 .collect();
             merge(&mut slot.images, images);
-            if let Some(header) = entry.select(&select(".pos-header")).next() {
+            // A phrasal verb's header ("phrasal verb with go") pronounces its
+            // verb alone: no cue for the phrase.
+            if let Some(header) = entry
+                .select(&select(".pos-header"))
+                .next()
+                .filter(|header| header.select(&select(".anc-info-head")).next().is_none())
+            {
                 merge(&mut slot.ipa_us, all(header, ".us .ipa"));
                 merge(&mut slot.ipa_uk, all(header, ".uk .ipa"));
                 let audio: Vec<String> = header
@@ -179,17 +197,26 @@ pub fn parse_page(
     // The primary (American) block's entries, then any part of speech only
     // another block defines (American run-ons carry no definition).
     let request = request_url(query)?;
-    let mut source = request.clone();
-    source.set_fragment(None);
+    // The entry the search landed on, as the page names it.
+    let source = document
+        .select(&select("link[rel=\"canonical\"]"))
+        .next()
+        .and_then(|link| link.value().attr("href"))
+        .filter(|href| href.starts_with(PAGE))
+        .and_then(|href| url::Url::parse(href).ok())
+        .unwrap_or_else(|| request.clone());
     let mut entries = Vec::new();
     let mut covered: Vec<String> = Vec::new();
     for (rank, block) in blocks.iter().enumerate() {
         let mut found_here: Vec<String> = Vec::new();
-        for entry in block.select(&select(".entry-body__el")) {
-            let Some(headword) = first(entry, ".di-title .hw, .headword .hw") else {
+        for entry in block.select(&select(ENTRY)) {
+            // A phrase's headword is the heading itself ("go back on something").
+            let Some(headword) = first(entry, ".di-title .hw, .headword .hw")
+                .or_else(|| first(entry, ".di-title .headword"))
+            else {
                 continue;
             };
-            let pos = first(entry, ".posgram .pos").unwrap_or_default();
+            let pos = part_of_speech(entry);
             if rank > 0 && (covered.contains(&pos) || pos.is_empty()) {
                 continue;
             }
