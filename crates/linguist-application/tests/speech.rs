@@ -225,6 +225,21 @@ fn voice_language_resources_and_provider_selection_are_checked_first() {
 }
 
 #[test]
+fn piper_speaks_as_the_dictionary_fallback() {
+    let fixture = Fixture::new(COPY, json!({"language": {"code": "en_US"}}));
+    let mut settings = fixture.settings();
+    settings
+        .values
+        .insert("audio.provider".into(), json!("dictionary"));
+    settings
+        .values
+        .insert("audio.synthesis_fallback".into(), json!("piper"));
+    let result = synthesize("chin up", &en(), &settings, &env()).unwrap();
+    assert_eq!(fixture.read("stdin"), "chin up\n");
+    assert_eq!(result.bytes, wave(2205));
+}
+
+#[test]
 fn process_faults_and_invalid_output_are_typed() {
     let config = json!({"language": {"code": "en_US"}});
     let fixture = Fixture::new("while :; do :; done", config.clone());

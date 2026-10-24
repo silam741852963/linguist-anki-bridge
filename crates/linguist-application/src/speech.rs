@@ -227,6 +227,8 @@ pub fn preflight(
     }
     match settings.values["audio.provider"].as_str() {
         Some("piper") => {}
+        // Piper speaks when the dictionary has no recording.
+        Some("dictionary") if settings.values["audio.synthesis_fallback"] == "piper" => {}
         Some("preserve" | "disabled") => return Err(SpeechError::SpeechDisabled),
         other => {
             return Err(SpeechError::SpeechProviderUnavailable {

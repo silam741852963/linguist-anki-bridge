@@ -5354,12 +5354,16 @@ fn local_engines(
     } else {
         checks.push(serde_json::json!({"engine":"ocr","status":"OCR_ENGINE_UNAVAILABLE","required":settings.values["images.existing_policy"] == "inspect","selected":settings.values["ocr.engine"]}));
     }
-    if settings.values["audio.provider"] == "piper" {
+    let piper_required = settings.values["audio.provider"] == "piper";
+    if piper_required
+        || settings.values["audio.provider"] == "dictionary"
+            && settings.values["audio.synthesis_fallback"] == "piper"
+    {
         let status = match linguist_application::speech::preflight(settings, environment, None) {
             Ok(()) => "available".to_owned(),
             Err(error) => error.code(),
         };
-        checks.push(serde_json::json!({"engine":"speech","provider":"piper","status":status,"required":true,"synthesis_probed":false}));
+        checks.push(serde_json::json!({"engine":"speech","provider":"piper","status":status,"required":piper_required,"synthesis_probed":false}));
     }
     let voicevox_required = settings.values["audio.provider"] == "voicevox";
     if voicevox_required
