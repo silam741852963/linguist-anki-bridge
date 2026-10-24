@@ -109,7 +109,7 @@ impl Desktop {
             info["anki_version"], "25.09.2",
             "evidence is pinned to this build"
         );
-        assert_eq!(info["mutation_variants"].as_array().unwrap().len(), 9);
+        assert_eq!(info["mutation_variants"].as_array().unwrap().len(), 10);
         self.endpoint = info["endpoint"].as_str().unwrap().to_owned();
         self.stdin = child.stdin.take();
         self.child = Some(child);
