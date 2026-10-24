@@ -42,7 +42,9 @@ pub fn split(
         .ok_or("GRAMMAR_SPLIT_DOCUMENT_MISSING")?;
     if !matches!(original.content, LearningContent::Grammar(_))
         || request.input_digest != original.semantic_digest().map_err(|e| e.to_string())?
-        || !(2..=100).contains(&request.units.len())
+        // One unit is an authored rewrite of a single-pattern page: OCR text
+        // verbatim is no pattern (WP-24 grammar cohort).
+        || !(1..=100).contains(&request.units.len())
         || request.anchor_index >= request.units.len()
         || base
             .grammar_groups

@@ -3901,12 +3901,13 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             let linguist_core::LearningContent::Grammar(grammar) = &document.content else {
                 panic!()
             };
-            let mut first = grammar.clone();
-            first.pattern = "なら".into();
-            first.use_key = "conditional".into();
-            let mut second = grammar.clone();
-            second.pattern = "ので".into();
-            second.use_key = "reason".into();
+            let state = format!("storage.state_dir={}", root.display());
+            let plan_id = plan.id.to_string();
+            // One unit is an authored rewrite of a single-pattern page: the
+            // item keeps its identity and gets no group (WP-24 grammar).
+            let mut only = grammar.clone();
+            only.pattern = "N1 は N2 です".into();
+            only.use_key = "identity".into();
             let request = linguist_application::grammar::SplitRequest {
                 schema_version: 2,
                 base_revision: 1,
@@ -3915,12 +3916,45 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
                 input_digest: document.semantic_digest().unwrap(),
                 actor: "reviewer".into(),
                 anchor_index: 0,
+                units: vec![only],
+            };
+            let file = root.join("rewrite.json");
+            std::fs::write(&file, serde_json::to_vec(&request).unwrap()).unwrap();
+            let out = cli()
+                .args(["--set", &state, "plans", "split-grammar", &plan_id])
+                .args(["--request", file.to_str().unwrap()])
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(4), "{out:?}");
+            let store = linguist_store::Store::read_only(&root).unwrap();
+            let rewritten = store.revision(plan.id, 2).unwrap();
+            drop(store);
+            assert_eq!(rewritten.documents.len(), plan.documents.len());
+            assert!(rewritten.grammar_groups.is_empty());
+            let anchor = &rewritten.documents[0];
+            assert_eq!(anchor.id, document.id);
+            let linguist_core::LearningContent::Grammar(grammar) = &anchor.content else {
+                panic!()
+            };
+            assert_eq!(grammar.pattern, "N1 は N2 です");
+            let mut first = grammar.clone();
+            first.pattern = "なら".into();
+            first.use_key = "conditional".into();
+            let mut second = grammar.clone();
+            second.pattern = "ので".into();
+            second.use_key = "reason".into();
+            let request = linguist_application::grammar::SplitRequest {
+                schema_version: 2,
+                base_revision: 2,
+                base_digest: rewritten.approval_digest().unwrap(),
+                document_id: anchor.id,
+                input_digest: anchor.semantic_digest().unwrap(),
+                actor: "reviewer".into(),
+                anchor_index: 0,
                 units: vec![first, second],
             };
             let file = root.join("split.json");
             std::fs::write(&file, serde_json::to_vec(&request).unwrap()).unwrap();
-            let state = format!("storage.state_dir={}", root.display());
-            let plan_id = plan.id.to_string();
             let args = [
                 "--set",
                 &state,
@@ -3933,7 +3967,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             let out = cli().args(args).output().unwrap();
             assert_eq!(out.status.code(), Some(4), "{out:?}");
             let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-            assert_eq!(value["revision"], 2);
+            assert_eq!(value["revision"], 3);
             assert_eq!(value["writes_enabled"], false);
             assert_eq!(
                 value["grammar_groups"][0]["anchor_document"],
@@ -3944,7 +3978,7 @@ fn revamp_commands_publish_recoverable_source_drafts_using_only_anki_reads() {
             let store = linguist_store::Store::read_only(&root).unwrap();
             assert_eq!(store.revision(plan.id, 1).unwrap(), plan);
             assert_eq!(
-                store.revision(plan.id, 2).unwrap().documents.len(),
+                store.revision(plan.id, 3).unwrap().documents.len(),
                 plan.documents.len() + 1
             );
             drop(store);
