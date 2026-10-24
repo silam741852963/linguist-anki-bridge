@@ -17,7 +17,11 @@ pub(super) fn masked(text: &str, expression: &str) -> String {
 
 /// The sense list of the entry holding the selected sense, with that sense
 /// marked by the `lab-selected` class. Falls back to the accepted meaning.
+/// WP-27: each sense and part-of-speech chip carries `lab-pos-<class>`, and a
+/// sense outside the card's `main` class is marked `lab-other`.
 pub(super) fn meaning(
+    language: &str,
+    main: Option<&str>,
     entries: &[DictionaryEntry],
     expression: &str,
     selected_sense_key: &str,
@@ -44,37 +48,51 @@ pub(super) fn meaning(
     };
     // Cambridge: the first definition of each part of speech of the word,
     // plus the selected one; other providers list the selected entry.
-    let senses: Vec<&crate::Sense> = if entry.provider == "cambridge-html-v1" {
+    let senses: Vec<(&DictionaryEntry, usize)> = if entry.provider == "cambridge-html-v1" {
         entries
             .iter()
             .filter(|e| e.provider == entry.provider && e.forms.iter().any(|f| f == expression))
             .flat_map(|e| {
-                let mut picked = vec![&e.senses[0]];
+                let mut picked = vec![(e, 0)];
                 if let Some(selected) = e
                     .senses
                     .iter()
                     .skip(1)
-                    .find(|s| s.key == selected_sense_key)
+                    .position(|s| s.key == selected_sense_key)
                 {
-                    picked.push(selected);
+                    picked.push((e, selected + 1));
                 }
                 picked
             })
             .collect()
     } else {
-        entry.senses.iter().collect()
+        (0..entry.senses.len())
+            .map(|index| (entry, index))
+            .collect()
     };
     let mut body = String::from("<ol class=\"lab-senses\">");
-    for sense in senses {
+    for (entry, index) in senses {
+        let sense = &entry.senses[index];
         let selected = sense.key == selected_sense_key;
-        body.push_str(if selected {
-            "<li class=\"lab-sense lab-selected\">"
-        } else {
-            "<li class=\"lab-sense\">"
-        });
+        let classes = crate::profile::sense_classes(language, entry, index);
+        let mut class = String::from("lab-sense");
+        if selected {
+            class.push_str(" lab-selected");
+        }
+        if let Some(first) = classes.first() {
+            class.push_str(&format!(" lab-pos-{first}"));
+            if !selected && main.is_some_and(|main| !classes.contains(&main)) {
+                class.push_str(" lab-other");
+            }
+        }
+        body.push_str(&format!("<li class=\"{class}\">"));
         for label in &sense.labels {
+            let chip = match crate::profile::label_class(language, label) {
+                Some(class) => format!("lab-pos lab-pos-{class}"),
+                None => "lab-pos".into(),
+            };
             body.push_str(&format!(
-                "<span class=\"lab-pos\">{}</span>",
+                "<span class=\"{chip}\">{}</span>",
                 masked(label, expression)
             ));
         }
@@ -97,7 +115,8 @@ mod tests {
             "senses":[
                 {"key":"first", "definitions":["life", "<script>alert(1)</script>"], "labels":["Noun"],
                  "examples":[{"sentence":"生きる。", "translation":"Live.", "provenance":"dictionary"}]},
-                {"key":"second", "definitions":["raw (see 生物)"], "labels":[]}
+                {"key":"second", "definitions":["raw (see 生物)"], "labels":[]},
+                {"key":"third", "definitions":["to grow"], "labels":["Godan verb with 'u' ending"]}
             ],
             "metadata":{"jlpt":["jlpt-n5"]},
             "related_entries":["related word"]
@@ -106,9 +125,14 @@ mod tests {
         let mut decoy = entry.clone();
         decoy.forms = vec!["other".into()];
         decoy.readings = vec![];
-        let html = meaning(&[decoy, entry], "生", "first", "life");
+        let html = meaning("ja", Some("noun"), &[decoy, entry], "生", "first", "life");
         assert_eq!(html.matches("lab-selected").count(), 1);
-        assert!(html.contains("<span class=\"lab-pos\">Noun</span>life; &lt;script&gt;"));
+        assert!(html.contains(
+            "<li class=\"lab-sense lab-selected lab-pos-noun\"><span class=\"lab-pos lab-pos-noun\">Noun</span>life; &lt;script&gt;"
+        ));
+        // A sense without labels takes the one before; another class is marked.
+        assert!(html.contains("<li class=\"lab-sense lab-pos-noun\">raw"));
+        assert!(html.contains("<li class=\"lab-sense lab-pos-verb lab-other\">"));
         assert!(html.contains("raw (see 〜物)"));
         for hidden in [
             "jisho", "https", "first", "second", "生", "なま", "jlpt", "related", "Live.",
@@ -117,9 +141,9 @@ mod tests {
         }
         assert!(!html.contains("<script"));
         assert_eq!(
-            meaning(&[], "生", "first", "life <b>"),
+            meaning("ja", None, &[], "生", "first", "life <b>"),
             "<p class=\"lab-gloss\">life &lt;b&gt;</p>"
         );
-        assert!(meaning(&[], "生", "first", " ").is_empty());
+        assert!(meaning("ja", None, &[], "生", "first", " ").is_empty());
     }
 }

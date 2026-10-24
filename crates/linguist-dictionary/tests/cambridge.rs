@@ -127,8 +127,10 @@ fn meaning_shows_the_first_definition_of_each_part_of_speech() {
     // verb, noun and adjective firsts, plus the selected later noun sense.
     assert_eq!(meaning.matches("<li").count(), 4, "{meaning}");
     assert_eq!(meaning.matches("lab-selected").count(), 1);
-    assert!(meaning.contains("<span class=\"lab-pos\">verb</span>"));
-    assert!(meaning.contains("<span class=\"lab-pos\">adjective</span>"));
+    assert!(meaning.contains("<span class=\"lab-pos lab-pos-verb\">verb</span>"));
+    assert!(meaning.contains("<span class=\"lab-pos lab-pos-adjective\">adjective</span>"));
+    // WP-27: the card is a noun; the verb and adjective uses are marked.
+    assert_eq!(meaning.matches("lab-other").count(), 2, "{meaning}");
     assert!(!meaning.contains("record"), "answer masked: {meaning}");
     let back = &rendered(
         "tenacious",

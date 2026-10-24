@@ -207,6 +207,25 @@ fn class_of(row: &LabelRow) -> &str {
     row.value.split("::").next().unwrap_or_default()
 }
 
+/// The classes of one sense of `entry`, first label first, for its colour.
+pub fn sense_classes(language: &str, entry: &DictionaryEntry, index: usize) -> Vec<&'static str> {
+    let mut classes = Vec::new();
+    for row in sense_pos(language, entry, index) {
+        let class = class_of(row);
+        if !classes.contains(&class) {
+            classes.push(class);
+        }
+    }
+    classes
+}
+
+/// The class a part-of-speech label names, for its chip colour.
+pub fn label_class(language: &str, text: &str) -> Option<&'static str> {
+    label(language, text)
+        .filter(|row| row.role == Role::Pos)
+        .map(class_of)
+}
+
 /// Vocabulary: the selected sense's labels; fallback, another entry that lists
 /// the same form. Other senses of the entry, and other Cambridge entries of
 /// the word, give the other uses.

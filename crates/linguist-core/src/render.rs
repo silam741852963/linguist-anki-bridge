@@ -645,6 +645,8 @@ pub fn render(
             fields.insert(
                 "Meaning".into(),
                 dictionary::meaning(
+                    doc.target_language.as_str(),
+                    crate::profile::vocabulary(doc.target_language.as_str(), v).class,
                     &v.dictionary,
                     &crate::review::dictionary_form(v),
                     &v.sense_key,

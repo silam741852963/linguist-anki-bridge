@@ -19,7 +19,7 @@
 .replay-button svg { width: 52px; height: 52px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.18)); transition: transform .12s ease; }
 .replay-button:hover svg { transform: scale(1.06); }
 .replay-button svg circle { fill: var(--lab-accent); stroke: none; }
-.replay-button svg path { fill: #fff; stroke: none; }
+.replay-button svg path { fill: var(--lab-on-accent); stroke: none; }
 hr#answer { border: none; border-top: 1px solid var(--lab-line); margin: 1.2em 0; }
 .lab-picture img { max-width: 100%; max-height: 40vh; object-fit: contain; border-radius: 12px; margin: .25em; }
 .lab-panel { text-align: left; background: var(--lab-panel); border: 1px solid var(--lab-line); border-radius: 12px; padding: .8em 1em; margin: .9em 0; font-size: .9em; }
@@ -30,7 +30,7 @@ hr#answer { border: none; border-top: 1px solid var(--lab-line); margin: 1.2em 0
 .lab-sense { counter-increment: lab-sense; position: relative; padding: .35em .6em .35em 2.1em; border-radius: 8px; color: var(--lab-muted); }
 .lab-sense::before { content: counter(lab-sense); position: absolute; left: .55em; top: .45em; width: 1.25em; height: 1.25em; border-radius: 50%; background: var(--lab-chip); font-size: .75em; line-height: 1.25em; text-align: center; }
 .lab-sense.lab-selected { color: var(--lab-ink); background: var(--lab-accent-soft); border-left: 4px solid var(--lab-accent); font-weight: 600; }
-.lab-sense.lab-selected::before { background: var(--lab-accent); color: #fff; }
+.lab-sense.lab-selected::before { background: var(--lab-accent); color: var(--lab-on-accent); }
 .lab-pos { display: inline-block; font-size: .68em; font-weight: 500; padding: .05em .55em; margin-right: .45em; border-radius: 999px; background: var(--lab-chip); color: var(--lab-muted); vertical-align: .12em; }
 .lab-gloss { font-weight: 600; }
 .lab-examples, .lab-collocations { list-style: none; margin: 0; padding: 0; }
@@ -59,3 +59,57 @@ hr#answer { border: none; border-top: 1px solid var(--lab-line); margin: 1.2em 0
 .lab-type { margin: .6em 0; }
 .lab-type input { font-size: 1.1em; text-align: center; padding: .3em .6em; border-radius: 8px; border: 1px solid var(--lab-line); background: var(--lab-panel); color: var(--lab-ink); }
 .lab-panel.lab-meaning { background: none; border: none; padding: 0; }
+/* WP-27: one colour per part-of-speech class, chosen by the lab::pos::* tag on
+ * the card root; other uses of the word carry their own class colour. */
+.card {
+  --lab-c-noun: #0550ae; --lab-s-noun: #d9e4f1;
+  --lab-c-verb: #b31d28; --lab-s-verb: #eedee1;
+  --lab-c-adjective: #116329; --lab-s-adjective: #dbe6e1;
+  --lab-c-adverb: #6639ba; --lab-s-adverb: #e5e1f2;
+  --lab-c-pronoun: #0a6c74; --lab-s-pronoun: #dae7ea;
+  --lab-c-function: #8a4600; --lab-s-function: #e9e3dc;
+  --lab-c-number: #5c5c00; --lab-s-number: #e4e5dc;
+  --lab-c-expression: #99286e; --lab-s-expression: #ebdfe9;
+  --lab-c-affix: #4a5a8c; --lab-s-affix: #e1e5ed;
+  --lab-c-interjection: #a3324f; --lab-s-interjection: #ece0e5;
+  --lab-c-unknown: #57606a; --lab-s-unknown: #e3e6e9;
+  --lab-on-accent: #ffffff;
+}
+.nightMode.card, .night_mode .card {
+  --lab-c-noun: #79c0ff; --lab-s-noun: #2b3a4a;
+  --lab-c-verb: #ff7b72; --lab-s-verb: #402f34;
+  --lab-c-adjective: #56d364; --lab-s-adjective: #253d32;
+  --lab-c-adverb: #d2a8ff; --lab-s-adverb: #39374a;
+  --lab-c-pronoun: #39c5cf; --lab-s-pronoun: #213b43;
+  --lab-c-function: #f0883e; --lab-s-function: #3e312c;
+  --lab-c-number: #d4c04a; --lab-s-number: #393a2d;
+  --lab-c-expression: #f778ba; --lab-s-expression: #3f2f3f;
+  --lab-c-affix: #a5b4dc; --lab-s-affix: #323945;
+  --lab-c-interjection: #ff8fab; --lab-s-interjection: #40333d;
+  --lab-c-unknown: #b1bac4; --lab-s-unknown: #343941;
+  --lab-on-accent: #0d1117;
+}
+.lab-card[data-tags~="lab::pos::noun"] { --lab-accent: var(--lab-c-noun); --lab-accent-soft: var(--lab-s-noun); }
+.lab-card[data-tags~="lab::pos::verb"] { --lab-accent: var(--lab-c-verb); --lab-accent-soft: var(--lab-s-verb); }
+.lab-card[data-tags~="lab::pos::adjective"] { --lab-accent: var(--lab-c-adjective); --lab-accent-soft: var(--lab-s-adjective); }
+.lab-card[data-tags~="lab::pos::adverb"] { --lab-accent: var(--lab-c-adverb); --lab-accent-soft: var(--lab-s-adverb); }
+.lab-card[data-tags~="lab::pos::pronoun"] { --lab-accent: var(--lab-c-pronoun); --lab-accent-soft: var(--lab-s-pronoun); }
+.lab-card[data-tags~="lab::pos::function"] { --lab-accent: var(--lab-c-function); --lab-accent-soft: var(--lab-s-function); }
+.lab-card[data-tags~="lab::pos::number"] { --lab-accent: var(--lab-c-number); --lab-accent-soft: var(--lab-s-number); }
+.lab-card[data-tags~="lab::pos::expression"] { --lab-accent: var(--lab-c-expression); --lab-accent-soft: var(--lab-s-expression); }
+.lab-card[data-tags~="lab::pos::affix"] { --lab-accent: var(--lab-c-affix); --lab-accent-soft: var(--lab-s-affix); }
+.lab-card[data-tags~="lab::pos::interjection"] { --lab-accent: var(--lab-c-interjection); --lab-accent-soft: var(--lab-s-interjection); }
+.lab-card[data-tags~="lab::pos::unknown"] { --lab-accent: var(--lab-c-unknown); --lab-accent-soft: var(--lab-s-unknown); }
+.lab-pos-noun { --lab-pos: var(--lab-c-noun); }
+.lab-pos-verb { --lab-pos: var(--lab-c-verb); }
+.lab-pos-adjective { --lab-pos: var(--lab-c-adjective); }
+.lab-pos-adverb { --lab-pos: var(--lab-c-adverb); }
+.lab-pos-pronoun { --lab-pos: var(--lab-c-pronoun); }
+.lab-pos-function { --lab-pos: var(--lab-c-function); }
+.lab-pos-number { --lab-pos: var(--lab-c-number); }
+.lab-pos-expression { --lab-pos: var(--lab-c-expression); }
+.lab-pos-affix { --lab-pos: var(--lab-c-affix); }
+.lab-pos-interjection { --lab-pos: var(--lab-c-interjection); }
+.lab-pos-unknown { --lab-pos: var(--lab-c-unknown); }
+.lab-pos[class*="lab-pos-"] { color: var(--lab-pos); background: transparent; box-shadow: inset 0 0 0 1px var(--lab-pos); }
+.lab-sense.lab-other { border-left: 3px solid var(--lab-pos); }

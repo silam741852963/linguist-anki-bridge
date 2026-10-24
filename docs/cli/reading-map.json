@@ -343,10 +343,11 @@
       "path": "implementation/wp-27.md",
       "heading": "## WP-27 \u2014 card profiles: part-of-speech colours, normalized tags and a three-level domain taxonomy",
       "title": "WP-27 \u2014 card profiles: part-of-speech colours, normalized tags and a three-level domain taxonomy",
-      "words": 3035,
+      "words": 3382,
       "requires": [
         "contracts/invariants.md",
-        "implementation/README.md"
+        "implementation/README.md",
+        "operations/collection.md"
       ]
     },
     "OP-34": {
