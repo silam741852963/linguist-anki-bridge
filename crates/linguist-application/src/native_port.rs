@@ -236,6 +236,9 @@ impl<'a> NativePort<'a> {
                 payload,
             )
             .map_err(rejected)?;
+        // A note write finishes in tens of milliseconds: poll soon, then back
+        // off to the configured interval for long effects such as exports.
+        let mut wait = Duration::from_millis(10).min(self.deadlines.poll);
         while matches!(
             status.state,
             NativeOperationState::Queued | NativeOperationState::Running
@@ -247,7 +250,8 @@ impl<'a> NativePort<'a> {
                     deadline.as_secs()
                 )));
             }
-            std::thread::sleep(self.deadlines.poll);
+            std::thread::sleep(wait);
+            wait = (wait * 2).min(self.deadlines.poll);
             status = match self.client.native_observe(lineage_id, operation_id) {
                 Ok(NativeObservation::Present(status)) => status,
                 Ok(NativeObservation::Absent) => {

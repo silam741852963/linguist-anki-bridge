@@ -1361,6 +1361,46 @@ pub(crate) fn fresh_snapshot(
     migration: Option<&Migration>,
     now_ms: u64,
 ) -> Result<Snapshot> {
+    snapshot_with(
+        store, port, operation, note, target, migration, now_ms, true,
+    )
+}
+
+/// A snapshot of the note's fields, tags and cards without archiving the
+/// media its fields reference: for a write that keeps every media reference
+/// and stores or deletes no file (`notes retag`), the files stay in the
+/// collection and the collection checkpoint holds them.
+pub(crate) fn fresh_snapshot_without_media(
+    store: &mut Store,
+    port: &mut dyn ApplyPort,
+    operation: Uuid,
+    note: &ObservedNote,
+    target: &ManagedModel,
+    now_ms: u64,
+) -> Result<Snapshot> {
+    snapshot_with(
+        store,
+        port,
+        operation,
+        Some(note),
+        target,
+        None,
+        now_ms,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn snapshot_with(
+    store: &mut Store,
+    port: &mut dyn ApplyPort,
+    operation: Uuid,
+    note: Option<&ObservedNote>,
+    target: &ManagedModel,
+    migration: Option<&Migration>,
+    now_ms: u64,
+    archive_media: bool,
+) -> Result<Snapshot> {
     let mut originals = Vec::new();
     let mut archives = Vec::new();
     let mut media: Vec<linguist_core::records::MediaAsset> = vec![];
@@ -1410,7 +1450,9 @@ pub(crate) fn fresh_snapshot(
             original_fields: note.fields.clone(),
             asset_digests: vec![digest],
         });
-        media = archive_source_media(store, port, note, source_id, 100 * 1024 * 1024);
+        if archive_media {
+            media = archive_source_media(store, port, note, source_id, 100 * 1024 * 1024);
+        }
     }
     let before_digest = canonical::digest("snapshot-original", &(&originals, &archives, &media))
         .map_err(|e| e.to_string())?;

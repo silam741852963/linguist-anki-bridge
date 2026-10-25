@@ -217,6 +217,16 @@ impl Revisions {
 
 /// The tags apply would write today: the user's own tags (outside `lab::`)
 /// from the document and the note, and every tag the renderer derives.
+fn media_names(fields: &BTreeMap<String, String>) -> Result<BTreeSet<String>> {
+    Ok(
+        crate::capture::discover_media(fields, 100 * 1024 * 1024, 10000)?
+            .references
+            .into_iter()
+            .map(|reference| reference.filename)
+            .collect(),
+    )
+}
+
 pub fn rendered_tags(document: &LearningDocument, note: &ObservedNote) -> Vec<String> {
     let user = |tag: &&String| !tag.starts_with("lab::");
     let mut tags: Vec<String> = document.tags.iter().filter(user).cloned().collect();
@@ -296,6 +306,15 @@ pub fn propose(
             note_id,
             operation,
             "RETAG_MODEL_CHANGED: the current render targets another note type or field set",
+        ));
+    }
+    // The write's snapshot archives no media, so it may only keep the media
+    // the note already references.
+    if media_names(&rendered.fields)? != media_names(&note.fields)? {
+        return Ok(Proposal::skip(
+            note_id,
+            operation,
+            "RETAG_MEDIA_CHANGED: the current render references other media files",
         ));
     }
     let tags = rendered_tags(&document, &note);
@@ -474,13 +493,13 @@ pub fn retag(
         created_ms: request.now_ms,
         intent: serde_json::to_value(&intent).map_err(|e| e.to_string())?,
     })?;
-    let snapshot = apply::fresh_snapshot(
+    // The write keeps every media reference and stores no file.
+    let snapshot = apply::fresh_snapshot_without_media(
         store,
         port,
         operation,
-        Some(&note),
+        &note,
         &write.model,
-        None,
         request.now_ms,
     )?;
     // The companion takes an exact `restore_note` only under a restore

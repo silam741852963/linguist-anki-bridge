@@ -268,6 +268,10 @@ impl Client {
             })
             .transpose()?;
         let http = reqwest::blocking::Client::builder()
+            // AnkiConnect closes each connection after its response without
+            // `Connection: close`; a pooled connection could be reused just
+            // as the close arrives, failing about one request in thousands.
+            .pool_max_idle_per_host(0)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
@@ -321,8 +325,8 @@ impl Client {
         if let Some(key) = &self.key {
             request["key"] = json!(key)
         }
-        // Anki's AnkiConnect server now and then drops one connection in
-        // thousands; a read is resent up to 3 times before that is an error.
+        // A read whose connection fails anyway is resent up to 3 times
+        // before that is an error.
         let mut attempt = 0;
         let response = loop {
             match self.http.post(self.endpoint.clone()).json(&request).send() {

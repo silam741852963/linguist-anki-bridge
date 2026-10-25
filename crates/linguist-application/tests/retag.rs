@@ -296,3 +296,22 @@ fn a_restored_note_still_in_the_collection_keeps_its_operation_state() {
         "{kept:?}"
     );
 }
+
+#[test]
+fn a_render_that_changes_media_references_is_skipped() {
+    let mut s = setup(Kind::Update);
+    let mut anki = Anki::new(&s, Kind::Update);
+    applied(&mut s, &mut anki);
+    let mut old = latest(&s, 10);
+    old.desired.fields.insert(
+        "Meaning".into(),
+        "<p>old</p><img src=\"lab_old_picture.png\">".into(),
+    );
+    let observed = anki.notes.get_mut(&10).unwrap();
+    observed.fields = old.desired.fields.clone();
+    let skipped = proposal(&s, &mut anki, 10, old);
+    assert!(
+        matches!(&skipped.verdict, Verdict::Skip { code } if code.starts_with("RETAG_MEDIA_CHANGED")),
+        "{skipped:?}"
+    );
+}

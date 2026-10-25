@@ -592,8 +592,17 @@ impl Client {
         Ok(value)
     }
 
+    /// A call the companion binds to the collection session it carries (the
+    /// binding or `session_epoch`), or a lineage-scoped status read. The
+    /// companion re-observes the profile on each such call and a profile
+    /// switch ends the session (`BRIDGE_SESSION_CONFLICT`), so the profile
+    /// pinned by `native_capabilities` needs no extra round trips around it.
+    fn session_call(&self, action: Action, params: Value) -> Result<Value> {
+        self.call(action, params)
+    }
+
     pub fn native_begin(&self, binding: Value, approved_digest: &str) -> Result<NativeOwner> {
-        let value = self.native_call(
+        let value = self.session_call(
             Action::NativeBegin,
             json!({"binding": binding, "approved_digest": approved_digest}),
         )?;
@@ -625,12 +634,9 @@ impl Client {
         if kind == "note_evidence" {
             // FSRS desired retention and decay are floats; this evidence is
             // read, compared and digested by integer/string fields only.
-            self.check_profile()?;
-            let value = self.call_with(Action::NativeInspect, params, true)?;
-            self.check_profile()?;
-            return Ok(value);
+            return self.call_with(Action::NativeInspect, params, true);
         }
-        self.native_call(Action::NativeInspect, params)
+        self.session_call(Action::NativeInspect, params)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -644,7 +650,7 @@ impl Client {
         variant: &str,
         payload: &str,
     ) -> Result<NativeOperationStatus> {
-        let value = self.native_call(
+        let value = self.session_call(
             Action::NativeMutate,
             json!({
                 "lineage_id": lineage_id, "operation_id": operation_id,
@@ -661,7 +667,7 @@ impl Client {
         lineage_id: Uuid,
         operation_id: Uuid,
     ) -> Result<NativeObservation> {
-        let value = self.native_call(
+        let value = self.session_call(
             Action::NativeOperationStatus,
             json!({"lineage_id": lineage_id, "operation_id": operation_id}),
         )?;
