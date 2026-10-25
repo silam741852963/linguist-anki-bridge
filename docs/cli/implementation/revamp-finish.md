@@ -133,5 +133,17 @@ Reclassify those plans from a fresh base instead.
 
 ## Progress
 
-- 2026-10-25: plan written. Step 1 not yet run. Campaign paused until the
-  20:29 reset.
+- 2026-10-25: plan written. Campaign paused until the 20:29 reset.
+- 2026-10-25 18:00-18:45, step 1 partly done:
+  - 155 notes retagged: 72 under checkpoint 027af94c, 83 under the next
+    run's checkpoint.
+  - Stopped by the user at 8.7 s per note, which would have taken ~10 h for
+    the rest. The stop was clean: 0 pending operations.
+  - Fixes: 1a30dc4 (retried reads, deleted notes reported as missing),
+    4d68ed9 (lease renewed per note), 93e2089 (companion 0.6.1 ledger scan,
+    checkpoint hashed once).
+  - **Before the next run:** the user installs
+    `target/lab/companion-0.6.1/linguist_bridge-0.6.1.ankiaddon` in Anki
+    (Tools > Add-ons > Install from file) and restarts Anki. Then run
+    `notes retag --all --apply`, only on the user's instruction. The 155
+    notes already done show as current.
