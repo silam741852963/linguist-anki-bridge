@@ -64,6 +64,15 @@ impl Action {
             Self::RetrieveMedia => "retrieveMediaFile",
         }
     }
+    /// Actions that change nothing, so a request whose connection failed is
+    /// sent again. Owner, mutation and rebind requests are never resent here:
+    /// their callers settle a lost response through the operation ledger.
+    fn read_only(self) -> bool {
+        !matches!(
+            self,
+            Self::NativeBegin | Self::NativeEnd | Self::NativeMutate | Self::NativeRebind
+        )
+    }
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -312,18 +321,20 @@ impl Client {
         if let Some(key) = &self.key {
             request["key"] = json!(key)
         }
-        let response = self
-            .http
-            .post(self.endpoint.clone())
-            .json(&request)
-            .send()
-            .map_err(|e| {
-                if e.is_timeout() {
-                    "ANKI_READ_TIMEOUT"
-                } else {
-                    "ANKI_DEPENDENCY_UNAVAILABLE"
+        // Anki's AnkiConnect server now and then drops one connection in
+        // thousands; a read is resent up to 3 times before that is an error.
+        let mut attempt = 0;
+        let response = loop {
+            match self.http.post(self.endpoint.clone()).json(&request).send() {
+                Ok(response) => break response,
+                Err(e) if e.is_timeout() => return Err("ANKI_READ_TIMEOUT".into()),
+                Err(_) if action.read_only() && attempt < 3 => {
+                    attempt += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(250 << attempt));
                 }
-            })?;
+                Err(_) => return Err("ANKI_DEPENDENCY_UNAVAILABLE".into()),
+            }
+        };
         if !response.status().is_success() {
             return Err(format!("ANKI_HTTP_FAILURE: {}", response.status().as_u16()));
         }

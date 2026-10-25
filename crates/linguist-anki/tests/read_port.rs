@@ -52,6 +52,10 @@ impl Server {
                 }
                 let mut bytes = vec![0; length];
                 reader.read_exact(&mut bytes).unwrap();
+                // Status 0: the connection drops with no response.
+                if status == 0 {
+                    continue;
+                }
                 captured
                     .lock()
                     .unwrap()
@@ -780,4 +784,18 @@ fn malformed_native_operation_status_is_rejected() {
         inspect_native_operation_status(extra, lineage, operation).unwrap_err(),
         "ANKI_NATIVE_STATUS_INVALID"
     );
+}
+#[test]
+fn a_read_whose_connection_drops_is_sent_again() {
+    let server = Server::new(vec![
+        (0, String::new()),
+        response(json!("Fixture")),
+        (0, String::new()),
+        response(json!({"日本語":123})),
+    ]);
+    let client = Client::from_settings(&settings(&server.endpoint), &BTreeMap::new()).unwrap();
+    assert_eq!(client.decks().unwrap()[0].id, "123");
+    let requests = server.finish();
+    assert_eq!(requests[0]["action"], "getActiveProfile");
+    assert_eq!(requests[1]["action"], "deckNamesAndIds");
 }
