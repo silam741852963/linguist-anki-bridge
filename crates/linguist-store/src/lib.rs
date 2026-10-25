@@ -9,7 +9,7 @@ use std::{
 };
 pub type Result<T> = std::result::Result<T, String>;
 const APPLICATION_ID: i64 = 0x4c414232;
-const SCHEMA: i64 = 15;
+const SCHEMA: i64 = 16;
 static BUSY_TIMEOUT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(5000);
 /// Process-wide SQLite busy timeout for stores opened afterwards (`storage.sqlite_busy_timeout_ms`).
 pub fn set_busy_timeout_ms(ms: u64) {
@@ -277,6 +277,7 @@ impl Store {
             tx.execute_batch(legacy_jobs::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(engine::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(campaign::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(harvest::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
                 .map_err(sql)?;
             tx.commit().map_err(sql)?;
@@ -303,6 +304,7 @@ impl Store {
             tx.execute_batch(legacy_jobs::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(engine::SCHEMA_SQL).map_err(sql)?;
             tx.execute_batch(campaign::SCHEMA_SQL).map_err(sql)?;
+            tx.execute_batch(harvest::SCHEMA_SQL).map_err(sql)?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)
                 .map_err(sql)?;
             tx.pragma_update(None, "user_version", SCHEMA)
@@ -645,6 +647,7 @@ pub mod campaign;
 pub mod checkpoint;
 pub mod engine;
 pub mod gc;
+pub mod harvest;
 pub mod legacy_jobs;
 pub mod preparation;
 pub mod preparation_control;

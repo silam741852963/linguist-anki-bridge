@@ -121,6 +121,7 @@ const PREP: &str = "crates/linguist-application/src/jobs.rs";
 const SPEECH: &str = "crates/linguist-application/src/speech.rs";
 const VOCAB: &str = "crates/linguist-application/src/vocab.rs";
 const CLI: &str = "crates/linguist-cli/src/main.rs";
+const HARVEST: &str = "crates/linguist-cli/src/harvest_cmd.rs";
 const DIAG: &str = "crates/linguist-cli/src/diagnostics.rs";
 const CACHE: &str = "crates/linguist-application/src/cache.rs";
 const PCACHE: &str = "crates/linguist-provider/src/cache.rs";
@@ -187,6 +188,7 @@ pub const ROWS: &[Row] = &[
     c("audio.voice_resource", SPEECH),
     c("audio.speed", SPEECH),
     c("audio.timeout_seconds", SPEECH),
+    c("harvest.jmdict_path", HARVEST),
     c("backup.scope", CLI),
     c("backup.reuse_max_age_seconds", JOBS),
     c("backup.verify_timeout_seconds", CLI),

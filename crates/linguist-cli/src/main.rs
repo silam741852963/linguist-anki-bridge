@@ -9,6 +9,7 @@ use std::{
 };
 mod campaign;
 mod diagnostics;
+mod harvest_cmd;
 mod interrupt;
 mod maintenance;
 mod merge_cmd;
@@ -196,6 +197,12 @@ enum Command {
     Campaign {
         #[command(subcommand)]
         command: campaign::CampaignCommand,
+    },
+    /// Words met in the deck's own example sentences that it has no card for
+    /// (WP-25): scan, rank, mark and export as `vocab add` JSONL.
+    Harvest {
+        #[command(subcommand)]
+        command: harvest_cmd::HarvestCommand,
     },
 }
 #[derive(Subcommand)]
@@ -1626,6 +1633,9 @@ fn run(cli: Cli) -> Result<u8, String> {
     if let Some(code) = merge_cmd::handle(&settings, &cli.command)? {
         return Ok(code);
     }
+    if let Command::Harvest { command } = &cli.command {
+        return harvest_cmd::handle(&settings, command);
+    }
     if let Command::Campaign { .. } = &cli.command {
         let globals = campaign::Globals {
             config: cli.config.clone(),
@@ -1733,6 +1743,7 @@ fn run(cli: Cli) -> Result<u8, String> {
         Command::Config { .. }
         | Command::Completions { .. }
         | Command::Campaign { .. }
+        | Command::Harvest { .. }
         | Command::Cache { .. }
         | Command::Resources { .. } => unreachable!(),
         Command::Apply {

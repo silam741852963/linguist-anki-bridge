@@ -50,6 +50,11 @@ fn strip_sound_markers(raw: &str) -> String {
     out.push_str(rest);
     out
 }
+/// The visible text of a field's HTML, one line per block (WP-25 harvest).
+pub(crate) fn visible_text_of(raw: &str) -> String {
+    visible_text(raw)
+}
+
 fn visible_text(raw: &str) -> String {
     let cleaned = ammonia::Builder::default()
         .tags(std::collections::HashSet::from([

@@ -115,3 +115,11 @@ Aliases `inject`/`modernize` may map to add/revamp with deprecation messages; th
 | OP-87 | [`models update PURPOSE`](collection.md#op-87-models-update-purpose) |
 | OP-88 | [`notes retag [NOTE_ID...] [--all] [--limit N] [--apply]`](collection.md#op-88-notes-retag-note_id---all---limit-n---apply) |
 | OP-89 | [`plans classify PLAN`](plans.md#op-89-plans-classify-plan) |
+| OP-90 | [`harvest scan --purpose P [--deck DECK] [--full] [--limit N]`](harvest.md#op-90-harvest-scan---purpose-p---deck-deck---full---limit-n) |
+| OP-91 | [`harvest list --purpose P [--status S] [--min-notes K] [--limit N]`](harvest.md#op-91-harvest-list---purpose-p---status-s---min-notes-k---limit-n) |
+| OP-92 | [`harvest show --purpose P WORD`](harvest.md#op-92-harvest-show---purpose-p-word) |
+| OP-93 | [`harvest ignore --purpose P WORD...`](harvest.md#op-93-harvest-ignore---purpose-p-word) |
+| OP-94 | [`harvest known --purpose P WORD...`](harvest.md#op-94-harvest-known---purpose-p-word) |
+| OP-95 | [`harvest unignore --purpose P WORD...`](harvest.md#op-95-harvest-unignore---purpose-p-word) |
+| OP-96 | [`harvest queue --purpose P (WORD... | --top N)`](harvest.md#op-96-harvest-queue---purpose-p-word---top-n) |
+| OP-97 | [`harvest export --purpose P [--status S] --output FILE`](harvest.md#op-97-harvest-export---purpose-p---status-s---output-file) |

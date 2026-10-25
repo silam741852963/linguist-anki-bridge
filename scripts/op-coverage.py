@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-89 with its
+"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-97 with its
 CLI handler and the tests that exercise it.
 
 Command-level tests are found by scanning `crates/linguist-cli/tests/*.rs`
@@ -44,7 +44,10 @@ OPS = [("OP-01", "doctor"), ("OP-02", "config init"), ("OP-03", "config show"),
        ("OP-80", "notes delete-merged"), ("OP-81", "notes restore-merged"),
        ("OP-82", "campaign reopen"), ("OP-83", "campaign tune"), ("OP-84", "campaign agent-done"), ("OP-85", "campaign requeue"),
        ("OP-86", "campaign wrap-up"), ("OP-87", "models update"),
-       ("OP-88", "notes retag"), ("OP-89", "plans classify")]
+       ("OP-88", "notes retag"), ("OP-89", "plans classify"),
+       ("OP-90", "harvest scan"), ("OP-91", "harvest list"), ("OP-92", "harvest show"),
+       ("OP-93", "harvest ignore"), ("OP-94", "harvest known"), ("OP-95", "harvest unignore"),
+       ("OP-96", "harvest queue"), ("OP-97", "harvest export")]
 APP = "crates/linguist-application/tests/"
 LIBRARY = {
     "OP-17": [APP + "checkpoint_writes.rs::created_model_is_journaled_before_call_and_verified",
@@ -57,6 +60,7 @@ LIBRARY = {
               APP + "retag.rs::a_change_after_the_proposal_refuses_before_the_journal"],
     "OP-89": [APP + "classify.rs::a_classified_profile_reaches_the_note_through_its_approval",
               APP + "classify.rs::a_reply_outside_the_taxonomy_publishes_nothing"],
+    "OP-90": [APP + "harvest.rs::words_met_in_examples_are_ranked_marked_rescanned_and_exported"],
     "OP-34": [APP + "apply.rs::create_commits_with_marker_snapshot_receipt_and_owner_release",
               APP + "apply.rs::mapped_migration_retains_card_id_history_and_scheduling"],
     "OP-39": [APP + "jobs_apply.rs::simulate_never_writes_and_apply_jobs_need_the_current_flag",
@@ -119,7 +123,7 @@ def handler_line(words):
              "notes": "NoteCommand", "vocab": "PrepareCommand", "grammar": "PrepareCommand",
              "plans": "PlanCommand", "jobs": "JobCommand", "snapshots": "SnapshotCommand",
              "backup": "BackupCommand", "cache": "CacheCommand", "resources": "ResourceCommand",
-             "recover": "RecoveryCommand", "campaign": "CampaignCommand"}.get(words[0])
+             "recover": "RecoveryCommand", "campaign": "CampaignCommand", "harvest": "HarvestCommand"}.get(words[0])
     needles = [f"{group}::{variant}"] if group and len(words) > 1 else [f"Command::{variant}"]
     start = next(i for i, line in enumerate(main) if line.startswith("fn run(cli: Cli)"))
     for index, line in enumerate(main[start:], start + 1):
@@ -128,8 +132,8 @@ def handler_line(words):
     for index, line in enumerate(main, 1):
         if any(n in line for n in needles) and "fn state_write_estimate" not in "".join(main[max(0, index - 60):index]):
             return f"crates/linguist-cli/src/main.rs:{index}"
-    # WP-24 handlers live in their own modules.
-    for module in ("campaign.rs", "merge_cmd.rs"):
+    # WP-24 and WP-25 handlers live in their own modules.
+    for module in ("campaign.rs", "merge_cmd.rs", "harvest_cmd.rs"):
         lines = (ROOT / "crates/linguist-cli/src" / module).read_text().splitlines()
         for index, line in enumerate(lines, 1):
             if any(n in line for n in needles) and ("=>" in line or "=>" in "".join(lines[index:index + 8])):

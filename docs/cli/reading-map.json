@@ -322,11 +322,12 @@
       "path": "implementation/wp-25.md",
       "heading": "## WP-25 \u2014 word harvester: unknown words met in the deck's own examples",
       "title": "WP-25 \u2014 word harvester: unknown words met in the deck's own examples",
-      "words": 1218,
+      "words": 1809,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "operations/preparation.md"
+        "operations/preparation.md",
+        "operations/harvest.md"
       ]
     },
     "WP-26": {
@@ -842,6 +843,87 @@
         "contracts/invariants.md",
         "operations/README.md",
         "configuration/README.md"
+      ]
+    },
+    "OP-90": {
+      "path": "operations/harvest.md",
+      "heading": "## OP-90 \u2014 `harvest scan --purpose P [--deck DECK] [--full] [--limit N]`",
+      "title": "OP-90 \u2014 `harvest scan --purpose P [--deck DECK] [--full] [--limit N]`",
+      "words": 350,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-91": {
+      "path": "operations/harvest.md",
+      "heading": "## OP-91 \u2014 `harvest list --purpose P [--status S] [--min-notes K] [--limit N]`",
+      "title": "OP-91 \u2014 `harvest list --purpose P [--status S] [--min-notes K] [--limit N]`",
+      "words": 94,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-92": {
+      "path": "operations/harvest.md",
+      "heading": "## OP-92 \u2014 `harvest show --purpose P WORD`",
+      "title": "OP-92 \u2014 `harvest show --purpose P WORD`",
+      "words": 39,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-93": {
+      "path": "operations/harvest.md",
+      "heading": "## OP-93 \u2014 `harvest ignore --purpose P WORD...`",
+      "title": "OP-93 \u2014 `harvest ignore --purpose P WORD...`",
+      "words": 44,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-94": {
+      "path": "operations/harvest.md",
+      "heading": "## OP-94 \u2014 `harvest known --purpose P WORD...`",
+      "title": "OP-94 \u2014 `harvest known --purpose P WORD...`",
+      "words": 28,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-95": {
+      "path": "operations/harvest.md",
+      "heading": "## OP-95 \u2014 `harvest unignore --purpose P WORD...`",
+      "title": "OP-95 \u2014 `harvest unignore --purpose P WORD...`",
+      "words": 27,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-96": {
+      "path": "operations/harvest.md",
+      "heading": "## OP-96 \u2014 `harvest queue --purpose P (WORD... | --top N)`",
+      "title": "OP-96 \u2014 `harvest queue --purpose P (WORD... | --top N)`",
+      "words": 46,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-97": {
+      "path": "operations/harvest.md",
+      "heading": "## OP-97 \u2014 `harvest export --purpose P [--status S] --output FILE`",
+      "title": "OP-97 \u2014 `harvest export --purpose P [--status S] --output FILE`",
+      "words": 112,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md",
+        "operations/preparation.md"
       ]
     },
     "OP-48": {

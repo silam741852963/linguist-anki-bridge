@@ -10,6 +10,7 @@ linguist-core.workspace = true
 linguist-anki.workspace = true
 linguist-config.workspace = true
 linguist-store.workspace = true
+linguist-text.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

@@ -54,6 +54,11 @@
       "count": 3
     },
     {
+      "name": "harvest",
+      "path": "settings/harvest.json",
+      "count": 1
+    },
+    {
       "name": "helpers",
       "path": "settings/helpers.json",
       "count": 2

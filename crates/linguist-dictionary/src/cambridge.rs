@@ -98,6 +98,9 @@ struct Extras {
     /// WP-27: the CEFR level of each definition any block marks (the
     /// learner's dictionary does, the American one does not).
     levels: Vec<(String, String)>,
+    /// WP-25: the irregular inflections the header lists (went, gone,
+    /// supernovae), for the harvester's lemmatizer.
+    irregular: Vec<String>,
 }
 const CEFR: [&str; 6] = ["A1", "A2", "B1", "B2", "C1", "C2"];
 fn merge(into: &mut Vec<String>, values: Vec<String>) {
@@ -152,7 +155,14 @@ pub fn parse_page(
     for block in &blocks {
         for entry in block.select(&select(ENTRY)) {
             let pos = part_of_speech(entry);
-            let slot = extras.entry(pos).or_default();
+            let slot = extras.entry(pos.clone()).or_default();
+            // A phrase's header inflects its verb alone (go back on: went).
+            if !pos.contains("phrasal") && !pos.contains("idiom") {
+                merge(
+                    &mut slot.irregular,
+                    all(entry, ".pos-header .irreg-infls .inf"),
+                );
+            }
             merge(&mut slot.synonyms, all(entry, ".xref.synonyms .x-h"));
             merge(&mut slot.related, all(entry, ".xref.related_word .x-h"));
             for runon in entry.select(&select(".runon")) {
@@ -325,6 +335,7 @@ pub fn parse_page(
                     ("smart_vocabulary_topic", &slot.smart_topic),
                     ("smart_vocabulary", &slot.smart_words),
                     ("images", &slot.images),
+                    ("irregular_forms", &slot.irregular),
                     (
                         "cefr",
                         &slot

@@ -261,3 +261,22 @@ fn the_cefr_level_of_a_sense_is_a_label() {
         .unwrap();
     assert_eq!(noun.metadata["cefr"], ["C2"]);
 }
+
+#[test]
+fn irregular_inflections_are_entry_metadata() {
+    let supernova = page(
+        "supernova",
+        include_str!("fixtures/cambridge-supernova.html"),
+    );
+    assert!(
+        supernova.entries[0].metadata["irregular_forms"].contains(&"supernovae".to_owned()),
+        "{:?}",
+        supernova.entries[0].metadata
+    );
+    // A phrasal verb's header inflects the verb alone: no forms for the phrase.
+    let phrase = page(
+        "go back on",
+        include_str!("fixtures/cambridge-go-back-on.html"),
+    );
+    assert!(!phrase.entries[0].metadata.contains_key("irregular_forms"));
+}

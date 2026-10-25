@@ -3246,6 +3246,20 @@
       "x-scope": "purpose",
       "x-sensitive": false
     },
+    "harvest.jmdict_path": {
+      "default": null,
+      "description": "Optional local JMdict XML file (EDRDG, CC BY-SA 4.0, installed by the user). `harvest scan` uses it to keep known compounds whole and to give readings and frequency bands; without it compounds stay split and ranking leaves out frequency.",
+      "maxLength": 1048576,
+      "pattern": "^[^\\u0000\\r\\n]*\\S[^\\u0000\\r\\n]*$",
+      "type": [
+        "string",
+        "null"
+      ],
+      "x-consumer": "word harvester",
+      "x-runtime-format": "path",
+      "x-scope": "global",
+      "x-sensitive": false
+    },
     "helpers.max_output_mb": {
       "default": 20,
       "description": "Bound helper stdout/protocol output; excess is typed error, never truncate valid evidence.",

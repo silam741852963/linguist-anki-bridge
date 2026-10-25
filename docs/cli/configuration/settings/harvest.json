@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "key": "harvest.jmdict_path",
+      "type": "string|null",
+      "default": null,
+      "constraints": {
+        "format": "path"
+      },
+      "scope": "global",
+      "consumer": "word harvester",
+      "description": "Optional local JMdict XML file (EDRDG, CC BY-SA 4.0, installed by the user). `harvest scan` uses it to keep known compounds whole and to give readings and frequency bands; without it compounds stay split and ranking leaves out frequency.",
+      "sensitive": false
+    }
+  ]
+}
