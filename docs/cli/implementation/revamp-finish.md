@@ -40,7 +40,7 @@ linguist-anki-bridge-head --output json notes retag --all --apply    # one check
 
 ### Step 1 follow-ups (from the 2026-10-25 preview: 4,048 change, 39 current, 72 skipped)
 
-- [ ] **Deleted-note reporting in `retag.rs`, with a test.**
+- [x] **Deleted-note reporting in `retag.rs`, with a test.** Done in 1a30dc4.
   - 66 notes show as `RETAG_NOT_APPLIED: the latest operation … is restored`.
   - An apply created each of them and a snapshot restore deleted it again;
     `notes show` gives `ANKI_NOTE_NOT_FOUND`.
@@ -147,3 +147,16 @@ Reclassify those plans from a fresh base instead.
     (Tools > Add-ons > Install from file) and restarts Anki. Then run
     `notes retag --all --apply`, only on the user's instruction. The 155
     notes already done show as current.
+- 2026-10-25 20:21: **step 1 done.** Every applied note that can be
+  retagged now has the current render:
+  - 3,024 notes in the final run under checkpoint c13e7836, 0 pending;
+    4,087 change-or-current in total.
+  - Still skipped: 66 `RETAG_NOTE_MISSING` (deleted by restores), 1
+    `RETAG_NOT_APPLIED` (歩留まり) and 5 `RETAG_RENDER_BLOCKED`. These 6
+    real notes are the fix-up campaign item above.
+  - Per-note write time went from 8.7 s to 0.53 s: companion 0.6.1
+    (93e2089), checkpoint hashed once, read retries (c894564), fewer round
+    trips and unpooled AnkiConnect connections (7fc5d91).
+  - The dropped connections that stopped earlier runs came from reqwest
+    reusing connections that AnkiConnect closes silently.
+  - Two stops were settled with `recover reconcile`.
