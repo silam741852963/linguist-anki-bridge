@@ -342,6 +342,39 @@ class OperationLedgerTest(unittest.TestCase):
         self.assertEqual(ledger._db.execute("SELECT count(*) FROM operations").fetchone()[0], 1)
         ledger.close()
 
+    def test_a_closed_history_forged_after_a_scan_still_fails_closed(self):
+        ledger = OperationLedger(self.root, initialize=True)
+        args = owned(ledger, request(self.lineage_id))
+        ledger.queue(**args)
+        ledger.fail_before_write(**self.owner(args), reason="preflight_rejected")
+        # This request's scan validates the closed history and remembers it.
+        sibling = self.sibling(args)
+        ledger.queue(**sibling)
+        ledger.fail_before_write(**self.owner(sibling), reason="preflight_rejected")
+        ledger._db.execute("DROP TRIGGER operation_events_no_update")
+        ledger._db.execute("UPDATE operation_events SET digest='forged' WHERE sequence=2")
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_HISTORY_INVALID"):
+            ledger.queue(**self.sibling(args))
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_HISTORY_INVALID"):
+            owned(ledger, request(self.lineage_id))
+        ledger.close()
+
+    def test_an_event_added_to_a_validated_history_is_validated_again(self):
+        ledger = OperationLedger(self.root, initialize=True)
+        args = owned(ledger, request(self.lineage_id))
+        ledger.queue(**args)
+        ledger.fail_before_write(**self.owner(args), reason="preflight_rejected")
+        owned(ledger, request(self.lineage_id))
+        # A third event after failed_before_write is not a valid history.
+        status = ledger.status(args["lineage_id"], args["operation_id"])
+        ledger._db.execute("BEGIN IMMEDIATE")
+        ledger._event(args["lineage_id"], args["operation_id"], 3, "verified",
+                      status["event_digest"], receipt={})
+        ledger._db.execute("COMMIT")
+        with self.assertRaisesRegex(OperationError, "BRIDGE_OPERATION_HISTORY_INVALID"):
+            owned(ledger, request(self.lineage_id))
+        ledger.close()
+
     def test_racing_start_and_before_write_failure_have_one_winner(self):
         ledger = OperationLedger(self.root, initialize=True)
         args = owned(ledger, request(self.lineage_id))

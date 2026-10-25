@@ -181,6 +181,51 @@ fn sha256_file(path: &Path, limit: u64) -> Result<(u64, String)> {
     Ok((total, format!("{:x}", sha2::Digest::finalize(hash))))
 }
 
+/// `require_checkpoint` runs before every dependent write, and one group of
+/// thousands of notes shares one multi-gigabyte checkpoint. The file is
+/// hashed once per process and afterwards known by its device, inode, size,
+/// modification and change times: a replaced, rewritten or deleted file is
+/// hashed again, or fails, before the next write.
+#[cfg(unix)]
+fn artifact_sha256(path: &Path, limit: u64) -> Result<(u64, String)> {
+    use std::os::unix::fs::MetadataExt;
+    type Identity = (u64, u64, u64, i64, i64, i64, i64);
+    type Hashed = std::collections::BTreeMap<PathBuf, (Identity, (u64, String))>;
+    static HASHED: std::sync::Mutex<Hashed> = std::sync::Mutex::new(Hashed::new());
+    let identity = |path: &Path| -> Result<Identity> {
+        let m = fs::symlink_metadata(path).map_err(|_| "CHECKPOINT_ARTIFACT_MISSING")?;
+        Ok((
+            m.dev(),
+            m.ino(),
+            m.len(),
+            m.mtime(),
+            m.mtime_nsec(),
+            m.ctime(),
+            m.ctime_nsec(),
+        ))
+    };
+    let before = identity(path)?;
+    if let Some((seen, hashed)) = HASHED.lock().map_err(|e| e.to_string())?.get(path)
+        && *seen == before
+    {
+        return Ok(hashed.clone());
+    }
+    let hashed = sha256_file(path, limit)?;
+    // Only a file that did not change while it was read is remembered.
+    if identity(path)? == before {
+        HASHED
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(path.to_owned(), (before, hashed.clone()));
+    }
+    Ok(hashed)
+}
+
+#[cfg(not(unix))]
+fn artifact_sha256(path: &Path, limit: u64) -> Result<(u64, String)> {
+    sha256_file(path, limit)
+}
+
 fn sync_parent(path: &Path) -> Result<()> {
     let parent = path.parent().ok_or("CHECKPOINT_OUTPUT_INVALID")?;
     File::open(parent)
@@ -499,7 +544,8 @@ pub(crate) fn same_execution(a: &CollectionBinding, b: &CollectionBinding) -> bo
 }
 
 /// Fail-closed gate before any dependent collection write. It re-hashes the
-/// artifact, so a deleted or changed file blocks the write.
+/// artifact (once per process while the file is unchanged), so a deleted or
+/// changed file blocks the write.
 pub fn require_checkpoint(
     store: &Store,
     receipt_id: Uuid,
@@ -569,7 +615,7 @@ pub fn require_checkpoint(
         }
         Some("cross_group_reuse_unchanged_protected_manifest_within_age")
     };
-    let (size, sha256) = sha256_file(Path::new(&receipt.path), dependent.max_package_bytes)?;
+    let (size, sha256) = artifact_sha256(Path::new(&receipt.path), dependent.max_package_bytes)?;
     if size != record.size_bytes || sha256 != receipt.checksum {
         return Err("CHECKPOINT_ARTIFACT_CHANGED".into());
     }

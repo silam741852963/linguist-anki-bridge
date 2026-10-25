@@ -130,6 +130,11 @@ TABLES_V1 = ("operations", "operation_events")
 class OperationLedger:
     def __init__(self, root, *, initialize=False, busy_timeout_ms=5000):
         self._db = None
+        # Closed operations already validated by a scan, with their event
+        # count, valid while the schema (and so the immutability triggers)
+        # is unchanged; see `_in_flight`.
+        self._closed = {}
+        self._closed_schema = None
         if type(initialize) is not bool or type(busy_timeout_ms) is not int or not 1 <= busy_timeout_ms <= 60000:
             raise OperationError("BRIDGE_OPERATION_OPEN_INPUT_INVALID")
         try:
@@ -290,11 +295,7 @@ class OperationLedger:
         live = frozenset(live_operations)
 
         def run():
-            for prior_lineage, prior_operation in self._db.execute(
-                    "SELECT lineage_id,operation_id FROM operations").fetchall():
-                status, _ = self._status(prior_lineage, prior_operation)
-                if status["state"] not in IN_FLIGHT:
-                    continue
+            for (prior_lineage, prior_operation), status in self._in_flight():
                 if (prior_lineage, prior_operation) in live:
                     raise OperationError("BRIDGE_OPERATION_PENDING")
                 if status["state"] == "running":
@@ -335,6 +336,36 @@ class OperationLedger:
                 or (approved_digest is not None and owner["approved_digest"] != approved_digest)):
             raise OperationError("BRIDGE_OWNER_BINDING_CONFLICT")
         return owner
+
+    def _in_flight(self):
+        """Validate every operation history and return the queued or running
+        ones as ((lineage_id, operation_id), status) pairs.
+
+        A closed history is fully validated once per ledger connection. Its
+        rows cannot change while the UPDATE/DELETE triggers stand, and
+        removing a trigger changes the schema version, which revalidates
+        every history; a new event changes the operation's event count.
+        Without this the scan read and parsed every payload on each request,
+        seconds per write once the ledger held thousands of operations.
+        """
+        schema = self._db.execute("PRAGMA schema_version").fetchone()[0]
+        if schema != self._closed_schema:
+            self._closed = {}
+            self._closed_schema = schema
+        found = []
+        for lineage_id, operation_id, events in self._db.execute(
+                "SELECT o.lineage_id,o.operation_id,(SELECT count(*) FROM operation_events e "
+                "WHERE e.lineage_id=o.lineage_id AND e.operation_id=o.operation_id) "
+                "FROM operations o").fetchall():
+            key = (lineage_id, operation_id)
+            if self._closed.get(key) == events:
+                continue
+            status, _ = self._status(lineage_id, operation_id)
+            if status["state"] in IN_FLIGHT:
+                found.append((key, status))
+            else:
+                self._closed[key] = events
+        return found
 
     # ------------------------------------------------------------ operations
     def _status(self, lineage_id, operation_id):
@@ -488,11 +519,8 @@ class OperationLedger:
             self._require_owner(owner_token, fence_generation, lineage_id=lineage_id,
                                 session_epoch=session_epoch, approved_digest=approved_digest)
             # Validate every earlier history before accepting another request.
-            for prior_lineage, prior_operation in self._db.execute(
-                    "SELECT lineage_id,operation_id FROM operations").fetchall():
-                prior_status, _ = self._status(prior_lineage, prior_operation)
-                if prior_status["state"] in IN_FLIGHT:
-                    raise OperationError("BRIDGE_OPERATION_PENDING")
+            if self._in_flight():
+                raise OperationError("BRIDGE_OPERATION_PENDING")
             self._db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,?,?,?)",
                              (lineage_id, operation_id, payload_digest, approved_digest,
                               session_epoch, owner_token, fence_generation, variant, payload))
