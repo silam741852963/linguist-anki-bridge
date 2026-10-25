@@ -316,3 +316,17 @@ review count and review-row digest, an evidence digest and the task map, which
 it adds to the document. The decision stays valid only while that evidence,
 the source model digest and the task map still match; apply then checks the
 live note again and keeps every mapped card's ID, scheduling and history.
+
+## OP-89 — `plans classify PLAN`
+
+Inputs: plan ID, `--base-revision N --digest DIGEST` (the latest revision), optional `--batch N` (notes per call, default 25, at most 50), `--limit N` and `--run`.
+
+Effects: Without `--run`, a local preview. With `--run`, agent calls and one new local revision; no collection write.
+
+1. Require the exact latest base and digest (`CLASSIFY_BASE_CONFLICT`), `llm.enabled` and an agent provider in `llm.provider` or `llm.fallback` (`CLASSIFY_NO_AGENT`; the local engine is not used).
+2. Take the documents with no judged profile (WP-27 drafts made before the enrichment call asked for one), in plan order, up to `--limit`.
+3. Send them in batches: each call carries the classify prompt with the `domains-v1` leaf list and functions, and per note a compact form (vocabulary: expression, reading, selected sense with its labels, class and other classes, domain hints, first example; grammar: pattern, first line of meaning and formation, first example). The reply schema asks for one profile per note: domain, up to two secondary paths, grammar functions and register, vocabulary connotation and transitivity partner.
+4. Check each profile as an enrichment profile is checked: a primary path that is not a leaf drops the note's profile; unknown secondary paths, functions, registers and connotations are dropped; a partner is kept only when `partner_problem` finds none. A reply that does not parse is kept in `rejected-<provider>.jsonl` and ends the run.
+5. Publish one child revision in which only the classified documents changed, and only in `profile`; renders are refreshed and review decisions cleared.
+
+Result/failure: `pending`, `sent`, `classified`, the calls with their provider identity, `stopped` (the error that ended the run, if any) and the new revision and digest (exit 4: the revision needs review and approval). A failed call keeps the profiles of earlier calls. Nothing is applied: once the revision is approved, `notes retag` renders an applied note from it, under its approval, when its document differs from the applied one only in the profile. `DOMAIN_HINT_IGNORED` (warning) shows a vocabulary profile whose paths all leave the branch of a dictionary field label.

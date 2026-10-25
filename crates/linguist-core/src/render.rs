@@ -83,6 +83,24 @@ fn block(s: &str) -> String {
         format!("<p>{}</p>", escape(s))
     }
 }
+/// WP-27: a grammar formation with each slot token (`V`, `N`, `い-Adj`) in
+/// the colour of its class.
+fn formation(s: &str) -> String {
+    if s.trim().is_empty() {
+        return String::new();
+    }
+    let html: String = crate::profile::slot_runs(s)
+        .into_iter()
+        .map(|(text, class)| match class {
+            Some(class) => format!(
+                "<span class=\"lab-slot lab-pos-{class}\">{}</span>",
+                escape(text)
+            ),
+            None => escape(text),
+        })
+        .collect();
+    format!("<p>{html}</p>")
+}
 fn url_filename(s: &str) -> String {
     s.bytes()
         .map(|b| {
@@ -150,6 +168,18 @@ fn related(v: &Vocabulary) -> String {
         html.push_str(&format!(
             "<h4>Also written</h4><ul class=\"lab-collocations\">{}</ul>",
             chips(spellings)
+        ));
+    }
+    // WP-27: a verb's transitivity partner, judged and checked.
+    if let Some(partner) = v
+        .profile
+        .as_ref()
+        .map(|p| p.partner.trim())
+        .filter(|p| !p.is_empty())
+    {
+        html.push_str(&format!(
+            "<h4>Transitivity pair</h4><ul class=\"lab-collocations\">{}</ul>",
+            chips(vec![&partner.to_owned()])
         ));
     }
     let cambridge = selected.is_some_and(|i| v.dictionary[i].provider == "cambridge-html-v1");
@@ -670,7 +700,7 @@ pub fn render(
             let forms = grammar_forms(g);
             fields.insert("Pattern".into(), escape(&g.pattern));
             fields.insert("Meaning".into(), grammar_meaning(g));
-            fields.insert("Formation".into(), block(&g.formation));
+            fields.insert("Formation".into(), formation(&g.formation));
             fields.insert("Example".into(), grammar_examples(doc, g, &forms));
             fields.insert(
                 "Usage".into(),

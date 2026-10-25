@@ -106,6 +106,13 @@ pub struct Derived {
     pub note: BTreeSet<&'static str>,
     /// Grammar: the forms the pattern requires of its slots (`te`, `nai`).
     pub forms: BTreeSet<&'static str>,
+    /// Grammar: the kinds of slot the pattern attaches to (`verb`,
+    /// `i-adjective`, `sentence`).
+    pub attach: BTreeSet<&'static str>,
+    /// English: the CEFR level Cambridge shows for the selected sense.
+    pub cefr: BTreeSet<&'static str>,
+    /// Vocabulary: `negative` when a label says derogatory or disapproving.
+    pub connotation: BTreeSet<&'static str>,
 }
 
 impl Derived {
@@ -125,6 +132,9 @@ impl Derived {
             ("origin", &self.origin),
             ("note", &self.note),
             ("form", &self.forms),
+            ("attach", &self.attach),
+            ("cefr", &self.cefr),
+            ("connotation", &self.connotation),
         ] {
             for value in values {
                 tags.push(format!("lab::{prefix}::{value}"));
@@ -261,6 +271,18 @@ pub fn vocabulary(language: &str, v: &Vocabulary) -> Derived {
             if let Some(row) = label(language, l).filter(|row| row.role != Role::Pos) {
                 derived.add(row);
             }
+            if let Some(level) = CEFR
+                .iter()
+                .find(|level| level.eq_ignore_ascii_case(l.trim()))
+            {
+                derived.cefr.insert(level);
+            }
+        }
+        if derived.cefr.is_empty()
+            && let Some(level) = entry.metadata.get("cefr").and_then(|l| l.first())
+            && let Some(level) = CEFR.iter().find(|c| c.eq_ignore_ascii_case(level))
+        {
+            derived.cefr.insert(level);
         }
         let mut others: Vec<&'static str> = (0..entry.senses.len())
             .filter(|i| *i != index)
@@ -300,10 +322,155 @@ pub fn vocabulary(language: &str, v: &Vocabulary) -> Derived {
     {
         derived.origin.insert("gairaigo");
     }
+    if language.starts_with("ja")
+        && derived.origin.is_empty()
+        && let Some(origin) = word_origin(&expression, &v.reading, &v.kanji_details)
+    {
+        derived.origin.insert(origin);
+    }
+    if derived
+        .register
+        .iter()
+        .any(|r| matches!(*r, "derogatory" | "disapproving" | "offensive"))
+    {
+        derived.connotation.insert("negative");
+    }
     if let Some(class) = derived.class {
         derived.also.remove(class);
     }
     derived
+}
+
+/// CEFR levels as Cambridge prints them; tags use them lower-cased.
+const CEFR: [&str; 6] = ["a1", "a2", "b1", "b2", "c1", "c2"];
+
+fn hiragana(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '\u{30a1}'..='\u{30f6}' => char::from_u32(c as u32 - 0x60).unwrap_or(c),
+            _ => c,
+        })
+        .collect()
+}
+
+/// The readings a kanji may take inside a word: as listed, voiced (か to が,
+/// は to ば or ぱ) and with a final sokuon (つ, く, ち, き to っ).
+fn variants(reading: &str) -> Vec<String> {
+    const VOICED: [(char, &str); 20] = [
+        ('か', "が"),
+        ('き', "ぎ"),
+        ('く', "ぐ"),
+        ('け', "げ"),
+        ('こ', "ご"),
+        ('さ', "ざ"),
+        ('し', "じ"),
+        ('す', "ず"),
+        ('せ', "ぜ"),
+        ('そ', "ぞ"),
+        ('た', "だ"),
+        ('ち', "ぢ"),
+        ('つ', "づ"),
+        ('て', "で"),
+        ('と', "ど"),
+        ('は', "ばぱ"),
+        ('ひ', "びぴ"),
+        ('ふ', "ぶぷ"),
+        ('へ', "べぺ"),
+        ('ほ', "ぼぽ"),
+    ];
+    let mut out = vec![reading.to_owned()];
+    if let Some(first) = reading.chars().next()
+        && let Some((_, voiced)) = VOICED.iter().find(|(plain, _)| *plain == first)
+    {
+        for v in voiced.chars() {
+            out.push(format!("{v}{}", &reading[first.len_utf8()..]));
+        }
+    }
+    for r in out.clone() {
+        if let Some(last) = r.chars().last()
+            && matches!(last, 'つ' | 'く' | 'ち' | 'き')
+            && r.chars().count() > 1
+        {
+            out.push(format!("{}っ", &r[..r.len() - last.len_utf8()]));
+        }
+    }
+    out
+}
+
+/// Word origin of a Japanese word written in kanji: `wago` when every kanji
+/// reads a kun reading, `kango` when every one reads an on reading, `mixed`
+/// otherwise, matched against the word's reading. Kana after the kanji must
+/// end the reading. None when the reading cannot be split.
+pub fn word_origin(
+    expression: &str,
+    reading: &str,
+    kanji: &[crate::document::KanjiDetail],
+) -> Option<&'static str> {
+    let kana = |c: char| ('\u{3041}'..='\u{309f}').contains(&c);
+    let expression = expression.trim();
+    let stem: Vec<char> = expression.chars().take_while(|c| !kana(*c)).collect();
+    let okurigana: String = expression.chars().skip(stem.len()).collect();
+    if stem.is_empty() || !okurigana.chars().all(kana) {
+        return None;
+    }
+    let reading = hiragana(&reading.split_whitespace().collect::<String>());
+    let reading = reading.strip_suffix(okurigana.as_str())?.to_owned();
+    // Every way to read the stem: (characters consumed, kinds used).
+    let mut states: Vec<(usize, bool, bool)> = vec![(0, false, false)];
+    for c in &stem {
+        let detail = kanji.iter().find(|k| k.character.starts_with(*c))?;
+        let on: Vec<String> = detail
+            .on_readings
+            .iter()
+            .flat_map(|r| variants(&hiragana(r)))
+            .collect();
+        let kun: Vec<String> = detail
+            .kun_readings
+            .iter()
+            .map(|r| {
+                r.split('.')
+                    .next()
+                    .unwrap_or_default()
+                    .trim_matches('-')
+                    .to_owned()
+            })
+            .flat_map(|r| variants(&r))
+            .collect();
+        let mut next = Vec::new();
+        for (at, used_on, used_kun) in &states {
+            let rest = &reading[*at..];
+            for (list, is_on) in [(&on, true), (&kun, false)] {
+                for r in list
+                    .iter()
+                    .filter(|r| !r.is_empty() && rest.starts_with(r.as_str()))
+                {
+                    let state = (at + r.len(), *used_on || is_on, *used_kun || !is_on);
+                    if !next.contains(&state) {
+                        next.push(state);
+                    }
+                }
+            }
+        }
+        if next.is_empty() {
+            return None;
+        }
+        states = next;
+    }
+    let kinds: Vec<_> = states
+        .into_iter()
+        .filter(|(at, ..)| *at == reading.len())
+        .map(|(_, on, kun)| (on, kun))
+        .collect();
+    // Prefer a single-kind reading when one fits (よう / ひ).
+    if kinds.contains(&(true, false)) {
+        Some("kango")
+    } else if kinds.contains(&(false, true)) {
+        Some("wago")
+    } else if kinds.is_empty() {
+        None
+    } else {
+        Some("mixed")
+    }
 }
 
 /// One slot a grammar pattern attaches to, read from a token such as `V`,
@@ -374,10 +541,57 @@ fn verb_form(text: &str) -> Option<&'static str> {
         .map(|(_, form)| *form)
 }
 
+fn separator(c: char) -> bool {
+    c.is_whitespace() || "／/()（）+＋、,，・…〜~;；「」[]［］".contains(c)
+}
+
 fn tokens(text: &str) -> Vec<&str> {
-    text.split(|c: char| c.is_whitespace() || "／/()（）+＋、,，・…〜~;；「」[]［］".contains(c))
-        .filter(|t| !t.is_empty())
-        .collect()
+    text.split(separator).filter(|t| !t.is_empty()).collect()
+}
+
+/// WP-27: a formation line split into text and slot runs; a slot run carries
+/// its class. `V` and `N` slots cover the letter and its index (`V1`), so the
+/// form after them (`て`, `の`) stays plain.
+pub fn slot_runs(text: &str) -> Vec<(&str, Option<&'static str>)> {
+    let mut runs = Vec::new();
+    let mut plain = 0;
+    let mut start = None;
+    let flush = |runs: &mut Vec<_>, plain: &mut usize, from: usize, to: usize| {
+        let token = &text[from..to];
+        if let Some((class, _)) = slot(token) {
+            let end = if token.starts_with(['V', 'N', 'Ｖ', 'Ｎ']) {
+                let first = token.chars().next().map_or(0, char::len_utf8);
+                first
+                    + token[first..]
+                        .find(|c: char| !c.is_ascii_digit())
+                        .unwrap_or(token.len() - first)
+            } else {
+                token.len()
+            };
+            if *plain < from {
+                runs.push((&text[*plain..from], None));
+            }
+            runs.push((&token[..end], Some(class)));
+            *plain = from + end;
+        }
+    };
+    for (i, c) in text.char_indices() {
+        match (separator(c), start) {
+            (true, Some(from)) => {
+                flush(&mut runs, &mut plain, from, i);
+                start = None;
+            }
+            (false, None) => start = Some(i),
+            _ => {}
+        }
+    }
+    if let Some(from) = start {
+        flush(&mut runs, &mut plain, from, text.len());
+    }
+    if plain < text.len() {
+        runs.push((&text[plain..], None));
+    }
+    runs
 }
 
 /// Grammar: the class of the slot the pattern attaches to, read from the
@@ -389,6 +603,11 @@ pub fn grammar(g: &Grammar) -> Derived {
         let tokens = tokens(text);
         for (i, token) in tokens.iter().enumerate() {
             if let Some((class, sub)) = slot(token) {
+                derived.attach.insert(match (class, sub) {
+                    ("adjective", Some("i")) => "i-adjective",
+                    ("adjective", Some("na")) => "na-adjective",
+                    _ => class,
+                });
                 match derived.class {
                     None => derived.class = Some(class),
                     Some(main) if main != class => {
@@ -413,8 +632,10 @@ pub fn grammar(g: &Grammar) -> Derived {
                 }
             } else if *token == "plain" && tokens.get(i + 1) == Some(&"form") {
                 derived.forms.insert("plain");
+                derived.attach.insert("sentence");
                 clause = true;
             } else if matches!(*token, "S" | "S1" | "S2" | "sentence") {
+                derived.attach.insert("sentence");
                 clause = true;
             }
         }
@@ -436,6 +657,11 @@ pub const TAXONOMY: &str = "domains-v1";
 /// At most this many secondary domains, and grammar functions.
 pub const SECONDARY_MAX: usize = 2;
 pub const FUNCTIONS_MAX: usize = 2;
+/// Grammar register, judged (at most `REGISTER_MAX`).
+pub const REGISTERS: [&str; 6] = ["spoken", "written", "polite", "plain", "formal", "casual"];
+pub const REGISTER_MAX: usize = 2;
+/// Vocabulary connotation, judged.
+pub const CONNOTATIONS: [&str; 3] = ["positive", "neutral", "negative"];
 
 /// The shipped domain taxonomy: three-level leaf paths, grammar communicative
 /// functions (`group::function`) and the JMdict field hints, keyed by the
@@ -522,7 +748,84 @@ pub fn judged_problem(profile: &crate::document::JudgedProfile, grammar: bool) -
     {
         return Some("unknown or too many functions".into());
     }
+    if !grammar && !profile.register.is_empty() {
+        return Some("register is judged for grammar only".into());
+    }
+    if profile.register.len() > REGISTER_MAX
+        || profile
+            .register
+            .iter()
+            .enumerate()
+            .any(|(i, r)| !REGISTERS.contains(&r.as_str()) || profile.register[..i].contains(r))
+    {
+        return Some("unknown, repeated or too many registers".into());
+    }
+    if grammar && !(profile.connotation.is_empty() && profile.partner.is_empty()) {
+        return Some("connotation and partner are for vocabulary only".into());
+    }
+    if !profile.connotation.is_empty() && !CONNOTATIONS.contains(&profile.connotation.as_str()) {
+        return Some(format!("connotation {} is unknown", profile.connotation));
+    }
     None
+}
+
+/// Okurigana endings of Japanese transitivity pairs, intransitive first
+/// (開く/開ける, 上がる/上げる, 出る/出す, 落ちる/落とす, 壊れる/壊す, 残る/残す…).
+const PARTNER_ENDINGS: [(&str, &str); 14] = [
+    ("く", "ける"),
+    ("がる", "げる"),
+    ("まる", "める"),
+    ("わる", "える"),
+    ("かる", "ける"),
+    ("る", "す"),
+    ("れる", "す"),
+    ("ちる", "とす"),
+    ("きる", "こす"),
+    ("びる", "ばす"),
+    ("える", "やす"),
+    ("う", "える"),
+    ("つ", "てる"),
+    ("む", "める"),
+];
+
+/// Why `partner` is not the transitivity partner of the verb `word`, if it is
+/// not: the word must be labelled transitive or intransitive, both must share
+/// the kanji stem, and their okurigana must form a known pair in the opposite
+/// direction. This is checked without a lookup of the partner (WP-25's local
+/// JMdict will allow one).
+pub fn partner_problem(word: &str, transitivity: Option<&str>, partner: &str) -> Option<String> {
+    let kana = |c: char| ('\u{3041}'..='\u{309f}').contains(&c);
+    let split = |w: &str| -> (String, String) {
+        let stem: String = w.chars().take_while(|c| !kana(*c)).collect();
+        let ending: String = w.chars().skip(stem.chars().count()).collect();
+        (stem, ending)
+    };
+    let (stem, ending) = split(word.trim());
+    let (partner_stem, partner_ending) = split(partner.trim());
+    let Some(transitivity) = transitivity else {
+        return Some("the word has no transitivity label".into());
+    };
+    if stem.is_empty() || stem != partner_stem || ending == partner_ending || ending.is_empty() {
+        return Some("the partner does not share the word's kanji stem".into());
+    }
+    if !partner_ending.chars().all(kana) {
+        return Some("the partner's ending is not kana".into());
+    }
+    let pair = PARTNER_ENDINGS
+        .iter()
+        .any(|(intransitive, transitive)| match transitivity {
+            "intransitive" => {
+                ending.ends_with(intransitive)
+                    && partner_ending.ends_with(transitive)
+                    && ending.strip_suffix(intransitive) == partner_ending.strip_suffix(transitive)
+            }
+            _ => {
+                ending.ends_with(transitive)
+                    && partner_ending.ends_with(intransitive)
+                    && ending.strip_suffix(transitive) == partner_ending.strip_suffix(intransitive)
+            }
+        });
+    (!pair).then(|| "the okurigana are not a known transitivity pair".into())
 }
 
 /// Tags of a judged profile: `lab::domain::<path>`, `lab::domain2::<path>`
@@ -543,6 +846,16 @@ pub fn judged_tags(profile: Option<&crate::document::JudgedProfile>, grammar: bo
                 .functions
                 .iter()
                 .map(|f| format!("lab::function::{f}")),
+        )
+        .chain(
+            profile
+                .register
+                .iter()
+                .map(|r| format!("lab::register::{r}")),
+        )
+        .chain(
+            (!profile.connotation.is_empty())
+                .then(|| format!("lab::connotation::{}", profile.connotation)),
         )
         .collect()
 }
@@ -622,6 +935,52 @@ pub fn domain_hints(language: &str, v: &Vocabulary) -> Vec<String> {
     hints
 }
 
+/// WP-27 `doctor --labels`: the provider labels of a vocabulary card that the
+/// label table has no row for. Japanese sense labels and every part of speech
+/// count; an English sense label with no row is a Cambridge guide word, and a
+/// CEFR level is read apart, so neither is reported.
+pub fn unknown_labels(language: &str, v: &Vocabulary) -> BTreeSet<String> {
+    let japanese = language.starts_with("ja");
+    let mut unknown = BTreeSet::new();
+    for entry in &v.dictionary {
+        for pos in entry.metadata.get("part_of_speech").into_iter().flatten() {
+            if label(language, pos).is_none() {
+                unknown.insert(pos.trim().to_owned());
+            }
+        }
+        if !japanese {
+            continue;
+        }
+        for l in entry.senses.iter().flat_map(|s| &s.labels) {
+            if !l.trim().is_empty()
+                && label(language, l).is_none()
+                && !CEFR.iter().any(|c| c.eq_ignore_ascii_case(l.trim()))
+            {
+                unknown.insert(l.trim().to_owned());
+            }
+        }
+    }
+    unknown
+}
+
+/// The field hints of a vocabulary card that a judged profile leaves: no
+/// primary or secondary path shares the hint's second-level branch.
+pub fn ignored_hints(
+    language: &str,
+    v: &Vocabulary,
+    profile: &crate::document::JudgedProfile,
+) -> Vec<String> {
+    let branch = |path: &str| path.rsplit_once("::").map_or(path, |(b, _)| b).to_owned();
+    let chosen: BTreeSet<String> = std::iter::once(&profile.domain)
+        .chain(&profile.secondary)
+        .map(|p| branch(p))
+        .collect();
+    domain_hints(language, v)
+        .into_iter()
+        .filter(|hint| !hint.starts_with("topic: ") && !chosen.contains(&branch(hint)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -697,6 +1056,7 @@ mod tests {
                 domain: domain.into(),
                 secondary: secondary.iter().map(|s| s.to_string()).collect(),
                 functions: functions.iter().map(|s| s.to_string()).collect(),
+                ..Default::default()
             };
         let good = profile(
             "food::meals::breakfast",
@@ -804,6 +1164,87 @@ mod tests {
     }
 
     #[test]
+    fn unknown_labels_skip_guide_words_and_known_rows() {
+        let ja = vocab(
+            "対応",
+            "s1",
+            vec![entry(
+                "jisho-api-v1",
+                &["対応"],
+                serde_json::json!([
+                    {"key":"s1","definitions":["x"],"labels":["Noun","Not a real JMdict label"]}
+                ]),
+                &[],
+            )],
+        );
+        assert_eq!(
+            unknown_labels("ja", &ja),
+            BTreeSet::from(["Not a real JMdict label".to_owned()])
+        );
+        let en = vocab(
+            "issue",
+            "s1",
+            vec![entry(
+                "cambridge",
+                &["issue"],
+                serde_json::json!([{"key":"s1","definitions":["x"],"labels":["noun","subject","B2"]}]),
+                &[],
+            )],
+        );
+        assert!(unknown_labels("en", &en).is_empty());
+    }
+
+    #[test]
+    fn formation_slots_are_runs_with_their_class() {
+        assert_eq!(
+            slot_runs("V1て + N の / い-Adj くて"),
+            [
+                ("V1", Some("verb")),
+                ("て + ", None),
+                ("N", Some("noun")),
+                (" の / ", None),
+                ("い-Adj", Some("adjective")),
+                (" くて", None),
+            ]
+        );
+        // `Verb`-like ASCII words and plain text are not slots.
+        assert_eq!(slot_runs("Note: S1 が"), [("Note: S1 が", None)]);
+        assert!(slot_runs("").is_empty());
+    }
+
+    #[test]
+    fn a_field_hint_left_by_the_profile_is_reported() {
+        let v = vocab(
+            "対応",
+            "s1",
+            vec![entry(
+                "jisho-api-v1",
+                &["対応"],
+                serde_json::json!([
+                    {"key":"s1","definitions":["correspondence"],"labels":["Noun","Computing"]}
+                ]),
+                &[],
+            )],
+        );
+        let hint = taxonomy().hints["computing"].clone();
+        let other = taxonomy()
+            .leaves
+            .iter()
+            .find(|l| !l.starts_with(hint.rsplit_once("::").unwrap().0))
+            .unwrap()
+            .clone();
+        let mut profile = crate::document::JudgedProfile {
+            taxonomy: TAXONOMY.into(),
+            domain: other,
+            ..Default::default()
+        };
+        assert_eq!(ignored_hints("ja", &v, &profile), std::slice::from_ref(&hint));
+        // A secondary path in the hint's branch takes it into account.
+        profile.secondary = vec![hint];
+        assert!(ignored_hints("ja", &v, &profile).is_empty());
+    }
+
+    #[test]
     fn a_jisho_sense_without_labels_takes_the_sense_before_it() {
         let v = vocab(
             "祈る",
@@ -907,5 +1348,116 @@ mod tests {
         );
         assert_eq!(grammar_of("これ／それ／あれ", "").class, None);
         assert_eq!(grammar_of("NG Vox Note", "").class, None);
+    }
+
+    fn kanji(character: &str, on: &[&str], kun: &[&str]) -> crate::document::KanjiDetail {
+        serde_json::from_value(serde_json::json!({
+            "character": character, "meanings": [],
+            "on_readings": on, "kun_readings": kun,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn word_origin_follows_the_reading_of_each_kanji() {
+        let k = [
+            kanji("学", &["ガク"], &["まな.ぶ"]),
+            kanji("校", &["コウ"], &[]),
+            kanji("山", &["サン"], &["やま"]),
+            kanji("道", &["ドウ"], &["みち"]),
+            kanji("食", &["ショク"], &["た.べる", "く.う"]),
+            kanji("重", &["ジュウ"], &["おも.い"]),
+            kanji("箱", &["ソウ"], &["はこ"]),
+            kanji("一", &["イチ"], &["ひと"]),
+            kanji("杯", &["ハイ"], &["さかずき"]),
+            kanji("本", &["ホン"], &["もと"]),
+            kanji("棚", &["ホウ"], &["たな"]),
+        ];
+        assert_eq!(word_origin("学校", "がっこう", &k), Some("kango"));
+        assert_eq!(word_origin("山道", "やまみち", &k), Some("wago"));
+        assert_eq!(word_origin("食べる", "たべる", &k), Some("wago"));
+        assert_eq!(word_origin("重箱", "じゅうばこ", &k), Some("mixed"));
+        assert_eq!(word_origin("一杯", "いっぱい", &k), Some("kango"));
+        assert_eq!(word_origin("本棚", "ほんだな", &k), Some("mixed"));
+        // Unknown kanji or a reading that does not split: no origin.
+        assert_eq!(word_origin("学校", "まなびや", &k), None);
+        assert_eq!(word_origin("雨", "あめ", &k), None);
+    }
+
+    #[test]
+    fn a_transitivity_partner_needs_the_stem_and_a_known_pair() {
+        assert_eq!(
+            partner_problem("開く", Some("intransitive"), "開ける"),
+            None
+        );
+        assert_eq!(partner_problem("開ける", Some("transitive"), "開く"), None);
+        assert_eq!(
+            partner_problem("上がる", Some("intransitive"), "上げる"),
+            None
+        );
+        assert_eq!(partner_problem("壊す", Some("transitive"), "壊れる"), None);
+        assert_eq!(
+            partner_problem("起きる", Some("intransitive"), "起こす"),
+            None
+        );
+        assert_eq!(
+            partner_problem("揃う", Some("intransitive"), "揃える"),
+            None
+        );
+        assert!(partner_problem("開く", None, "開ける").is_some());
+        assert!(partner_problem("開く", Some("intransitive"), "閉める").is_some());
+        // The direction must be opposite: 開ける is not the intransitive of 開く.
+        assert!(partner_problem("開く", Some("transitive"), "開ける").is_some());
+        assert!(partner_problem("食べる", Some("transitive"), "食べさせる").is_some());
+    }
+
+    #[test]
+    fn judged_register_and_connotation_are_closed_lists_with_tags() {
+        let mut grammar = crate::document::JudgedProfile {
+            taxonomy: TAXONOMY.into(),
+            domain: taxonomy().leaves[0].clone(),
+            register: vec!["polite".into(), "spoken".into()],
+            ..Default::default()
+        };
+        assert_eq!(judged_problem(&grammar, true), None);
+        assert!(judged_tags(Some(&grammar), true).contains(&"lab::register::polite".to_owned()));
+        assert!(judged_problem(&grammar, false).is_some());
+        grammar.register = vec!["polite".into(), "polite".into()];
+        assert!(judged_problem(&grammar, true).is_some());
+        grammar.register = vec!["slangy".into()];
+        assert!(judged_problem(&grammar, true).is_some());
+        let mut vocabulary = crate::document::JudgedProfile {
+            taxonomy: TAXONOMY.into(),
+            domain: taxonomy().leaves[0].clone(),
+            connotation: "negative".into(),
+            partner: "開ける".into(),
+            ..Default::default()
+        };
+        assert_eq!(judged_problem(&vocabulary, false), None);
+        assert!(
+            judged_tags(Some(&vocabulary), false)
+                .contains(&"lab::connotation::negative".to_owned())
+        );
+        assert!(judged_problem(&vocabulary, true).is_some());
+        vocabulary.connotation = "rude".into();
+        assert!(judged_problem(&vocabulary, false).is_some());
+    }
+
+    #[test]
+    fn grammar_slots_give_attach_tags() {
+        let g = Grammar {
+            pattern: "V て ください".into(),
+            ..Default::default()
+        };
+        assert!(grammar(&g).tags().contains(&"lab::attach::verb".to_owned()));
+        let g = Grammar {
+            pattern: "S1 が、S2".into(),
+            ..Default::default()
+        };
+        assert!(
+            grammar(&g)
+                .tags()
+                .contains(&"lab::attach::sentence".to_owned())
+        );
     }
 }

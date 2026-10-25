@@ -4858,3 +4858,92 @@ fn regenerate_previews_by_default_and_snapshot_export_requires_a_snapshot() {
     assert!(String::from_utf8_lossy(&missing.stderr).contains("SNAPSHOT_NOT_FOUND"));
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// WP-27 `plans classify` previews what it would send, refuses a stale base
+/// and an LLM-less run; `doctor --labels` scans the store without Anki.
+#[test]
+fn classify_previews_by_default_and_doctor_lists_unknown_labels() {
+    let root = std::env::temp_dir().join(format!("lab-cli-classify-{}", uuid::Uuid::new_v4()));
+    let base: Vec<String> = [
+        "--set",
+        &format!("storage.state_dir={}", root.join("state").display()),
+        "--set",
+        "llm.enabled=false",
+        "--set",
+        "dictionary.provider=authored",
+        "--set",
+        "images.search_when_missing=false",
+        "--set",
+        "kanji.enabled=false",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let added = cli()
+        .args(&base)
+        .args([
+            "vocab",
+            "add",
+            "--expression",
+            "eat",
+            "--meaning",
+            "consume food",
+            "--sense-key",
+            "food",
+            "--target-language",
+            "en",
+        ])
+        .output()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&added.stdout).unwrap();
+    let plan = value["plan_id"].as_str().unwrap();
+    let digest = value["digest"].as_str().unwrap();
+    let classify = |digest: &str, run: bool| {
+        let mut command = cli();
+        command.args(&base).args([
+            "plans",
+            "classify",
+            plan,
+            "--base-revision",
+            "1",
+            "--digest",
+            digest,
+        ]);
+        if run {
+            command.arg("--run");
+        }
+        command.output().unwrap()
+    };
+    let preview = classify(digest, false);
+    assert!(preview.status.success(), "{preview:?}");
+    let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(preview["executed"], false);
+    assert_eq!(preview["pending"], 1);
+    assert_eq!(preview["calls"], 1);
+    assert!(preview["next_command"].as_str().unwrap().ends_with("--run"));
+    assert!(
+        String::from_utf8_lossy(&classify("stale", false).stderr)
+            .contains("CLASSIFY_BASE_CONFLICT")
+    );
+    assert!(
+        String::from_utf8_lossy(&classify(digest, true).stderr).contains("GENERATION_DISABLED")
+    );
+    let store = linguist_store::Store::read_only(&root.join("state")).unwrap();
+    assert_eq!(
+        store
+            .latest_revision(uuid::Uuid::parse_str(plan).unwrap())
+            .unwrap(),
+        1
+    );
+    drop(store);
+    let labels = cli()
+        .args(&base)
+        .args(["doctor", "--labels"])
+        .output()
+        .unwrap();
+    assert!(labels.status.success(), "{labels:?}");
+    let labels: serde_json::Value = serde_json::from_slice(&labels.stdout).unwrap();
+    assert_eq!(labels["vocabulary_documents"], 1);
+    assert_eq!(labels["unknown"], serde_json::json!([]));
+    std::fs::remove_dir_all(root).unwrap();
+}

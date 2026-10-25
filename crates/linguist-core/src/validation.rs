@@ -698,6 +698,25 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             format!("The judged profile does not fit the taxonomy: {problem}."),
         ));
     }
+    // WP-27: a JMdict field label of the selected sense hints a domain. The
+    // hint is about the entry, the card about one sense, so it only warns.
+    if let LearningContent::Vocabulary(v) = &doc.content
+        && let Some(profile) = &v.profile
+    {
+        let ignored = crate::profile::ignored_hints(doc.target_language.as_str(), v, profile);
+        if !ignored.is_empty() {
+            issues.push(Issue::new(
+                "DOMAIN_HINT_IGNORED",
+                Severity::Warning,
+                Some("profile"),
+                format!(
+                    "The dictionary's field label points to {}, but the profile chose {}.",
+                    ignored.join(", "),
+                    profile.domain
+                ),
+            ));
+        }
+    }
     // A reviewed multi-unit segmentation must be carried out by a split.
     if doc.reviews.iter().any(|review| {
         matches!(&review.choice, ReviewChoice::Segmentation(ids) if ids.len() > 1)

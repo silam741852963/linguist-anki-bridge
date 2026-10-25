@@ -161,6 +161,10 @@ enum Command {
         /// Inspect the native companion's declaration without authorizing writes.
         #[arg(long)]
         bridge: bool,
+        /// WP-27: list the dictionary labels in the store that the label table
+        /// has no row for; local, never contacts Anki.
+        #[arg(long, conflicts_with_all = ["ollama", "bridge", "local"])]
+        labels: bool,
     },
     /// Read Anki deck names, IDs and requested counts.
     Decks {
@@ -1031,6 +1035,29 @@ enum PlanCommand {
         /// drafts go to now, each item is refused with GENERATION_ENGINE_UNVERIFIED.
         #[arg(long, requires = "pending")]
         certified_engine_only: bool,
+    },
+    /// WP-27: judged profiles (domains, register, connotation, partner) for
+    /// the plan's documents that have none, in batched agent calls; publishes
+    /// one revision that differs only in profiles, for review and approval.
+    /// Without --run, shows what would be sent.
+    Classify {
+        /// Plan ID.
+        plan: uuid::Uuid,
+        /// Latest revision the classification extends.
+        #[arg(long)]
+        base_revision: u32,
+        /// Digest of that revision.
+        #[arg(long)]
+        digest: String,
+        /// Notes per agent call.
+        #[arg(long, default_value_t = linguist_application::classify::BATCH)]
+        batch: usize,
+        /// At most this many notes in this run.
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Make the agent calls and publish the revision.
+        #[arg(long)]
+        run: bool,
     },
     /// Read managed v2 duplicate candidates for one authored add item; never clears apply.
     DuplicateCandidates {
@@ -2494,6 +2521,50 @@ fn run(cli: Cli) -> Result<u8, String> {
                     )?;
                     return Ok(if ready { 0 } else { 4 });
                 }
+                PlanCommand::Classify {
+                    plan,
+                    base_revision,
+                    digest,
+                    batch,
+                    limit,
+                    run,
+                } => {
+                    let base = store.revision(plan, base_revision)?;
+                    if store.latest_revision(plan)? != base_revision
+                        || base.approval_digest().map_err(|e| e.to_string())? != digest
+                    {
+                        return Err("CLASSIFY_BASE_CONFLICT".into());
+                    }
+                    let pending = linguist_application::classify::pending(&base);
+                    let sent = limit.map_or(pending.len(), |l| l.min(pending.len()));
+                    if !run {
+                        emit(
+                            &serde_json::json!({"schema_version":1,"plan_id":plan,"base_revision":base_revision,
+                            "pending":pending.len(),"would_send":sent,"calls":sent.div_ceil(batch.clamp(1, 50)),"executed":false,
+                            "next_command":format!("linguist-anki-bridge plans classify {plan} --base-revision {base_revision} --digest {digest} --run")}),
+                        )?;
+                        return Ok(0);
+                    }
+                    drop(store);
+                    let environment: BTreeMap<String, String> = std::env::vars().collect();
+                    let mut store = linguist_store::Store::open_existing(&root)?;
+                    let result = linguist_application::classify::classify_plan(
+                        &mut store,
+                        &base,
+                        &digest,
+                        &linguist_application::classify::ClassifyRequest {
+                            settings: &settings,
+                            environment: &environment,
+                            batch,
+                            limit,
+                        },
+                    )?;
+                    let published = result.get("revision").is_some();
+                    emit(
+                        &serde_json::json!({"result":result,"executed":true,"writes_enabled":false}),
+                    )?;
+                    return Ok(if published { 4 } else { 0 });
+                }
                 PlanCommand::Generate {
                     plan,
                     item_id,
@@ -3239,7 +3310,49 @@ fn run(cli: Cli) -> Result<u8, String> {
             ollama,
             certify,
             bridge,
+            labels,
         } => {
+            if labels {
+                let environment: BTreeMap<String, String> = std::env::vars().collect();
+                let root = linguist_config::expand_path(
+                    settings.values["storage.state_dir"]
+                        .as_str()
+                        .ok_or("STORAGE_STATE_DIR_INVALID")?,
+                    &environment,
+                )?;
+                let store = linguist_store::Store::read_only(&root)?;
+                let mut unknown: BTreeMap<(String, String), (usize, String)> = BTreeMap::new();
+                let mut documents = 0usize;
+                for (plan, revision) in store.plan_heads()? {
+                    for doc in store.revision(plan, revision)?.documents {
+                        let linguist_core::LearningContent::Vocabulary(v) = &doc.content else {
+                            continue;
+                        };
+                        documents += 1;
+                        let language = doc.target_language.as_str();
+                        for label in linguist_core::profile::unknown_labels(language, v) {
+                            let slot = unknown
+                                .entry((
+                                    language.split('-').next().unwrap_or_default().to_owned(),
+                                    label,
+                                ))
+                                .or_insert((0, v.expression.clone()));
+                            slot.0 += 1;
+                        }
+                    }
+                }
+                let rows: Vec<_> = unknown
+                    .into_iter()
+                    .map(|((language, label), (documents, example))| {
+                        serde_json::json!({"language":language,"label":label,"documents":documents,"example":example})
+                    })
+                    .collect();
+                emit(
+                    &serde_json::json!({"schema_version":1,"collection_writes_enabled":false,
+                    "label_table":"labels-v1","vocabulary_documents":documents,"unknown":rows}),
+                )?;
+                return Ok(if rows.is_empty() { 0 } else { 3 });
+            }
             if local {
                 let environment: BTreeMap<String, String> = std::env::vars().collect();
                 let resources = linguist_config::resources::inspect(&settings, &environment);

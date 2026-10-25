@@ -343,11 +343,12 @@
       "path": "implementation/wp-27.md",
       "heading": "## WP-27 \u2014 card profiles: part-of-speech colours, normalized tags and a three-level domain taxonomy",
       "title": "WP-27 \u2014 card profiles: part-of-speech colours, normalized tags and a three-level domain taxonomy",
-      "words": 3826,
+      "words": 4377,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
-        "operations/collection.md"
+        "operations/collection.md",
+        "operations/plans.md"
       ]
     },
     "OP-34": {
@@ -836,7 +837,7 @@
       "path": "operations/doctor.md",
       "heading": "## OP-01 \u2014 `doctor`",
       "title": "OP-01 \u2014 `doctor`",
-      "words": 495,
+      "words": 595,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -1228,6 +1229,16 @@
       "heading": "## OP-33 \u2014 `plans approve PLAN`",
       "title": "OP-33 \u2014 `plans approve PLAN`",
       "words": 61,
+      "requires": [
+        "contracts/invariants.md",
+        "operations/README.md"
+      ]
+    },
+    "OP-89": {
+      "path": "operations/plans.md",
+      "heading": "## OP-89 \u2014 `plans classify PLAN`",
+      "title": "OP-89 \u2014 `plans classify PLAN`",
+      "words": 339,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md"

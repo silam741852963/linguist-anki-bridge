@@ -114,3 +114,4 @@ Aliases `inject`/`modernize` may map to add/revamp with deprecation messages; th
 | OP-86 | [`campaign wrap-up CAMPAIGN [--wait-seconds N]`](campaign.md#op-86-campaign-wrap-up-campaign---wait-seconds-n) |
 | OP-87 | [`models update PURPOSE`](collection.md#op-87-models-update-purpose) |
 | OP-88 | [`notes retag [NOTE_ID...] [--all] [--limit N] [--apply]`](collection.md#op-88-notes-retag-note_id---all---limit-n---apply) |
+| OP-89 | [`plans classify PLAN`](plans.md#op-89-plans-classify-plan) |

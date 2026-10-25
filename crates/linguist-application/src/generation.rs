@@ -632,6 +632,12 @@ pub struct VocabularySupplement {
     pub domain: String,
     #[serde(default)]
     pub domains_secondary: Vec<String>,
+    /// `positive`, `neutral` or `negative`.
+    #[serde(default)]
+    pub connotation: String,
+    /// A Japanese verb's transitivity partner, kept after `partner_problem`.
+    #[serde(default)]
+    pub transitivity_partner: String,
 }
 /// Bounds on the v3 list fields; the request schema enforces them.
 pub const NUANCE_MAX: usize = 3;
@@ -657,6 +663,9 @@ pub struct GrammarSupplement {
     /// Communicative functions, `group::function`.
     #[serde(default)]
     pub functions: Vec<String>,
+    /// Register, from `profile::REGISTERS`.
+    #[serde(default)]
+    pub register: Vec<String>,
 }
 /// Bound on generated highlight forms.
 pub const FORMS_MAX: usize = 6;
@@ -939,17 +948,29 @@ fn constrained_schema(kind: &str, allowed: &[String], examples: usize) -> Result
                 COLLOCATIONS_MAX
             };
             property["maxItems"] = json!(max);
-        } else if name == "domains_secondary" || name == "functions" {
+        } else if name == "domains_secondary" || name == "functions" || name == "register" {
             // Paths are checked on merge, not enumerated here: 459 leaves
             // twice would pass the structured-output enum limits.
             let max = if !allowed.iter().any(|field| field == "domain") {
                 0
             } else if name == "functions" {
                 linguist_core::profile::FUNCTIONS_MAX
+            } else if name == "register" {
+                property["items"]["enum"] = json!(linguist_core::profile::REGISTERS);
+                linguist_core::profile::REGISTER_MAX
             } else {
                 linguist_core::profile::SECONDARY_MAX
             };
             property["maxItems"] = json!(max);
+        } else if name == "connotation" || name == "transitivity_partner" {
+            // Judged with the domain, in the same call.
+            if !allowed.iter().any(|field| field == "domain") {
+                property["enum"] = json!([""]);
+            } else if name == "connotation" {
+                let mut values = vec![""];
+                values.extend(linguist_core::profile::CONNOTATIONS);
+                property["enum"] = json!(values);
+            }
         } else if !allowed.iter().any(|field| field == name) {
             property["enum"] = json!([""]);
         }
@@ -1004,7 +1025,10 @@ pub fn validate_output(
                 || (!v.collocations.is_empty() && !allowed("collocations"))
                 || v.nuance.len() > NUANCE_MAX
                 || v.collocations.len() > COLLOCATIONS_MAX
-                || (!allowed("domain") && !v.domains_secondary.is_empty())
+                || (!allowed("domain")
+                    && !(v.domains_secondary.is_empty()
+                        && v.connotation.is_empty()
+                        && v.transitivity_partner.is_empty()))
             {
                 return Err("GENERATION_FIELD_NOT_ALLOWED".into());
             }
@@ -1049,7 +1073,9 @@ pub fn validate_output(
                 || g.nuance.len() > NUANCE_MAX
                 || g.forms.len() > FORMS_MAX
                 || (!allowed("domain")
-                    && !(g.domains_secondary.is_empty() && g.functions.is_empty()))
+                    && !(g.domains_secondary.is_empty()
+                        && g.functions.is_empty()
+                        && g.register.is_empty()))
             {
                 return Err("GENERATION_FIELD_NOT_ALLOWED".into());
             }
@@ -1354,7 +1380,7 @@ pub fn merge_external_response(
 /// `domains-v1` leaf. Unknown or repeated secondary paths and functions are
 /// dropped, not refused: a slip costs no draft, and a note without a profile
 /// is found and filled later.
-fn judged(
+pub(crate) fn judged(
     domain: String,
     secondary: Vec<String>,
     functions: Vec<String>,
@@ -1391,7 +1417,43 @@ fn judged(
         domain,
         secondary,
         functions,
+        ..Default::default()
     })
+}
+
+/// The judged facts that come with the domain: a grammar register, a word's
+/// connotation and a verb's transitivity partner. Anything outside the
+/// closed lists, or a partner that fails `partner_problem`, is dropped.
+pub(crate) fn judged_extras(
+    profile: &mut linguist_core::document::JudgedProfile,
+    register: Vec<String>,
+    connotation: String,
+    partner: Option<(&LearningDocument, &linguist_core::Vocabulary, String)>,
+) {
+    use linguist_core::profile::{CONNOTATIONS, REGISTER_MAX, REGISTERS};
+    for r in register.into_iter().map(|r| r.trim().to_owned()) {
+        if REGISTERS.contains(&r.as_str()) && !profile.register.contains(&r) {
+            profile.register.push(r);
+        }
+    }
+    profile.register.truncate(REGISTER_MAX);
+    let connotation = connotation.trim();
+    if CONNOTATIONS.contains(&connotation) {
+        profile.connotation = connotation.to_owned();
+    }
+    if let Some((doc, v, partner)) = partner
+        && doc.target_language.as_str().starts_with("ja")
+        && !partner.trim().is_empty()
+    {
+        let derived = linguist_core::profile::vocabulary(doc.target_language.as_str(), v);
+        let transitivity = ["transitive", "intransitive"]
+            .into_iter()
+            .find(|t| derived.subclasses.contains(t));
+        let word = linguist_core::review::dictionary_form(v);
+        if linguist_core::profile::partner_problem(&word, transitivity, &partner).is_none() {
+            profile.partner = partner.trim().to_owned();
+        }
+    }
 }
 
 fn merge_checked_output(
@@ -1536,7 +1598,14 @@ fn merge_checked_output(
                     serde_json::to_string(&v.collocations).map_err(|_| "GENERATION_ENCODING")?,
                 ));
             }
-            if let Some(profile) = judged(s.domain, s.domains_secondary, vec![], false) {
+            if let Some(mut profile) = judged(s.domain, s.domains_secondary, vec![], false) {
+                let before = v.clone();
+                judged_extras(
+                    &mut profile,
+                    vec![],
+                    s.connotation,
+                    Some((doc, &before, s.transitivity_partner)),
+                );
                 if v.profile.is_some() {
                     return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
                 }
@@ -1598,7 +1667,8 @@ fn merge_checked_output(
                     serde_json::to_string(&g.forms).map_err(|_| "GENERATION_ENCODING")?,
                 ));
             }
-            if let Some(profile) = judged(s.domain, s.domains_secondary, s.functions, true) {
+            if let Some(mut profile) = judged(s.domain, s.domains_secondary, s.functions, true) {
+                judged_extras(&mut profile, s.register, String::new(), None);
                 if g.profile.is_some() {
                     return Err("GENERATION_AUTHORED_FIELD_CONFLICT".into());
                 }

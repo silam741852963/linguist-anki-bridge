@@ -235,6 +235,16 @@ pub struct JudgedProfile {
     /// Grammar: communicative functions, `group::function`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub functions: Vec<String>,
+    /// Grammar: register, from `profile::REGISTERS` (at most two).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub register: Vec<String>,
+    /// Vocabulary: `positive`, `neutral` or `negative`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub connotation: String,
+    /// Japanese verb: its transitivity partner (開く for 開ける), kept only
+    /// when `profile::partner_problem` finds none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub partner: String,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

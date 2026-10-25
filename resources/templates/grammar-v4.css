@@ -3,3 +3,5 @@
 .lab-example-line { display: flex; align-items: center; gap: .45em; }
 .lab-example-line .replay-button svg { width: 30px; height: 30px; filter: none; }
 .lab-voiced .lab-tr { padding-left: calc(30px + .45em); }
+/* WP-27: formation slot tokens in the colour of their class. */
+.lab-slot { color: var(--lab-pos); font-weight: 600; }

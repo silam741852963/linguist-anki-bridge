@@ -184,6 +184,35 @@ impl Revisions {
             .cloned()
             .ok_or_else(|| "RETAG_DOCUMENT_MISSING".to_owned())
     }
+
+    /// The newest later revision of the applied item that `plans classify`
+    /// made: approved for this item, and different from the applied document
+    /// only in its profile. A retag renders it under that approval.
+    fn approved_profile(
+        &mut self,
+        store: &Store,
+        applied: &Applied,
+        base: &LearningDocument,
+    ) -> Result<Option<(Applied, LearningDocument)>> {
+        let latest = store.latest_revision(applied.plan_id)?;
+        for revision in (applied.revision + 1..=latest).rev() {
+            let Some(approval) = store
+                .approvals_for(applied.plan_id, revision)?
+                .into_iter()
+                .rfind(|a| a.approval.item_ids.contains(&applied.item_id))
+            else {
+                continue;
+            };
+            let document = self.document(store, applied.plan_id, revision, applied.item_id)?;
+            if crate::classify::profile_only(base, &document) && document != *base {
+                let mut newer = applied.clone();
+                newer.revision = revision;
+                newer.approval_id = approval.id;
+                return Ok(Some((newer, document)));
+            }
+        }
+        Ok(None)
+    }
 }
 
 /// The tags apply would write today: the user's own tags (outside `lab::`)
@@ -231,6 +260,10 @@ pub fn propose(
         ));
     }
     let document = revisions.document(store, applied.plan_id, applied.revision, applied.item_id)?;
+    let (applied, document) = match revisions.approved_profile(store, applied, &document)? {
+        Some((newer, document)) => (newer, document),
+        None => (applied.clone(), document),
+    };
     let empty = BTreeMap::new();
     let source = document
         .sources
@@ -282,7 +315,7 @@ pub fn propose(
             tags_removed,
         },
         write: Some(Write {
-            applied: applied.clone(),
+            applied,
             note,
             model: rendered.model,
             fields: rendered.fields,

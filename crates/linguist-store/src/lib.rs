@@ -135,6 +135,24 @@ impl Store {
             .map_err(sql)?
             .ok_or("PLAN_NOT_FOUND".into())
     }
+    /// The latest revision of every plan, by plan ID.
+    pub fn plan_heads(&self) -> Result<Vec<(uuid::Uuid, u32)>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT id,MAX(revision) FROM revisions GROUP BY id ORDER BY id")
+            .map_err(sql)?;
+        let rows = statement
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get(1)?)))
+            .map_err(sql)?;
+        rows.map(|r| {
+            let (id, revision) = r.map_err(sql)?;
+            Ok((
+                uuid::Uuid::parse_str(&id).map_err(|_| "STORE_CORRUPT_ID")?,
+                revision,
+            ))
+        })
+        .collect()
+    }
     /// Opens or creates a private local store. Read-only CLI handlers must check existence first.
     pub fn open(root: &Path) -> Result<Self> {
         Self::open_inner(root, true)

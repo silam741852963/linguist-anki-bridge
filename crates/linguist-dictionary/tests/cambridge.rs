@@ -236,3 +236,28 @@ fn idioms_and_phrasal_verbs_are_entries() {
     assert!(!entry.metadata.contains_key("audio_us"));
     assert!(!entry.metadata.contains_key("ipa_us"));
 }
+
+#[test]
+fn the_cefr_level_of_a_sense_is_a_label() {
+    let record = page("record", include_str!("fixtures/cambridge-record.html"));
+    let levels: Vec<&String> = record
+        .entries
+        .iter()
+        .flat_map(|e| &e.senses)
+        .flat_map(|s| &s.labels)
+        .filter(|l| matches!(l.as_str(), "A1" | "A2" | "B1" | "B2" | "C1" | "C2"))
+        .collect();
+    assert!(!levels.is_empty());
+    let adolescent = page(
+        "adolescent",
+        include_str!("fixtures/cambridge-adolescent.html"),
+    );
+    // The noun's level reaches its entry as the lowest level of its part of
+    // speech, even where another block words the definition differently.
+    let noun = adolescent
+        .entries
+        .iter()
+        .find(|e| e.metadata["part_of_speech"] == ["noun"])
+        .unwrap();
+    assert_eq!(noun.metadata["cefr"], ["C2"]);
+}

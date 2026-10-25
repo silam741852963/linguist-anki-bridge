@@ -53,6 +53,9 @@ impl From<VocabularyInput> for Vocabulary {
     }
 }
 
+// One input is read per command, so the larger grammar body (with its WP-27
+// profile) costs nothing worth boxing it for.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AddInput {
@@ -815,6 +818,7 @@ pub mod cache;
 pub mod campaign;
 pub mod capture;
 pub mod checkpoint;
+pub mod classify;
 pub mod dictionary;
 pub mod dictionary_entry;
 pub mod duplicate_candidates;

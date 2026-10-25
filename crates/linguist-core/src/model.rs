@@ -300,9 +300,11 @@ pub fn prior_manifests(name: &str) -> &'static [&'static str] {
         "Linguist English Vocabulary v1" => {
             &["9549fd6ed48d20e566bcae151adac8837023a09ac026d2a3e35e8bdd9f9b5cc9"]
         }
-        "Linguist Grammar v4" => {
-            &["1cc7761facf6088c15071bd7409163f1f4b82bb472da5ed6bf0bb914d2cb62c8"]
-        }
+        "Linguist Grammar v4" => &[
+            "1cc7761facf6088c15071bd7409163f1f4b82bb472da5ed6bf0bb914d2cb62c8",
+            // 1b, before the coloured formation slots.
+            "314c4b16edee535f5e1265c899fe271d70e23dd479a63dfd67318f2e1c24ffcb",
+        ],
         _ => &[],
     }
 }

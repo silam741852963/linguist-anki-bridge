@@ -95,7 +95,11 @@ struct Extras {
     ipa_us: Vec<String>,
     ipa_uk: Vec<String>,
     audio_us: Vec<String>,
+    /// WP-27: the CEFR level of each definition any block marks (the
+    /// learner's dictionary does, the American one does not).
+    levels: Vec<(String, String)>,
 }
+const CEFR: [&str; 6] = ["A1", "A2", "B1", "B2", "C1", "C2"];
 fn merge(into: &mut Vec<String>, values: Vec<String>) {
     for value in values {
         if !into.contains(&value) && into.len() < MAX_WORDS {
@@ -176,6 +180,20 @@ pub fn parse_page(
                 .map(|src| src.replacen("/images/thumb/", "/images/full/", 1))
                 .collect();
             merge(&mut slot.images, images);
+            for def in entry.select(&select(".def-block")) {
+                let level = def
+                    .select(&select(".ddef_h .epp-xref"))
+                    .map(text)
+                    .find(|l| CEFR.contains(&l.as_str()));
+                let definition = def
+                    .select(&select(".ddef_h .def"))
+                    .next()
+                    .map(definition_text)
+                    .map(|d| d.trim_end_matches(':').trim().to_lowercase());
+                if let (Some(level), Some(definition)) = (level, definition) {
+                    slot.levels.push((definition, level));
+                }
+            }
             // A phrasal verb's header ("phrasal verb with go") pronounces its
             // verb alone: no cue for the phrase.
             if let Some(header) = entry
@@ -247,6 +265,26 @@ pub fn parse_page(
                             labels.push(label);
                         }
                     }
+                    // WP-27: the CEFR level Cambridge prints for the sense
+                    // (B1), here or on the same definition in another block.
+                    let level = def
+                        .select(&select(".ddef_h .epp-xref"))
+                        .map(text)
+                        .find(|l| CEFR.contains(&l.as_str()))
+                        .or_else(|| {
+                            let wanted = definition.to_lowercase();
+                            extras.get(&pos).and_then(|slot| {
+                                slot.levels
+                                    .iter()
+                                    .find(|(d, _)| *d == wanted)
+                                    .map(|(_, l)| l.clone())
+                            })
+                        });
+                    if let Some(level) = level
+                        && !labels.contains(&level)
+                    {
+                        labels.push(level);
+                    }
                     if let Some(guideword) = &guideword {
                         labels.push(guideword.clone());
                     }
@@ -287,6 +325,16 @@ pub fn parse_page(
                     ("smart_vocabulary_topic", &slot.smart_topic),
                     ("smart_vocabulary", &slot.smart_words),
                     ("images", &slot.images),
+                    (
+                        "cefr",
+                        &slot
+                            .levels
+                            .iter()
+                            .map(|(_, l)| l.clone())
+                            .min()
+                            .into_iter()
+                            .collect(),
+                    ),
                     ("ipa_us", &slot.ipa_us[..slot.ipa_us.len().min(1)].to_vec()),
                     ("ipa_uk", &slot.ipa_uk[..slot.ipa_uk.len().min(1)].to_vec()),
                     (
