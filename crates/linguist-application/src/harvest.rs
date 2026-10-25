@@ -232,7 +232,20 @@ pub fn scan(store: &mut Store, request: &ScanRequest) -> Result<ScanSummary> {
     // and the words the user marked.
     let mut known = Known::default();
     for note in request.deck {
-        known.insert(&crate::revamp::visible_text_of(&note.expression));
+        let word = crate::revamp::visible_text_of(&note.expression);
+        known.insert(&word);
+        // A deck word of one token is also known by its reading, so a kana
+        // spelling (できる) meets its kanji note (出来る). Kanji candidates are
+        // matched by spelling only, so homophones stay apart.
+        if language == "ja" {
+            let head = linguist_core::review::head_word(&word);
+            if let Ok(tokens) = linguist_text::ja::tokenize(head.trim())
+                && let [token] = tokens.as_slice()
+                && !token.reading.is_empty()
+            {
+                known.insert(&token.reading);
+            }
+        }
     }
     let latest = crate::retag::latest_by_note(store)?;
     let mut revisions: BTreeMap<(uuid::Uuid, u32), linguist_core::records::PlanRevision> =

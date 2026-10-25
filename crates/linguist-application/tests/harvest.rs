@@ -167,3 +167,25 @@ fn words_met_in_examples_are_ranked_marked_rescanned_and_exported() {
     let after = scan(&mut s.store, &request(&notes, None)).unwrap();
     assert_eq!(after.became_added, 1, "{after:?}");
 }
+
+#[test]
+fn a_kana_spelling_meets_its_kanji_deck_note_and_grammar_words_stay_out() {
+    let mut s = setup_with(Kind::Update, |_| {});
+    let notes = vec![DeckNote {
+        note_id: 20,
+        expression: "出来る".into(),
+        fields: vec![(
+            "Example".into(),
+            "安心できる。休みなく働く。The ます form is polite.".into(),
+        )],
+    }];
+    scan(&mut s.store, &request(&notes, None)).unwrap();
+    let ranked = rank(&s.store, "japanese_vocab").unwrap();
+    let bases: Vec<&str> = ranked.iter().map(|r| r.base.as_str()).collect();
+    for word in ["安心", "休み", "働く"] {
+        assert!(bases.contains(&word), "{word} in {bases:?}");
+    }
+    for word in ["できる", "ない", "ます"] {
+        assert!(!bases.contains(&word), "{word} in {bases:?}");
+    }
+}

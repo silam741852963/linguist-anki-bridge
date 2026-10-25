@@ -3,7 +3,7 @@
 //! numbers, proper nouns, dependent words and single kana are dropped, a サ変
 //! noun followed by する is the noun, and adjacent nouns are joined when the
 //! caller knows the joined form (交通 + 費 is 交通費 when 交通費 is a word).
-use crate::{Word, hiragana, is_kana};
+use crate::{Word, hiragana, is_kana, is_kanji};
 use lindera::dictionary::load_dictionary;
 use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
@@ -91,8 +91,17 @@ fn base_reading(token: &Token) -> String {
     }
 }
 
+/// Words IPADIC tags as content words that act as grammar: negation (休みなく),
+/// かもしれない, and polite endings met outside a Japanese sentence.
+const FUNCTION_WORDS: [&str; 4] = ["ない", "しれる", "ます", "です"];
+
 fn dropped(token: &Token) -> bool {
     let [pos, sub, sub2] = &token.pos;
+    if FUNCTION_WORDS.contains(&token.base.as_str())
+        || !token.base.chars().any(|c| is_kana(c) || is_kanji(c))
+    {
+        return true;
+    }
     let single_kana = token.base.chars().count() == 1 && token.base.chars().all(is_kana);
     matches!(
         pos.as_str(),
@@ -113,6 +122,12 @@ fn noun(token: &Token) -> bool {
 /// The content words of one sentence. `known` says whether a joined noun
 /// (交通費) is a word worth keeping whole.
 pub fn words(text: &str, known: &dyn Fn(&str) -> bool) -> Result<Vec<Word>, String> {
+    // An English explanation that quotes a Japanese form ("The ます form is
+    // polite.") is not a Japanese sentence.
+    let japanese = text.chars().filter(|&c| is_kana(c) || is_kanji(c)).count();
+    if text.chars().filter(char::is_ascii_alphabetic).count() > japanese {
+        return Ok(Vec::new());
+    }
     let tokens = tokenize(text)?;
     let mut out: Vec<Word> = Vec::new();
     let mut i = 0;
@@ -233,6 +248,15 @@ mod tests {
     fn names_particles_and_single_kana_are_dropped() {
         assert_eq!(bases("田中さんはゆっくり歩く。", &[]), ["ゆっくり", "歩く"]);
         assert_eq!(bases("りんごを3つ買う", &[]), ["りんご", "買う"]);
+    }
+
+    #[test]
+    fn grammar_words_symbols_and_english_text_are_dropped() {
+        assert_eq!(bases("休みなく働く", &[]), ["休み", "働く"]);
+        assert_eq!(bases("雨かもしれません", &[]), ["雨"]);
+        assert_eq!(bases("～の試み", &[]), ["試み"]);
+        assert!(bases("The ます form is polite.", &[]).is_empty());
+        assert_eq!(bases("PDAを使う", &[]), ["使う"]);
     }
 
     #[test]
