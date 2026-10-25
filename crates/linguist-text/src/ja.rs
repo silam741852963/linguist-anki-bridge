@@ -113,6 +113,29 @@ fn dropped(token: &Token) -> bool {
         || token.base.chars().all(|c| c.is_ascii() || c.is_numeric())
 }
 
+/// Plural and honorific suffixes: a noun with one of these (子どもたち,
+/// 学生ら, 田中様) is the noun, never a new word, even when JMdict lists the
+/// joined form.
+const INFLECTING_SUFFIXES: [&str; 11] = [
+    "たち",
+    "達",
+    "ら",
+    "等",
+    "がた",
+    "様",
+    "さま",
+    "さん",
+    "君",
+    "くん",
+    "ちゃん",
+];
+
+fn inflecting_suffix(token: &Token) -> bool {
+    token.pos[0] == "名詞"
+        && token.pos[1] == "接尾"
+        && INFLECTING_SUFFIXES.contains(&token.surface.as_str())
+}
+
 fn noun(token: &Token) -> bool {
     token.pos[0] == "名詞" && !dropped(token)
         || (token.pos[0] == "名詞" && token.pos[1] == "接尾" && token.pos[2] != "人名")
@@ -137,7 +160,7 @@ pub fn words(text: &str, known: &dyn Fn(&str) -> bool) -> Result<Vec<Word>, Stri
         // is known: the longest run first.
         if noun(token) {
             let mut end = i + 1;
-            while end < tokens.len() && noun(&tokens[end]) {
+            while end < tokens.len() && noun(&tokens[end]) && !inflecting_suffix(&tokens[end]) {
                 end += 1;
             }
             let mut joined = None;
@@ -248,6 +271,14 @@ mod tests {
     fn names_particles_and_single_kana_are_dropped() {
         assert_eq!(bases("田中さんはゆっくり歩く。", &[]), ["ゆっくり", "歩く"]);
         assert_eq!(bases("りんごを3つ買う", &[]), ["りんご", "買う"]);
+    }
+
+    #[test]
+    fn a_plural_or_honorific_suffix_is_never_joined() {
+        let known = ["子ども", "子どもたち", "子供達", "学生ら"];
+        assert_eq!(bases("子どもたちが遊ぶ", &known), ["子ども", "遊ぶ"]);
+        assert_eq!(bases("子供達が遊ぶ", &known), ["子供", "遊ぶ"]);
+        assert_eq!(bases("学生らが来た", &known), ["学生", "来る"]);
     }
 
     #[test]

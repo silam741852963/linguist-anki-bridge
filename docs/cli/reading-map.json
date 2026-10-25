@@ -322,7 +322,7 @@
       "path": "implementation/wp-25.md",
       "heading": "## WP-25 \u2014 word harvester: unknown words met in the deck's own examples",
       "title": "WP-25 \u2014 word harvester: unknown words met in the deck's own examples",
-      "words": 2029,
+      "words": 2149,
       "requires": [
         "contracts/invariants.md",
         "implementation/README.md",
