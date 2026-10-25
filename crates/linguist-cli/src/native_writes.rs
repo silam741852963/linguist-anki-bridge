@@ -948,6 +948,8 @@ pub(crate) fn notes_retag(
         let mut refused = Vec::new();
         let mut stopped = false;
         for proposal in &changes {
+            // Thousands of notes outlast one lease period.
+            writer.renew()?;
             let request = retag::RetagRequest {
                 checkpoint_id: checkpoint,
                 group_id: Some(group),
