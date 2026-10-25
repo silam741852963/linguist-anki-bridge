@@ -2146,7 +2146,7 @@ pub(crate) fn drive(
 }
 
 /// Save the observed post-state and receipt, then commit.
-fn commit(
+pub(crate) fn commit(
     journal: &mut Journal,
     context: &Context,
     intent: &ApplyIntent,
@@ -2159,6 +2159,8 @@ fn commit(
             .into_iter()
             .next(),
         Effect::UpdateNote(update) => port.note(update.note_id)?,
+        // WP-27 `notes retag`: an exact field and tag rewrite in place.
+        Effect::RestoreNote(restore) => port.note(restore.note_id)?,
         _ => None,
     }
     .ok_or("APPLY_READBACK_UNAVAILABLE")?;
@@ -2167,12 +2169,18 @@ fn commit(
     } else {
         context.retained()
     };
-    let projection = project_inherited(
-        &note,
-        &retained,
-        Some((intent.target_model_id, &intent.target_manifest_digest)),
-        &inherited_ordinals(&last.effect),
-    );
+    let projection = match &last.effect {
+        Effect::RestoreNote(restore) => restore_projection(
+            &note,
+            &restore.card_decks.iter().map(|c| c.card_id).collect(),
+        ),
+        effect => project_inherited(
+            &note,
+            &retained,
+            Some((intent.target_model_id, &intent.target_manifest_digest)),
+            &inherited_ordinals(effect),
+        ),
+    };
     let projection_bytes = canonical::bytes(&projection).map_err(|e| e.to_string())?;
     if canonical::asset_digest(&projection_bytes) != last.expected_digest {
         journal.advance(|j| {

@@ -110,6 +110,22 @@ impl Store {
         Ok(record)
     }
 
+    /// Every recorded operation ID, oldest first (WP-27 `notes retag` finds
+    /// the latest operation of each note).
+    pub fn apply_operation_ids(&self) -> Result<Vec<Uuid>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT operation FROM apply_operations ORDER BY created_ms,operation")
+            .map_err(sql)?;
+        let ids = statement
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(sql)?;
+        ids.map(|id| {
+            Uuid::parse_str(&id.map_err(sql)?).map_err(|_| "APPLY_OPERATION_CORRUPT".into())
+        })
+        .collect()
+    }
+
     /// Every recorded operation for one plan item, oldest first.
     pub fn apply_operations_for_item(
         &self,

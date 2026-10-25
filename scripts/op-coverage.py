@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-87 with its
+"""Write docs/cli/implementation/op-coverage.md: every OP-01..OP-88 with its
 CLI handler and the tests that exercise it.
 
 Command-level tests are found by scanning `crates/linguist-cli/tests/*.rs`
@@ -43,7 +43,8 @@ OPS = [("OP-01", "doctor"), ("OP-02", "config init"), ("OP-03", "config show"),
        ("OP-77", "campaign install-timer"), ("OP-78", "jobs publish"), ("OP-79", "plans merge-notes"),
        ("OP-80", "notes delete-merged"), ("OP-81", "notes restore-merged"),
        ("OP-82", "campaign reopen"), ("OP-83", "campaign tune"), ("OP-84", "campaign agent-done"), ("OP-85", "campaign requeue"),
-       ("OP-86", "campaign wrap-up"), ("OP-87", "models update")]
+       ("OP-86", "campaign wrap-up"), ("OP-87", "models update"),
+       ("OP-88", "notes retag")]
 APP = "crates/linguist-application/tests/"
 LIBRARY = {
     "OP-17": [APP + "checkpoint_writes.rs::created_model_is_journaled_before_call_and_verified",
@@ -51,6 +52,9 @@ LIBRARY = {
     "OP-87": [APP + "checkpoint_writes.rs::a_known_prior_model_is_updated_in_place_and_verified",
               APP + "checkpoint_writes.rs::an_unknown_reshaped_or_absent_model_is_never_overwritten",
               APP + "checkpoint_writes.rs::a_lost_update_is_reconciled_from_evidence_and_read_back"],
+    "OP-88": [APP + "retag.rs::an_unedited_note_is_rewritten_with_the_current_render_and_can_be_restored",
+              APP + "retag.rs::a_note_edited_since_apply_is_skipped_and_never_written",
+              APP + "retag.rs::a_change_after_the_proposal_refuses_before_the_journal"],
     "OP-34": [APP + "apply.rs::create_commits_with_marker_snapshot_receipt_and_owner_release",
               APP + "apply.rs::mapped_migration_retains_card_id_history_and_scheduling"],
     "OP-39": [APP + "jobs_apply.rs::simulate_never_writes_and_apply_jobs_need_the_current_flag",

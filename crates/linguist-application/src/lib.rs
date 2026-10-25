@@ -840,6 +840,7 @@ pub mod plan_diff;
 pub mod regenerate;
 pub mod resources;
 pub mod restore;
+pub mod retag;
 pub mod revamp;
 pub mod review;
 pub mod selector;

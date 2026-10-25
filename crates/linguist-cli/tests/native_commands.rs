@@ -205,6 +205,7 @@ fn an_unverified_companion_cannot_bind_or_write() {
         vec!["backup", "create", "--scope", "collection", "--apply"],
         vec!["models", "install", "japanese_vocab", "--apply"],
         vec!["models", "update", "japanese_vocab", "--apply"],
+        vec!["notes", "retag", "--all", "--apply"],
     ] {
         let out = cli(&f, &endpoint).args(&args).output().unwrap();
         let stderr = String::from_utf8_lossy(&out.stderr);

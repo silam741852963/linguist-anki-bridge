@@ -850,6 +850,140 @@ pub(crate) fn models_update(
     result
 }
 
+/// WP-27 `notes retag [NOTE...|--all] [--apply]`: the preview lists what the
+/// current renderer would change on each applied note; apply takes one
+/// checkpoint for the changed notes and writes them one journaled operation
+/// at a time, stopping at the first unresolved one.
+pub(crate) fn notes_retag(
+    settings: &linguist_config::Effective,
+    notes: &[String],
+    limit: Option<usize>,
+    show_fields: bool,
+    apply: bool,
+) -> Result<u8, String> {
+    use linguist_application::retag;
+    // An unverified companion is refused before the store is read.
+    let client = crate::anki_client(settings)?;
+    let mut port = connect(&client, settings)?;
+    let root = state_root(settings)?;
+    let latest = retag::latest_by_note(&Store::read_only(&root)?)?;
+    let mut selected: Vec<i64> = if notes.is_empty() {
+        latest.keys().copied().collect()
+    } else {
+        notes
+            .iter()
+            .map(|n| n.parse().map_err(|_| "RETAG_NOTE_ID_INVALID".to_owned()))
+            .collect::<Result<_, _>>()?
+    };
+    if let Some(limit) = limit {
+        selected.truncate(limit);
+    }
+    port.refresh()?;
+    let mut revisions = retag::Revisions::default();
+    let mut proposals = Vec::new();
+    {
+        let store = Store::read_only(&root)?;
+        for id in &selected {
+            proposals.push(retag::propose(
+                &store,
+                &mut port,
+                &mut revisions,
+                *id,
+                latest.get(id),
+            )?);
+        }
+    }
+    let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+    for p in &proposals {
+        let key = match &p.verdict {
+            retag::Verdict::Change { .. } => "change".to_owned(),
+            retag::Verdict::Current => "current".to_owned(),
+            retag::Verdict::Skip { code } => code.split(':').next().unwrap_or_default().to_owned(),
+        };
+        *counts.entry(key).or_default() += 1;
+    }
+    let changes: Vec<&retag::Proposal> = proposals
+        .iter()
+        .filter(|p| matches!(p.verdict, retag::Verdict::Change { .. }))
+        .collect();
+    if !apply || changes.is_empty() {
+        let shown: Vec<serde_json::Value> = proposals
+            .iter()
+            .map(|p| {
+                let mut value = serde_json::to_value(p).unwrap_or_default();
+                if show_fields {
+                    value["field_changes"] = p
+                        .field_changes()
+                        .into_iter()
+                        .map(|(name, before, after)| json!({"field": name, "before": before, "after": after}))
+                        .collect();
+                }
+                value
+            })
+            .collect();
+        emit(&json!({
+            "schema_version": 2, "mode": if apply { "apply" } else { "preview" },
+            "selected": selected.len(), "counts": counts, "proposals": shown,
+            "apply_requires": {"checkpoint": "collection", "journal_before_call": true},
+            "collection_writes_enabled": false,
+        }))?;
+        return Ok(0);
+    }
+    let mut writer = Writer::open(port, settings)?;
+    let result = (|| {
+        let group = Uuid::new_v4();
+        let ids: Vec<i64> = changes.iter().map(|p| p.note_id).collect();
+        let (checkpoint, protected) = writer.checkpoint(settings, &ids, &[], Some(group))?;
+        let mut outcomes = Vec::new();
+        let mut refused = Vec::new();
+        let mut stopped = false;
+        for proposal in &changes {
+            let request = retag::RetagRequest {
+                checkpoint_id: checkpoint,
+                group_id: Some(group),
+                protected_manifest_digest: &protected,
+                reuse_max_age_seconds: reuse_seconds(settings),
+                max_package_bytes: max_package(settings),
+                now_ms: now_ms()?,
+            };
+            match retag::retag(
+                &mut writer.store,
+                &writer.lease,
+                &mut writer.port,
+                proposal,
+                &request,
+            ) {
+                Ok(outcome) => {
+                    let committed = outcome.state == OperationState::Committed;
+                    outcomes.push(outcome);
+                    if !committed {
+                        stopped = true;
+                        break;
+                    }
+                }
+                // Refused before the journal: nothing was written.
+                Err(code) if code.starts_with("RETAG_NOTE_") => {
+                    refused.push(json!({"note_id": proposal.note_id, "code": code}));
+                }
+                Err(code) => {
+                    refused.push(json!({"note_id": proposal.note_id, "code": code}));
+                    stopped = true;
+                    break;
+                }
+            }
+        }
+        emit(&json!({
+            "schema_version": 2, "mode": "apply", "selected": selected.len(),
+            "counts": counts, "retagged": outcomes, "refused": refused,
+            "stopped": stopped, "checkpoint_id": checkpoint, "group_id": group,
+            "collection_writes_enabled": true,
+        }))?;
+        Ok(if stopped { 4 } else { 0 })
+    })();
+    writer.finish();
+    result
+}
+
 /// RI-03 explicit binding: a child revision bound to the verified live
 /// session's stable identity (endpoint, profile, path, bridge, lineage).
 /// Approval then covers the binding; apply compares it with the execution

@@ -125,6 +125,21 @@ Result/failure: `updated` or `current` with the model id; `MODEL_UPDATE_ABSENT`,
 
 WP-27 uses it to ship the part-of-speech colours: `prior_manifests` in `linguist_core::model` lists the manifests each managed model may be updated from.
 
+## OP-88 — `notes retag [NOTE_ID...] [--all] [--limit N] [--apply]`
+
+Inputs: Anki note IDs, or --all for every note an apply operation wrote; optional --limit (note ID order), --fields (the preview shows each changed field before and after) and --apply.
+
+Effects: Preview by default; with --apply, the fields and tags of unedited applied notes are rewritten in place with the current renderer. Cards, scheduling and the note type stay.
+
+1. Find each note's latest apply operation in the store (a retag is one too). A note whose latest operation was restored or is unresolved is skipped.
+2. Read the note through the verified companion. It must still equal the fields and tags that operation wrote; a note edited since is skipped (`RETAG_NOTE_EDITED`) and never written.
+3. Render the operation's stored document with the current renderer: fields, and tags as apply makes them (the user's own tags kept, `lab::` derived). Preview `change` (fields and tags that differ), `current` or the skip code.
+4. With --apply: lease, one collection-scope checkpoint for the changed notes, then per note an apply-operation record for the same plan item and approval, a fresh snapshot, a journaled exact `restore_note` intent, the companion call, read-back and receipt. The note is read again first; a change since the preview refuses before the journal (`RETAG_NOTE_CHANGED`).
+
+Result/failure: counts by verdict, the proposals, and with --apply the committed operations and refusals; the run stops at the first operation that is not committed. `RETAG_NOT_APPLIED`, `RETAG_NOTE_MISSING`, `RETAG_RENDER_BLOCKED` and `RETAG_MODEL_CHANGED` skip a note without writing. A lost response enters `needs_recovery` for `recover reconcile`; `snapshots restore` of a retag puts back what was there. No LLM is called, so there is no review.
+
+WP-27 uses it to bring notes applied before the part-of-speech tags and colours up to the current render.
+
 ## OP-18 — `notes list`
 
 Inputs: Exactly one selector family: IDs, query, deck/purpose; limit/cursor.

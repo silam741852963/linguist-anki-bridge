@@ -921,6 +921,26 @@ enum NoteCommand {
         #[arg(long)]
         apply: bool,
     },
+    /// Re-render applied notes from their stored documents with the current
+    /// renderer (WP-27 tags and colours) and write fields and tags in place;
+    /// a note edited since its latest apply is skipped. Previews unless --apply.
+    Retag {
+        /// Anki note IDs; without them --all selects every applied note.
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        notes: Vec<String>,
+        /// Every note an apply operation wrote.
+        #[arg(long)]
+        all: bool,
+        /// At most this many notes (in note ID order).
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Preview: also show each changed field before and after.
+        #[arg(long)]
+        fields: bool,
+        /// Write through the verified companion add-on after one checkpoint.
+        #[arg(long)]
+        apply: bool,
+    },
     /// Recreate a deleted merged note with its note, card and review IDs.
     RestoreMerged {
         /// Anki note ID of the deleted duplicate.
@@ -3486,6 +3506,15 @@ fn run(cli: Cli) -> Result<u8, String> {
             match command {
                 NoteCommand::DeleteMerged { .. } | NoteCommand::RestoreMerged { .. } => {
                     unreachable!("handled by merge_cmd")
+                }
+                NoteCommand::Retag {
+                    notes,
+                    all: _,
+                    limit,
+                    fields,
+                    apply,
+                } => {
+                    return native_writes::notes_retag(&settings, &notes, limit, fields, apply);
                 }
                 NoteCommand::Show { note_id, media } => {
                     linguist_anki::wire_id(&serde_json::json!(note_id))?;
