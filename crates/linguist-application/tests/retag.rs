@@ -258,4 +258,41 @@ fn a_note_no_apply_wrote_or_one_gone_is_skipped() {
     assert!(
         matches!(&gone.verdict, Verdict::Skip { code } if code.starts_with("RETAG_NOTE_MISSING"))
     );
+    // A note whose creating apply was restored is gone too, and is reported
+    // as missing rather than by its operation state.
+    let restored: Result<Applied, String> =
+        Err("RETAG_NOT_APPLIED: the latest operation 1 is restored".into());
+    let deleted = propose(
+        &s.store,
+        &mut anki,
+        &mut Revisions::default(),
+        10,
+        Some(&restored),
+    )
+    .unwrap();
+    assert!(
+        matches!(&deleted.verdict, Verdict::Skip { code } if code.starts_with("RETAG_NOTE_MISSING")),
+        "{deleted:?}"
+    );
+}
+
+#[test]
+fn a_restored_note_still_in_the_collection_keeps_its_operation_state() {
+    let mut s = setup(Kind::Update);
+    let mut anki = Anki::new(&s, Kind::Update);
+    applied(&mut s, &mut anki);
+    let restored: Result<Applied, String> =
+        Err("RETAG_NOT_APPLIED: the latest operation 1 is restored".into());
+    let kept = propose(
+        &s.store,
+        &mut anki,
+        &mut Revisions::default(),
+        10,
+        Some(&restored),
+    )
+    .unwrap();
+    assert!(
+        matches!(&kept.verdict, Verdict::Skip { code } if code.ends_with("is restored")),
+        "{kept:?}"
+    );
 }

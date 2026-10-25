@@ -884,13 +884,23 @@ pub(crate) fn notes_retag(
     {
         let store = Store::read_only(&root)?;
         for id in &selected {
-            proposals.push(retag::propose(
-                &store,
-                &mut port,
-                &mut revisions,
-                *id,
-                latest.get(id),
-            )?);
+            // Proposals only read, so a dropped AnkiConnect connection is
+            // retried: one in thousands of reads must not end a long run.
+            let mut attempt = 0;
+            let proposal = loop {
+                match retag::propose(&store, &mut port, &mut revisions, *id, latest.get(id)) {
+                    Err(error)
+                        if attempt < 4
+                            && (error.starts_with("ANKI_DEPENDENCY_UNAVAILABLE")
+                                || error.starts_with("ANKI_READ_TIMEOUT")) =>
+                    {
+                        attempt += 1;
+                        std::thread::sleep(std::time::Duration::from_secs(2 << attempt));
+                    }
+                    other => break other?,
+                }
+            };
+            proposals.push(proposal);
         }
     }
     let mut counts: std::collections::BTreeMap<String, usize> = Default::default();

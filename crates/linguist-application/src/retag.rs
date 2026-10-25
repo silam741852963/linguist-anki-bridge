@@ -241,7 +241,18 @@ pub fn propose(
                 "RETAG_NOT_APPLIED: no apply operation wrote this note",
             ));
         }
-        Some(Err(code)) => return Ok(Proposal::skip(note_id, None, code.clone())),
+        // A restored apply that created the note deleted it again; say so
+        // rather than reporting an operation state.
+        Some(Err(code)) => {
+            if port.note(note_id)?.is_none() {
+                return Ok(Proposal::skip(
+                    note_id,
+                    None,
+                    "RETAG_NOTE_MISSING: the note is no longer in the collection",
+                ));
+            }
+            return Ok(Proposal::skip(note_id, None, code.clone()));
+        }
         Some(Ok(applied)) => applied,
     };
     let operation = Some(applied.operation);
