@@ -296,8 +296,40 @@ pub fn classify_plan(
             LearningContent::Grammar(g) => g.profile = Some(profile),
         }
     }
+    // A classified document differs from its base only in the profile, which
+    // no review decision judges: decisions and review records bound to its
+    // base digest, or to its digest without a profile, move to its new
+    // digest. Documents left alone keep theirs.
+    let mut moved: BTreeMap<String, String> = BTreeMap::new();
+    for (old, new) in base.documents.iter().zip(child.documents.iter_mut()) {
+        if !profile_only(old, new) {
+            continue;
+        }
+        let to = new.semantic_digest().map_err(|e| e.to_string())?;
+        let mut bare = new.clone();
+        match &mut bare.content {
+            LearningContent::Vocabulary(v) => v.profile = None,
+            LearningContent::Grammar(g) => g.profile = None,
+        }
+        for from in [
+            old.semantic_digest().map_err(|e| e.to_string())?,
+            bare.semantic_digest().map_err(|e| e.to_string())?,
+        ] {
+            if from == to {
+                continue;
+            }
+            for review in new.reviews.iter_mut().filter(|r| r.input_digest == from) {
+                review.input_digest = to.clone();
+            }
+            moved.insert(from, to.clone());
+        }
+    }
+    for decision in &mut child.review_decisions {
+        if let Some(to) = moved.get(&decision.input_digest) {
+            decision.input_digest = to.clone();
+        }
+    }
     child.rendered = linguist_core::render::render_ready(&child.documents);
-    child.review_decisions.clear();
     child.approval_digest().map_err(|e| e.to_string())?;
     let digest = store.publish_revision(&child)?;
     result["revision"] = json!(child.revision);
@@ -306,13 +338,17 @@ pub fn classify_plan(
 }
 
 /// True when `newer` is `older` with a profile added or changed: the only
-/// difference `notes retag` may carry from a later approved revision.
+/// difference `notes retag` may carry from a later approved revision. The
+/// digest a review is bound to moves with the profile and is not compared.
 pub fn profile_only(older: &LearningDocument, newer: &LearningDocument) -> bool {
     let strip = |d: &LearningDocument| {
         let mut d = d.clone();
         match &mut d.content {
             LearningContent::Vocabulary(v) => v.profile = None,
             LearningContent::Grammar(g) => g.profile = None,
+        }
+        for review in &mut d.reviews {
+            review.input_digest.clear();
         }
         d
     };

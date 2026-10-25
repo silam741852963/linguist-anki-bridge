@@ -208,3 +208,62 @@ fn a_reply_outside_the_taxonomy_publishes_nothing() {
     let error = classify_plan(&mut s.store, &base, "other", &request).unwrap_err();
     assert!(error.starts_with("CLASSIFY_BASE_CONFLICT"), "{error}");
 }
+
+#[test]
+fn review_decisions_follow_a_classified_document_to_its_new_digest() {
+    let mut s = setup(Kind::Update);
+    let mut anki = Anki::new(&s, Kind::Update);
+    applied(&mut s, &mut anki);
+    let (settings, environment) = agent(&s, reply(&s, &leaf()));
+    // A base revision holding one decision on the document.
+    let mut base = s.store.revision(s.plan.id, 1).unwrap();
+    base.revision = 2;
+    base.parent_digest = Some(s.digest.into());
+    base.binding = None;
+    let before = base.documents[0].semantic_digest().unwrap();
+    let decision = linguist_core::records::ReviewDecision {
+        id: Uuid::new_v4(),
+        issue_id: format!("DICTIONARY_SENSE_REVIEW:{}", base.documents[0].id),
+        input_digest: before.clone(),
+        actor: "campaign-policy".into(),
+        created_at: "unix-seconds:1".into(),
+        choice: linguist_core::records::ReviewChoice::Sense("k".into()),
+    };
+    base.review_decisions.push(decision.clone());
+    // The document's own review record, which readiness checks.
+    base.documents[0].reviews.push(decision);
+    let before = base.documents[0].semantic_digest().unwrap();
+    base.review_decisions[0].input_digest = before.clone();
+    base.documents[0].reviews[0].input_digest = before.clone();
+    let digest = s.store.publish_revision(&base).unwrap();
+    let result = classify_plan(
+        &mut s.store,
+        &base,
+        &digest,
+        &ClassifyRequest {
+            settings: &settings,
+            environment: &environment,
+            batch: 25,
+            limit: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(result["revision"], 3, "{result}");
+    let child = s.store.revision(s.plan.id, 3).unwrap();
+    let after = child.documents[0].semantic_digest().unwrap();
+    assert_ne!(before, after);
+    assert_eq!(child.review_decisions.len(), 1);
+    assert_eq!(child.review_decisions[0].input_digest, after);
+    assert_eq!(child.review_decisions[0].actor, "campaign-policy");
+    assert_eq!(child.documents[0].reviews[0].input_digest, after);
+    // Still a profile-only change for `notes retag`.
+    assert!(profile_only(&base.documents[0], &child.documents[0]));
+    // The staged render was made after the reviews moved.
+    let evidence = linguist_core::plan_validation::inspect(&child).unwrap();
+    let codes: Vec<&str> = evidence
+        .items
+        .iter()
+        .flat_map(|item| item.issues.iter().map(|i| i.code.as_str()))
+        .collect();
+    assert!(!codes.contains(&"STAGED_RENDER_MISMATCH"), "{codes:?}");
+}
