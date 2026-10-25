@@ -160,3 +160,7 @@ Reclassify those plans from a fresh base instead.
   - The dropped connections that stopped earlier runs came from reqwest
     reusing connections that AnkiConnect closes silently.
   - Two stops were settled with `recover reconcile`.
+- 2026-10-25 20:25: fix-up campaign `f8cf60c2-f783-48ad-8a24-c94ffe5d140f`
+  created from `target/lab/wp24/spec-fixup-retag.json` (the 6 notes above, one
+  batch). A session cron one-shot at 20:31 runs it first, then starts the
+  main campaign 42e5a4e4.
