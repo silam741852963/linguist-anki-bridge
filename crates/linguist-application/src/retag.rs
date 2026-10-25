@@ -196,10 +196,10 @@ impl Revisions {
     ) -> Result<Option<(Applied, LearningDocument)>> {
         let latest = store.latest_revision(applied.plan_id)?;
         for revision in (applied.revision + 1..=latest).rev() {
-            let Some(approval) = store
-                .approvals_for(applied.plan_id, revision)?
+            let Some((approval_id, _)) = store
+                .approval_records_for(applied.plan_id, revision)?
                 .into_iter()
-                .rfind(|a| a.approval.item_ids.contains(&applied.item_id))
+                .rfind(|(_, a)| a.item_ids.contains(&applied.item_id))
             else {
                 continue;
             };
@@ -207,7 +207,7 @@ impl Revisions {
             if crate::classify::profile_only(base, &document) && document != *base {
                 let mut newer = applied.clone();
                 newer.revision = revision;
-                newer.approval_id = approval.id;
+                newer.approval_id = approval_id;
                 return Ok(Some((newer, document)));
             }
         }
@@ -449,6 +449,10 @@ pub fn retag(
         checkpoint: serde_json::to_value(&authorization).map_err(|e| e.to_string())?,
         reused_media: vec![],
     };
+    // The rewrite carries the approval of the document it renders, as it was
+    // recorded: apply already acted on it, and today's validation may add
+    // warnings it never accepted.
+    let plan_digest = store.approval_record(write.applied.approval_id)?.digest;
     let operation = Uuid::new_v4();
     store.publish_apply_operation(&ApplyOperationRecord {
         operation_id: operation,
@@ -468,8 +472,28 @@ pub fn retag(
         None,
         request.now_ms,
     )?;
-    // The rewrite carries the approval of the document it renders.
-    let approval_digest = store.approval(write.applied.approval_id)?.approval.digest;
+    // The companion takes an exact `restore_note` only under a restore
+    // decision. A retag's decision binds the plan approval of the document it
+    // renders to this note, its observed state and this exact payload; the
+    // receipt names the plan approval.
+    let approval_digest = linguist_core::canonical::digest(
+        "lab-restore-decision-v1",
+        &serde_json::json!({
+            "schema_version": 1,
+            "kind": "retag",
+            "plan_approval": plan_digest,
+            "plan_id": write.applied.plan_id,
+            "revision": write.applied.revision,
+            "item_id": write.applied.item_id,
+            "note_id": note.id,
+            "steps": intent
+                .steps
+                .iter()
+                .map(|s| (&s.precondition_digest, &s.payload_digest))
+                .collect::<Vec<_>>(),
+        }),
+    )
+    .map_err(|e| e.to_string())?;
     let journal = OperationJournal {
         id: operation,
         group_id: request.group_id,

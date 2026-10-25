@@ -102,15 +102,7 @@ impl Store {
             .map_err(sql)?;
         let (plan_id, revision, digest, record_digest, body) =
             record.ok_or("APPROVAL_NOT_FOUND")?;
-        let approval: Approval = canonical::parse(&body).map_err(|_| "APPROVAL_CORRUPT")?;
-        if approval.plan_id.to_string() != plan_id
-            || approval.revision != revision
-            || approval.digest != digest
-            || canonical::digest("approval-record", &approval).map_err(|_| "APPROVAL_CORRUPT")?
-                != record_digest
-        {
-            return Err("APPROVAL_CORRUPT".into());
-        }
+        let approval = recorded(&plan_id, revision, &digest, &record_digest, &body)?;
         let plan = self.revision(approval.plan_id, revision)?;
         let request = ApprovalRequest {
             plan_id: approval.plan_id,
@@ -133,4 +125,76 @@ impl Store {
             apply_authorized: false,
         })
     }
+    /// An approval as recorded, checked against its own record digest but not
+    /// rebuilt under today's validation. For operations that act on what an
+    /// approval already authorized (WP-27 `notes retag`); a new apply reads it
+    /// with [`Store::approval`].
+    pub fn approval_record(&self, id: uuid::Uuid) -> Result<Approval> {
+        let (plan_id, revision, digest, record_digest, body): (
+            String,
+            u32,
+            String,
+            String,
+            Vec<u8>,
+        ) = self
+            .connection
+            .query_row(
+                "SELECT plan_id,revision,plan_digest,record_digest,body FROM approvals WHERE id=?1",
+                [id.to_string()],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(sql)?
+            .ok_or("APPROVAL_NOT_FOUND")?;
+        recorded(&plan_id, revision, &digest, &record_digest, &body)
+    }
+    /// The IDs and recorded approvals of one exact revision, oldest first.
+    pub fn approval_records_for(
+        &self,
+        plan_id: uuid::Uuid,
+        revision: u32,
+    ) -> Result<Vec<(uuid::Uuid, Approval)>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT id FROM approvals WHERE plan_id=?1 AND revision=?2 ORDER BY id")
+            .map_err(sql)?;
+        let ids: Vec<String> = statement
+            .query_map(params![plan_id.to_string(), revision], |row| row.get(0))
+            .map_err(sql)?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(sql)?;
+        ids.into_iter()
+            .map(|id| {
+                let id = uuid::Uuid::parse_str(&id).map_err(|_| "APPROVAL_CORRUPT")?;
+                Ok((id, self.approval_record(id)?))
+            })
+            .collect()
+    }
+}
+
+fn recorded(
+    plan_id: &str,
+    revision: u32,
+    digest: &str,
+    record_digest: &str,
+    body: &[u8],
+) -> Result<Approval> {
+    let approval: Approval = canonical::parse(body).map_err(|_| "APPROVAL_CORRUPT")?;
+    if approval.plan_id.to_string() != plan_id
+        || approval.revision != revision
+        || approval.digest != digest
+        || canonical::digest("approval-record", &approval).map_err(|_| "APPROVAL_CORRUPT")?
+            != record_digest
+    {
+        return Err("APPROVAL_CORRUPT".into());
+    }
+    Ok(approval)
 }

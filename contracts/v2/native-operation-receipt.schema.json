@@ -4,8 +4,9 @@
   "type": "object",
   "properties": {
     "approved_digest": {
+      "description": "A reviewed plan, or (WP-27 `notes retag`) the restore decision an\nexact `restore_note` runs under.",
       "type": "string",
-      "pattern": "^lab-jcs-v1:plan:[0-9a-f]{64}$"
+      "pattern": "^lab-jcs-v1:(plan|lab-restore-decision-v1):[0-9a-f]{64}$"
     },
     "evidence_digest": {
       "type": "string",

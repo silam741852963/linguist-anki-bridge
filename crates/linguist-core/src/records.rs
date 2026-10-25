@@ -772,7 +772,9 @@ pub struct NativeOperationReceipt {
     pub session_epoch: Uuid,
     #[schemars(pattern(r"^[0-9a-f]{64}$"))]
     pub payload_digest: String,
-    #[schemars(pattern(r"^lab-jcs-v1:plan:[0-9a-f]{64}$"))]
+    /// A reviewed plan, or (WP-27 `notes retag`) the restore decision an
+    /// exact `restore_note` runs under.
+    #[schemars(pattern(r"^lab-jcs-v1:(plan|lab-restore-decision-v1):[0-9a-f]{64}$"))]
     pub approved_digest: String,
     pub state: NativeReceiptState,
     pub readback: Option<NativeReadback>,
@@ -794,10 +796,13 @@ impl NativeOperationReceipt {
             || self.session_epoch.is_nil()
             || !raw_digest(&self.payload_digest)
             || !raw_digest(&self.evidence_digest)
-            || !self
-                .approved_digest
-                .strip_prefix("lab-jcs-v1:plan:")
-                .is_some_and(raw_digest)
+            || !["lab-jcs-v1:plan:", "lab-jcs-v1:lab-restore-decision-v1:"]
+                .iter()
+                .any(|prefix| {
+                    self.approved_digest
+                        .strip_prefix(prefix)
+                        .is_some_and(raw_digest)
+                })
             || (self.state == NativeReceiptState::Verified) != self.readback.is_some()
         {
             return Err(invalid());

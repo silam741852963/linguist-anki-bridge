@@ -1238,7 +1238,10 @@ mod tests {
             domain: other,
             ..Default::default()
         };
-        assert_eq!(ignored_hints("ja", &v, &profile), std::slice::from_ref(&hint));
+        assert_eq!(
+            ignored_hints("ja", &v, &profile),
+            std::slice::from_ref(&hint)
+        );
         // A secondary path in the hint's branch takes it into account.
         profile.secondary = vec![hint];
         assert!(ignored_hints("ja", &v, &profile).is_empty());

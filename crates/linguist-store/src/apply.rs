@@ -58,8 +58,11 @@ impl Store {
         {
             return Err("APPLY_OPERATION_INVALID".into());
         }
-        // The approval must exist and cover this exact revision and item.
-        let approval = self.approval(record.approval_id)?.approval;
+        // The approval must exist, match its record digest and cover this
+        // exact revision and item. Readiness under today's validation is the
+        // caller's check (apply authorizes with `Store::approval`); a retag
+        // acts on an approval apply already used.
+        let approval = self.approval_record(record.approval_id)?;
         if approval.plan_id != record.plan_id
             || approval.revision != record.revision
             || !approval.item_ids.contains(&record.item_id)

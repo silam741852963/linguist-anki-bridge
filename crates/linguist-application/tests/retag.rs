@@ -122,6 +122,14 @@ fn an_unedited_note_is_rewritten_with_the_current_render_and_can_be_restored() {
     let journal = s.journal(outcome.operation);
     assert_eq!(journal.steps.len(), 1);
     assert_eq!(journal.steps[0].action, "restore_note");
+    // The companion takes an exact restore_note only under a restore decision.
+    assert!(
+        journal
+            .approval_digest
+            .starts_with("lab-jcs-v1:lab-restore-decision-v1:"),
+        "{}",
+        journal.approval_digest
+    );
     assert!(
         journal
             .steps
