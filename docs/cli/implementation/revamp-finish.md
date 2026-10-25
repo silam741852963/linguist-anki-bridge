@@ -46,7 +46,7 @@ linguist-anki-bridge-head --output json notes retag --all --apply    # one check
     `notes show` gives `ANKI_NOTE_NOT_FOUND`.
   - Fix: leave such notes out, or report them as a distinct
     `RETAG_NOTE_DELETED`. Add a CHANGELOG entry.
-- [ ] **Fix-up campaign for the 6 real notes**, built the same way as
+- [x] **Fix-up campaign for the 6 real notes** (ran 2026-10-25; all deferred, see Progress), built the same way as
   `target/lab/wp24/spec-fixup.json`. It costs about 6 Codex draft calls, so
   run it after a Codex reset.
   - 歩留まり 1791366792727: an old `Linguist Vocabulary v2` note whose apply
@@ -164,3 +164,17 @@ Reclassify those plans from a fresh base instead.
   created from `target/lab/wp24/spec-fixup-retag.json` (the 6 notes above, one
   batch). A session cron one-shot at 20:31 runs it first, then starts the
   main campaign 42e5a4e4.
+- 2026-10-25 20:35: fix-up f8cf60c2 finished and wrapped up, with nothing
+  written; all 6 notes are deferred:
+  - 内面, 外面, 門, 粉, 的: `AGENT: multi-word note, split outside the
+    campaign`. Each Pronunciation holds two readings that are different
+    words (ないめん/うちづら, がいめん/そとづら, もん/かど, こな/こ,
+    まと/てき); the draft had picked the secondary reading for 粉 and 的.
+    They need `plans split-vocab` outside a campaign (open item).
+  - 歩留まり: `PREPARE_FAILED: SOURCE_CAPTURE_REVIEW_REQUIRED
+    (SOURCE_MAPPING_MODEL_CONFLICT)`. The spec maps Linguist Vocabulary v3
+    fields, and the note is v2. It needs a source with a v2 mapping (open
+    item).
+- 2026-10-25 20:35: main campaign 42e5a4e4 resumed through
+  `campaign-session.sh start` (driver pid 3555466); agent turns run from the
+  session watch.
