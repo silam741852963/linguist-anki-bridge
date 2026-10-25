@@ -178,3 +178,13 @@ Reclassify those plans from a fresh base instead.
 - 2026-10-25 20:35: main campaign 42e5a4e4 resumed through
   `campaign-session.sh start` (driver pid 3555466); agent turns run from the
   session watch.
+- 2026-10-25 20:35-21:10, first agent turn on 42e5a4e4:
+  - Approved batches 273 (after `plans bind --renew`, rev 22), 281 and 282
+    after spot-checks.
+  - Split the grammar pages of 283 (5 notes into 10 units: とは ×3,
+    だに, なり ×3, つ〜つ, といったところだ ×2), 284 (5 notes, 1 unit each)
+    and 285 (5 notes, 1 unit each), with corrected OCR text and English
+    translations. The next ticks re-review them.
+  - Batches 274-280 have no meaning drafts yet (`REQUIRED_CONTENT`) and wait
+    for Codex, which cools down until 01:32. 280 also logged a
+    `REVISION_CONFLICT`; check it after the next tick.
