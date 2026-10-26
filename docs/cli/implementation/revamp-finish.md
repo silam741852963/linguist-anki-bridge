@@ -204,3 +204,7 @@ Reclassify those plans from a fresh base instead.
 - 2026-10-26: the user chose to keep the keigo drills as drills, in text,
   answered by tap-build on the phone. Plan: [WP-28](wp-28.md). Until it
   ships, agent turns defer every drill note.
+- 2026-10-26 17:53: batches 287 and 289 closed with every note deferred;
+  290 and 291 are drills too (10 notes deferred; 290 repeats 289's five
+  drills word for word, so the deck holds duplicate drills, a WP-28 merge
+  case). 20 drill notes deferred in all. Codex is drafting 274-285.
