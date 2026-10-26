@@ -205,6 +205,10 @@ fn an_unverified_companion_cannot_bind_or_write() {
         vec!["backup", "create", "--scope", "collection", "--apply"],
         vec!["models", "install", "japanese_vocab", "--apply"],
         vec!["models", "update", "japanese_vocab", "--apply"],
+        // A drill purpose has no config preset: it must reach the gate,
+        // not fail as UNSUPPORTED_PURPOSE.
+        vec!["models", "install", "japanese_drill", "--apply"],
+        vec!["models", "update", "japanese_drill", "--apply"],
         vec!["notes", "retag", "--all", "--apply"],
     ] {
         let out = cli(&f, &endpoint).args(&args).output().unwrap();

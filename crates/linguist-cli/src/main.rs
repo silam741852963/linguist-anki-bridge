@@ -861,6 +861,8 @@ enum ModelCommand {
     /// Preview a managed model for a purpose; --apply installs it through the companion add-on.
     Install {
         /// Purpose whose managed model to preview.
+        /// Not the global --purpose: a drill purpose has no config preset.
+        #[arg(id = "model_purpose", value_name = "PURPOSE")]
         purpose: String,
         /// Install through the verified companion add-on (refused without one).
         #[arg(long)]
@@ -870,6 +872,8 @@ enum ModelCommand {
     /// (same fields); --apply writes them through the companion add-on.
     Update {
         /// Purpose whose managed model to update.
+        /// Not the global --purpose: a drill purpose has no config preset.
+        #[arg(id = "model_purpose", value_name = "PURPOSE")]
         purpose: String,
         /// Update through the verified companion add-on (0.6.0 or later).
         #[arg(long)]
