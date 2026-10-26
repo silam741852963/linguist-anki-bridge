@@ -223,3 +223,17 @@ Reclassify those plans from a fresh base instead.
   install japanese_drill --apply`, then the deferred drills return at the
   next `campaign-session.sh start` and agent turns convert them with
   `drills.py convert`. Steps in [WP-28](wp-28.md#progress).
+- 2026-10-26 20:20-21:30 session on 42e5a4e4:
+  - WP-28 rollout: companion 0.7.0 verified, `Linguist Drill v1` already
+    installed. 35 drill notes requeued (batches 1030-1036), not yet
+    converted; the user tries 10 on the phone before the rest apply.
+  - Approved 280, 298, 299, 300, 301, 303, 304, 307, 309, 310 after spot
+    checks; split 301, 303 and 304 (5 grammar units each). Merges 309 口調,
+    310 寸前, 307 僧侶 confirmed; 313 "bail" skipped: homophones (note
+    1659522924103 shows a hay bale, 1659523049478 court bail).
+  - Fixes: 5cf9146 (a batch held only by undrafted split units drafts
+    again), f3807ca (`campaign reopen` takes an applying batch that wrote
+    nothing), 83d645f (`campaign resume` needs no `--by-user`), 5c2ab52
+    (`start` resumes any pause; the agent may resume).
+  - 274-279 wait for Codex drafts of their split units (cooldown until
+    22:42). Wrapped up by the user at 21:30: applied 4014, deferred 33.
