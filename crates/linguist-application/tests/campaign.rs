@@ -129,6 +129,10 @@ struct World {
     read_retries: u32,
     /// Retries the prepare job's attempt budget still allows (None: any).
     retry_budget: Option<u32>,
+    /// Notes with empty required content (REQUIRED_CONTENT) until a
+    /// `plans generate` drafts them, after this many generate calls.
+    undrafted: BTreeSet<String>,
+    undrafted_skips: u32,
     /// The next `plans generate` calls fail every item with this error.
     draft_fail: Option<(u32, String)>,
     /// An apply that ends needing recovery, then reconcile attempts that
@@ -185,6 +189,8 @@ impl FakeCli {
                 .iter()
                 .filter(|n| !p.decided.contains(*n))
                 .map(|n| json!({"issue": {"id": format!("DICTIONARY_SENSE_REVIEW:{n}")}, "request_identity": {"document_id": doc(n)}}))
+                .chain(p.notes.iter().filter(|n| w.undrafted.contains(*n))
+                    .map(|n| json!({"issue": {"id": "REQUIRED_CONTENT:meaning", "code": "REQUIRED_CONTENT"}, "request_identity": {"document_id": doc(n)}})))
                 .collect();
             let mut v = json!({"revision": p.revision, "digest": format!("d{}", p.revision), "issues": open, "grammar_groups": []});
             if !issues_only {
@@ -378,8 +384,19 @@ impl FakeCli {
                     );
                 }
                 let drafts = std::mem::take(&mut w.drafts);
+                let undrafted = if w.undrafted_skips == 0 {
+                    std::mem::take(&mut w.undrafted)
+                } else {
+                    w.undrafted_skips -= 1;
+                    BTreeSet::new()
+                };
                 let p = w.plans.get_mut(*plan).unwrap();
-                let drafted: Vec<String> = p.notes.iter().take(drafts).cloned().collect();
+                let mut drafted: Vec<String> = p.notes.iter().take(drafts).cloned().collect();
+                for n in undrafted {
+                    if !drafted.contains(&n) {
+                        drafted.push(n);
+                    }
+                }
                 for n in &drafted {
                     p.decided.remove(n);
                 }
@@ -1239,6 +1256,50 @@ fn an_agent_edit_during_a_review_is_reviewed_again() {
     }
     // The needs were computed before the agent's decision: the batch is
     // reviewed again on the newer revision instead of waiting for nothing.
+    assert_eq!(phases(&root, id), ["ready"]);
+}
+
+#[test]
+fn a_batch_held_only_by_undrafted_items_is_drafted_again_once_per_revision() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-undrafted-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    {
+        // The review rounds run out before 101 is drafted (a grammar split
+        // adding many units at once): only PLAN_NOT_READY holds the batch.
+        let mut w = cli.world.lock().unwrap();
+        w.undrafted.insert("101".into());
+        w.undrafted_skips = u32::MAX;
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    let generates = || {
+        let w = cli.world.lock().unwrap();
+        w.calls
+            .iter()
+            .filter(|c| c.starts_with("plans generate"))
+            .count()
+    };
+    ctx.tick(600).unwrap();
+    assert_eq!(phases(&root, id), ["needs_agent"]);
+    // Reviewed once more on the same revision (a second generate), then
+    // the batch waits: no generate loop.
+    assert_eq!(generates(), 2, "the batch is drafted again once");
+    ctx.tick(600).unwrap();
+    assert_eq!(generates(), 2, "once per revision");
+    assert_eq!(phases(&root, id), ["needs_agent"]);
+    // A newer revision (an agent edit) reviews it again, and drafts land.
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.undrafted_skips = 0;
+        w.plans.values_mut().next().unwrap().revision += 1;
+    }
+    ctx.tick(600).unwrap();
     assert_eq!(phases(&root, id), ["ready"]);
 }
 

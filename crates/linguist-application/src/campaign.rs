@@ -278,6 +278,9 @@ pub struct BatchData {
     /// Open issues the policy left, per note.
     pub needs: BTreeMap<String, Vec<String>>,
     pub checked_revision: Option<u32>,
+    /// Revision at which a batch held only by undrafted items was reviewed
+    /// again (once per revision, so a draft that never comes cannot loop).
+    pub redraft_revision: Option<u32>,
     pub review_rounds: u32,
     pub approval: Option<Approval>,
     /// Card facts read just before the apply job was created.

@@ -560,6 +560,19 @@ impl Context<'_> {
         Ok(())
     }
 
+    /// Only PLAN_NOT_READY holds the batch, and an active item still has
+    /// empty required content (a draft generation never wrote).
+    fn undrafted(&self, data: &BatchData, head: &Value) -> bool {
+        data.needs.keys().all(|note| note == "*")
+            && head["issues"].as_array().into_iter().flatten().any(|e| {
+                e["issue"]["code"] == "REQUIRED_CONTENT"
+                    && e["request_identity"]["document_id"]
+                        .as_str()
+                        .and_then(|d| self.note_of(data, d))
+                        .is_none_or(|n| !data.deferred.contains_key(&n))
+            })
+    }
+
     fn note_of(&self, data: &BatchData, document: &str) -> Option<String> {
         data.documents
             .iter()
@@ -576,10 +589,17 @@ impl Context<'_> {
             && data.checked_revision == Some(revision)
             && !needs_met(&data, &head)
         {
-            return Ok(Step::Waiting(format!(
-                "batch {}: waiting for the agent",
-                record.batch
-            )));
+            // The review rounds can run out before every item is drafted (a
+            // grammar split adds many units at once): the batch then holds
+            // only PLAN_NOT_READY with empty content no agent can fill, and
+            // nothing would draft it again. Review once more per revision.
+            if data.redraft_revision == Some(revision) || !self.undrafted(&data, &head) {
+                return Ok(Step::Waiting(format!(
+                    "batch {}: waiting for the agent",
+                    record.batch
+                )));
+            }
+            data.redraft_revision = Some(revision);
         }
         if !data.merge.is_empty() && !data.settled.iter().any(|n| n == "merge:added") {
             let document = data
