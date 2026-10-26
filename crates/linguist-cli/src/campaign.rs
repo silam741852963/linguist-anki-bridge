@@ -81,7 +81,8 @@ pub(crate) enum CampaignCommand {
         batch: u32,
         /// Anki note ID in that batch.
         note: String,
-        /// The note's open question is answered (split done, or not needed).
+        /// The note's open question is answered (split done, or not needed);
+        /// drafts that failed are tried again.
         #[arg(long, conflicts_with_all = ["defer", "undefer"])]
         settled: bool,
         /// Leave the note out of this batch, with a reason.

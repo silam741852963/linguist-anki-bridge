@@ -768,7 +768,7 @@ impl Context<'_> {
         for (note, (_, error)) in &data.draft_failures {
             if !data.deferred.contains_key(note) {
                 data.needs.entry(note.clone()).or_default().push(format!(
-                    "GENERATION_FAILED: {MAX_DRAFT_FAILURES} drafts failed ({error}); defer it, or `campaign reopen --fresh` the batch"
+                    "GENERATION_FAILED: {MAX_DRAFT_FAILURES} drafts failed ({error}); mark it settled to draft again, defer it, or `campaign reopen --fresh` the batch"
                 ));
             }
         }
@@ -1782,6 +1782,10 @@ impl Context<'_> {
                 if !data.settled.iter().any(|n| n == note) {
                     data.settled.push(note.into());
                 }
+                // Drafts that failed for a passing cause (a provider timing
+                // out) are tried again rather than lost with a defer or a
+                // fresh prepare, which would drop the agent's splits.
+                data.draft_failures.remove(note);
             }
             ItemAction::Defer(reason) => {
                 if data.merge.iter().any(|n| n == note)

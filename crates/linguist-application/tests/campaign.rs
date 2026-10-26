@@ -1073,6 +1073,16 @@ fn a_batch_whose_drafts_failed_is_never_ready() {
                 .starts_with("GENERATION_FAILED: 3 drafts failed (AGENT_QUOTA_COOLDOWN")
         );
     }
+    // The cause passed (a provider that timed out answers again): settling
+    // the notes drafts them again instead of losing them to a defer.
+    cli.world.lock().unwrap().draft_fail = None;
+    for note in ["101", "102"] {
+        ctx.item(1, note, ItemAction::Settled).unwrap();
+    }
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    assert_eq!(phases(&root, id), ["ready"]);
 }
 
 #[test]
