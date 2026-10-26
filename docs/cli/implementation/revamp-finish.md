@@ -208,3 +208,18 @@ Reclassify those plans from a fresh base instead.
   290 and 291 are drills too (10 notes deferred; 290 repeats 289's five
   drills word for word, so the deck holds duplicate drills, a WP-28 merge
   case). 20 drill notes deferred in all. Codex is drafting 274-285.
+- 2026-10-26 evening, agent turns:
+  - 292-294 drill notes deferred (35 drill notes deferred in all, batches
+    287 and 289-294). 295 and 297-300 split with authored units (OCR fixed,
+    English translations); 298 なりに split in three uses, だろうに and
+    あれで in two.
+  - 282, 283, 284 and 285 approved after spot checks.
+  - Codex drafts time out often (100-240 s per call). Deferred with
+    `GENERATION_FAILED`: 284 にもまして, three 285 units and four 297 units.
+    Their authored units are kept for a re-split. The fix (settling a note
+    retries its drafts, commit 34f6878) is not in the lab binary yet.
+- 2026-10-26: WP-28 implemented (commit 4deb84f), not yet live. Rollout
+  while the campaign is paused: lab binary, companion 0.7.0, `models
+  install japanese_drill --apply`, then the deferred drills return at the
+  next `campaign-session.sh start` and agent turns convert them with
+  `drills.py convert`. Steps in [WP-28](wp-28.md#progress).
