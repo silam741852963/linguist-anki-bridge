@@ -16,9 +16,14 @@ path or `cd` (only that exact command prefix is allowed).
 
 ## Hard limits
 
-- Never run `campaign resume`, `campaign close`, `jobs rollback`,
+- Never run `campaign close`, `campaign cancel`, `jobs rollback`,
   `snapshots restore`, `notes restore-merged`, `models install` or anything
-  outside the CLI. A paused campaign is the user's: report and stop.
+  outside the CLI.
+- A paused campaign: read `code` and `detail` in `campaign status`. Fix the
+  cause when you can (defer the note, `campaign reopen` a batch that wrote
+  nothing, `campaign requeue` deferred notes), then `campaign resume`. A
+  cause you cannot fix (Anki closed, a lost collection session, a failed
+  verification): report it and stop.
 - Never sync Anki, never start or stop Anki.
 - Every decision you record carries `actor: "claude-agent"`.
 - When unsure, defer the note (`campaign item ... --defer REASON`); a deferred
@@ -26,8 +31,9 @@ path or `cd` (only that exact command prefix is allowed).
 
 ## Steps
 
-1. `BIN --output json campaign status CAMPAIGN_ID`. If `status` is not
-   `running`, write one line saying why and stop. If `agent_needed` is false,
+1. `BIN --output json campaign status CAMPAIGN_ID`. If `status` is
+   `paused`, handle it as the hard limits say; any other status that is not
+   `running`: write one line saying why and stop. If `agent_needed` is false,
    stop.
 2. For each entry in `agent` with phase `needs_agent`: open
    `BIN --output json plans show PLAN --issues-only` and handle each note in

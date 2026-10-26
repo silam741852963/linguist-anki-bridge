@@ -5,7 +5,7 @@
 # be open).
 #
 #   campaign-session.sh start [CAMPAIGN]    start VOICEVOX if needed, resume a
-#                                           wrapped-up campaign, run the driver
+#                                           paused campaign, run the driver
 #   campaign-session.sh watch [--seen] [CAMPAIGN]
 #                                           return when the agent must act
 #   campaign-session.sh status [CAMPAIGN]   driver, services, campaign status
@@ -184,8 +184,11 @@ start() {
     say "resuming the wrapped-up campaign"
     cli campaign requeue "$C" --reason AGENT: --reason APPLY_FAILED: --reason PREPARE_FAILED: >> "$LOG" 2>&1
     cli campaign resume "$C" >> "$LOG" 2>&1
-  elif [ "${s[0]:-}" = paused ] && ! grep -q "Codex usage limit" <<<"${s[1]:-}"; then
-    echo "paused: ${s[1]:-}; look at it, then run: $B campaign resume $C" >&2; return 1
+  elif [ "${s[0]:-}" = paused ]; then
+    # Any other pause (a step failure, a guardrail): the session's operator
+    # fixed the cause and starts again, so start resumes it.
+    say "resuming the campaign paused for: ${s[1]:-}"
+    cli campaign resume "$C" >> "$LOG" 2>&1
   fi
   echo "$C" > "$SESSION/campaign"
   setsid "$REPO/scripts/campaign-session.sh" _drive "$C" > /dev/null 2>> "$LOG" < /dev/null &
