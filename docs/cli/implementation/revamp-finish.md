@@ -188,3 +188,16 @@ Reclassify those plans from a fresh base instead.
   - Batches 274-280 have no meaning drafts yet (`REQUIRED_CONTENT`) and wait
     for Codex, which cools down until 01:32. 280 also logged a
     `REVISION_CONFLICT`; check it after the next tick.
+- 2026-10-26 17:42: session started (driver pid 94185). Agent turn:
+  - 283-285 splits went through; their units now wait for Codex meaning
+    drafts (`REQUIRED_CONTENT`), like 274-280. 280's `REVISION_CONFLICT`
+    cleared by itself.
+  - Batches 287 and 289 hold **keigo drill cards**, not grammar pages: deck
+    夕暮れの詞, note type "Cơ bản", front a screenshot of a plain sentence,
+    back a screenshot of its polite business forms. The user wants them
+    **kept as drills, but as text instead of images**. No managed note type
+    can hold that, so the 10 notes are deferred (`AGENT: keigo drill card
+    …`). Open item: a text drill note type and a campaign path that turns
+    the two screenshots into prompt and answers. Until then, defer every
+    drill card the campaign meets. 夕暮れの詞 has 317 image-only "Cơ bản"
+    notes; some are grammar pages, the rest drills.
