@@ -18,4 +18,4 @@
 5. Approval is a separate command (the agent's). It refuses, and pauses the campaign, when the share of agent-decided notes exceeds the limit.
 6. Before an apply job, the approved notes' card facts are read (card IDs, repetitions, review row IDs). Verification requires every card, every review row and every referenced media file, and the target note type; new reviews are allowed. A failure pauses the campaign.
 7. A session end (`JOB_CHECKPOINT_SESSION_ENDED`) creates the follow-up job for the pending items with a new checkpoint; unknown outcomes are reconciled (`--rebind`) and pause the campaign when they cannot be settled; any other halt pauses it.
-8. Pauses (guardrail, pilot review, repeated step errors) are cleared only by the user (`campaign resume` from a terminal or `--by-user`). Retention deletes only checkpoint files the campaign created, of `done` batches beyond the newest N.
+8. Pauses (guardrail, pilot review, repeated step errors) are cleared by `campaign resume` (the session's operator; the unattended agent wrapper never resumes). Retention deletes only checkpoint files the campaign created, of `done` batches beyond the newest N.

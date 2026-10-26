@@ -112,7 +112,7 @@ drive() {
         done
         say "requeue + resume"
         cli campaign requeue "$C" --reason AGENT: --reason APPLY_FAILED: --reason PREPARE_FAILED: >> "$LOG" 2>&1
-        cli campaign resume "$C" --by-user >> "$LOG" 2>&1
+        cli campaign resume "$C" >> "$LOG" 2>&1
         continue
       fi
       # An upgraded local engine: certify it again; resume only if it passes.
@@ -121,7 +121,7 @@ drive() {
         if cli doctor --ollama --certify > "$SESSION/certify-last.json" 2>> "$LOG" &&
           [ "$(json 'd.get("certification",d).get("passed")' < "$SESSION/certify-last.json")" = True ]; then
           say "certified; resume"
-          cli campaign resume "$C" --by-user >> "$LOG" 2>&1
+          cli campaign resume "$C" >> "$LOG" 2>&1
           continue
         fi
         say "certification failed: see $SESSION/certify-last.json"
@@ -183,7 +183,7 @@ start() {
   if [ "${s[0]:-}" = paused ] && grep -q "$WRAPPED" <<<"${s[1]:-}"; then
     say "resuming the wrapped-up campaign"
     cli campaign requeue "$C" --reason AGENT: --reason APPLY_FAILED: --reason PREPARE_FAILED: >> "$LOG" 2>&1
-    cli campaign resume "$C" --by-user >> "$LOG" 2>&1
+    cli campaign resume "$C" >> "$LOG" 2>&1
   elif [ "${s[0]:-}" = paused ] && ! grep -q "Codex usage limit" <<<"${s[1]:-}"; then
     echo "paused: ${s[1]:-}; look at it, then run: $B campaign resume $C" >&2; return 1
   fi

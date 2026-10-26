@@ -325,7 +325,7 @@ fn user_only_steps_refuse_an_agent_and_local_controls_record_events() {
     assert_eq!(requeued["requeued"], json!([]));
     let (_, status, _) = run(cli(&home, &endpoint).args(["campaign", "status", &id]));
     assert_eq!(status["agent_active"], false);
-    // Pause; a run does nothing; only the user resumes.
+    // Pause; a run does nothing until it is resumed (no terminal needed).
     let (code, _, _) =
         run(cli(&home, &endpoint).args(["campaign", "pause", &id, "--reason", "holiday"]));
     assert_eq!(code, 0);
@@ -333,11 +333,7 @@ fn user_only_steps_refuse_an_agent_and_local_controls_record_events() {
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(ran["stopped"], "paused");
     assert_eq!(ran["steps"], json!([]));
-    let (code, _, stderr) = run(cli(&home, &endpoint).args(["campaign", "resume", &id]));
-    assert_eq!(code, 2, "{stderr}");
-    assert!(stderr.contains("CAMPAIGN_RESUME_BY_USER_REQUIRED"));
-    let (code, resumed, _) =
-        run(cli(&home, &endpoint).args(["campaign", "resume", &id, "--by-user"]));
+    let (code, resumed, _) = run(cli(&home, &endpoint).args(["campaign", "resume", &id]));
     assert_eq!((code, resumed["status"].clone()), (0, json!("running")));
     // The timer is previewed without --execute.
     let script = home.0.join("tick.sh");

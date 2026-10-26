@@ -74,7 +74,7 @@ Effects: local status `paused` with `CAMPAIGN_PAUSED_BY_REQUEST`. A running tick
 
 ## OP-72 — `campaign resume CAMPAIGN [--by-user]`
 
-Effects: local status `running`. Refused without a terminal unless `--by-user` is given (`CAMPAIGN_RESUME_BY_USER_REQUIRED`): only the user resumes a paused campaign. The agent's allowlist excludes this command.
+Effects: local status `running`. Works from any caller, terminal or not; `--by-user` is still accepted and does nothing (it was required before 2026-10-26). The unattended agent wrapper's allowlist still excludes this command.
 
 ## OP-73 — `campaign cancel CAMPAIGN`
 

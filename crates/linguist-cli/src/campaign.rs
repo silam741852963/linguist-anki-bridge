@@ -124,12 +124,12 @@ pub(crate) enum CampaignCommand {
         #[arg(long, default_value = "paused by request")]
         reason: String,
     },
-    /// Resume a paused campaign (the user's step: needs a terminal or --by-user).
+    /// Resume a paused campaign.
     Resume {
         /// Campaign ID from `campaign list`.
         campaign: Uuid,
-        /// Confirm that the user, not an agent, resumes it.
-        #[arg(long)]
+        /// Accepted for older scripts; resume no longer needs it.
+        #[arg(long, hide = true)]
         by_user: bool,
     },
     /// Stop for good; batches keep their state and history.
@@ -658,7 +658,7 @@ fn wrap_up(
         "quota_cooldowns": cooldowns,
         "resume": [
             format!("linguist-anki-bridge campaign status {id}"),
-            format!("linguist-anki-bridge campaign resume {id} --by-user"),
+            format!("linguist-anki-bridge campaign resume {id}"),
             format!("linguist-anki-bridge campaign run {id} --max-seconds 3000"),
         ],
     });
@@ -916,11 +916,7 @@ pub(crate) fn handle(
                 "paused",
             )?)?;
         }
-        CampaignCommand::Resume { campaign, by_user } => {
-            use std::io::IsTerminal;
-            if !by_user && !std::io::stdin().is_terminal() {
-                return Err("CAMPAIGN_RESUME_BY_USER_REQUIRED: only the user resumes a paused campaign; run it in a terminal or pass --by-user".into());
-            }
+        CampaignCommand::Resume { campaign, .. } => {
             emit(&set_status(
                 &root, campaign, "running", None, None, "resumed",
             )?)?;
