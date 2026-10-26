@@ -685,6 +685,12 @@ fn decide(
                 .map(|t| choice(t))
                 .ok_or("NO_TEMPLATE".into()),
             LearningContent::Grammar(_) => Err("GRAMMAR_OCR_NEEDS_AGENT".into()),
+            // A drill's text was written from the page by its reviewer
+            // (WP-28); the OCR is evidence only, as on a vocabulary note.
+            LearningContent::Drill(_) => templates
+                .first()
+                .map(|t| choice(t))
+                .ok_or("NO_TEMPLATE".into()),
         },
         "GRAMMAR_SPLIT_NATIVE_REVIEW" => plan
             .grammar_groups
@@ -720,16 +726,17 @@ pub fn fill(policy: &Policy, plan: &PlanRevision, template: &Value) -> Result<Fi
         });
         if entry.get("history_map").is_some() {
             // The map names vocabulary tasks; a grammar note's single card
-            // is its Recognition card (Grammar v4 has no other task).
-            let grammar = plan
+            // is its Recognition card (Grammar v4 has no other task), a
+            // drill's its Production card (WP-28).
+            let content = plan
                 .documents
                 .iter()
                 .find(|d| d.id == document_id)
-                .is_some_and(|d| matches!(d.content, LearningContent::Grammar(_)));
-            out["history_map"] = if grammar {
-                json!(["0=recognition"])
-            } else {
-                json!(policy.history_map)
+                .map(|d| &d.content);
+            out["history_map"] = match content {
+                Some(LearningContent::Grammar(_)) => json!(["0=recognition"]),
+                Some(LearningContent::Drill(_)) => json!(["0=production"]),
+                _ => json!(policy.history_map),
             };
             decided.push(out);
             continue;

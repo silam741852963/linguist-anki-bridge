@@ -3,7 +3,7 @@
 from uuid import UUID
 
 PROTOCOL = "lab-native-v1"
-COMPANION_VERSION = "0.6.1"
+COMPANION_VERSION = "0.7.0"
 
 
 def _label(value, limit):

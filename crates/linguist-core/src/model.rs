@@ -195,6 +195,11 @@ const GRAMMAR_STYLE: &str = concat!(
     include_str!("../../../resources/templates/vocabulary-v3.css"),
     include_str!("../../../resources/templates/grammar-v4.css")
 );
+/// Drill v1: the same system plus the tap-build board.
+const DRILL_STYLE: &str = concat!(
+    include_str!("../../../resources/templates/vocabulary-v3.css"),
+    include_str!("../../../resources/templates/drill-v1.css")
+);
 /// WP-19 vocabulary model: fields only, no text cues and no provenance fields.
 /// Language and explanation language are note tags (`lab::lang::*`).
 pub fn vocabulary() -> ManagedModel {
@@ -284,7 +289,7 @@ pub fn english_vocabulary() -> ManagedModel {
 }
 /// Every managed model, in a fixed order.
 pub fn managed() -> Vec<ManagedModel> {
-    vec![vocabulary(), english_vocabulary(), grammar()]
+    vec![vocabulary(), english_vocabulary(), grammar(), drill()]
 }
 pub fn by_name(name: &str) -> Option<ManagedModel> {
     managed().into_iter().find(|model| model.name == name)
@@ -333,6 +338,37 @@ pub fn grammar() -> ManagedModel {
             include_str!("../../../resources/templates/grammar-v4-back.html"),
         )],
         css: GRAMMAR_STYLE.into(),
+    }
+}
+/// WP-28 drill model (the shared `Linguist Drill v1` of WP-26). Prompt comes
+/// first so it is the sort field. The front builds the first answer from
+/// `Data` (chunks and decoys) by taps, graded by the template's own
+/// JavaScript; the back lists every accepted answer with its reading, the
+/// changes and the translation. One card, task Production.
+pub fn drill() -> ManagedModel {
+    ManagedModel {
+        name: "Linguist Drill v1".into(),
+        version: 1,
+        fields: [
+            "Prompt",
+            "Instruction",
+            "Answer",
+            "Changes",
+            "Translation",
+            "Data",
+            "Kind",
+            "Language",
+            "Source",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+        templates: vec![template(
+            "Drill",
+            0,
+            include_str!("../../../resources/templates/drill-v1-front.html"),
+            include_str!("../../../resources/templates/drill-v1-back.html"),
+        )],
+        css: DRILL_STYLE.into(),
     }
 }
 /// The WP-22 grammar model, kept so its notes can be read as revamp sources.
@@ -422,6 +458,7 @@ pub fn for_document(doc: &LearningDocument) -> ManagedModel {
         }
         LearningContent::Vocabulary(_) => vocabulary(),
         LearningContent::Grammar(_) => grammar(),
+        LearningContent::Drill(_) => drill(),
     }
 }
 

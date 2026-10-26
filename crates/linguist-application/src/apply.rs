@@ -457,7 +457,8 @@ pub fn purpose(document: &LearningDocument) -> Result<String> {
     };
     let kind = match document.content {
         LearningContent::Vocabulary(_) => "vocab",
-        LearningContent::Grammar(_) => "grammar",
+        // A drill (WP-28) comes from a grammar-deck note and keeps its deck.
+        LearningContent::Grammar(_) | LearningContent::Drill(_) => "grammar",
     };
     Ok(format!("{language}_{kind}"))
 }
@@ -945,6 +946,7 @@ fn migration_plan(
     let kind = match document.content {
         LearningContent::Vocabulary(_) => TargetModelKind::Vocabulary,
         LearningContent::Grammar(_) => TargetModelKind::Grammar,
+        LearningContent::Drill(_) => TargetModelKind::Drill,
     };
     let map = document
         .task_maps

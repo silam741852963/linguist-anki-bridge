@@ -162,8 +162,11 @@ fn images_requested(settings: &Effective, document: &LearningDocument) -> bool {
 /// Grammar example sentences that no synthesized audio reads yet: neither a
 /// selected reading nor a candidate (pending or declined) speaks them (WP-23).
 fn unvoiced_examples(document: &LearningDocument) -> Vec<String> {
-    let LearningContent::Grammar(g) = &document.content else {
-        return vec![];
+    // A drill (WP-28) reads each accepted answer, as grammar reads examples.
+    let sentences: Vec<&str> = match &document.content {
+        LearningContent::Grammar(g) => g.examples.iter().map(|e| e.sentence.as_str()).collect(),
+        LearningContent::Drill(d) => d.answers.iter().map(String::as_str).collect(),
+        LearningContent::Vocabulary(_) => return vec![],
     };
     let spoken: BTreeSet<String> = document
         .media
@@ -174,8 +177,8 @@ fn unvoiced_examples(document: &LearningDocument) -> Vec<String> {
         .filter_map(|m| linguist_core::render::spoken_text(document, &m.digest))
         .collect();
     let mut out: Vec<String> = Vec::new();
-    for example in &g.examples {
-        let sentence = example.sentence.trim();
+    for sentence in sentences {
+        let sentence = sentence.trim();
         if !sentence.is_empty() && !spoken.contains(sentence) && !out.iter().any(|s| s == sentence)
         {
             out.push(sentence.to_owned());
@@ -190,7 +193,9 @@ fn audio_requested(settings: &Effective, document: &LearningDocument) -> bool {
     );
     match &document.content {
         // Grammar reads every example, each with its own candidate (WP-23).
-        LearningContent::Grammar(_) => provider && !unvoiced_examples(document).is_empty(),
+        LearningContent::Grammar(_) | LearningContent::Drill(_) => {
+            provider && !unvoiced_examples(document).is_empty()
+        }
         LearningContent::Vocabulary(_) => {
             provider
                 // Only a chosen audio counts: a captured source recording waits for
@@ -831,7 +836,7 @@ fn stage_audio(
             }]
         }
         // One reading per example, each reviewed on its own (WP-23).
-        LearningContent::Grammar(_) => unvoiced_examples(document),
+        LearningContent::Grammar(_) | LearningContent::Drill(_) => unvoiced_examples(document),
     };
     for text in texts {
         stage_reading(document, settings, environment, port, engine, &text, assets)?;

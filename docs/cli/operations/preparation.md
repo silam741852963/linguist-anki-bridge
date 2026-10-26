@@ -141,3 +141,23 @@ approval-bound grammar group records the anchor and ordered siblings, actor and
 request asset digest. Exit 4 with native split/history review unresolved and writes
 disabled. See the [request schema](../../../contracts/v2/grammar-split-request.schema.json).
 Automatic OCR segmentation and native write/recovery execution remain pending.
+
+Keigo drill conversion (WP-28): a grammar-cohort page whose OCR starts with
+"Answer" is a rephrasing drill (a plain sentence on the front, its polite
+versions on the back) and is reported as `DRILL_CANDIDATE`. `plans
+convert-drill PLAN --template ITEM` prints a request with the identity filled
+in. The reviewer writes the drill from the pages: `prompt` (the plain
+sentence), `instruction`, `answers` (every accepted polite version; the first
+is the one built on the card), `changes` (plain part, polite part, kind
+`formal`, `humble`, `honorific` or `polite`, note), `readings` (word and kana
+reading, shown as furigana), and `translation`; names the `actor`; and submits
+it with `--request FILE`. Empty `chunks` and `decoys` are made from the first
+answer: bunsetsu chunks, a polite part kept in one chunk, and one decoy per
+change with the plain part put back (at most 3; a decoy another answer
+accepts is dropped). The item keeps its document, note and card and becomes a
+`Linguist Drill v1` note with one `Production` card; the native history
+review maps the source card to it. Refused: a stale base or input
+(`DRILL_CONVERT_BASE_CONFLICT`, `DRILL_CONVERT_INPUT_CONFLICT`), an item in a
+split group, and a drill that fails validation (`DRILL_CONVERT_INVALID` with
+the `DRILL_*` codes). Generation never drafts a drill
+(`GENERATION_DRILL_AUTHORED`); the audio stage voices each answer.

@@ -64,10 +64,19 @@
       ]
     },
     "TargetModelKind": {
-      "type": "string",
-      "enum": [
-        "vocabulary",
-        "grammar"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "vocabulary",
+            "grammar"
+          ]
+        },
+        {
+          "description": "WP-28 `Linguist Drill v1`: one card, task Production.",
+          "type": "string",
+          "const": "drill"
+        }
       ]
     },
     "Task": {

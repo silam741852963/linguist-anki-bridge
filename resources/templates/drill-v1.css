@@ -1,0 +1,15 @@
+.lab-drill-prompt { font-size: 1.35em; line-height: 1.9; text-align: left; margin: .4em 0 .8em; }
+.lab-drill-prompt rt, .lab-drill-answers rt { font-size: .5em; color: var(--lab-muted); }
+.lab-drill-answers .lab-target { line-height: 1.9; }
+.lab-example-line .replay-button svg { width: 30px; height: 30px; filter: none; }
+.lab-build { text-align: left; }
+.lab-build-line { min-height: 1.9em; padding: .35em .6em; border-bottom: 2px solid var(--lab-line); font-size: 1.1em; }
+.lab-build-state { min-height: 1.4em; margin: .35em 0; font-size: .85em; color: var(--lab-muted); }
+.lab-build-right { color: #116329; font-weight: 600; }
+.lab-build-wrong { color: var(--lab-accent); font-weight: 600; }
+.lab-build-tiles { display: flex; flex-wrap: wrap; gap: .45em; margin: .4em 0 .6em; }
+.lab-tile { font: inherit; font-size: 1em; padding: .35em .7em; border-radius: 10px; border: 1px solid var(--lab-line); background: var(--lab-panel); color: var(--lab-ink); cursor: pointer; }
+.lab-tile-used { opacity: .3; }
+.lab-tile-wrong { border-color: var(--lab-accent); background: var(--lab-accent-soft); }
+.lab-build-undo { font: inherit; font-size: .8em; padding: .25em .8em; border-radius: 8px; border: 1px solid var(--lab-line); background: none; color: var(--lab-muted); }
+.nightMode .lab-build-right, .night_mode .lab-build-right { color: #3fb950; }

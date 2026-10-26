@@ -252,6 +252,106 @@
         "senses"
       ]
     },
+    "Drill": {
+      "description": "WP-28 drill document. `answers` are every accepted version, the first\nbeing the tap-build target; `chunks` cut that first answer in order\n(they join to it exactly) and `decoys` are wrong chunks made from the\nplain parts of `changes`.",
+      "type": "object",
+      "properties": {
+        "answers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DrillChange"
+          }
+        },
+        "chunks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "decoys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DrillKind",
+          "default": "rephrase"
+        },
+        "lesson": {
+          "type": "string"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JudgedProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "readings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReadingHint"
+          }
+        },
+        "translation": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "prompt",
+        "instruction",
+        "answers"
+      ]
+    },
+    "DrillChange": {
+      "description": "One change from the plain sentence to the answers: the plain part, the\npolite part that replaces it, its kind (`formal`, `humble`, `honorific`,\n`polite`) and a short note.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string",
+          "default": ""
+        },
+        "plain": {
+          "type": "string"
+        },
+        "polite": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "plain",
+        "polite",
+        "kind"
+      ]
+    },
+    "DrillKind": {
+      "description": "WP-28 drill kinds. `rephrase`: say a plain sentence in a target register\n(a keigo drill: さっきもらった… to 先程ちょうだいした…).",
+      "type": "string",
+      "enum": [
+        "rephrase"
+      ]
+    },
     "Evidence": {
       "type": "object",
       "properties": {
@@ -606,11 +706,26 @@
       "description": "WP-27 judged profile: chosen by the LLM from closed lists\n(`resources/taxonomy/domains-v1.json`), validated against the version it\nnames. Paths are `level1::level2::level3` leaves.",
       "type": "object",
       "properties": {
+        "connotation": {
+          "description": "Vocabulary: `positive`, `neutral` or `negative`.",
+          "type": "string"
+        },
         "domain": {
           "type": "string"
         },
         "functions": {
           "description": "Grammar: communicative functions, `group::function`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "partner": {
+          "description": "Japanese verb: its transitivity partner (開く for 開ける), kept only\nwhen `profile::partner_problem` finds none.",
+          "type": "string"
+        },
+        "register": {
+          "description": "Grammar: register, from `profile::REGISTERS` (at most two).",
           "type": "array",
           "items": {
             "type": "string"
@@ -734,6 +849,23 @@
             "kind": {
               "type": "string",
               "const": "grammar"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "body"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "body": {
+              "$ref": "#/$defs/Drill"
+            },
+            "kind": {
+              "type": "string",
+              "const": "drill"
             }
           },
           "additionalProperties": false,
@@ -876,6 +1008,23 @@
         "generated",
         "user",
         "provider"
+      ]
+    },
+    "ReadingHint": {
+      "description": "A reading hint the source gives for a word of the prompt or an answer\n(見積書 みつもりしょ), shown as furigana on that word only.",
+      "type": "object",
+      "properties": {
+        "reading": {
+          "type": "string"
+        },
+        "word": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "word",
+        "reading"
       ]
     },
     "ReviewChoice": {
@@ -1694,10 +1843,19 @@
       ]
     },
     "TargetModelKind": {
-      "type": "string",
-      "enum": [
-        "vocabulary",
-        "grammar"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "vocabulary",
+            "grammar"
+          ]
+        },
+        {
+          "description": "WP-28 `Linguist Drill v1`: one card, task Production.",
+          "type": "string",
+          "const": "drill"
+        }
       ]
     },
     "Task": {

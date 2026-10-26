@@ -137,6 +137,14 @@ pub fn sentences(doc: &LearningDocument) -> Vec<Sentence> {
             (&v.examples, &v.usage, &v.nuance)
         }
         LearningContent::Grammar(g) => (&g.examples, &g.usage, &g.nuance),
+        // A drill's sentences are the source's own keigo practice, read
+        // from its answers.
+        LearningContent::Drill(d) => {
+            for answer in &d.answers {
+                out.push((answer.trim().to_owned(), String::new(), "source"));
+            }
+            return out;
+        }
     };
     for e in examples {
         out.push((

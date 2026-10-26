@@ -85,7 +85,8 @@ Effects: Preview by default; Anki schema write only with --apply.
 Result/failure: Verified model receipt or recovery ID; never overwrites same-name different model. The shared wrapper supplies typed errors and leaves durable evidence for any started effect.
 
 Current preview implementation supports the four built-in Japanese/English
-vocabulary/grammar purposes. Without `--apply`, it performs profile-pinned
+vocabulary/grammar purposes, and `japanese_drill`/`english_drill` for
+`Linguist Drill v1` (WP-28; installing it needs companion 0.7.0). Without `--apply`, it performs profile-pinned
 read-only model inventory/inspection and returns the exact v2 field, template and
 CSS manifest. It reports `create` when the name is absent,
 `reuse_requires_native_order_verification` when field order and template/CSS

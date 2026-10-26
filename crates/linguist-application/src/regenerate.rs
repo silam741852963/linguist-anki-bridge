@@ -97,6 +97,10 @@ fn text_field<'a>(document: &'a mut LearningDocument, field: &str) -> Option<&'a
             "jlpt" => Some(&mut g.jlpt),
             _ => None,
         },
+        LearningContent::Drill(d) => match field {
+            "translation" => Some(&mut d.translation),
+            _ => None,
+        },
     }
 }
 
@@ -185,6 +189,7 @@ pub fn prepare_item(
                 let examples = match &mut prepared.content {
                     LearningContent::Vocabulary(v) => &mut v.examples,
                     LearningContent::Grammar(g) => &mut g.examples,
+                    LearningContent::Drill(_) => continue,
                 };
                 let generated = examples
                     .iter()
@@ -260,6 +265,7 @@ pub fn prepare_item(
                     (LearningContent::Vocabulary(v), _) => v.collocations.clear(),
                     (LearningContent::Grammar(g), "nuance") => g.nuance.clear(),
                     (LearningContent::Grammar(g), _) => g.forms.clear(),
+                    (LearningContent::Drill(_), _) => {}
                 }
                 prepared
                     .evidence

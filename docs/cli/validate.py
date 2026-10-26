@@ -92,7 +92,7 @@ def main():
     check(saved == routes, 'Stale reading map; run validate.py --update-map')
     ids = set(routes['records'])
     check({i for i in ids if i.startswith('OP-')} == {f'OP-{i:02}' for i in range(1,98)}, 'Operation coverage')
-    check({i for i in ids if i.startswith('WP-')} == {f'WP-{i:02}' for i in range(1,28)}, 'Package coverage')
+    check({i for i in ids if i.startswith('WP-')} == {f'WP-{i:02}' for i in range(1,29)}, 'Package coverage')
     algorithms = {i for i in ids if i.startswith('ALG-')}
     check(len(algorithms) == 19, 'Algorithm coverage')
     presets = json.loads((ROOT/'configuration/purpose-defaults.json').read_text())['presets']

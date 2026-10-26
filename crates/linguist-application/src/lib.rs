@@ -821,6 +821,7 @@ pub mod checkpoint;
 pub mod classify;
 pub mod dictionary;
 pub mod dictionary_entry;
+pub mod drill;
 pub mod duplicate_candidates;
 pub mod editor;
 pub mod export;

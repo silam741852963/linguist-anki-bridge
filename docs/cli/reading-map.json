@@ -352,6 +352,16 @@
         "operations/plans.md"
       ]
     },
+    "WP-28": {
+      "path": "implementation/wp-28.md",
+      "heading": "## WP-28 \u2014 keigo drill cards as text: tap-build on the phone, converted in place",
+      "title": "WP-28 \u2014 keigo drill cards as text: tap-build on the phone, converted in place",
+      "words": 2007,
+      "requires": [
+        "contracts/invariants.md",
+        "implementation/README.md"
+      ]
+    },
     "OP-34": {
       "path": "operations/apply.md",
       "heading": "## OP-34 \u2014 `apply PLAN`",
@@ -681,7 +691,7 @@
       "path": "operations/collection.md",
       "heading": "## OP-17 \u2014 `models install PURPOSE`",
       "title": "OP-17 \u2014 `models install PURPOSE`",
-      "words": 317,
+      "words": 329,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",
@@ -1366,7 +1376,7 @@
       "path": "operations/preparation.md",
       "heading": "## OP-24 \u2014 `grammar revamp`",
       "title": "OP-24 \u2014 `grammar revamp`",
-      "words": 1891,
+      "words": 2101,
       "requires": [
         "contracts/invariants.md",
         "operations/README.md",

@@ -1098,6 +1098,23 @@ enum PlanCommand {
         #[arg(long)]
         template: Option<uuid::Uuid>,
     },
+    /// Rewrite a grammar-cohort item whose pages are a rephrasing drill (a
+    /// plain sentence and its polite versions) as a drill note in place
+    /// (WP-28); chunks and decoys are made when the request leaves them empty.
+    ConvertDrill {
+        /// Plan ID.
+        plan: uuid::Uuid,
+        /// JSON drill request (see --template).
+        #[arg(
+            long,
+            required_unless_present = "template",
+            conflicts_with = "template"
+        )]
+        request: Option<PathBuf>,
+        /// Print an editable drill request for this item.
+        #[arg(long)]
+        template: Option<uuid::Uuid>,
+    },
     /// Archive duplicate notes on their survivor's item before it is revamped
     /// (WP-24); `notes delete-merged` removes them after the apply.
     MergeNotes {
@@ -1589,6 +1606,7 @@ fn state_write_estimate(command: &Command) -> Option<u64> {
             | PlanCommand::Export { .. }
             | PlanCommand::DuplicateCandidates { record: false, .. }
             | PlanCommand::SplitGrammar { request: None, .. }
+            | PlanCommand::ConvertDrill { request: None, .. }
             | PlanCommand::SplitVocab { request: None, .. }
             | PlanCommand::Regenerate {
                 use_current_settings: false,
@@ -2721,6 +2739,39 @@ fn run(cli: Cli) -> Result<u8, String> {
                     )?;
                     return Ok(4);
                 }
+                PlanCommand::ConvertDrill {
+                    plan,
+                    request,
+                    template,
+                } => {
+                    if let Some(item) = template {
+                        let latest = store.latest_revision(plan)?;
+                        let base = store.revision(plan, latest)?;
+                        emit(&linguist_application::drill::template(&base, item)?)?;
+                        return Ok(0);
+                    }
+                    let request = request.ok_or("DRILL_CONVERT_REQUEST_REQUIRED")?;
+                    let raw = read_input(&request, max_bytes, max_chars)?;
+                    let request: linguist_application::drill::DrillRequest =
+                        canonical::parse(&raw).map_err(|e| e.to_string())?;
+                    let base = store.revision(plan, request.base_revision)?;
+                    drop(store);
+                    let child = linguist_application::drill::convert(
+                        &mut linguist_store::Store::open_existing(&root)?,
+                        &base,
+                        &request,
+                        &raw,
+                    )?;
+                    let document = child
+                        .documents
+                        .iter()
+                        .find(|d| d.id == request.document_id)
+                        .ok_or("DRILL_CONVERT_DOCUMENT_MISSING")?;
+                    emit(
+                        &serde_json::json!({"schema_version":2,"plan_id":plan,"revision":child.revision,"digest":child.approval_digest().map_err(|e| e.to_string())?,"document":document.content,"ready":false,"apply_eligible":false,"writes_enabled":false}),
+                    )?;
+                    return Ok(4);
+                }
                 PlanCommand::SplitVocab {
                     plan,
                     request,
@@ -3476,6 +3527,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 "japanese_vocab" => model::vocabulary(),
                 "english_vocab" => model::english_vocabulary(),
                 "japanese_grammar" | "english_grammar" => model::grammar(),
+                "japanese_drill" | "english_drill" => model::drill(),
                 _ => return Err("MODEL_PURPOSE_UNSUPPORTED".into()),
             };
             native_writes::models_update(&settings, target, apply)
@@ -3487,6 +3539,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 "japanese_vocab" => model::vocabulary(),
                 "english_vocab" => model::english_vocabulary(),
                 "japanese_grammar" | "english_grammar" => model::grammar(),
+                "japanese_drill" | "english_drill" => model::drill(),
                 _ => return Err("MODEL_PURPOSE_UNSUPPORTED".into()),
             };
             if apply {

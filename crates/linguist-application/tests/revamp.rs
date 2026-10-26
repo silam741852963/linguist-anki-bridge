@@ -2461,3 +2461,97 @@ fn a_non_breaking_space_in_a_field_is_a_space() {
     };
     assert_eq!(vocab.expression, "go back on something");
 }
+
+#[test]
+fn a_drill_page_is_rewritten_in_place_as_one_production_drill() {
+    use linguist_application::drill::*;
+    use linguist_core::{Drill, DrillChange};
+    let (capture, mut settings) = setup(
+        "japanese_grammar",
+        &[("Pattern", "Answer"), ("Meaning", "")],
+        &[("pattern", "Pattern"), ("meaning", "Meaning")],
+    );
+    let root = std::env::temp_dir().join(format!("lab-drill-convert-{}", uuid::Uuid::new_v4()));
+    settings
+        .values
+        .insert("storage.state_dir".into(), json!(root));
+    let prepared = publish_capture_draft(
+        &capture,
+        &settings,
+        "japanese_grammar",
+        &BTreeMap::from([("HOME".into(), "/tmp/lab-drill-convert".into())]),
+    )
+    .unwrap();
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let base = store.revision(prepared.plan_id, 1).unwrap();
+    let original = base.documents[0].clone();
+    let mut request = template(&base, original.id).unwrap();
+    request.drill = Drill {
+        prompt: "さっきもらった見積書について、3つ確認したいことがあるんですが。".into(),
+        instruction: "Business keigo".into(),
+        answers: vec![
+            "先程ちょうだいした見積書につきまして、3点ほど確認させていただきたいことがあるのですが。"
+                .into(),
+        ],
+        changes: vec![DrillChange {
+            plain: "もらった".into(),
+            polite: "ちょうだいした".into(),
+            kind: "humble".into(),
+            note: String::new(),
+        }],
+        translation: "About the quote I received earlier, there are three points I'd like to check."
+            .into(),
+        ..Default::default()
+    };
+    // No actor: refused before anything is published.
+    let raw = serde_json::to_vec(&request).unwrap();
+    assert!(
+        convert(&mut store, &base, &request, &raw)
+            .unwrap_err()
+            .contains("INPUT_CONFLICT")
+    );
+    request.actor = "reviewer".into();
+    request.drill.changes[0].polite = "頂戴した".into();
+    let raw = serde_json::to_vec(&request).unwrap();
+    assert!(
+        convert(&mut store, &base, &request, &raw)
+            .unwrap_err()
+            .contains("DRILL_CHANGE_UNMATCHED")
+    );
+    assert_eq!(store.latest_revision(base.id).unwrap(), 1);
+    request.drill.changes[0].polite = "ちょうだいした".into();
+    let raw = serde_json::to_vec(&request).unwrap();
+    let child = convert(&mut store, &base, &request, &raw).unwrap();
+    assert_eq!(child.revision, 2);
+    assert!(child.grammar_groups.is_empty(), "no split group");
+    assert_eq!(child.documents.len(), 1);
+    let document = &child.documents[0];
+    assert_eq!(document.id, original.id, "the note is kept");
+    assert_eq!(document.requested_tasks, [Task::Production]);
+    assert!(document.task_maps.is_empty());
+    let cards = |d: &linguist_core::LearningDocument| -> Vec<_> {
+        d.sources.iter().flat_map(|s| s.cards.clone()).collect()
+    };
+    assert_eq!(cards(document).len(), cards(&original).len(), "cards kept");
+    assert!(cards(document).iter().all(|c| c.task == Task::Production));
+    assert_eq!(document.archives[0], original.archives[0]);
+    let LearningContent::Drill(drill) = &document.content else {
+        panic!("{:?}", document.content)
+    };
+    assert_eq!(drill.chunks.concat(), drill.answers[0]);
+    assert!(drill.chunks.contains(&"ちょうだいした".to_owned()));
+    assert_eq!(drill.decoys, ["もらった"]);
+    assert!(
+        !document
+            .issues
+            .iter()
+            .any(|issue| issue.stage == "ocr" || issue.code.starts_with("DRILL_")),
+        "{:?}",
+        document.issues
+    );
+    // Converting it again (a drill already) from the new base is allowed.
+    let again = template(&child, document.id).unwrap();
+    assert_eq!(again.base_revision, 2);
+    drop(store);
+    std::fs::remove_dir_all(root).unwrap();
+}

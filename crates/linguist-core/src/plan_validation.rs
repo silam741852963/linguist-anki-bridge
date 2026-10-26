@@ -61,6 +61,11 @@ pub fn inspect(plan: &PlanRevision) -> Result<ValidationEvidence, ContractError>
                 "pattern":g.pattern.trim(), "use_key":g.use_key.trim(),
                 "meaning":g.meaning.trim(), "context":doc.context.trim(),
             }),
+            LearningContent::Drill(d) => serde_json::json!({
+                "kind":"drill", "language":doc.target_language,
+                "prompt":d.prompt.trim(), "answers":d.answers,
+                "context":doc.context.trim(),
+            }),
         };
         let key = crate::canonical::digest("batch-duplicate-identity", &identity)?;
         if let Some(first) = semantic_keys.get(&key) {

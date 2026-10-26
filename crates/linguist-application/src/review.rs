@@ -141,6 +141,8 @@ pub fn summarize(plan: &linguist_core::records::PlanRevision) -> Result<serde_js
             (LearningContent::Vocabulary(_), true) => "vocab_revamp",
             (LearningContent::Grammar(_), false) => "grammar_add",
             (LearningContent::Grammar(_), true) => "grammar_revamp",
+            (LearningContent::Drill(_), false) => "drill_add",
+            (LearningContent::Drill(_), true) => "drill_revamp",
         });
     }
     let status = if errors > 0 {

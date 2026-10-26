@@ -35,6 +35,11 @@ GRAMMAR_V3_FIELDS = frozenset({
 GRAMMAR_V4_FIELDS = frozenset({
     "Pattern", "Meaning", "Formation", "Example", "Usage", "Nuance",
 })
+# WP-28 drill model: a plain sentence rebuilt in its polite form by tapping.
+DRILL_V1_FIELDS = frozenset({
+    "Prompt", "Instruction", "Answer", "Changes", "Translation", "Data", "Kind",
+    "Language", "Source",
+})
 FIELDS = {
     "Linguist Vocabulary v2": VOCAB_FIELDS,
     "Linguist Vocabulary v3": VOCAB_V3_FIELDS,
@@ -42,6 +47,7 @@ FIELDS = {
     "Linguist Grammar v2": GRAMMAR_FIELDS,
     "Linguist Grammar v3": GRAMMAR_V3_FIELDS,
     "Linguist Grammar v4": GRAMMAR_V4_FIELDS,
+    "Linguist Drill v1": DRILL_V1_FIELDS,
 }
 VOCAB_MODELS = frozenset({"Linguist Vocabulary v2", "Linguist Vocabulary v3",
                           "Linguist English Vocabulary v1"})
@@ -252,8 +258,12 @@ def _create_note(body, operation_id, approved_digest):
         raise _invalid()
     for value in fields.values():
         _text(value, MAX_FIELD_BYTES)
-    primary = "Expression" if model in VOCAB_MODELS else "Pattern"
-    if (not fields[primary].strip() or not fields["Meaning"].strip()
+    if model == "Linguist Drill v1":
+        if (any(not fields[key].strip() for key in ("Prompt", "Answer", "Data"))
+                or fields["Language"] not in {"ja", "en"}):
+            raise _invalid()
+    elif (not fields["Expression" if model in VOCAB_MODELS else "Pattern"].strip()
+            or not fields["Meaning"].strip()
             or fields.get("Language", "ja") not in {"ja", "en"}
             or (model == "Linguist Grammar v2" and
                 (not fields["UseKey"].strip() or not fields["Formation"].strip()

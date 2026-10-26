@@ -288,7 +288,7 @@ pub fn classify(
         ((coverage / 0.25).min(1.0) * 0.6 + (lines as f64 / 4.0).min(1.0) * 0.4) * confidence;
     let text_class = match document.content {
         LearningContent::Vocabulary(_) => ImageClass::Dictionary,
-        LearningContent::Grammar(_) => ImageClass::Grammar,
+        LearningContent::Grammar(_) | LearningContent::Drill(_) => ImageClass::Grammar,
     };
     // On a vocabulary note a dictionary marker decides: the screenshot is
     // archived whatever its layout score.
@@ -305,7 +305,7 @@ pub fn classify(
                     .any(|r| r.text.to_lowercase().contains("getty")))
             .then_some("dictionary-photo-credit")
         }),
-        LearningContent::Grammar(_) => None,
+        LearningContent::Grammar(_) | LearningContent::Drill(_) => None,
     };
     let class = if marker.is_some() {
         text_class
@@ -654,6 +654,18 @@ fn segmentation_issue(document: &LearningDocument) -> Option<Issue> {
         .filter(|r| !r.text.trim().is_empty())
         .collect();
     regions.sort_by_key(|r| r.reading_order);
+    if drill_page(&regions) {
+        let mut issue = Issue::new(
+            "DRILL_CANDIDATE",
+            Severity::Review,
+            Some("content"),
+            "The pages hold a rephrasing drill (a numbered plain sentence and an \"Answer\" with polite versions), not a grammar pattern. Convert it with plans convert-drill, or treat it as grammar.",
+        );
+        issue.id = format!("DRILL_CANDIDATE:{}", document.id);
+        issue.stage = "segmentation".into();
+        issue.source_refs = regions.iter().map(|r| r.id.to_string()).collect();
+        return Some(issue);
+    }
     let marked: Vec<_> = regions
         .iter()
         .copied()
@@ -676,6 +688,28 @@ fn segmentation_issue(document: &LearningDocument) -> Option<Issue> {
     issue.stage = "segmentation".into();
     issue.source_refs = candidates.iter().map(|r| r.id.to_string()).collect();
     Some(issue)
+}
+
+/// WP-28: a rephrasing drill's pages: a line that is only "Answer" (the
+/// back's heading) and a numbered sentence (the front: "7. さっき…").
+fn drill_page(regions: &[&SourceRegion]) -> bool {
+    let answer = regions
+        .iter()
+        .any(|r| r.text.trim().eq_ignore_ascii_case("answer"));
+    let numbered = regions.iter().any(|r| {
+        let text = r.text.trim();
+        let digits = text
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || ('①'..='⑳').contains(c))
+            .count();
+        (1..=3).contains(&digits)
+            && text
+                .chars()
+                .nth(digits)
+                .is_some_and(|c| matches!(c, '.' | '．' | '、'))
+            && text.chars().any(|c| matches!(c, '\u{3040}'..='\u{30ff}'))
+    });
+    answer && numbered
 }
 
 /// Generation gate: required OCR must exist and its reviews must be resolved.

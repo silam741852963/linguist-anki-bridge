@@ -97,6 +97,7 @@ pub fn inspect(
             &g.pattern,
             &["Pattern", "Language", "UseKey", "Meaning", "Formation"],
         ),
+        LearningContent::Drill(d) => ("Prompt", &d.prompt, &["Prompt", "Language", "Answer"]),
     };
     // Search all models: a legacy Basic or Picture Words note can be a candidate.
     // Anki search is approximate; only the returned fields are compared below.

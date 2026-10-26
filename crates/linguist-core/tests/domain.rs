@@ -267,6 +267,7 @@ fn fixtures_render_fixed_models_and_roundtrip() {
         let expected = match doc.content {
             LearningContent::Vocabulary(_) => 9,
             LearningContent::Grammar(_) => 6,
+            LearningContent::Drill(_) => unreachable!(),
         };
         assert_eq!(rendered.fields.len(), expected);
         assert_eq!(
@@ -1368,4 +1369,180 @@ fn grammar_v4_renders_every_example_with_its_own_audio() {
     ] {
         assert!(tags.contains(&tag.to_string()), "{tags:?}");
     }
+}
+
+fn drill_document() -> LearningDocument {
+    let mut doc = LearningDocument::from_json(include_bytes!(
+        "../../../contracts/v2/fixtures/grammar.json"
+    ))
+    .unwrap();
+    doc.requested_tasks = vec![Task::Production];
+    doc.content = LearningContent::Drill(Drill {
+        kind: DrillKind::Rephrase,
+        prompt: "火曜日までに返事をもらえたらうれしいです。".into(),
+        instruction: "Business keigo".into(),
+        readings: vec![
+            ReadingHint {
+                word: "返事".into(),
+                reading: "へんじ".into(),
+            },
+            ReadingHint {
+                word: "幸い".into(),
+                reading: "さいわい".into(),
+            },
+        ],
+        answers: vec![
+            "火曜日までにお返事をいただければ幸いです。".into(),
+            "火曜日までにご返事をいただければ幸いです。".into(),
+        ],
+        changes: vec![DrillChange {
+            plain: "うれしいです".into(),
+            polite: "幸いです".into(),
+            kind: "formal".into(),
+            note: "A written, formal way to ask.".into(),
+        }],
+        translation: "I would be grateful for your reply by Tuesday.".into(),
+        chunks: vec![
+            "火曜日までに".into(),
+            "お返事を".into(),
+            "いただければ".into(),
+            "幸いです。".into(),
+        ],
+        decoys: vec!["うれしいです。".into()],
+        lesson: "Business Japanese".into(),
+        profile: None,
+    });
+    doc
+}
+
+#[test]
+fn a_drill_renders_furigana_highlights_answers_and_build_data() {
+    use linguist_core::records::{Evidence, EvidenceTarget, MediaAsset, MediaOwner, MediaRole};
+    let mut doc = drill_document();
+    let digest = "d".repeat(64);
+    doc.media.push(MediaAsset {
+        digest: digest.clone(),
+        filename: format!("lab_{digest}.wav"),
+        original_filename: None,
+        size_bytes: 10,
+        mime: "audio/wav".into(),
+        owner: MediaOwner::App,
+        role: MediaRole::Audio,
+        source_id: None,
+        attribution: "test".into(),
+        license: None,
+    });
+    doc.evidence.push(Evidence {
+        id: uuid::Uuid::new_v4(),
+        field: "audio".into(),
+        provenance: Provenance::Provider,
+        source_id: None,
+        region_id: None,
+        target: Some(EvidenceTarget::MediaAsset { digest }),
+        source_span: None,
+        language: doc.target_language.clone(),
+        claim: serde_json::json!({ "text": "火曜日までにお返事をいただければ幸いです。" })
+            .to_string(),
+        source_url: None,
+        ambiguous: true,
+    });
+    let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
+    assert_eq!(rendered.model.name, "Linguist Drill v1");
+    assert_eq!(
+        rendered.model.fields[0], "Prompt",
+        "Prompt is the sort field"
+    );
+    assert_eq!(rendered.tasks, [Task::Production]);
+    assert_eq!(
+        rendered.fields["Prompt"],
+        "火曜日までに<ruby>返事<rt>へんじ</rt></ruby>をもらえたらうれしいです。"
+    );
+    let answer = &rendered.fields["Answer"];
+    // The hint nests inside the highlight it falls in.
+    assert!(
+        answer.contains(&format!(
+            "[sound:lab_{}.wav]<span class=\"lab-target\">火曜日までにお<ruby>返事<rt>へんじ</rt></ruby>をいただければ<b class=\"lab-hl\"><ruby>幸い<rt>さいわい</rt></ruby>です</b>。</span>",
+            "d".repeat(64)
+        )),
+        "{answer}"
+    );
+    assert_eq!(answer.matches("<li").count(), 2);
+    assert!(rendered.fields["Changes"].contains("うれしいです → <b class=\"lab-hl\">幸いです</b>"));
+    assert_eq!(
+        rendered.fields["Translation"],
+        "<p>I would be grateful for your reply by Tuesday.</p>"
+    );
+    let data: serde_json::Value =
+        serde_json::from_str(&rendered.fields["Data"].replace("&amp;", "&")).unwrap();
+    assert_eq!(data["chunks"][1], "お返事を");
+    assert_eq!(data["decoys"][0], "うれしいです。");
+    assert_eq!(data["answers"].as_array().unwrap().len(), 2);
+    assert_eq!(rendered.fields["Kind"], "rephrase");
+    let tags = render::tags(&doc);
+    for tag in [
+        "lab::kind::drill",
+        "drill::rephrase",
+        "drill::ja",
+        "lab::lesson::business-japanese",
+        "lab::task::production",
+    ] {
+        assert!(tags.contains(&tag.to_string()), "{tags:?}");
+    }
+}
+
+#[test]
+fn a_drill_with_broken_build_data_or_facts_is_not_ready() {
+    let codes = |doc: &LearningDocument| -> Vec<String> {
+        validation::validate(doc)
+            .into_iter()
+            .filter(|i| i.severity == validation::Severity::Error)
+            .map(|i| i.code)
+            .collect()
+    };
+    assert!(
+        codes(&drill_document()).is_empty(),
+        "{:?}",
+        codes(&drill_document())
+    );
+    type Break = fn(&mut Drill);
+    let broken: [(&str, Break); 7] = [
+        ("DRILL_ANSWER_REQUIRED", |d| d.answers.clear()),
+        ("DRILL_CHUNKS_MISMATCH", |d| {
+            d.chunks.pop();
+        }),
+        ("DRILL_DECOY_INVALID", |d| {
+            d.decoys.push("いただければ".into())
+        }),
+        ("DRILL_DECOY_INVALID", |d| d.decoys.push("火曜日".into())),
+        ("DRILL_CHANGE_UNMATCHED", |d| {
+            d.changes[0].polite = "存じます".into()
+        }),
+        ("DRILL_CHANGE_UNMATCHED", |d| {
+            d.changes[0].kind = "rude".into()
+        }),
+        ("DRILL_READING_UNMATCHED", |d| {
+            d.readings[0].reading = "henji".into()
+        }),
+    ];
+    for (code, change) in broken {
+        let mut doc = drill_document();
+        let LearningContent::Drill(d) = &mut doc.content else {
+            panic!()
+        };
+        change(d);
+        assert!(
+            codes(&doc).contains(&code.to_string()),
+            "{code}: {:?}",
+            codes(&doc)
+        );
+    }
+    let mut doc = drill_document();
+    doc.requested_tasks = vec![Task::Recognition];
+    assert!(codes(&doc).contains(&"TASK_KIND_MISMATCH".to_string()));
+    let mut doc = drill_document();
+    let LearningContent::Drill(d) = &mut doc.content else {
+        panic!()
+    };
+    d.translation.clear();
+    assert!(codes(&doc).contains(&"REQUIRED_CONTENT".to_string()));
 }

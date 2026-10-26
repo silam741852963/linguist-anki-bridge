@@ -315,6 +315,61 @@ pub struct Grammar {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<JudgedProfile>,
 }
+/// WP-28 drill kinds. `rephrase`: say a plain sentence in a target register
+/// (a keigo drill: さっきもらった… to 先程ちょうだいした…).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DrillKind {
+    #[default]
+    Rephrase,
+}
+/// A reading hint the source gives for a word of the prompt or an answer
+/// (見積書 みつもりしょ), shown as furigana on that word only.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReadingHint {
+    pub word: String,
+    pub reading: String,
+}
+/// One change from the plain sentence to the answers: the plain part, the
+/// polite part that replaces it, its kind (`formal`, `humble`, `honorific`,
+/// `polite`) and a short note.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DrillChange {
+    pub plain: String,
+    pub polite: String,
+    pub kind: String,
+    #[serde(default)]
+    pub note: String,
+}
+/// WP-28 drill document. `answers` are every accepted version, the first
+/// being the tap-build target; `chunks` cut that first answer in order
+/// (they join to it exactly) and `decoys` are wrong chunks made from the
+/// plain parts of `changes`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Drill {
+    #[serde(default)]
+    pub kind: DrillKind,
+    pub prompt: String,
+    pub instruction: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub readings: Vec<ReadingHint>,
+    pub answers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changes: Vec<DrillChange>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub translation: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chunks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decoys: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lesson: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<JudgedProfile>,
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "kind",
@@ -325,6 +380,7 @@ pub struct Grammar {
 pub enum LearningContent {
     Vocabulary(Vocabulary),
     Grammar(Grammar),
+    Drill(Drill),
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

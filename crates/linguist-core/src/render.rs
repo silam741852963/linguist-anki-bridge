@@ -523,17 +523,157 @@ fn grammar_examples(
     }
     html
 }
+/// Byte spans of `needles` in `text`, longest needle first, never
+/// overlapping one already taken; `all` takes every occurrence, else the
+/// first only. Each span carries the index of its needle.
+fn spans(text: &str, needles: &[&str], all: bool) -> Vec<(usize, usize, usize)> {
+    let mut order: Vec<usize> = (0..needles.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(needles[i].chars().count()));
+    let mut taken: Vec<(usize, usize, usize)> = Vec::new();
+    for i in order {
+        let needle = needles[i].trim();
+        if needle.is_empty() {
+            continue;
+        }
+        for (start, _) in text.match_indices(needle) {
+            let end = start + needle.len();
+            if taken.iter().all(|&(s, e, _)| end <= s || start >= e) {
+                taken.push((start, end, i));
+                if !all {
+                    break;
+                }
+            }
+        }
+    }
+    taken.sort();
+    taken
+}
+/// Drill text: the `highlights` in the accent colour and the reading hints as
+/// furigana on the first occurrence of their word. A hint that crosses a
+/// highlight's edge is dropped; one inside a highlight nests in it.
+fn drill_text(text: &str, highlights: &[&str], readings: &[ReadingHint]) -> String {
+    let hl = spans(text, highlights, true);
+    let words: Vec<&str> = readings.iter().map(|r| r.word.as_str()).collect();
+    let ruby: Vec<_> = spans(text, &words, false)
+        .into_iter()
+        .filter(|&(s, e, _)| {
+            hl.iter()
+                .all(|&(hs, he, _)| e <= hs || s >= he || (s >= hs && e <= he))
+        })
+        .collect();
+    let mut points: std::collections::BTreeSet<usize> = [0, text.len()].into();
+    for &(s, e, _) in hl.iter().chain(&ruby) {
+        points.insert(s);
+        points.insert(e);
+    }
+    let points: Vec<usize> = points.into_iter().collect();
+    let mut html = String::new();
+    for pair in points.windows(2) {
+        let (at, next) = (pair[0], pair[1]);
+        for &(_, e, i) in &ruby {
+            if e == at {
+                html.push_str(&format!(
+                    "<rt>{}</rt></ruby>",
+                    escape(readings[i].reading.trim())
+                ));
+            }
+        }
+        if hl.iter().any(|&(_, e, _)| e == at) {
+            html.push_str("</b>");
+        }
+        if hl.iter().any(|&(s, _, _)| s == at) {
+            html.push_str("<b class=\"lab-hl\">");
+        }
+        if ruby.iter().any(|&(s, _, _)| s == at) {
+            html.push_str("<ruby>");
+        }
+        html.push_str(&escape(&text[at..next]));
+    }
+    let end = text.len();
+    for &(_, e, i) in &ruby {
+        if e == end {
+            html.push_str(&format!(
+                "<rt>{}</rt></ruby>",
+                escape(readings[i].reading.trim())
+            ));
+        }
+    }
+    if hl.iter().any(|&(_, e, _)| e == end) {
+        html.push_str("</b>");
+    }
+    html
+}
+/// Drill Answer (WP-28): every accepted answer with the polite parts of the
+/// changes highlighted and the play button of each selected reading of it.
+fn drill_answers(doc: &LearningDocument, d: &Drill) -> String {
+    let polite: Vec<&str> = d.changes.iter().map(|c| c.polite.as_str()).collect();
+    let audio: Vec<_> = doc
+        .media
+        .iter()
+        .filter(|m| m.role == MediaRole::Audio)
+        .map(|m| (m, spoken_text(doc, &m.digest)))
+        .collect();
+    let mut placed: Vec<&str> = Vec::new();
+    let mut html = String::from("<ul class=\"lab-examples lab-drill-answers\">");
+    for answer in &d.answers {
+        let mut sounds = String::new();
+        for (asset, text) in &audio {
+            if text.as_deref() == Some(answer.trim()) && !placed.contains(&asset.digest.as_str()) {
+                placed.push(&asset.digest);
+                sounds.push_str(&format!("[sound:{}]", asset.filename));
+            }
+        }
+        html.push_str(&format!(
+            "<li{}><div class=\"lab-example-line\">{}<span class=\"lab-target\">{}</span></div></li>",
+            if sounds.is_empty() { "" } else { " class=\"lab-voiced\"" },
+            sounds,
+            drill_text(answer.trim(), &polite, &d.readings)
+        ));
+    }
+    html.push_str("</ul>");
+    html
+}
+/// Drill Changes: plain part, polite part, kind and note, one per line.
+fn drill_changes(d: &Drill) -> String {
+    if d.changes.is_empty() {
+        return String::new();
+    }
+    let mut html = String::from("<dl class=\"lab-nuance lab-drill-changes\">");
+    for change in &d.changes {
+        html.push_str(&format!(
+            "<div><dt>{} → <b class=\"lab-hl\">{}</b></dt><dd><span class=\"lab-pos\">{}</span>{}</dd></div>",
+            escape(change.plain.trim()),
+            escape(change.polite.trim()),
+            escape(change.kind.trim()),
+            escape(change.note.trim())
+        ));
+    }
+    html.push_str("</dl>");
+    html
+}
+/// Drill Data: what the front's tap-build reads (chunks of the first
+/// answer, decoys, every accepted answer), as escaped JSON text.
+fn drill_data(d: &Drill) -> Result<String, ContractError> {
+    let data = serde_json::json!({
+        "v": 1,
+        "chunks": d.chunks,
+        "decoys": d.decoys,
+        "answers": d.answers.iter().map(|a| a.trim()).collect::<Vec<_>>(),
+    });
+    Ok(escape(&serde_json::to_string(&data)?))
+}
 /// Selected grammar readings of sentences that are no longer examples.
 fn stale_grammar_audio(doc: &LearningDocument) -> Vec<String> {
-    let LearningContent::Grammar(g) = &doc.content else {
-        return vec![];
+    let spoken: Vec<&str> = match &doc.content {
+        LearningContent::Grammar(g) => g.examples.iter().map(|e| e.sentence.trim()).collect(),
+        LearningContent::Drill(d) => d.answers.iter().map(|a| a.trim()).collect(),
+        LearningContent::Vocabulary(_) => return vec![],
     };
     doc.media
         .iter()
         .filter(|m| m.role == MediaRole::Audio)
         .filter(|m| {
-            spoken_text(doc, &m.digest)
-                .is_some_and(|text| !g.examples.iter().any(|e| e.sentence.trim() == text))
+            spoken_text(doc, &m.digest).is_some_and(|text| !spoken.contains(&text.as_str()))
         })
         .map(|m| m.digest.clone())
         .collect()
@@ -617,6 +757,16 @@ pub fn tags(doc: &LearningDocument) -> Vec<String> {
             }
             tags.extend(crate::profile::grammar(g).tags());
             tags.extend(crate::profile::judged_tags(g.profile.as_ref(), true));
+        }
+        LearningContent::Drill(d) => {
+            tags.push("lab::kind::drill".into());
+            tags.push(format!("drill::{}", slug(&format!("{:?}", d.kind))));
+            tags.push(format!("drill::{}", slug(doc.target_language.as_str())));
+            let lesson = slug(&d.lesson);
+            if !lesson.is_empty() {
+                tags.push(format!("lab::lesson::{lesson}"));
+            }
+            tags.extend(crate::profile::judged_tags(d.profile.as_ref(), true));
         }
     }
     for task in &doc.requested_tasks {
@@ -711,6 +861,19 @@ pub fn render(
                 },
             );
             fields.insert("Nuance".into(), grammar_nuance(g));
+        }
+        LearningContent::Drill(d) => {
+            fields.insert(
+                "Prompt".into(),
+                drill_text(d.prompt.trim(), &[], &d.readings),
+            );
+            fields.insert("Instruction".into(), escape(d.instruction.trim()));
+            fields.insert("Answer".into(), drill_answers(doc, d));
+            fields.insert("Changes".into(), drill_changes(d));
+            fields.insert("Translation".into(), block(d.translation.trim()));
+            fields.insert("Data".into(), drill_data(d)?);
+            fields.insert("Kind".into(), slug(&format!("{:?}", d.kind)));
+            fields.insert("Language".into(), doc.target_language.to_string());
         }
     }
     for asset in &doc.media {

@@ -235,6 +235,126 @@ pub fn class(text: &str) -> Option<&'static str> {
     })
 }
 
+/// Verbs that make a compound particle with the に or と before them
+/// (について, に関して, として, という): they stay in that chunk.
+const COMPOUND_PARTICLE_VERBS: [&str; 13] = [
+    "つく",
+    "関する",
+    "対する",
+    "よる",
+    "当たる",
+    "際する",
+    "沿う",
+    "おく",
+    "する",
+    "いう",
+    "言う",
+    "比べる",
+    "伴う",
+];
+
+/// Most chunks a sentence is cut into; shorter neighbours are joined first.
+pub const MAX_CHUNKS: usize = 9;
+
+/// A content word that starts a chunk (bunsetsu): a noun, an independent
+/// verb or adjective, an adverb, adnominal, conjunction, interjection or
+/// prefix. Suffixes and dependent words belong to the chunk before them.
+fn starts_chunk(token: &Token) -> bool {
+    let [pos, sub, _] = &token.pos;
+    match pos.as_str() {
+        "名詞" => !matches!(sub.as_str(), "接尾" | "非自立"),
+        "動詞" | "形容詞" => sub == "自立",
+        "副詞" | "連体詞" | "接続詞" | "感動詞" | "接頭詞" => true,
+        _ => false,
+    }
+}
+
+/// Whether `token` stays in the chunk that `previous` ended.
+fn continues_chunk(previous: &Token, token: &Token) -> bool {
+    let [pos, sub, _] = &token.pos;
+    let [prev_pos, prev_sub, _] = &previous.pos;
+    // A prefix belongs to its word; a noun run (交通費, 3点) is one word,
+    // unless the first is adverbial (先程 ちょうだい).
+    prev_pos == "接頭詞"
+        || (pos == "名詞" && prev_pos == "名詞" && prev_sub != "副詞可能")
+        // する after a サ変 noun (確認 させ).
+        || (pos == "動詞" && token.base == "する" && prev_pos == "名詞" && prev_sub == "サ変接続")
+        // A compound particle (に つき まして, と して).
+        || (pos == "動詞"
+            && prev_pos == "助詞"
+            && matches!(previous.surface.as_str(), "に" | "と")
+            && COMPOUND_PARTICLE_VERBS.contains(&token.base.as_str()))
+        // A word after an opening bracket.
+        || (prev_pos == "記号" && prev_sub == "括弧開")
+        || sub == "接尾"
+}
+
+/// Cut a sentence into bunsetsu chunks for a tap-build drill (WP-28): each
+/// chunk is a content word with the particles, auxiliaries, suffixes and
+/// punctuation that follow it. The chunks join to `text` exactly. A chunk
+/// of one character is joined to its neighbour, and a sentence gives at
+/// most `MAX_CHUNKS`, the shortest neighbours joined first.
+pub fn chunks(text: &str) -> Result<Vec<String>, String> {
+    let tokens = tokenize(text)?;
+    let mut out: Vec<String> = Vec::new();
+    let mut content = false;
+    let mut cursor = 0;
+    for (i, token) in tokens.iter().enumerate() {
+        // Characters the tokenizer skipped (spaces) stay where they were.
+        let at = text[cursor..]
+            .find(token.surface.as_str())
+            .map(|offset| cursor + offset)
+            .ok_or("TEXT_CHUNK_ALIGNMENT")?;
+        let gap = &text[cursor..at];
+        let open = token.pos[0] == "記号" && token.pos[1] == "括弧開";
+        let new_chunk = (starts_chunk(token) || open)
+            && content
+            && !(i > 0 && continues_chunk(&tokens[i - 1], token));
+        if new_chunk || out.is_empty() {
+            if let Some(last) = out.last_mut() {
+                last.push_str(gap);
+                out.push(String::new());
+            } else {
+                out.push(gap.to_owned());
+            }
+            content = false;
+        } else {
+            out.last_mut().unwrap().push_str(gap);
+        }
+        out.last_mut().unwrap().push_str(&token.surface);
+        content |= starts_chunk(token);
+        cursor = at + token.surface.len();
+    }
+    match out.last_mut() {
+        Some(last) => last.push_str(&text[cursor..]),
+        None if !text.is_empty() => out.push(text.to_owned()),
+        None => {}
+    }
+    // One-character chunks join their neighbour.
+    let mut i = 0;
+    while out.len() > 1 && i < out.len() {
+        if out[i].trim().chars().count() <= 1 {
+            if i == 0 {
+                let first = out.remove(0);
+                out[0].insert_str(0, &first);
+            } else {
+                let chunk = out.remove(i);
+                out[i - 1].push_str(&chunk);
+            }
+            continue;
+        }
+        i += 1;
+    }
+    while out.len() > MAX_CHUNKS {
+        let shortest = (0..out.len() - 1)
+            .min_by_key(|&i| out[i].chars().count() + out[i + 1].chars().count())
+            .unwrap();
+        let next = out.remove(shortest + 1);
+        out[shortest].push_str(&next);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +408,47 @@ mod tests {
         assert_eq!(bases("～の試み", &[]), ["試み"]);
         assert!(bases("The ます form is polite.", &[]).is_empty());
         assert_eq!(bases("PDAを使う", &[]), ["使う"]);
+    }
+
+    #[test]
+    fn a_keigo_sentence_is_cut_into_bunsetsu_that_join_back() {
+        let text = "先程ちょうだいした見積書につきまして、3点ほど確認させていただきたいことがあるのですが。";
+        let cut = chunks(text).unwrap();
+        assert_eq!(
+            cut,
+            [
+                "先程",
+                "ちょうだいした",
+                "見積書につきまして、",
+                "3点ほど",
+                "確認させていただきたいことが",
+                "あるのですが。"
+            ]
+        );
+        assert_eq!(cut.concat(), text);
+    }
+
+    #[test]
+    fn short_and_spaced_sentences_still_join_back() {
+        for text in [
+            "はい、ただ今、お持ちいたします。",
+            "そちら資料の2ページの表3をご覧ください。",
+            "お忙しいとは存じますが、山田様のご都合のよい日時をお知らせいただければ幸いでございます。",
+            "これ は 「テスト」 です。",
+            "はい。",
+        ] {
+            let cut = chunks(text).unwrap();
+            assert_eq!(cut.concat(), text, "{cut:?}");
+            assert!(cut.len() <= MAX_CHUNKS);
+            assert!(
+                cut.len() == 1 || cut.iter().all(|c| c.trim().chars().count() > 1),
+                "{cut:?}"
+            );
+        }
+        assert_eq!(
+            chunks("はい、ただ今、お持ちいたします。").unwrap(),
+            ["はい、", "ただ今、", "お持ちいたします。"]
+        );
     }
 
     #[test]

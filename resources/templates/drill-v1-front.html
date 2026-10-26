@@ -1,0 +1,103 @@
+{{#Prompt}}<div class="lab-card lab-front lab-drill" data-tags="{{Tags}}">
+<div class="lab-task">{{Instruction}}</div>
+<div class="lab-drill-prompt" id="lab-drill-prompt">{{Prompt}}</div>
+<div class="lab-build" id="lab-build">
+<div class="lab-build-line" id="lab-build-line"></div>
+<div class="lab-build-state" id="lab-build-state"></div>
+<div class="lab-build-tiles" id="lab-build-tiles"></div>
+<button type="button" class="lab-build-undo" id="lab-build-undo">Undo</button>
+</div>
+<div class="lab-drill-data" id="lab-drill-data" hidden>{{Data}}</div>
+<script>
+(function () {
+  var dataNode = document.getElementById("lab-drill-data");
+  var board = document.getElementById("lab-build");
+  if (!dataNode || !board) { return; }
+  var data;
+  try { data = JSON.parse(dataNode.textContent); } catch (e) { data = null; }
+  var answers = data && data.answers ? data.answers : [];
+  var tiles = data ? (data.chunks || []).concat(data.decoys || []) : [];
+  if (!answers.length || tiles.length < 2) { board.style.display = "none"; return; }
+  // Seed: day number and a hash of the prompt, so the order is the same
+  // all day on every device and changes the next day.
+  var prompt = document.getElementById("lab-drill-prompt");
+  var text = prompt ? prompt.textContent : answers[0];
+  var seed = Math.floor(Date.now() / 86400000) % 2147483647;
+  for (var c = 0; c < text.length; c++) { seed = (seed * 31 + text.charCodeAt(c)) % 2147483647; }
+  if (seed <= 0) { seed += 2147483646; }
+  function random() { seed = (seed * 48271) % 2147483647; return seed / 2147483647; }
+  var order = [];
+  for (var i = 0; i < tiles.length; i++) { order.push(i); }
+  for (var j = order.length - 1; j > 0; j--) {
+    var k = Math.floor(random() * (j + 1));
+    var t = order[j]; order[j] = order[k]; order[k] = t;
+  }
+  var line = document.getElementById("lab-build-line");
+  var state = document.getElementById("lab-build-state");
+  var box = document.getElementById("lab-build-tiles");
+  var undo = document.getElementById("lab-build-undo");
+  var buttons = [];
+  var used = [];
+  var built = "";
+  var mistakes = 0;
+  var done = false;
+  function startsAnswer(candidate) {
+    for (var a = 0; a < answers.length; a++) { if (answers[a].indexOf(candidate) === 0) { return true; } }
+    return false;
+  }
+  function isAnswer(candidate) {
+    for (var a = 0; a < answers.length; a++) { if (answers[a] === candidate) { return true; } }
+    return false;
+  }
+  function show() {
+    line.textContent = built;
+    for (var b = 0; b < buttons.length; b++) {
+      buttons[b].className = "lab-tile" + (used.indexOf(b) >= 0 ? " lab-tile-used" : "");
+      buttons[b].disabled = done || used.indexOf(b) >= 0;
+    }
+    undo.disabled = done || !used.length;
+    if (done) {
+      state.className = "lab-build-state lab-build-right";
+      state.textContent = mistakes ? "Correct, after " + mistakes + (mistakes === 1 ? " wrong tap" : " wrong taps") : "Correct";
+    }
+  }
+  function tap(index) {
+    if (done || used.indexOf(index) >= 0) { return; }
+    var next = built + tiles[index];
+    if (startsAnswer(next)) {
+      used.push(index);
+      built = next;
+      done = isAnswer(built);
+      state.className = "lab-build-state";
+      state.textContent = "";
+    } else {
+      mistakes++;
+      var button = buttons[index];
+      button.className = "lab-tile lab-tile-wrong";
+      state.className = "lab-build-state lab-build-wrong";
+      state.textContent = "Not next";
+      setTimeout(function () { if (!done && used.indexOf(index) < 0) { button.className = "lab-tile"; } }, 700);
+      return;
+    }
+    show();
+  }
+  for (var n = 0; n < order.length; n++) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.textContent = tiles[order[n]];
+    button.onclick = (function (index) { return function () { tap(index); }; })(order[n]);
+    buttons[order[n]] = button;
+    box.appendChild(button);
+  }
+  undo.onclick = function () {
+    if (done || !used.length) { return; }
+    used.pop();
+    built = "";
+    for (var u = 0; u < used.length; u++) { built += tiles[used[u]]; }
+    state.textContent = "";
+    show();
+  };
+  show();
+})();
+</script>
+</div>{{/Prompt}}

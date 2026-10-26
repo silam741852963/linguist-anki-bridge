@@ -231,6 +231,21 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                 &[Task::Recognition, Task::Application],
             )
         }
+        LearningContent::Drill(d) => {
+            for (code, field, message) in drill_problems(d) {
+                add(code, Severity::Error, Some(field), message)
+            }
+            let translation_required = doc.target_language.as_str().split('-').next()
+                != doc.explanation_language.as_str().split('-').next();
+            let mut required = vec![
+                ("prompt", d.prompt.as_str()),
+                ("instruction", d.instruction.as_str()),
+            ];
+            if translation_required {
+                required.push(("translation", d.translation.as_str()));
+            }
+            (required, d.prompt.as_str(), &[Task::Production])
+        }
     };
     for (field, value) in required {
         if value.trim().is_empty() {
@@ -442,6 +457,7 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             (&doc.content, map.target_model),
             (LearningContent::Vocabulary(_), TargetModelKind::Vocabulary)
                 | (LearningContent::Grammar(_), TargetModelKind::Grammar)
+                | (LearningContent::Drill(_), TargetModelKind::Drill)
         );
         if map.validate().is_err()
             || !mapped_sources.insert(map.source_id)
@@ -495,9 +511,10 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             );
         }
     }
-    let examples = match &doc.content {
+    let examples: &[Example] = match &doc.content {
         LearningContent::Vocabulary(v) => &v.examples,
         LearningContent::Grammar(g) => &g.examples,
+        LearningContent::Drill(_) => &[],
     };
     let translation_required = doc.target_language.as_str().split('-').next()
         != doc.explanation_language.as_str().split('-').next();
@@ -593,6 +610,7 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             Some(EvidenceTarget::Example { index }) => match &doc.content {
                 LearningContent::Vocabulary(v) => v.examples.get(*index),
                 LearningContent::Grammar(g) => g.examples.get(*index),
+                LearningContent::Drill(_) => None,
             }
             .is_some_and(|example| {
                 example.provenance == evidence.provenance
@@ -687,6 +705,7 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
     let judged = match &doc.content {
         LearningContent::Vocabulary(v) => v.profile.as_ref().map(|p| (p, false)),
         LearningContent::Grammar(g) => g.profile.as_ref().map(|p| (p, true)),
+        LearningContent::Drill(d) => d.profile.as_ref().map(|p| (p, true)),
     };
     if let Some(problem) =
         judged.and_then(|(profile, grammar)| crate::profile::judged_problem(profile, grammar))
@@ -863,4 +882,84 @@ pub fn vocabulary_units(text: &str) -> Vec<String> {
 fn is_kana(text: &str) -> bool {
     text.chars()
         .all(|c| matches!(c, '\u{3041}'..='\u{309F}' | '\u{30A0}'..='\u{30FF}'))
+}
+
+/// Drill kinds a `change` may name: what the polite part does.
+pub const DRILL_CHANGE_KINDS: [&str; 4] = ["formal", "humble", "honorific", "polite"];
+
+/// WP-28 drill checks: at least one answer, chunks that re-join to the
+/// first answer, decoys that are not chunks or accepted text, changes found
+/// in an answer and reading hints found in the prompt.
+pub fn drill_problems(d: &Drill) -> Vec<(&'static str, &'static str, &'static str)> {
+    let mut out = Vec::new();
+    let answers: Vec<&str> = d.answers.iter().map(|a| a.trim()).collect();
+    if answers.is_empty() || answers.iter().any(|a| a.is_empty()) {
+        out.push((
+            "DRILL_ANSWER_REQUIRED",
+            "answers",
+            "A drill needs at least one accepted answer, none empty.",
+        ));
+    }
+    let distinct: BTreeSet<_> = answers.iter().collect();
+    if distinct.len() != answers.len() {
+        out.push((
+            "DRILL_ANSWER_DUPLICATE",
+            "answers",
+            "Accepted answers must be distinct.",
+        ));
+    }
+    if d.chunks.len() < 2
+        || d.chunks.iter().any(|c| c.trim().is_empty())
+        || answers
+            .first()
+            .is_none_or(|first| d.chunks.concat() != *first)
+    {
+        out.push((
+            "DRILL_CHUNKS_MISMATCH",
+            "chunks",
+            "Chunks must be at least two, none empty, and join to the first answer exactly.",
+        ));
+    }
+    let decoys: BTreeSet<_> = d.decoys.iter().map(|c| c.as_str()).collect();
+    if decoys.len() != d.decoys.len()
+        || d.decoys.iter().any(|decoy| {
+            decoy.trim().is_empty()
+                || d.chunks.contains(decoy)
+                || answers.iter().any(|answer| answer.contains(decoy.as_str()))
+        })
+    {
+        out.push((
+            "DRILL_DECOY_INVALID",
+            "decoys",
+            "A decoy must be distinct, not a chunk and not text of an accepted answer.",
+        ));
+    }
+    if d.changes.iter().any(|c| {
+        c.plain.trim().is_empty()
+            || c.polite.trim().is_empty()
+            || !DRILL_CHANGE_KINDS.contains(&c.kind.as_str())
+            || !answers
+                .iter()
+                .any(|answer| answer.contains(c.polite.trim()))
+    }) {
+        out.push((
+            "DRILL_CHANGE_UNMATCHED",
+            "changes",
+            "A change needs a plain and a polite part, a known kind, and its polite part in an answer.",
+        ));
+    }
+    if d.readings.iter().any(|r| {
+        r.word.trim().is_empty()
+            || r.reading.trim().is_empty()
+            || !r.reading.chars().all(|c| is_kana(&c.to_string()))
+            || !(d.prompt.contains(r.word.trim())
+                || answers.iter().any(|answer| answer.contains(r.word.trim())))
+    }) {
+        out.push((
+            "DRILL_READING_UNMATCHED",
+            "readings",
+            "A reading hint needs a word of the prompt or an answer and a kana reading.",
+        ));
+    }
+    out
 }

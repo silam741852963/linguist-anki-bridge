@@ -795,6 +795,11 @@ pub fn build_request(
                 g.examples.len(),
             )
         }
+        // WP-28: the reviewer writes a drill from its source pages; nothing
+        // is drafted, so no provider call is spent on it.
+        LearningContent::Drill(_) => {
+            return Err("GENERATION_DRILL_AUTHORED: a drill is written by its reviewer".into());
+        }
     };
     if settings.values[prompt_key] != prompt_ref {
         return Err(
@@ -1685,6 +1690,7 @@ fn merge_checked_output(
     let examples = match &mut child.content {
         LearningContent::Vocabulary(v) => &mut v.examples,
         LearningContent::Grammar(g) => &mut g.examples,
+        LearningContent::Drill(_) => return Err("GENERATION_KIND_CONFLICT".into()),
     };
     for example in new_examples {
         if examples

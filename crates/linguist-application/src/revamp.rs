@@ -508,6 +508,7 @@ pub fn stage_document(
         let example_index = match &doc.content {
             linguist_core::LearningContent::Vocabulary(v) => v.examples.len(),
             linguist_core::LearningContent::Grammar(g) => g.examples.len(),
+            linguist_core::LearningContent::Drill(_) => continue,
         };
         doc.evidence.push(Evidence {
             id: evidence_id,
@@ -533,6 +534,7 @@ pub fn stage_document(
         match &mut doc.content {
             linguist_core::LearningContent::Vocabulary(v) => v.examples.push(example),
             linguist_core::LearningContent::Grammar(g) => g.examples.push(example),
+            linguist_core::LearningContent::Drill(_) => {}
         }
     }
     for (field, claim) in values {
@@ -1112,6 +1114,7 @@ pub fn native_history_request(
     let kind = match &document.content {
         linguist_core::LearningContent::Vocabulary(_) => TargetModelKind::Vocabulary,
         linguist_core::LearningContent::Grammar(_) => TargetModelKind::Grammar,
+        linguist_core::LearningContent::Drill(_) => TargetModelKind::Drill,
     };
     // A map entry for a template the note has no card of is dropped: a
     // uniform map (0, 1, 2) serves notes with fewer cards (WP-24).
@@ -1136,6 +1139,7 @@ pub fn native_history_request(
                 (TargetModelKind::Vocabulary, Task::Spelling) => 2,
                 (TargetModelKind::Grammar, Task::Recognition) => 0,
                 (TargetModelKind::Grammar, Task::Application) => 1,
+                (TargetModelKind::Drill, Task::Production) => 0,
                 _ => {
                     return Err(
                         "SOURCE_TASK_MAP_INVALID: task does not belong to the target model"

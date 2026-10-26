@@ -39,6 +39,8 @@ pub struct CardState {
 pub enum TargetModelKind {
     Vocabulary,
     Grammar,
+    /// WP-28 `Linguist Drill v1`: one card, task Production.
+    Drill,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -83,6 +85,7 @@ impl SourceTaskMap {
                 (TargetModelKind::Vocabulary, Task::Spelling) => 2,
                 (TargetModelKind::Grammar, Task::Recognition) => 0,
                 (TargetModelKind::Grammar, Task::Application) => 1,
+                (TargetModelKind::Drill, Task::Production) => 0,
                 _ => return Err(invalid()),
             };
             if entry.target_ordinal != expected
@@ -408,6 +411,9 @@ pub const GRAMMAR_SPLIT_SOURCE: &str = "grammar_split_request_v1";
 /// Source kind of the recorded request of a vocabulary split group (one note
 /// holding several words or readings).
 pub const VOCABULARY_SPLIT_SOURCE: &str = "vocabulary_split_request_v1";
+/// Source kind of the recorded request that turned a grammar-cohort item
+/// into a rephrasing drill (WP-28).
+pub const DRILL_CONVERSION_SOURCE: &str = "drill_conversion_request_v1";
 
 /// A reviewed split of one source note: grammar patterns or vocabulary words.
 /// The anchor keeps the source note and its history; other units are new notes.
@@ -446,7 +452,9 @@ impl GrammarGroup {
                 .find(|document| document.id == *id)
                 .ok_or_else(fail)?;
             let request_kind = match document.content {
-                crate::LearningContent::Grammar(_) => GRAMMAR_SPLIT_SOURCE,
+                crate::LearningContent::Grammar(_) | crate::LearningContent::Drill(_) => {
+                    GRAMMAR_SPLIT_SOURCE
+                }
                 crate::LearningContent::Vocabulary(_) => VOCABULARY_SPLIT_SOURCE,
             };
             if !document

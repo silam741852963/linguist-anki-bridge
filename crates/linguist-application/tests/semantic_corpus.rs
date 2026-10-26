@@ -406,6 +406,7 @@ fn policy(fixture: &Fixture, outcome: &Outcome) {
     let examples = match &document.content {
         LearningContent::Vocabulary(v) => &v.examples,
         LearningContent::Grammar(g) => &g.examples,
+        LearningContent::Drill(_) => &Vec::new(),
     };
     for example in examples {
         assert!(
@@ -453,6 +454,7 @@ fn policy(fixture: &Fixture, outcome: &Outcome) {
                     "{id}: ready exercise leaks the answer"
                 );
             }
+            LearningContent::Drill(_) => {}
         }
         let rendered = outcome.rendered.as_ref().expect("ready content renders");
         for (field, value) in rendered {

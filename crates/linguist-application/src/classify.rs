@@ -55,6 +55,8 @@ pub fn pending(plan: &PlanRevision) -> Vec<&LearningDocument> {
         .filter(|d| match &d.content {
             LearningContent::Vocabulary(v) => v.profile.is_none(),
             LearningContent::Grammar(g) => g.profile.is_none(),
+            // Drills are not classified (WP-28).
+            LearningContent::Drill(_) => false,
         })
         .collect()
 }
@@ -96,6 +98,13 @@ pub fn compact(doc: &LearningDocument) -> Value {
             "meaning": first_line(&g.meaning),
             "formation": first_line(&g.formation),
             "example": g.examples.first().map(|e| first_line(&e.sentence)).unwrap_or_default(),
+        }),
+        LearningContent::Drill(d) => json!({
+            "id": doc.id,
+            "kind": "drill",
+            "language": doc.target_language.as_str(),
+            "prompt": d.prompt,
+            "answer": d.answers.first().cloned().unwrap_or_default(),
         }),
     }
 }
@@ -169,7 +178,7 @@ pub fn merge_reply(
             continue;
         };
         match &doc.content {
-            LearningContent::Grammar(_) => {
+            LearningContent::Grammar(_) | LearningContent::Drill(_) => {
                 judged_extras(&mut profile, p.register, String::new(), None)
             }
             LearningContent::Vocabulary(v) => judged_extras(
@@ -294,6 +303,7 @@ pub fn classify_plan(
         match &mut document.content {
             LearningContent::Vocabulary(v) => v.profile = Some(profile),
             LearningContent::Grammar(g) => g.profile = Some(profile),
+            LearningContent::Drill(d) => d.profile = Some(profile),
         }
     }
     // A classified document differs from its base only in the profile, which
@@ -310,6 +320,7 @@ pub fn classify_plan(
         match &mut bare.content {
             LearningContent::Vocabulary(v) => v.profile = None,
             LearningContent::Grammar(g) => g.profile = None,
+            LearningContent::Drill(d) => d.profile = None,
         }
         for from in [
             old.semantic_digest().map_err(|e| e.to_string())?,
@@ -346,6 +357,7 @@ pub fn profile_only(older: &LearningDocument, newer: &LearningDocument) -> bool 
         match &mut d.content {
             LearningContent::Vocabulary(v) => v.profile = None,
             LearningContent::Grammar(g) => g.profile = None,
+            LearningContent::Drill(d) => d.profile = None,
         }
         for review in &mut d.reviews {
             review.input_digest.clear();

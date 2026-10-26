@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from linguist_bridge import manifest  # noqa: E402
 from linguist_bridge.payloads import (  # noqa: E402
-    GRAMMAR_V3_FIELDS, GRAMMAR_V4_FIELDS, SCHEDULER_KEYS,
+    DRILL_V1_FIELDS, GRAMMAR_V3_FIELDS, GRAMMAR_V4_FIELDS, SCHEDULER_KEYS,
     PayloadError, VOCAB_FIELDS, VOCAB_V3_FIELDS, validate_body)
 
 PLAN = "lab-jcs-v1:plan:" + "a" * 64
@@ -107,6 +107,29 @@ class PayloadTest(unittest.TestCase):
                     [dict(entry, scheduler=dict(scheduler, due=""))],
                     [dict(entry, card_ordinal=-1)]):
             self.assertInvalid("create_note", dict(body, inherit_schedule=bad))
+
+    def test_drill_create_body_and_manifest(self):
+        marker = "lab_op_" + OPERATION.replace("-", "")
+        fields = {name: "" for name in DRILL_V1_FIELDS}
+        fields.update(Prompt="さっきもらった。", Answer="<ul><li>先程ちょうだいした。</li></ul>",
+                      Data='{"v":1}', Language="ja")
+        body = {"model_name": "Linguist Drill v1", "model_manifest_digest": "b" * 64,
+                "deck_id": "123", "fields": fields, "tags": [marker, "lab::kind::drill"],
+                "marker_tag": marker, "source_plan_digest": PLAN, "checkpoint_digest": "c" * 64,
+                "binding": {"profile_fingerprint": "d" * 64, "path_fingerprint": "e" * 64},
+                "expected_absent": True}
+        check("create_note", body)
+        for edit in ({"Prompt": " "}, {"Answer": ""}, {"Data": ""}, {"Language": "vi"}):
+            self.assertInvalid("create_note", dict(body, fields=dict(fields, **edit)))
+        model = {"name": "Linguist Drill v1", "version": 1, "fields": sorted(DRILL_V1_FIELDS),
+                 "templates": [{"name": "Drill", "ordinal": 0, "front": "{{Prompt}}",
+                                "back": "{{Answer}}"}], "css": ""}
+        install = {"manifest": model, "manifest_digest": manifest.managed_digest(model),
+                   "expected_absent": True}
+        check("install_model", install)
+        bad = dict(model, fields=["Prompt"])
+        self.assertInvalid("install_model", dict(install, manifest=bad,
+                                                 manifest_digest=manifest.managed_digest(bad)))
 
     def test_media_model_and_export_bodies(self):
         media = {"filename": "eat.ogg", "sha256": "c" * 64, "size_bytes": 10,

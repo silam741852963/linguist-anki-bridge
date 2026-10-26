@@ -96,6 +96,8 @@ pub(crate) struct SplitUnit {
 pub(crate) enum SplitKind {
     Grammar,
     Vocabulary,
+    /// WP-28: one unit, the item rewritten as a drill in place.
+    Drill,
 }
 impl SplitKind {
     /// Error-code prefix and the request source kind recorded on every unit.
@@ -103,10 +105,13 @@ impl SplitKind {
         match self {
             Self::Grammar => ("GRAMMAR_SPLIT", GRAMMAR_SPLIT_SOURCE),
             Self::Vocabulary => ("VOCAB_SPLIT", VOCABULARY_SPLIT_SOURCE),
+            Self::Drill => ("DRILL_CONVERT", DRILL_CONVERSION_SOURCE),
         }
     }
 }
-pub use linguist_core::records::{GRAMMAR_SPLIT_SOURCE, VOCABULARY_SPLIT_SOURCE};
+pub use linguist_core::records::{
+    DRILL_CONVERSION_SOURCE, GRAMMAR_SPLIT_SOURCE, VOCABULARY_SPLIT_SOURCE,
+};
 
 /// Publish one explicit source-history anchor and fresh sibling identities
 /// for an already validated request. The original item is replaced by the
@@ -195,6 +200,20 @@ pub(crate) fn publish_split(
             uuid::Uuid::new_v4()
         };
         document.content = unit.content;
+        if kind == SplitKind::Drill {
+            // A drill keeps the note and its card, now its one Production
+            // card: the task map is made again from the native history
+            // review (0=production), and the pages' OCR reviews are done by
+            // the reviewer who wrote the drill from them.
+            document.requested_tasks = unit.sibling_tasks.clone();
+            document.task_maps.clear();
+            for card in document.sources.iter_mut().flat_map(|s| &mut s.cards) {
+                card.task = Task::Production;
+            }
+            document
+                .issues
+                .retain(|issue| issue.stage != "ocr" && issue.code != "SOURCE_TASK_MAPPING_REVIEW");
+        }
         if index != anchor_index {
             // Siblings are new notes: fresh scheduling, no inherited card state or
             // task maps. The source archive stays linked as a reference only.

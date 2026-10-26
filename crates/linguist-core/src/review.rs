@@ -1026,6 +1026,9 @@ fn reject_generated(
             let examples = match content {
                 crate::LearningContent::Vocabulary(v) => &mut v.examples,
                 crate::LearningContent::Grammar(g) => &mut g.examples,
+                crate::LearningContent::Drill(_) => {
+                    return Err(ContractError("REVIEW_EVIDENCE_TARGET_INVALID".into()));
+                }
             };
             if examples
                 .get(index)

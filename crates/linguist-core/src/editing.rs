@@ -85,6 +85,7 @@ pub fn apply_patch(
                 let meaning = match &mut document.content {
                     crate::LearningContent::Vocabulary(vocab) => &mut vocab.meaning,
                     crate::LearningContent::Grammar(grammar) => &mut grammar.meaning,
+                    crate::LearningContent::Drill(drill) => &mut drill.translation,
                 };
                 if meaning.trim().is_empty() {
                     *meaning = value.trim().to_owned();

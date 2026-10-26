@@ -447,11 +447,12 @@ fn model_inspection_exposes_differences_and_checks_profile_after_read() {
             assert!(!report.managed_verified);
             assert!(report.template_order_verified);
             assert_eq!(report.manifest_digest, target.manifest_digest().unwrap());
-            assert_eq!(report.compatibility.len(), 3);
+            assert_eq!(report.compatibility.len(), 4);
             assert!(report.compatibility[0].exact_content_match);
-            // The English model lacks only Kanji; grammar differs entirely.
+            // The English model lacks only Kanji; grammar and drill differ entirely.
             assert_eq!(report.compatibility[1].unexpected_fields, ["Kanji"]);
             assert!(!report.compatibility[2].missing_fields.is_empty());
+            assert!(!report.compatibility[3].missing_fields.is_empty());
         }
         let requests = server.finish();
         assert_eq!(requests.len(), 7);
