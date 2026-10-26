@@ -201,3 +201,6 @@ Reclassify those plans from a fresh base instead.
     the two screenshots into prompt and answers. Until then, defer every
     drill card the campaign meets. 夕暮れの詞 has 317 image-only "Cơ bản"
     notes; some are grammar pages, the rest drills.
+- 2026-10-26: the user chose to keep the keigo drills as drills, in text,
+  answered by tap-build on the phone. Plan: [WP-28](wp-28.md). Until it
+  ships, agent turns defer every drill note.
