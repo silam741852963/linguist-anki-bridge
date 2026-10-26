@@ -1832,8 +1832,8 @@ impl Context<'_> {
         Ok(json!({"batch": batch, "note": note, "phase": "needs_agent"}))
     }
 
-    /// `campaign reopen BATCH --reason R`: send an approved batch back to
-    /// review before any apply job exists for it. Deferrals the approval
+    /// `campaign reopen BATCH --reason R`: send an approved batch, or an
+    /// applying one that wrote nothing, back to review. Deferrals the approval
     /// made (`VALIDATION:`) are cleared; the next tick reviews it again and
     /// a new approval is needed.
     pub fn reopen(&self, batch: u32, reason: &str, fresh: bool) -> Result<Value, String> {
@@ -1868,15 +1868,20 @@ impl Context<'_> {
             )?;
             return Ok(json!({"batch": batch, "phase": "selected", "notes": again.notes.len()}));
         }
-        if record.phase != "approved"
-            || !data.apply_jobs.is_empty()
-            || data.apply_intent_ms.is_some()
-        {
+        // An applying batch whose first split group failed its preflight
+        // (a revision without the target deck) wrote nothing: it reopens too.
+        let nothing_written = data.apply_jobs.is_empty()
+            && data.apply_intent_ms.is_none()
+            && data.groups_done.is_empty()
+            && data.committed.is_empty();
+        if !matches!(record.phase.as_str(), "approved" | "applying") || !nothing_written {
             return Err(format!(
-                "CAMPAIGN_BATCH_LOCKED: batch {batch} is {} (only an approved batch without an apply job reopens)",
+                "CAMPAIGN_BATCH_LOCKED: batch {batch} is {} (only an approved or applying batch that wrote nothing reopens)",
                 record.phase
             ));
         }
+        data.step_failures = 0;
+        data.last_error = None;
         data.approval = None;
         data.before.clear();
         data.deferred

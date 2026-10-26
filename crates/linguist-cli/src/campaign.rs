@@ -92,7 +92,7 @@ pub(crate) enum CampaignCommand {
         #[arg(long)]
         undefer: bool,
     },
-    /// Send an approved batch back to review before its apply job exists.
+    /// Send an approved batch, or an applying one that wrote nothing, back to review.
     Reopen {
         /// Campaign ID from `campaign list`.
         campaign: Uuid,

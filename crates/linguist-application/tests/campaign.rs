@@ -1760,6 +1760,70 @@ fn approving_a_batch_whose_every_note_is_deferred_finishes_it() {
 }
 
 #[test]
+fn an_applying_batch_that_wrote_nothing_reopens() {
+    let root =
+        std::env::temp_dir().join(format!("lab-campaign-reopen-applying-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    ctx.tick(600).unwrap();
+    assert_eq!(phases(&root, id), ["ready"]);
+    // A split group failed its preflight (a revision without the target
+    // deck): the batch is applying with three step failures, nothing written.
+    let set = |mutate: &dyn Fn(&mut BatchData)| {
+        let mut store = linguist_store::Store::open_existing(&root).unwrap();
+        let record = store.campaign_batch(id, 1).unwrap();
+        let mut data = BatchData::from_value(&record.data).unwrap();
+        mutate(&mut data);
+        store
+            .update_campaign_batch(
+                id,
+                1,
+                record.version,
+                "applying",
+                &data.to_value(),
+                "batch",
+                &json!({}),
+                2000,
+            )
+            .unwrap();
+    };
+    set(&|data| {
+        data.step_failures = 3;
+        data.last_error =
+            Some("SPLIT_PREFLIGHT_FAILED: unit u: APPLY_TARGET_DECK_UNCONFIGURED".into());
+    });
+    let out = ctx.reopen(1, "deck lost", false).unwrap();
+    assert_eq!(out["phase"], "reviewing");
+    let data = BatchData::from_value(
+        &linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign_batch(id, 1)
+            .unwrap()
+            .data,
+    )
+    .unwrap();
+    assert_eq!(
+        (data.step_failures, data.last_error, data.approval),
+        (0, None, None)
+    );
+    // Once a split group is done, an applying batch never reopens.
+    set(&|data| data.groups_done.push(Uuid::new_v4()));
+    assert!(
+        ctx.reopen(1, "again", false)
+            .unwrap_err()
+            .starts_with("CAMPAIGN_BATCH_LOCKED")
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_ready_batch_reopened_fresh_is_prepared_again_from_scratch() {
     let root = std::env::temp_dir().join(format!("lab-campaign-fresh-{}", Uuid::new_v4()));
     let id = create(&root, spec(false), world_notes()[..2].to_vec());
