@@ -133,6 +133,8 @@ struct World {
     /// `plans generate` drafts them, after this many generate calls.
     undrafted: BTreeSet<String>,
     undrafted_skips: u32,
+    /// Every `plans generate` fails as a command (no JSON) with this error.
+    generate_error: Option<String>,
     /// The next `plans generate` calls fail every item with this error.
     draft_fail: Option<(u32, String)>,
     /// An apply that ends needing recovery, then reconcile attempts that
@@ -376,6 +378,13 @@ impl FakeCli {
                 ok(json!({"revision": 0}))
             }
             ["plans", "generate", plan, ..] => {
+                if let Some(error) = w.generate_error.clone() {
+                    return Output {
+                        code: 2,
+                        json: Value::Null,
+                        stderr: json!({"error": error}).to_string(),
+                    };
+                }
                 if let Some((left, error)) = w.draft_fail.clone() {
                     w.draft_fail = (left > 1).then(|| (left - 1, error.clone()));
                     let notes = w.plans[*plan].notes.clone();
@@ -1260,7 +1269,7 @@ fn an_agent_edit_during_a_review_is_reviewed_again() {
 }
 
 #[test]
-fn a_batch_held_only_by_undrafted_items_is_drafted_again_once_per_revision() {
+fn a_batch_held_only_by_undrafted_items_is_drafted_again_every_half_hour() {
     let root = std::env::temp_dir().join(format!("lab-campaign-undrafted-{}", Uuid::new_v4()));
     let id = create(&root, spec(false), world_notes()[..2].to_vec());
     let cli = FakeCli {
@@ -1291,16 +1300,50 @@ fn a_batch_held_only_by_undrafted_items_is_drafted_again_once_per_revision() {
     // the batch waits: no generate loop.
     assert_eq!(generates(), 2, "the batch is drafted again once");
     ctx.tick(600).unwrap();
-    assert_eq!(generates(), 2, "once per revision");
+    assert_eq!(generates(), 2, "not again within the interval");
     assert_eq!(phases(&root, id), ["needs_agent"]);
-    // A newer revision (an agent edit) reviews it again, and drafts land.
-    {
-        let mut w = cli.world.lock().unwrap();
-        w.undrafted_skips = 0;
-        w.plans.values_mut().next().unwrap().revision += 1;
-    }
+    // Half an hour later, on the same revision, it is drafted again and the
+    // drafts land.
+    cli.world.lock().unwrap().undrafted_skips = 0;
+    cli.clock.fetch_add(31 * 60 * 1000, Ordering::SeqCst);
     ctx.tick(600).unwrap();
     assert_eq!(phases(&root, id), ["ready"]);
+}
+
+#[test]
+fn a_failed_generate_command_is_a_step_failure_not_nothing_new() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-generr-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.undrafted.insert("101".into());
+        w.generate_error = Some("GENERATION_SETTINGS_INVALID: boom".into());
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    ctx.tick(600).unwrap();
+    let data = BatchData::from_value(
+        &linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign_batch(id, 1)
+            .unwrap()
+            .data,
+    )
+    .unwrap();
+    // Before, the error read as "nothing new": the batch waited for an agent
+    // who could not draft it.
+    assert!(data.step_failures > 0);
+    assert!(
+        data.last_error
+            .is_some_and(|e| e.contains("GENERATION_SETTINGS_INVALID")),
+    );
+    assert_eq!(data.redraft_after_ms, None);
 }
 
 #[test]

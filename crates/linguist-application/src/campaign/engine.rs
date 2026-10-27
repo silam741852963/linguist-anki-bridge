@@ -107,6 +107,8 @@ const WRITE_PHASES: [&str; 4] = ["approved", "applying", "verifying", "merging"]
 const LEASE_SECONDS: u64 = 120;
 /// Failed drafts of one note before the agent decides (WP-24).
 const MAX_DRAFT_FAILURES: u32 = 3;
+/// How often a batch held only by undrafted items is reviewed again.
+const REDRAFT_INTERVAL_MS: u64 = 30 * 60 * 1000;
 
 fn s(args: &[&str]) -> Vec<String> {
     args.iter().map(|a| (*a).to_owned()).collect()
@@ -592,14 +594,18 @@ impl Context<'_> {
             // The review rounds can run out before every item is drafted (a
             // grammar split adds many units at once): the batch then holds
             // only PLAN_NOT_READY with empty content no agent can fill, and
-            // nothing would draft it again. Review once more per revision.
-            if data.redraft_revision == Some(revision) || !self.undrafted(&data, &head) {
+            // nothing would draft it again. Review it again, at most every
+            // REDRAFT_INTERVAL_MS, so a draft that never comes cannot loop.
+            let now = (self.clock)();
+            if data.redraft_after_ms.is_some_and(|after| now < after)
+                || !self.undrafted(&data, &head)
+            {
                 return Ok(Step::Waiting(format!(
                     "batch {}: waiting for the agent",
                     record.batch
                 )));
             }
-            data.redraft_revision = Some(revision);
+            data.redraft_after_ms = Some(now + REDRAFT_INTERVAL_MS);
         }
         if !data.merge.is_empty() && !data.settled.iter().any(|n| n == "merge:added") {
             let document = data
@@ -702,8 +708,23 @@ impl Context<'_> {
                     "--certified-engine-only",
                 ]),
             )?;
-            if generated.unavailable() && generated.json.is_null() {
-                return Ok(Step::Waiting(generated.error()));
+            if generated.json.is_null() {
+                if generated.unavailable() {
+                    return Ok(Step::Waiting(generated.error()));
+                }
+                // A newer revision landed meanwhile (an agent decision):
+                // review it again. Any other failed command is no "nothing
+                // new": read as one, the batch waited for an agent who could
+                // not draft it.
+                if generated.error().contains("GENERATION_BASE_CONFLICT") {
+                    return self.moved(
+                        record,
+                        &record.phase,
+                        &data,
+                        "plan changed; reviewing again",
+                    );
+                }
+                return Err(generated.error());
             }
             let items = generated.json["items"].as_array().into_iter().flatten();
             // A draft that failed (usage limit, provider down, a draft the
