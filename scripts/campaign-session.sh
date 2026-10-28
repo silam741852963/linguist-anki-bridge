@@ -19,6 +19,10 @@
 #                                           the agent session is alive: its
 #                                           15-minute check runs this (start
 #                                           does too)
+#   campaign-session.sh wait-change [CAMPAIGN]
+#                                           return when the driver stops or
+#                                           starts: the agent session turns
+#                                           its 15-minute check off or on
 #   campaign-session.sh resume-when-ready [CAMPAIGN]
 #                                           after each automatic wrap-up (no
 #                                           provider can draft), wait out the
@@ -247,14 +251,21 @@ resume_when_ready() {  # while the agent session lives: after each automatic wra
       told=$end
       sleep 60; continue
     fi
-    # The session must also still be checking in: its 15-minute check beats.
-    if [ "$HEARTBEAT_SECONDS" != 0 ] && session_gone; then
-      say "resume when ready: no heartbeat for over ${HEARTBEAT_SECONDS}s; not resuming"; return 1
-    fi
+    # No heartbeat needed here: the session's 15-minute check is off while
+    # the campaign is wrapped up, and the bound process proves the session.
     say "resume when ready: cooldown over; starting"
     AGENT_PID=$agent start "$C" || return 1
     told=""
     sleep 60
+  done
+}
+wait_change() {  # return when the driver stops (WRAPPED) or starts (RUNNING): the agent session turns its 15-minute check off or on
+  local was now
+  alive driver && was=RUNNING || was=WRAPPED
+  while true; do
+    sleep 20
+    alive driver && now=RUNNING || now=WRAPPED
+    [ "$now" != "$was" ] && { echo "$now: $(status_of "$1" | tr '\n' ' ')"; return 0; }
   done
 }
 start() {
@@ -364,7 +375,7 @@ seen=""
 case $command in
   _drive) echo $$ > "$SESSION/driver.pid"; drive "$1"; rm -f "$SESSION/driver.pid" ;;
   _wait) resume_when_ready "$1" "$2" ;;
-  start|watch|status|wrap-up|resume-when-ready|heartbeat)
+  start|watch|status|wrap-up|resume-when-ready|heartbeat|wait-change)
     C=$(campaign_id "${1:-}") || exit 1
     case $command in
       start) start "$C" ;;
@@ -373,6 +384,7 @@ case $command in
       wrap-up) wrap_up "$C" ;;
       resume-when-ready) resume_when_ready "$C" ;;
       heartbeat) touch "$SESSION/heartbeat" ;;
+      wait-change) wait_change "$C" ;;
     esac ;;
   *) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
