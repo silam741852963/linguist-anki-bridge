@@ -20,7 +20,9 @@
 #   campaign-session.sh resume-when-ready [CAMPAIGN]
 #                                           wait for the driver to wrap up and
 #                                           no provider to cool down, then
-#                                           start; an agent session runs
+#                                           start; only from a Claude Code
+#                                           session, and it gives up once that
+#                                           session closes; an agent session runs
 #                                           it in its background after a
 #                                           wrap-up, so the campaign resumes
 #                                           only while that session lives
@@ -198,17 +200,36 @@ watch() {
 cooldown_end() {  # epoch seconds when the last cooling provider is back, or 0
   cli campaign status "$1" | json 'max([int(c["until"]) for c in (d.get("agent_cooldowns") or {}).values()] or [0])'
 }
-resume_when_ready() {  # wait for the wrap-up and the drafting cooldown, then start (run from a live agent session)
-  local C=$1 end now
+agent_session() {  # pid of the Claude Code process this command runs under, if any
+  local p=$$
+  while [ "$p" -gt 1 ]; do
+    [ "$(cat "/proc/$p/comm" 2>/dev/null)" = claude ] && { echo "$p"; return 0; }
+    p=$(awk '/^PPid:/{print $2}' "/proc/$p/status" 2>/dev/null) || return 1
+    [ -n "$p" ] || return 1
+  done
+  return 1
+}
+resume_when_ready() {  # wait for the wrap-up and the drafting cooldown, then start, only while the agent session lives
+  local C=$1 end now agent told=""
+  # Only from inside a Claude Code session, and only while it stays open:
+  # a closed session never resumes a campaign (session run policy).
+  agent=$(agent_session) || { echo "resume-when-ready runs only from a Claude Code session" >&2; return 1; }
+  session_open() { kill -0 "$agent" 2>/dev/null; }
   while true; do
-    alive driver && { sleep 120; continue; }
+    session_open || { say "resume when ready: agent session $agent closed; not resuming"; return 1; }
+    alive driver && { sleep 60; continue; }
     # Only a wrap-up: any other stop is for the agent to look at first.
     status_of "$C" | grep -q "$WRAPPED" || { echo "campaign not wrapped up: $(status_of "$C" | tr '\n' ' ')"; return 1; }
     end=$(cooldown_end "$C") now=$(date +%s)
     [ "${end:-0}" -le "$now" ] && break
-    say "resume when ready: drafting cools down until $(date -d "@$end" +%H:%M)"
-    sleep $((end - now + 60))
+    [ "$told" = "$end" ] || say "resume when ready: drafting cools down until $(date -d "@$end" +%H:%M)"
+    told=$end
+    sleep $(( end - now + 60 < 60 ? end - now + 60 : 60 ))
   done
+  # The session must also still be checking in: its 15-minute check beats.
+  if [ "$HEARTBEAT_SECONDS" != 0 ] && session_gone; then
+    say "resume when ready: no heartbeat for over ${HEARTBEAT_SECONDS}s; not resuming"; return 1
+  fi
   start "$C"
 }
 start() {
