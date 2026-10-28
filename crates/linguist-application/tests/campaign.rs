@@ -1311,6 +1311,56 @@ fn a_batch_held_only_by_undrafted_items_is_drafted_again_every_half_hour() {
 }
 
 #[test]
+fn undrafted_batches_are_drafted_again_one_at_a_time_lowest_first() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-redraft1-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..3].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    {
+        // Two grammar batches with many undrafted split units each.
+        let mut w = cli.world.lock().unwrap();
+        w.undrafted.insert("101".into());
+        w.undrafted.insert("103".into());
+        w.undrafted_skips = u32::MAX;
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    ctx.tick(600).unwrap();
+    assert_eq!(phases(&root, id), ["needs_agent", "needs_agent"]);
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    let plan = |batch| {
+        BatchData::from_value(&store.campaign_batch(id, batch).unwrap().data)
+            .unwrap()
+            .plan
+            .unwrap()
+            .to_string()
+    };
+    let (first, second) = (plan(1), plan(2));
+    let generates = |plan: &str| {
+        let w = cli.world.lock().unwrap();
+        w.calls
+            .iter()
+            .filter(|c| c.starts_with(&format!("plans generate {plan}")))
+            .count()
+    };
+    let before = (generates(&first), generates(&second));
+    // Half an hour later only the lowest batch is drafted again: the second
+    // waits while the first still waits for its redraft.
+    cli.clock.fetch_add(31 * 60 * 1000, Ordering::SeqCst);
+    ctx.tick(600).unwrap();
+    assert_eq!(generates(&first), before.0 + 1);
+    assert_eq!(generates(&second), before.1);
+    cli.clock.fetch_add(31 * 60 * 1000, Ordering::SeqCst);
+    ctx.tick(600).unwrap();
+    assert_eq!(generates(&first), before.0 + 2);
+    assert_eq!(generates(&second), before.1);
+}
+
+#[test]
 fn a_failed_generate_command_is_a_step_failure_not_nothing_new() {
     let root = std::env::temp_dir().join(format!("lab-campaign-generr-{}", Uuid::new_v4()));
     let id = create(&root, spec(false), world_notes()[..2].to_vec());

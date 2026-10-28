@@ -575,6 +575,16 @@ impl Context<'_> {
             })
     }
 
+    /// An earlier batch is still waiting for its redraft. Redrafts go one
+    /// batch at a time, lowest first: a grammar split can hold dozens of
+    /// units, and drafting several such batches at once overwhelms drafting
+    /// and the agent's review.
+    fn earlier_redraft(&self, batch: u32) -> Result<bool, String> {
+        Ok(self.store()?.campaign_batches(self.id)?.iter().any(|b| {
+            b.batch < batch && b.phase == "needs_agent" && !b.data["redraft_after_ms"].is_null()
+        }))
+    }
+
     fn note_of(&self, data: &BatchData, document: &str) -> Option<String> {
         data.documents
             .iter()
@@ -599,6 +609,7 @@ impl Context<'_> {
             let now = (self.clock)();
             if data.redraft_after_ms.is_some_and(|after| now < after)
                 || !self.undrafted(&data, &head)
+                || self.earlier_redraft(record.batch)?
             {
                 return Ok(Step::Waiting(format!(
                     "batch {}: waiting for the agent",
