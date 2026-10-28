@@ -39,8 +39,9 @@
 # agent's approval does not hold the session), the session wraps up by itself: the campaign is paused for the
 # next `start` (checked every two minutes during a tick and before each tick). A pause because the
 # The driver is detached from the agent session that started it, so it also
-# wraps up when that session stops checking in: no `heartbeat` for
-# HEARTBEAT_SECONDS (a closed or dead session). `status` says when the driver
+# wraps up when that session closes (its Claude Code process exits; checked
+# every two minutes) or stops checking in (no `heartbeat` for
+# HEARTBEAT_SECONDS). `status` says when the driver
 # runs an older copy of this script (restart it: wrap-up, then start). The
 # full policy is in docs/cli/operations/campaign.md, "Session run policy".
 # A pause because the
@@ -105,8 +106,14 @@ writes_pending() {  # batches that still reach Anki without drafting
   # gives, so counting it kept an idle session from ever wrapping up.
   [ "$(cli campaign status "$1" | json 'sum(d["phases"].get(p, 0) for p in ("approved", "applying", "verifying", "merging"))')" != 0 ]
 }
-session_gone() {  # the agent session stopped checking in
-  local beat
+agent_alive() {  # the Claude Code process with this pid still runs
+  [ "$(cat "/proc/$1/comm" 2>/dev/null)" = claude ]
+}
+session_gone() {  # the agent session closed, or stopped checking in
+  local beat agent
+  # Closed: the Claude Code session that started the driver has exited.
+  agent=$(cat "$SESSION/driver.agent" 2>/dev/null)
+  [ -n "$agent" ] && ! agent_alive "$agent" && return 0
   [ "$HEARTBEAT_SECONDS" = 0 ] && return 1
   beat=$(stat -c %Y "$SESSION/heartbeat" 2>/dev/null || echo 0)
   [ $(( $(date +%s) - beat )) -gt "$HEARTBEAT_SECONDS" ]
@@ -116,7 +123,7 @@ time_to_wrap_up() {  # nothing can draft and nothing is left to write, or no ses
 }
 auto_wrap_up() {  # in its own process group: wrap-up ends the driver's group
   local auto=1
-  if session_gone; then say "no heartbeat from the agent session for over ${HEARTBEAT_SECONDS}s; wrapping up"; auto=""
+  if session_gone; then say "the agent session closed or sent no heartbeat for over ${HEARTBEAT_SECONDS}s; wrapping up"; auto=""
   else say "no provider can draft ($(cli campaign status "$1" | json 'd.get("agent_cooldowns")')); wrapping up"; fi
   AUTO_WRAP=$auto setsid "$REPO/scripts/campaign-session.sh" wrap-up "$1" >> "$LOG" 2>&1 < /dev/null &
 }
@@ -225,7 +232,7 @@ resume_when_ready() {  # while the agent session lives: after each automatic wra
   echo $$ > "$SESSION/waiter.pid"
   echo "$agent" > "$SESSION/waiter.agent"
   trap '[ "$(cat "$SESSION/waiter.pid" 2>/dev/null)" = $$ ] && rm -f "$SESSION/waiter.pid"' EXIT
-  session_open() { kill -0 "$agent" 2>/dev/null; }
+  session_open() { agent_alive "$agent"; }
   while true; do
     session_open || { say "resume when ready: agent session $agent closed; not resuming"; return 1; }
     alive driver && { sleep 60; continue; }
@@ -245,7 +252,7 @@ resume_when_ready() {  # while the agent session lives: after each automatic wra
       say "resume when ready: no heartbeat for over ${HEARTBEAT_SECONDS}s; not resuming"; return 1
     fi
     say "resume when ready: cooldown over; starting"
-    start "$C" || return 1
+    AGENT_PID=$agent start "$C" || return 1
     told=""
     sleep 60
   done
@@ -278,7 +285,11 @@ start() {
   # Started from a Claude Code session (any session): that session resumes
   # the campaign after each automatic wrap-up for as long as it stays open.
   local agent
-  if agent=$(agent_session) &&
+  # The session's Claude Code process: found among the ancestors, or passed
+  # by the resume waiter (which runs detached).
+  agent=${AGENT_PID:-$(agent_session)}
+  echo "$agent" > "$SESSION/driver.agent"  # empty from a plain terminal: heartbeat only
+  if [ -n "$agent" ] && [ -z "${AGENT_PID:-}" ] &&
      { [ "$(cat "$SESSION/waiter.agent" 2>/dev/null)" != "$agent" ] ||
        ! { [ -f "$SESSION/waiter.pid" ] && kill -0 "$(cat "$SESSION/waiter.pid")" 2>/dev/null; }; }; then
     # The newest session takes the waiter over from an older one.
