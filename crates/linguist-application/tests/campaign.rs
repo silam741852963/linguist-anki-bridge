@@ -1908,6 +1908,11 @@ fn an_applying_batch_that_wrote_nothing_reopens() {
     );
     // Once a split group is done, an applying batch never reopens.
     set(&|data| data.groups_done.push(Uuid::new_v4()));
+    // The written group counts as an applied note (a grammar split applies
+    // through its own command, not an apply job item).
+    let status =
+        campaign::engine::status(&linguist_store::Store::read_only(&root).unwrap(), id, 0).unwrap();
+    assert_eq!(status["applied_notes"], 1);
     assert!(
         ctx.reopen(1, "again", false)
             .unwrap_err()

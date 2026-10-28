@@ -2049,7 +2049,9 @@ pub fn status(store: &Store, id: Uuid, now: u64) -> Result<Value, String> {
         let data = BatchData::from_value(&record.data)?;
         *notes_by_phase.entry(record.phase.clone()).or_default() +=
             data.notes.len() + data.merge.len();
-        applied += data.committed.len();
+        // A split group (a grammar note rewritten as units) is written by
+        // its own apply, not a job item: count it too.
+        applied += data.committed.len() + data.groups_done.len();
         // A requeued note counts in the batch it went round again in.
         deferred += data
             .deferred
