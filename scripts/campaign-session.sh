@@ -18,11 +18,12 @@
 #                                           15-minute check runs this (start
 #                                           does too)
 #   campaign-session.sh resume-when-ready [CAMPAIGN]
-#                                           wait for the driver to wrap up and
-#                                           no provider to cool down, then
-#                                           start; only from a Claude Code
-#                                           session, and it gives up once that
-#                                           session closes; an agent session runs
+#                                           after each automatic wrap-up (no
+#                                           provider can draft), wait out the
+#                                           cooldown and start again, for as
+#                                           long as the Claude Code session that
+#                                           runs it stays open; never after the
+#                                           user's wrap-up; an agent session runs
 #                                           it in its background after a
 #                                           wrap-up, so the campaign resumes
 #                                           only while that session lives
@@ -112,9 +113,10 @@ time_to_wrap_up() {  # nothing can draft and nothing is left to write, or no ses
   session_gone || { ! drafting_available "$1" && ! writes_pending "$1"; }
 }
 auto_wrap_up() {  # in its own process group: wrap-up ends the driver's group
-  if session_gone; then say "no heartbeat from the agent session for over ${HEARTBEAT_SECONDS}s; wrapping up"
+  local auto=1
+  if session_gone; then say "no heartbeat from the agent session for over ${HEARTBEAT_SECONDS}s; wrapping up"; auto=""
   else say "no provider can draft ($(cli campaign status "$1" | json 'd.get("agent_cooldowns")')); wrapping up"; fi
-  setsid "$REPO/scripts/campaign-session.sh" wrap-up "$1" >> "$LOG" 2>&1 < /dev/null &
+  AUTO_WRAP=$auto setsid "$REPO/scripts/campaign-session.sh" wrap-up "$1" >> "$LOG" 2>&1 < /dev/null &
 }
 watchdog() {  # during a tick: wrap up once no provider can draft
   local C=$1
@@ -209,33 +211,45 @@ agent_session() {  # pid of the Claude Code process this command runs under, if 
   done
   return 1
 }
-resume_when_ready() {  # wait for the wrap-up and the drafting cooldown, then start, only while the agent session lives
+resume_when_ready() {  # while the agent session lives: after each automatic wrap-up, wait out the cooldown and start again
   local C=$1 end now agent told=""
   # Only from inside a Claude Code session, and only while it stays open:
   # a closed session never resumes a campaign (session run policy).
   agent=$(agent_session) || { echo "resume-when-ready runs only from a Claude Code session" >&2; return 1; }
+  if [ -f "$SESSION/waiter.pid" ] && kill -0 "$(cat "$SESSION/waiter.pid")" 2>/dev/null; then
+    echo "a resume-when-ready waiter already runs (pid $(cat "$SESSION/waiter.pid"))"; return 0
+  fi
+  echo $$ > "$SESSION/waiter.pid"
+  trap '[ "$(cat "$SESSION/waiter.pid" 2>/dev/null)" = $$ ] && rm -f "$SESSION/waiter.pid"' EXIT
   session_open() { kill -0 "$agent" 2>/dev/null; }
   while true; do
     session_open || { say "resume when ready: agent session $agent closed; not resuming"; return 1; }
     alive driver && { sleep 60; continue; }
-    # Only a wrap-up: any other stop is for the agent to look at first.
-    status_of "$C" | grep -q "$WRAPPED" || { echo "campaign not wrapped up: $(status_of "$C" | tr '\n' ' ')"; return 1; }
+    # Only an automatic wrap-up for a cooldown: the user's wrap-up, a lost
+    # heartbeat or any other stop waits for an explicit start.
+    if [ ! -f "$SESSION/auto-wrapped" ] || ! status_of "$C" | grep -q "$WRAPPED"; then
+      say "resume when ready: not an automatic wrap-up ($(status_of "$C" | tr '\n' ' ')); stopping"; return 1
+    fi
     end=$(cooldown_end "$C") now=$(date +%s)
-    [ "${end:-0}" -le "$now" ] && break
-    [ "$told" = "$end" ] || say "resume when ready: drafting cools down until $(date -d "@$end" +%H:%M)"
-    told=$end
-    sleep $(( end - now + 60 < 60 ? end - now + 60 : 60 ))
+    if [ "${end:-0}" -gt "$now" ]; then
+      [ "$told" = "$end" ] || say "resume when ready: drafting cools down until $(date -d "@$end" +%H:%M)"
+      told=$end
+      sleep 60; continue
+    fi
+    # The session must also still be checking in: its 15-minute check beats.
+    if [ "$HEARTBEAT_SECONDS" != 0 ] && session_gone; then
+      say "resume when ready: no heartbeat for over ${HEARTBEAT_SECONDS}s; not resuming"; return 1
+    fi
+    say "resume when ready: cooldown over; starting"
+    start "$C" || return 1
+    told=""
+    sleep 60
   done
-  # The session must also still be checking in: its 15-minute check beats.
-  if [ "$HEARTBEAT_SECONDS" != 0 ] && session_gone; then
-    say "resume when ready: no heartbeat for over ${HEARTBEAT_SECONDS}s; not resuming"; return 1
-  fi
-  start "$C"
 }
 start() {
   local C=$1 s
   if alive driver; then echo "driver already running (pid $(cat "$SESSION/driver.pid"))"; return 0; fi
-  rm -f "$SESSION/stop"
+  rm -f "$SESSION/stop" "$SESSION/auto-wrapped"
   if ! curl -fs -m 3 http://127.0.0.1:8765 > /dev/null; then
     echo "Anki is not open (AnkiConnect on 127.0.0.1:8765): open it, then start again" >&2; return 1
   fi
@@ -276,6 +290,14 @@ show() {
 wrap_up() {
   local C=$1 pid rc
   touch "$SESSION/stop"  # the driver starts no new tick and resumes nothing
+  if [ -n "${AUTO_WRAP:-}" ]; then
+    touch "$SESSION/auto-wrapped"  # resume-when-ready may resume after the cooldown
+  else
+    # The user's (or the agent's) wrap-up: nothing resumes it but a new start.
+    rm -f "$SESSION/auto-wrapped"
+    [ -f "$SESSION/waiter.pid" ] && kill "$(cat "$SESSION/waiter.pid")" 2>/dev/null
+    rm -f "$SESSION/waiter.pid"
+  fi
   for f in "$SESSION"/watch-*.pid; do [ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null; rm -f "$f"; done
   echo "pausing; waiting for the running tick to finish its step"
   cli campaign wrap-up "$C" > "$SESSION/handoff.json"; rc=$?
