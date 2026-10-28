@@ -13,14 +13,21 @@
 #                                           the tick finish, end orphaned
 #                                           agents, stop what start started,
 #                                           record the handoff
+#   campaign-session.sh resume-when-ready [CAMPAIGN]
+#                                           wait for the driver to wrap up and
+#                                           no provider to cool down, then
+#                                           start; an agent session runs
+#                                           it in its background after a
+#                                           wrap-up, so the campaign resumes
+#                                           only while that session lives
 #
 # The driver runs ticks back to back. A generation provider at its usage
 # limit (or past llm.agents.max_calls_per_window, or past
 # llm.agents.codex.max_window_percent of its own five-hour window) is skipped
 # by the CLI while llm.fallback drafts. When no provider of the chain can
 # draft (`campaign status` drafting_available false) and no batch is left to
-# write (ready for the agent's approval, approved, applying, verifying or
-# merging), the session wraps up by itself: the campaign is paused for the
+# write (approved, applying, verifying or merging; a batch ready for the
+# agent's approval does not hold the session), the session wraps up by itself: the campaign is paused for the
 # next `start` (checked every two minutes during a tick and before each tick). A pause because the
 # local engine lost its certification (an upgraded Ollama) is certified
 # again with `doctor --ollama --certify` and resumed when that passes. Any
@@ -76,8 +83,10 @@ probe() {  # 0 = Codex answers, 1 = usage limit, 2 = other failure
 drafting_available() {  # false only when every provider of the chain cools down
   [ "$(cli campaign status "$1" | json 'd.get("drafting_available", True)')" != False ]
 }
-writes_pending() {  # batches that still reach Anki without drafting (or wait for the agent's approval)
-  [ "$(cli campaign status "$1" | json 'sum(d["phases"].get(p, 0) for p in ("ready", "approved", "applying", "verifying", "merging"))')" != 0 ]
+writes_pending() {  # batches that still reach Anki without drafting
+  # Not `ready`: a ready batch waits for the agent's approval, which no tick
+  # gives, so counting it kept an idle session from ever wrapping up.
+  [ "$(cli campaign status "$1" | json 'sum(d["phases"].get(p, 0) for p in ("approved", "applying", "verifying", "merging"))')" != 0 ]
 }
 time_to_wrap_up() {  # nothing can draft and nothing is left to write
   ! drafting_available "$1" && ! writes_pending "$1"
@@ -167,6 +176,22 @@ watch() {
 }
 
 # --- commands -------------------------------------------------------------------
+cooldown_end() {  # epoch seconds when the last cooling provider is back, or 0
+  cli campaign status "$1" | json 'max([int(c["until"]) for c in (d.get("agent_cooldowns") or {}).values()] or [0])'
+}
+resume_when_ready() {  # wait for the wrap-up and the drafting cooldown, then start (run from a live agent session)
+  local C=$1 end now
+  while true; do
+    alive driver && { sleep 120; continue; }
+    # Only a wrap-up: any other stop is for the agent to look at first.
+    status_of "$C" | grep -q "$WRAPPED" || { echo "campaign not wrapped up: $(status_of "$C" | tr '\n' ' ')"; return 1; }
+    end=$(cooldown_end "$C") now=$(date +%s)
+    [ "${end:-0}" -le "$now" ] && break
+    say "resume when ready: drafting cools down until $(date -d "@$end" +%H:%M)"
+    sleep $((end - now + 60))
+  done
+  start "$C"
+}
 start() {
   local C=$1 s
   if alive driver; then echo "driver already running (pid $(cat "$SESSION/driver.pid"))"; return 0; fi
@@ -234,7 +259,7 @@ print(f"tick {d['tick']}; agents ended {d['agents_ended']}")
 print(f"applied {d['applied_notes']}, deferred {d['deferred_notes']}, batches for the agent {d['agent_batches']}")
 print(f"notes by phase {d['notes_by_phase']}")
 for p,c in d["quota_cooldowns"].items(): print(f"{p} cooling down until {c['until']}")
-print("resume: scripts/campaign-session.sh start")
+print("resume: scripts/campaign-session.sh start (or resume-when-ready to wait out a cooldown)")
 EOF
   return $rc
 }
@@ -244,13 +269,14 @@ seen=""
 [ "${1:-}" = --seen ] && { seen=--seen; shift; }
 case $command in
   _drive) echo $$ > "$SESSION/driver.pid"; drive "$1"; rm -f "$SESSION/driver.pid" ;;
-  start|watch|status|wrap-up)
+  start|watch|status|wrap-up|resume-when-ready)
     C=$(campaign_id "${1:-}") || exit 1
     case $command in
       start) start "$C" ;;
       watch) watch "$C" $seen ;;
       status) show "$C" ;;
       wrap-up) wrap_up "$C" ;;
+      resume-when-ready) resume_when_ready "$C" ;;
     esac ;;
   *) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
