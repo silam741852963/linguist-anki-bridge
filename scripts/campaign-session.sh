@@ -13,6 +13,10 @@
 #                                           the tick finish, end orphaned
 #                                           agents, stop what start started,
 #                                           record the handoff
+#   campaign-session.sh heartbeat [CAMPAIGN]
+#                                           the agent session is alive: its
+#                                           15-minute check runs this (start
+#                                           does too)
 #   campaign-session.sh resume-when-ready [CAMPAIGN]
 #                                           wait for the driver to wrap up and
 #                                           no provider to cool down, then
@@ -29,13 +33,20 @@
 # write (approved, applying, verifying or merging; a batch ready for the
 # agent's approval does not hold the session), the session wraps up by itself: the campaign is paused for the
 # next `start` (checked every two minutes during a tick and before each tick). A pause because the
+# The driver is detached from the agent session that started it, so it also
+# wraps up when that session stops checking in: no `heartbeat` for
+# HEARTBEAT_SECONDS (a closed or dead session). `status` says when the driver
+# runs an older copy of this script (restart it: wrap-up, then start). The
+# full policy is in docs/cli/operations/campaign.md, "Session run policy".
+# A pause because the
 # local engine lost its certification (an upgraded Ollama) is certified
 # again with `doctor --ollama --certify` and resumed when that passes. Any
 # other stop ends the driver.
 #
 # Environment: LINGUIST_BIN (CLI; default target/lab/linguist-anki-bridge-head
 # when present, else linguist-anki-bridge on PATH), PROBE_SECONDS (1800),
-# TICK_SECONDS (3000).
+# TICK_SECONDS (3000), HEARTBEAT_SECONDS (2700; 0 turns the check off for a
+# session the user runs by hand).
 set -u
 cd "$(dirname "$0")/.."
 REPO=$PWD
@@ -50,6 +61,7 @@ LOG=$SESSION/driver.log
 USAGE=$STATE/codex-usage.jsonl
 PROBE_SECONDS=${PROBE_SECONDS:-1800}
 TICK_SECONDS=${TICK_SECONDS:-3000}
+HEARTBEAT_SECONDS=${HEARTBEAT_SECONDS:-2700}
 QUOTA_REASON="Codex usage limit reached; driver resumes when the quota resets"
 WRAPPED="wrapped up at the end of a session"
 KEY=$HOME/.config/linguist-anki-bridge/ankiconnect-api-key
@@ -88,11 +100,18 @@ writes_pending() {  # batches that still reach Anki without drafting
   # gives, so counting it kept an idle session from ever wrapping up.
   [ "$(cli campaign status "$1" | json 'sum(d["phases"].get(p, 0) for p in ("approved", "applying", "verifying", "merging"))')" != 0 ]
 }
-time_to_wrap_up() {  # nothing can draft and nothing is left to write
-  ! drafting_available "$1" && ! writes_pending "$1"
+session_gone() {  # the agent session stopped checking in
+  local beat
+  [ "$HEARTBEAT_SECONDS" = 0 ] && return 1
+  beat=$(stat -c %Y "$SESSION/heartbeat" 2>/dev/null || echo 0)
+  [ $(( $(date +%s) - beat )) -gt "$HEARTBEAT_SECONDS" ]
+}
+time_to_wrap_up() {  # nothing can draft and nothing is left to write, or no session watches
+  session_gone || { ! drafting_available "$1" && ! writes_pending "$1"; }
 }
 auto_wrap_up() {  # in its own process group: wrap-up ends the driver's group
-  say "no provider can draft ($(cli campaign status "$1" | json 'd.get("agent_cooldowns")')); wrapping up"
+  if session_gone; then say "no heartbeat from the agent session for over ${HEARTBEAT_SECONDS}s; wrapping up"
+  else say "no provider can draft ($(cli campaign status "$1" | json 'd.get("agent_cooldowns")')); wrapping up"; fi
   setsid "$REPO/scripts/campaign-session.sh" wrap-up "$1" >> "$LOG" 2>&1 < /dev/null &
 }
 watchdog() {  # during a tick: wrap up once no provider can draft
@@ -216,6 +235,8 @@ start() {
     cli campaign resume "$C" >> "$LOG" 2>&1
   fi
   echo "$C" > "$SESSION/campaign"
+  touch "$SESSION/heartbeat"
+  sha256sum "$0" | cut -d' ' -f1 > "$SESSION/driver.script"
   setsid "$REPO/scripts/campaign-session.sh" _drive "$C" > /dev/null 2>> "$LOG" < /dev/null &
   echo $! > "$SESSION/driver.pid"
   say "driver started (pid $!) for $C"
@@ -223,6 +244,9 @@ start() {
 show() {
   local C=$1
   alive driver && echo "driver: running (pid $(cat "$SESSION/driver.pid"))" || echo "driver: not running"
+  alive driver && [ "$(cat "$SESSION/driver.script" 2>/dev/null)" != "$(sha256sum "$0" | cut -d' ' -f1)" ] &&
+    echo "driver: OUTDATED (runs an older campaign-session.sh): wrap-up, then start"
+  [ -f "$SESSION/heartbeat" ] && echo "heartbeat: $(( $(date +%s) - $(stat -c %Y "$SESSION/heartbeat") ))s ago (wraps up after ${HEARTBEAT_SECONDS}s)"
   ls "$SESSION"/watch-*.pid > /dev/null 2>&1 && echo "watchers: $(cat "$SESSION"/watch-*.pid | tr '\n' ' ')"
   curl -fs -m 2 http://127.0.0.1:50021/version > /dev/null && echo "VOICEVOX: up" || echo "VOICEVOX: down"
   curl -fs -m 2 http://127.0.0.1:8765 > /dev/null && echo "Anki: open" || echo "Anki: closed"
@@ -269,7 +293,7 @@ seen=""
 [ "${1:-}" = --seen ] && { seen=--seen; shift; }
 case $command in
   _drive) echo $$ > "$SESSION/driver.pid"; drive "$1"; rm -f "$SESSION/driver.pid" ;;
-  start|watch|status|wrap-up|resume-when-ready)
+  start|watch|status|wrap-up|resume-when-ready|heartbeat)
     C=$(campaign_id "${1:-}") || exit 1
     case $command in
       start) start "$C" ;;
@@ -277,6 +301,7 @@ case $command in
       status) show "$C" ;;
       wrap-up) wrap_up "$C" ;;
       resume-when-ready) resume_when_ready "$C" ;;
+      heartbeat) touch "$SESSION/heartbeat" ;;
     esac ;;
   *) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
