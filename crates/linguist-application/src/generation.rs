@@ -555,6 +555,9 @@ fn candidate_from(
         .position(|document| document.id == document_id)
         .ok_or("PLAN_ITEM_NOT_FOUND")?;
     child.documents[index] = draft.document;
+    // Render the other items again: a revision frozen before a renderer
+    // change carries renders the store now rejects as stale.
+    child.rendered = linguist_core::render::render_ready(&child.documents);
     child
         .rendered
         .retain(|rendered| rendered.document_id != document_id);
