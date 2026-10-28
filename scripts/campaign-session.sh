@@ -5,7 +5,9 @@
 # be open).
 #
 #   campaign-session.sh start [CAMPAIGN]    start VOICEVOX if needed, resume a
-#                                           paused campaign, run the driver
+#                                           paused campaign, run the driver;
+#                                           from a Claude Code session, also
+#                                           the resume waiter for that session
 #   campaign-session.sh watch [--seen] [CAMPAIGN]
 #                                           return when the agent must act
 #   campaign-session.sh status [CAMPAIGN]   driver, services, campaign status
@@ -212,14 +214,16 @@ agent_session() {  # pid of the Claude Code process this command runs under, if 
   return 1
 }
 resume_when_ready() {  # while the agent session lives: after each automatic wrap-up, wait out the cooldown and start again
-  local C=$1 end now agent told=""
-  # Only from inside a Claude Code session, and only while it stays open:
-  # a closed session never resumes a campaign (session run policy).
-  agent=$(agent_session) || { echo "resume-when-ready runs only from a Claude Code session" >&2; return 1; }
+  local C=$1 agent=${2:-} end now told=""
+  # Only for a Claude Code session, and only while it stays open: a closed
+  # session never resumes a campaign (session run policy). `start` passes the
+  # session's pid; run by hand, the session is found among the ancestors.
+  [ -n "$agent" ] || agent=$(agent_session) || { echo "resume-when-ready runs only from a Claude Code session" >&2; return 1; }
   if [ -f "$SESSION/waiter.pid" ] && kill -0 "$(cat "$SESSION/waiter.pid")" 2>/dev/null; then
     echo "a resume-when-ready waiter already runs (pid $(cat "$SESSION/waiter.pid"))"; return 0
   fi
   echo $$ > "$SESSION/waiter.pid"
+  echo "$agent" > "$SESSION/waiter.agent"
   trap '[ "$(cat "$SESSION/waiter.pid" 2>/dev/null)" = $$ ] && rm -f "$SESSION/waiter.pid"' EXIT
   session_open() { kill -0 "$agent" 2>/dev/null; }
   while true; do
@@ -271,6 +275,18 @@ start() {
   fi
   echo "$C" > "$SESSION/campaign"
   touch "$SESSION/heartbeat"
+  # Started from a Claude Code session (any session): that session resumes
+  # the campaign after each automatic wrap-up for as long as it stays open.
+  local agent
+  if agent=$(agent_session) &&
+     { [ "$(cat "$SESSION/waiter.agent" 2>/dev/null)" != "$agent" ] ||
+       ! { [ -f "$SESSION/waiter.pid" ] && kill -0 "$(cat "$SESSION/waiter.pid")" 2>/dev/null; }; }; then
+    # The newest session takes the waiter over from an older one.
+    [ -f "$SESSION/waiter.pid" ] && kill "$(cat "$SESSION/waiter.pid")" 2>/dev/null
+    rm -f "$SESSION/waiter.pid"
+    setsid "$REPO/scripts/campaign-session.sh" _wait "$C" "$agent" > /dev/null 2>> "$LOG" < /dev/null &
+    say "resume waiter started for agent session $agent"
+  fi
   sha256sum "$0" | cut -d' ' -f1 > "$SESSION/driver.script"
   setsid "$REPO/scripts/campaign-session.sh" _drive "$C" > /dev/null 2>> "$LOG" < /dev/null &
   echo $! > "$SESSION/driver.pid"
@@ -336,6 +352,7 @@ seen=""
 [ "${1:-}" = --seen ] && { seen=--seen; shift; }
 case $command in
   _drive) echo $$ > "$SESSION/driver.pid"; drive "$1"; rm -f "$SESSION/driver.pid" ;;
+  _wait) resume_when_ready "$1" "$2" ;;
   start|watch|status|wrap-up|resume-when-ready|heartbeat)
     C=$(campaign_id "${1:-}") || exit 1
     case $command in
