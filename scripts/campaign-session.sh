@@ -42,6 +42,10 @@
 # write (approved, applying, verifying or merging; a batch ready for the
 # agent's approval does not hold the session), the session wraps up by itself: the campaign is paused for the
 # next `start` (checked every two minutes during a tick and before each tick). A pause because the
+# Careful mode: when the drafting cap comes within FAST_CAP_SECONDS (1800) of
+# a start, the next start tunes the campaign to prepare one batch at a time
+# (`campaign tune --prepare-ahead 1 --prepare-parallel 1`); a run that lasts
+# CALM_WINDOW_SECONDS (7200) before the cap restores the earlier limits.
 # The driver is detached from the agent session that started it, so it also
 # wraps up when that session closes (its Claude Code process exits; checked
 # every two minutes) or stops checking in (no `heartbeat` for
@@ -72,6 +76,8 @@ USAGE=$STATE/codex-usage.jsonl
 PROBE_SECONDS=${PROBE_SECONDS:-1800}
 TICK_SECONDS=${TICK_SECONDS:-3000}
 HEARTBEAT_SECONDS=${HEARTBEAT_SECONDS:-2700}
+FAST_CAP_SECONDS=${FAST_CAP_SECONDS:-1800}    # a cap this soon after a start: careful mode
+CALM_WINDOW_SECONDS=${CALM_WINDOW_SECONDS:-7200}  # a run this long without a cap ends it
 QUOTA_REASON="Codex usage limit reached; driver resumes when the quota resets"
 WRAPPED="wrapped up at the end of a session"
 KEY=$HOME/.config/linguist-anki-bridge/ankiconnect-api-key
@@ -113,6 +119,32 @@ writes_pending() {  # batches that still reach Anki without drafting
 agent_alive() {  # the Claude Code process with this pid still runs
   [ "$(cat "/proc/$1/comm" 2>/dev/null)" = claude ]
 }
+careful_judge() {  # the drafting cap came: fast after the start means careful mode, a long run ends it
+  local started ran
+  started=$(cat "$SESSION/started-at" 2>/dev/null || echo 0)
+  ran=$(( $(date +%s) - started ))
+  if [ "$ran" -lt "$FAST_CAP_SECONDS" ]; then
+    [ -f "$SESSION/careful" ] || say "drafting cap ${ran}s after the start: careful mode (one batch at a time) from the next start"
+    touch "$SESSION/careful"
+  elif [ "$ran" -ge "$CALM_WINDOW_SECONDS" ] && [ -f "$SESSION/careful" ]; then
+    say "the last run lasted ${ran}s before the cap: careful mode ends at the next start"
+    rm -f "$SESSION/careful"
+  fi
+}
+careful_apply() {  # before a start: one batch at a time in careful mode, the saved limits again after it
+  local C=$1
+  if [ -f "$SESSION/careful" ]; then
+    [ -f "$SESSION/limits-before" ] ||
+      cli campaign status "$C" | json '"%d %d" % (d["limits"]["prepare_ahead"], d["limits"]["prepare_parallel"])' > "$SESSION/limits-before"
+    cli campaign tune "$C" --prepare-ahead 1 --prepare-parallel 1 >> "$LOG" 2>&1 &&
+      say "careful mode: prepare one batch at a time (was $(cat "$SESSION/limits-before"))"
+  elif [ -f "$SESSION/limits-before" ]; then
+    local ahead parallel
+    read -r ahead parallel < "$SESSION/limits-before"
+    cli campaign tune "$C" --prepare-ahead "$ahead" --prepare-parallel "$parallel" >> "$LOG" 2>&1 &&
+      say "careful mode over: prepare-ahead $ahead, prepare-parallel $parallel again" && rm -f "$SESSION/limits-before"
+  fi
+}
 session_gone() {  # the agent session closed, or stopped checking in
   local beat agent
   # Closed: the Claude Code session that started the driver has exited.
@@ -128,7 +160,10 @@ time_to_wrap_up() {  # nothing can draft and nothing is left to write, or no ses
 auto_wrap_up() {  # in its own process group: wrap-up ends the driver's group
   local auto=1
   if session_gone; then say "the agent session closed or sent no heartbeat for over ${HEARTBEAT_SECONDS}s; wrapping up"; auto=""
-  else say "no provider can draft ($(cli campaign status "$1" | json 'd.get("agent_cooldowns")')); wrapping up"; fi
+  else
+    say "no provider can draft ($(cli campaign status "$1" | json 'd.get("agent_cooldowns")')); wrapping up"
+    careful_judge "$1"
+  fi
   AUTO_WRAP=$auto setsid "$REPO/scripts/campaign-session.sh" wrap-up "$1" >> "$LOG" 2>&1 < /dev/null &
 }
 watchdog() {  # during a tick: wrap up once no provider can draft
@@ -292,6 +327,8 @@ start() {
     cli campaign resume "$C" >> "$LOG" 2>&1
   fi
   echo "$C" > "$SESSION/campaign"
+  careful_apply "$C"
+  date +%s > "$SESSION/started-at"
   touch "$SESSION/heartbeat"
   # Started from a Claude Code session (any session): that session resumes
   # the campaign after each automatic wrap-up for as long as it stays open.
