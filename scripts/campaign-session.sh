@@ -46,6 +46,12 @@
 # a start, the next start tunes the campaign to prepare one batch at a time
 # (`campaign tune --prepare-ahead 1 --prepare-parallel 1`); a run that lasts
 # CALM_WINDOW_SECONDS (7200) before the cap restores the earlier limits.
+# While the driver runs in careful mode, it speeds up again by itself: every
+# RAMP_SECONDS (900) between ticks it compares how fast Codex spends its own
+# five-hour window with what llm.agents.codex.max_window_percent leaves until
+# the window resets, and steps the limits along RAMP_LADDER ("1 1,2 1,4 2,8
+# 3", then the saved limits): up as far as the pace has room for, one step
+# down when it spends faster. At the saved limits careful mode ends.
 # The driver is detached from the agent session that started it, so it also
 # wraps up when that session closes (its Claude Code process exits; checked
 # every two minutes) or stops checking in (no `heartbeat` for
@@ -78,6 +84,9 @@ TICK_SECONDS=${TICK_SECONDS:-3000}
 HEARTBEAT_SECONDS=${HEARTBEAT_SECONDS:-2700}
 FAST_CAP_SECONDS=${FAST_CAP_SECONDS:-1800}    # a cap this soon after a start: careful mode
 CALM_WINDOW_SECONDS=${CALM_WINDOW_SECONDS:-7200}  # a run this long without a cap ends it
+RAMP_SECONDS=${RAMP_SECONDS:-900}              # careful mode: how often the pace is judged
+RAMP_LADDER=${RAMP_LADDER:-"1 1,2 1,4 2,8 3"}  # careful mode: prepare-ahead prepare-parallel steps
+WINDOW=${XDG_STATE_HOME:-$HOME/.local/state}/linguist-anki-bridge/agents/window-codex.json
 QUOTA_REASON="Codex usage limit reached; driver resumes when the quota resets"
 WRAPPED="wrapped up at the end of a session"
 KEY=$HOME/.config/linguist-anki-bridge/ankiconnect-api-key
@@ -131,11 +140,73 @@ careful_judge() {  # the drafting cap came: fast after the start means careful m
     rm -f "$SESSION/careful"
   fi
 }
+ramp_decide() {  # careful mode: the ladder step the Codex window's pace has room for
+  python3 - "$WINDOW" "$SESSION/ramp" "$(setting llm.agents.codex.max_window_percent)" \
+    "$RAMP_LADDER,$(cat "$SESSION/limits-before")" "$(date +%s)" <<'PY'
+import json, math, sys
+window_path, ramp_path, limit, ladder, now = sys.argv[1:]
+now, ladder = int(now), [s.split() for s in ladder.split(",")]
+try: limit = float(json.loads(limit))
+except Exception: limit = 0
+try: ramp = json.load(open(ramp_path))
+except Exception: ramp = {}
+level = min(int(ramp.get("level", 0)), len(ladder) - 1)
+try: w = json.load(open(window_path))
+except Exception: w = {}
+used, resets = float(w.get("used_percent", 0)), int(w.get("resets_at", 0))
+if resets <= now: used = 0.0  # the window reset since Codex last reported it
+left = max(resets - now, 60)
+# Spent per second since the last judgment in the same window. The first
+# look only measures: the window's own average holds use from before.
+measured = ramp.get("resets") == resets and now - ramp.get("at", now) >= 300
+rate = max(used - ramp["used"], 0) / (now - ramp["at"]) if measured else 0.0
+room = (limit - used) / left if limit and resets > now else math.inf
+ahead = lambda l: max(int(ladder[l][0]), 1)
+if limit and resets > now and used >= limit:
+    to, why = 0, f"window at {used:.0f}% of {limit:.0f}%"
+elif not measured and resets > now:
+    to, why = level, "first look in this window: measuring the pace"
+elif rate > room:
+    to, why = max(level - 1, 0), "spending faster than the budget"
+elif rate == 0:
+    to, why = min(level + 1, len(ladder) - 1), "nothing spent since the last look"
+else:
+    # Throughput grows with prepare-ahead: the highest step whose pace still
+    # leaves a quarter of the budget, two steps at most per judgment.
+    to = level
+    while to + 1 < len(ladder) and to + 1 <= level + 2 and rate * ahead(to + 1) / ahead(level) * 1.25 <= room:
+        to += 1
+    why = "the budget has room" if to > level else "pace fits the budget"
+json.dump({"level": to, "used": used, "resets": resets, "at": now}, open(ramp_path, "w"))
+pace = f"{used:.0f}% of {limit:.0f}% used, {rate*3600:.1f}%/h spent, {('%.1f' % (room*3600)) if room != math.inf else 'any'}%/h allowed"
+print(to, " ".join(ladder[to]), "top" if to == len(ladder) - 1 else "", f"| {why}; {pace}")
+PY
+}
+careful_ramp() {  # careful mode while the driver runs: speed up as the Codex window allows
+  local C=$1 last level ahead parallel top why before
+  [ -f "$SESSION/careful" ] && [ -f "$SESSION/limits-before" ] || return 0
+  last=$(cat "$SESSION/ramp-at" 2>/dev/null || cat "$SESSION/started-at" 2>/dev/null || echo 0)
+  [ $(( $(date +%s) - last )) -ge "$RAMP_SECONDS" ] || return 0
+  date +%s > "$SESSION/ramp-at"
+  before=$(cli campaign status "$C" | json '"%d %d" % (d["limits"]["prepare_ahead"], d["limits"]["prepare_parallel"])')
+  read -r level ahead parallel top why <<<"$(ramp_decide)"
+  [ -n "$ahead" ] || return 0
+  [ "$top" = top ] || why="$top $why"
+  if [ "$top" = top ]; then
+    cli campaign tune "$C" --prepare-ahead "$ahead" --prepare-parallel "$parallel" >> "$LOG" 2>&1 &&
+      say "careful mode over while running: prepare-ahead $ahead, prepare-parallel $parallel again ${why#| }" &&
+      rm -f "$SESSION/careful" "$SESSION/limits-before" "$SESSION/ramp" "$SESSION/ramp-at"
+  elif [ "$ahead $parallel" != "$before" ]; then
+    cli campaign tune "$C" --prepare-ahead "$ahead" --prepare-parallel "$parallel" >> "$LOG" 2>&1 &&
+      say "careful mode: prepare-ahead $ahead, prepare-parallel $parallel (was $before) ${why#| }"
+  fi
+}
 careful_apply() {  # before a start: one batch at a time in careful mode, the saved limits again after it
   local C=$1
   if [ -f "$SESSION/careful" ]; then
     [ -f "$SESSION/limits-before" ] ||
       cli campaign status "$C" | json '"%d %d" % (d["limits"]["prepare_ahead"], d["limits"]["prepare_parallel"])' > "$SESSION/limits-before"
+    rm -f "$SESSION/ramp" "$SESSION/ramp-at"
     cli campaign tune "$C" --prepare-ahead 1 --prepare-parallel 1 >> "$LOG" 2>&1 &&
       say "careful mode: prepare one batch at a time (was $(cat "$SESSION/limits-before"))"
   elif [ -f "$SESSION/limits-before" ]; then
@@ -209,6 +280,7 @@ drive() {
       say "STOPPED ${s[*]}"; return
     fi
     if time_to_wrap_up "$C"; then auto_wrap_up "$C"; return; fi
+    careful_ramp "$C"
     watchdog "$C" & wd=$!
     say "tick start"
     cli campaign run "$C" --max-seconds "$TICK_SECONDS" > "$SESSION/run-last.json" 2> "$SESSION/run-last.err"
