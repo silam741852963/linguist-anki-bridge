@@ -52,6 +52,9 @@
 # the window resets, and steps the limits along RAMP_LADDER ("1 1,2 1,4 2,8
 # 3", then the saved limits): up as far as the pace has room for, one step
 # down when it spends faster. At the saved limits careful mode ends.
+# A one-window override of llm.agents.codex.max_window_percent (the user's
+# "this time only") is recorded in session/window-override as "VALUE
+# RESETS_AT"; start and the driver put VALUE back once that window resets.
 # The driver is detached from the agent session that started it, so it also
 # wraps up when that session closes (its Claude Code process exits; checked
 # every two minutes) or stops checking in (no `heartbeat` for
@@ -201,6 +204,16 @@ careful_ramp() {  # careful mode while the driver runs: speed up as the Codex wi
       say "careful mode: prepare-ahead $ahead, prepare-parallel $parallel (was $before) ${why#| }"
   fi
 }
+window_restore() {  # a one-window override of llm.agents.codex.max_window_percent ends when that window resets
+  local f=$SESSION/window-override value resets config
+  [ -f "$f" ] || return 0
+  read -r value resets < "$f"
+  [ "$(date +%s)" -ge "${resets:-0}" ] || return 0
+  config=${XDG_CONFIG_HOME:-$HOME/.config}/linguist-anki-bridge/config.toml
+  sed "s/^\"llm.agents.codex.max_window_percent\" = .*/\"llm.agents.codex.max_window_percent\" = $value/" "$config" > "$config.new" &&
+    mv "$config.new" "$config" && rm -f "$f" &&
+    say "the Codex window reset: llm.agents.codex.max_window_percent $value again"
+}
 careful_apply() {  # before a start: one batch at a time in careful mode, the saved limits again after it
   local C=$1
   if [ -f "$SESSION/careful" ]; then
@@ -280,6 +293,7 @@ drive() {
       say "STOPPED ${s[*]}"; return
     fi
     if time_to_wrap_up "$C"; then auto_wrap_up "$C"; return; fi
+    window_restore
     careful_ramp "$C"
     watchdog "$C" & wd=$!
     say "tick start"
@@ -399,6 +413,7 @@ start() {
     cli campaign resume "$C" >> "$LOG" 2>&1
   fi
   echo "$C" > "$SESSION/campaign"
+  window_restore
   careful_apply "$C"
   date +%s > "$SESSION/started-at"
   touch "$SESSION/heartbeat"
