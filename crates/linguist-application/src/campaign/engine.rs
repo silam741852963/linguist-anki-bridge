@@ -1666,6 +1666,23 @@ impl Context<'_> {
         }
         let mut data = BatchData::from_value(&record.data)?;
         let plan_id = data.plan.ok_or("CAMPAIGN_PLAN_MISSING")?.to_string();
+        // A revision written after the review (278: a usage redrafted by
+        // hand) brings issues the review never saw; approving it left the
+        // redrafted notes out. Back to review, and approve after it.
+        let head = self.plan_show(&data, true)?;
+        let revision = head["revision"].as_u64().map(|r| r as u32);
+        if data.checked_revision != revision {
+            data.checked_revision = None;
+            self.save(
+                &record,
+                "needs_agent",
+                &data,
+                json!({"approve": "plan changed after the review"}),
+            )?;
+            return Err(format!(
+                "CAMPAIGN_BATCH_CHANGED: batch {batch} has a revision its review has not seen; approve it once it is ready again"
+            ));
+        }
         let plan = self.plan_show(&data, false)?;
         let policy_actor = self.definition.spec.policy().actor;
         let mut agent_decided = BTreeSet::new();

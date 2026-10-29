@@ -727,6 +727,9 @@ fn drive(root: &std::path::Path, id: Uuid, cli: &FakeCli, kill_every: Option<u64
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 ctx.approve(b.batch, "claude-agent")
             })) {
+                // An approval killed after its bind finds the bound revision
+                // unseen: the batch is reviewed again, then approved.
+                Ok(Err(e)) if e.starts_with("CAMPAIGN_BATCH_CHANGED") => {}
                 Ok(result) => {
                     result.unwrap();
                 }
@@ -2151,4 +2154,37 @@ fn a_split_group_with_an_unapproved_unit_is_left_out_not_paused() {
         );
         std::fs::remove_dir_all(root).unwrap();
     }
+}
+
+/// 278: a usage redrafted by hand while the batch was ready wrote a revision
+/// the review never saw; approve sends the batch back to review instead.
+#[test]
+fn approving_a_revision_the_review_has_not_seen_reviews_it_first() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-unseen-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    ctx.tick(600).unwrap();
+    assert_eq!(phases(&root, id), ["ready"]);
+    cli.world
+        .lock()
+        .unwrap()
+        .plans
+        .values_mut()
+        .next()
+        .unwrap()
+        .revision += 1;
+    let refused = ctx.approve(1, "claude-agent").unwrap_err();
+    assert!(refused.starts_with("CAMPAIGN_BATCH_CHANGED"), "{refused}");
+    assert_eq!(phases(&root, id), ["needs_agent"]);
+    ctx.tick(600).unwrap();
+    assert_eq!(phases(&root, id), ["ready"]);
+    ctx.approve(1, "claude-agent").unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }
