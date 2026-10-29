@@ -213,8 +213,9 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
     let (first, last) = (word.chars().next(), word.chars().last());
     // A noun written with trailing kana (物干し) is glued to a kanji or
     // katakana noun right after it (物干し台, 物干しロープ); a verb or
-    // adjective ending (見る人, 高い山) is not.
-    let inflecting = last.is_some_and(|c| "るうくすつぬぶむぐい".contains(c));
+    // adjective ending (見る人, 高い山) is not, nor an adverb's (WP-24 378:
+    // 前もって連絡する, いつの間にか眠って, 思わず笑う).
+    let inflecting = last.is_some_and(|c| "るうくすつぬぶむぐいてでにとずかもば".contains(c));
     let katakana = |c: char| matches!(c, '\u{30a1}'..='\u{30fa}' | 'ー');
     phrase.match_indices(word).any(|(at, _)| {
         let before = phrase[..at].chars().last();
@@ -838,6 +839,10 @@ mod compound_tests {
         assert!(!stands_alone("物干し台", "物干し"));
         assert!(!stands_alone("物干しロープ", "物干し"));
         assert!(stands_alone("物干しに干す", "物干し"));
+        // An adverb before a verb is a phrase (378: 前もって, いつの間にか).
+        assert!(stands_alone("前もって連絡してね。", "前もって"));
+        assert!(stands_alone("いつの間にか眠ってしまった。", "いつの間にか"));
+        assert!(stands_alone("思わず笑ってしまった。", "思わず"));
         // A verb or adjective before a noun is a phrase.
         assert!(stands_alone("見る人", "見る"));
         assert!(stands_alone("高い山に登る", "高い"));

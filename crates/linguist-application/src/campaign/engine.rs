@@ -668,6 +668,9 @@ impl Context<'_> {
             }
         };
         let mut undecided = Vec::new();
+        // Notes whose drafts the review rejected until generation stopped
+        // asking (378: every example of 前もって rejected three times).
+        let mut spent = std::collections::BTreeSet::new();
         // The revision the undecided list describes: an agent's decision
         // that lands while this step runs makes a newer one, reviewed again.
         let mut evaluated: Option<u32> = None;
@@ -759,6 +762,13 @@ impl Context<'_> {
             // times, then left to the agent.
             let mut again = false;
             for item in items.clone() {
+                if item.get("skipped").and_then(Value::as_str)
+                    == Some("GENERATION_ATTEMPTS_EXHAUSTED")
+                    && let Some(note) =
+                        self.note_of(&data, item["document_id"].as_str().unwrap_or_default())
+                {
+                    spent.insert(note);
+                }
                 let Some(error) = item.get("error").and_then(Value::as_str) else {
                     if item.get("result").is_some()
                         && let Some(note) =
@@ -836,6 +846,13 @@ impl Context<'_> {
                 data.needs.entry(note.clone()).or_default().push(format!(
                     "GENERATION_FAILED: {MAX_DRAFT_FAILURES} drafts failed ({error}); mark it settled to draft again, defer it, or `campaign reopen --fresh` the batch"
                 ));
+            }
+        }
+        for note in spent {
+            if !data.settled.contains(&note) && !data.deferred.contains_key(&note) {
+                data.needs.entry(note).or_default().push(
+                    "GENERATION_ATTEMPTS_EXHAUSTED: the review rejected every draft of a generated field (examples, usage); defer it, mark it settled to keep it as it is, or `campaign reopen --fresh` the batch".into(),
+                );
             }
         }
         for note in exhausted {

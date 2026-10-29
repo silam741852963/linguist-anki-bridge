@@ -128,6 +128,8 @@ struct World {
     read_fail: BTreeMap<String, u32>,
     /// The code those reads fail with (None: SOURCE_READ_CONNECTION_FAILED).
     read_fail_code: Option<&'static str>,
+    /// Notes `plans generate` skips as GENERATION_ATTEMPTS_EXHAUSTED.
+    spent: BTreeSet<String>,
     read_retries: u32,
     /// Retries the prepare job's attempt budget still allows (None: any).
     retry_budget: Option<u32>,
@@ -427,9 +429,14 @@ impl FakeCli {
                 if !drafted.is_empty() {
                     p.revision += 1;
                 }
-                ok(
-                    json!({"items": drafted.iter().map(|n| json!({"document_id": doc(n), "result": {}})).collect::<Vec<_>>()}),
-                )
+                let mut items: Vec<Value> = drafted
+                    .iter()
+                    .map(|n| json!({"document_id": doc(n), "result": {}}))
+                    .collect();
+                items.extend(w.spent.iter().map(
+                    |n| json!({"document_id": doc(n), "skipped": "GENERATION_ATTEMPTS_EXHAUSTED"}),
+                ));
+                ok(json!({ "items": items }))
             }
             ["plans", "bind", plan, ..] => {
                 let p = w.plans.get_mut(*plan).unwrap();
@@ -1153,6 +1160,45 @@ fn a_batch_whose_drafts_failed_is_never_ready() {
         ctx.tick(600).unwrap();
     }
     assert_eq!(phases(&root, id), ["ready"]);
+}
+
+#[test]
+fn a_note_whose_every_draft_was_rejected_is_left_to_the_agent() {
+    // 378: the review rejected every example of 前もって three times, and
+    // generation then skipped it; the note reached ready with no examples.
+    let root = std::env::temp_dir().join(format!("lab-campaign-spent-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    cli.world.lock().unwrap().spent.insert("101".into());
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    assert_eq!(phases(&root, id), ["needs_agent"]);
+    let status =
+        campaign::engine::status(&linguist_store::Store::read_only(&root).unwrap(), id, 0).unwrap();
+    let needs = &status["agent"][0]["needs"];
+    assert!(
+        needs["101"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("GENERATION_ATTEMPTS_EXHAUSTED"),
+        "{needs}"
+    );
+    assert!(needs.get("102").is_none(), "{needs}");
+    // Settled, the note is kept as it is.
+    ctx.item(1, "101", ItemAction::Settled).unwrap();
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    assert_eq!(phases(&root, id), ["ready"]);
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
