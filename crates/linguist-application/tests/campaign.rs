@@ -126,6 +126,8 @@ struct World {
     redictionaried: Vec<String>,
     /// Notes whose read fails (Anki busy) this many more times.
     read_fail: BTreeMap<String, u32>,
+    /// The code those reads fail with (None: SOURCE_READ_CONNECTION_FAILED).
+    read_fail_code: Option<&'static str>,
     read_retries: u32,
     /// Retries the prepare job's attempt budget still allows (None: any).
     retry_budget: Option<u32>,
@@ -232,9 +234,10 @@ impl FakeCli {
                     .cloned()
                     .collect();
                 if !failing.is_empty() && !w.plans.contains_key(*job) {
+                    let code = w.read_fail_code.unwrap_or("SOURCE_READ_CONNECTION_FAILED");
                     return ok(json!({"plan": null, "captured_this_run": 0,
                         "item_counts": {"captured": notes.len() - failing.len(), "failed": failing.len(), "pending": 0},
-                        "error_counts": {"SOURCE_READ_CONNECTION_FAILED": failing.len()}}));
+                        "error_counts": {code: failing.len()}}));
                 }
                 if w.max_notes.is_some_and(|max| notes.len() > max) {
                     return Output {
@@ -287,8 +290,9 @@ impl FakeCli {
                         ..Default::default()
                     },
                 );
+                let code = w.read_fail_code.unwrap_or("SOURCE_READ_CONNECTION_FAILED");
                 ok(json!({"plan": {"id": job},
-                    "skipped": bad.iter().map(|n| json!({"note_id": n, "error_code": "SOURCE_READ_CONNECTION_FAILED"})).collect::<Vec<_>>()}))
+                    "skipped": bad.iter().map(|n| json!({"note_id": n, "error_code": code})).collect::<Vec<_>>()}))
             }
             ["plans", "show", plan, rest @ ..] => {
                 let p = w.plans[*plan].clone();
@@ -2008,6 +2012,43 @@ fn a_ready_batch_reopened_fresh_is_prepared_again_from_scratch() {
     .unwrap();
     assert_ne!(new.plan, old.plan, "a new plan");
     assert_eq!(phases(&root, id), ["ready"]);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_rejected_anki_action_is_read_again_before_the_note_is_left_out() {
+    // 387-393: AnkiConnect refused notesInfo under load
+    // (SOURCE_CAPTURE_TRANSIENT) and every note was deferred on the first run.
+    let root = std::env::temp_dir().join(format!("lab-campaign-rejected-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..2].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    {
+        let mut w = cli.world.lock().unwrap();
+        w.read_fail.insert("101".into(), 1);
+        w.read_fail_code = Some("SOURCE_CAPTURE_TRANSIENT");
+    }
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..6 {
+        ctx.tick(600).unwrap();
+        cli.clock.fetch_add(5 * 60 * 1000, Ordering::SeqCst);
+    }
+    assert_eq!(cli.world.lock().unwrap().read_retries, 1);
+    let data = BatchData::from_value(
+        &linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign_batch(id, 1)
+            .unwrap()
+            .data,
+    )
+    .unwrap();
+    assert!(data.plan.is_some());
+    assert!(data.deferred.is_empty(), "{:?}", data.deferred);
     std::fs::remove_dir_all(root).unwrap();
 }
 

@@ -252,9 +252,9 @@ impl Context<'_> {
         data.prepare_runs += 1;
         let mut plan = out.json["plan"]["id"].as_str().map(str::to_owned);
         let failed = out.json["item_counts"]["failed"].as_u64().unwrap_or(0);
-        // Reads that failed because Anki was busy or briefly unreachable are
-        // read again (after five minutes, three times) before any note is
-        // left out of the batch.
+        // Reads that failed because Anki was busy, refused an action under
+        // load or was briefly unreachable are read again (after five minutes,
+        // three times) before any note is left out of the batch.
         let transient = counts.as_object().is_some_and(|c| {
             !c.is_empty()
                 && c.keys().all(|k| {
@@ -263,6 +263,8 @@ impl Context<'_> {
                         "SOURCE_READ_CONNECTION_FAILED"
                             | "SOURCE_READ_UNAVAILABLE"
                             | "SOURCE_READ_TIMEOUT"
+                            | "SOURCE_READ_RATE_LIMITED"
+                            | "SOURCE_CAPTURE_TRANSIENT"
                     )
                 })
         });
