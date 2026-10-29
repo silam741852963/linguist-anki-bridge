@@ -935,6 +935,18 @@ fn explanations_are_in_the_explanation_language() {
         .unwrap_err(),
         "GENERATION_PROMPT_WORDING"
     );
+    // 気味: the source the prompt quotes is no source the learner sees.
+    assert_eq!(
+        validate_output(
+            &doc,
+            &request,
+            &output("It has a neutral tone; the source notes that it is less common in speech."),
+            10000,
+            10000
+        )
+        .unwrap_err(),
+        "GENERATION_PROMPT_WORDING"
+    );
     assert_eq!(
         validate_output(
             &doc,

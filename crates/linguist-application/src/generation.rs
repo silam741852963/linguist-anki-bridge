@@ -1154,8 +1154,9 @@ pub fn validate_output(
     }
     // The prompt's own wording is no explanation ("…, while the accepted
     // expression can refer…", "less honorific than the expression", 全く〜ない:
-    // "as in the authored example describing a new plan"): the learner sees
-    // the card, not the request. A vocabulary card has no other "expression"
+    // "as in the authored example describing a new plan", 気味: "the source
+    // notes that it is less common in speech"): the learner sees the card,
+    // not the request. A vocabulary card has no other "expression"
     // to refer to.
     let vocabulary = matches!(output, Supplement::Vocabulary(_));
     if explaining.iter().any(|text| {
@@ -1165,6 +1166,10 @@ pub fn validate_output(
             "accepted pattern",
             "authored",
             "source meaning",
+            "the source notes",
+            "the source says",
+            "the source states",
+            "according to the source",
         ]
         .iter()
         .any(|wording| text.contains(wording))
