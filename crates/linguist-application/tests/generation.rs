@@ -923,6 +923,18 @@ fn explanations_are_in_the_explanation_language() {
         .unwrap_err(),
         "GENERATION_PROMPT_WORDING"
     );
+    // 全く〜ない: the grammar prompt's "authored examples".
+    assert_eq!(
+        validate_output(
+            &doc,
+            &request,
+            &output("With affirmatives it means completely, as in the authored example."),
+            10000,
+            10000
+        )
+        .unwrap_err(),
+        "GENERATION_PROMPT_WORDING"
+    );
     assert_eq!(
         validate_output(
             &doc,
