@@ -237,3 +237,26 @@ Reclassify those plans from a fresh base instead.
     (`start` resumes any pause; the agent may resume).
   - 274-279 wait for Codex drafts of their split units (cooldown until
     22:42). Wrapped up by the user at 21:30: applied 4014, deferred 33.
+- 2026-10-27 to 10-29 sessions on 42e5a4e4 (applied 4247, deferred 9):
+  - Grammar 274, 275, 276 applied after reviewing every unit. 277 and 278
+    are ready but hold one prompt-wording leak each (277 unit
+    d4156141 全く〜ない usage "as in the authored example", 278 unit
+    17cafda9); each gets a Codex redraft of its usage before approval.
+    279 waits for its redraft.
+  - Approved 322, 340, 341; 338 reopened fresh (遠い got the wrong sense
+    from a full-entry Jisho screenshot). Applied notes from full-entry
+    screenshots may hold wrong senses: not yet checked.
+  - Fixes: 60d510a (failed generate is a step failure; redraft every 30
+    min), ed3dbdf (redraft undrafted batches one at a time, lowest
+    first), 0f3965c (re-render the other items when a draft writes a
+    revision), f8c24fb (status counts applied split groups), 49f328b
+    (screenshot senses ranked by coverage), b7746b1 (drafts with grammar
+    prompt wording are rejected).
+  - Session run policy written ([campaign.md](../operations/campaign.md),
+    "Session run policy"): auto wrap-up when idle, resume only from an
+    open Claude session, auto resume of automatic wrap-ups when the
+    Codex quota resets, careful mode (1 batch at a time) after a fast
+    drafting cap. Commits 3951ffc to 3f85180.
+  - Verified unattended: auto wrap 02:23, resume 06:00, cap 06:08 (careful
+    mode on), resume 11:00 at 1/1, wrap 11:25 (Codex cap until 16:01).
+  - Commits ed3dbdf..b7746b1 not pushed yet.
