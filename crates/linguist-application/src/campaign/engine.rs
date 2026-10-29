@@ -2045,13 +2045,40 @@ pub enum ItemAction {
 /// generation settings. The finished batch keeps them as deferred with the
 /// new batch named, so a note is requeued at most once per pass.
 pub fn requeue(store: &mut Store, id: Uuid, reasons: &[String], now: u64) -> Result<Value, String> {
+    requeue_with(store, id, reasons, &[], "", now)
+}
+
+/// Send applied notes of finished batches back round in new batches, to be
+/// prepared and applied again (378: 常に, 必ず and 44 more adverbs were
+/// applied without the examples a policy fix now keeps).
+pub fn redo(
+    store: &mut Store,
+    id: Uuid,
+    notes: &[String],
+    why: &str,
+    now: u64,
+) -> Result<Value, String> {
+    if why.trim().is_empty() {
+        return Err("CAMPAIGN_REASON_EMPTY".into());
+    }
+    requeue_with(store, id, &[], notes, why, now)
+}
+
+fn requeue_with(
+    store: &mut Store,
+    id: Uuid,
+    reasons: &[String],
+    redo: &[String],
+    why: &str,
+    now: u64,
+) -> Result<Value, String> {
     let campaign = store.campaign(id)?;
     if matches!(campaign.status.as_str(), "cancelled" | "closed") {
         return Err("CAMPAIGN_FINISHED".into());
     }
     // No tick runs meanwhile: the new batch number is named in the old one.
     let lease = store.acquire_lease(&Resource::Campaign(id), LEASE_SECONDS)?;
-    let result = requeue_locked(store, id, reasons, now);
+    let result = requeue_locked(store, id, reasons, redo, why, now);
     let released = store.release_lease(&lease);
     let value = result?;
     released?;
@@ -2062,9 +2089,12 @@ fn requeue_locked(
     store: &mut Store,
     id: Uuid,
     reasons: &[String],
+    redo: &[String],
+    why: &str,
     now: u64,
 ) -> Result<Value, String> {
     let mut created = Vec::new();
+    let mut found = std::collections::BTreeSet::new();
     for record in store.campaign_batches(id)? {
         // A batch whose every note failed to prepare ends skipped: its
         // deferred notes come back too (WP-24: 60 notes of five batches).
@@ -2075,12 +2105,22 @@ fn requeue_locked(
         if !data.merge.is_empty() {
             continue;
         }
-        let notes: Vec<String> = data
+        let mut notes: Vec<String> = data
             .deferred
             .iter()
             .filter(|(_, why)| reasons.iter().any(|r| why.starts_with(r.as_str())))
             .map(|(note, _)| note.clone())
             .collect();
+        // An applied note: in a done batch and never left out of it.
+        if record.phase == "done" {
+            for note in &data.notes {
+                if redo.contains(note) && !data.deferred.contains_key(note) {
+                    data.deferred.insert(note.clone(), format!("REDO: {why}"));
+                    found.insert(note.clone());
+                    notes.push(note.clone());
+                }
+            }
+        }
         if notes.is_empty() {
             continue;
         }
@@ -2119,7 +2159,8 @@ fn requeue_locked(
         )?;
         created.push(json!({"from": record.batch, "batch": batch, "notes": notes.len()}));
     }
-    Ok(json!({"campaign": id, "requeued": created}))
+    let missing: Vec<&String> = redo.iter().filter(|n| !found.contains(*n)).collect();
+    Ok(json!({"campaign": id, "requeued": created, "not_applied": missing}))
 }
 
 pub fn status(store: &Store, id: Uuid, now: u64) -> Result<Value, String> {

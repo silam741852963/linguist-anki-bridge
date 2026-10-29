@@ -164,6 +164,13 @@ pub(crate) enum CampaignCommand {
         /// Deferral reason prefixes to requeue (repeatable).
         #[arg(long = "reason", default_values_t = ["AGENT:".to_owned(), "APPLY_FAILED:".to_owned()])]
         reasons: Vec<String>,
+        /// An applied note to prepare and apply again (repeatable), instead
+        /// of deferred ones; needs --why.
+        #[arg(long = "note", requires = "why")]
+        notes: Vec<String>,
+        /// Why the applied notes are done again, recorded in their old batch.
+        #[arg(long)]
+        why: Option<String>,
     },
     /// Record that the agent run started by `agent-slot` ended; batches
     /// waiting for the agent are reviewed again.
@@ -962,13 +969,23 @@ pub(crate) fn handle(
             store.append_campaign_event(campaign, None, "agent_run", &json!({}), now())?;
             emit(&json!({"granted": true, "used_today": used + 1}))?;
         }
-        CampaignCommand::Requeue { campaign, reasons } => {
+        CampaignCommand::Requeue {
+            campaign,
+            reasons,
+            notes,
+            why,
+        } => {
             definition(&root, campaign)?;
             if reasons.iter().any(|r| r.is_empty()) {
                 return Err("CAMPAIGN_REASON_EMPTY".into());
             }
             let mut store = linguist_store::Store::open_existing(&root)?;
-            emit(&engine::requeue(&mut store, campaign, &reasons, now())?)?;
+            if notes.is_empty() {
+                emit(&engine::requeue(&mut store, campaign, &reasons, now())?)?;
+            } else {
+                let why = why.unwrap_or_default();
+                emit(&engine::redo(&mut store, campaign, &notes, &why, now())?)?;
+            }
         }
         CampaignCommand::AgentDone { campaign } => {
             definition(&root, campaign)?;

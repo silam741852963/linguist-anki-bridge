@@ -1861,6 +1861,47 @@ fn deferred_notes_of_finished_batches_are_requeued_once() {
 }
 
 #[test]
+fn an_applied_note_is_done_again_after_a_fix() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-redo-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    drive(&root, id, &cli, None);
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let note = BatchData::from_value(&store.campaign_batch(id, 1).unwrap().data)
+        .unwrap()
+        .notes[0]
+        .clone();
+    let before = store.campaign_batches(id).unwrap().len() as u32;
+    let notes = [note.clone(), "999".to_owned()];
+    let out = campaign::engine::redo(&mut store, id, &notes, "examples lost", 6).unwrap();
+    assert_eq!(out["requeued"][0]["from"], 1, "{out}");
+    assert_eq!(out["not_applied"], json!(["999"]), "{out}");
+    let new = store.campaign_batch(id, before + 1).unwrap();
+    assert_eq!(new.phase, "selected");
+    assert_eq!(
+        BatchData::from_value(&new.data).unwrap().notes,
+        std::slice::from_ref(&note)
+    );
+    let old = BatchData::from_value(&store.campaign_batch(id, 1).unwrap().data).unwrap();
+    assert_eq!(
+        old.deferred[&note],
+        format!("REQUEUED to batch {}: REDO: examples lost", before + 1)
+    );
+    // Once: the note is no longer an applied note of batch 1.
+    let again = campaign::engine::redo(&mut store, id, &notes[..1], "again", 7).unwrap();
+    assert_eq!(again["requeued"], json!([]));
+    assert!(campaign::engine::redo(&mut store, id, &notes[..1], " ", 7).is_err());
+    drop(store);
+    drive(&root, id, &cli, None);
+    assert_eq!(cli.world.lock().unwrap().applied[&note], 2);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn notes_of_a_batch_skipped_because_none_prepared_are_requeued() {
     let root = std::env::temp_dir().join(format!("lab-campaign-requeue-skip-{}", Uuid::new_v4()));
     let id = create(&root, spec(false), world_notes()[..2].to_vec());
