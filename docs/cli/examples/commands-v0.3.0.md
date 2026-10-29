@@ -136,7 +136,7 @@ linguist-anki-bridge campaign approve CAMPAIGN 3 --actor claude-agent
 linguist-anki-bridge campaign asset DIGEST --output picture.png
 linguist-anki-bridge campaign events CAMPAIGN --after 0 --limit 100
 linguist-anki-bridge campaign install-timer CAMPAIGN --script scripts/campaign-tick.sh --workdir . --execute
-linguist-anki-bridge campaign resume CAMPAIGN --by-user
+linguist-anki-bridge campaign resume CAMPAIGN
 linguist-anki-bridge campaign close CAMPAIGN
 linguist-anki-bridge plans resolve-batch PLAN --policy builtin
 linguist-anki-bridge plans generate PLAN --all-items --pending --base-revision 3 --digest DIGEST --use-current-settings

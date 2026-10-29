@@ -1374,6 +1374,14 @@ fn spellings_of_one_word_are_one_note_and_separate_words_still_split() {
             .iter()
             .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
     );
+    // A reading that only adds the polite ご is the same word.
+    let document = prepare("意見", "い けん\n\nご い けん");
+    assert!(
+        !document
+            .issues
+            .iter()
+            .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
+    );
     // Two words with their own entries stay one note per word.
     let document = prepare("祖父\nお祖父さん", "そふ\nおじいさん");
     let LearningContent::Vocabulary(vocab) = &document.content else {

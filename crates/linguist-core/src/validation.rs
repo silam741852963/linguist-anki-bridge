@@ -153,7 +153,16 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             // One note holding several words (私 / 僕 / 俺) or readings
             // (おどかす / おびやかす) is split, one note per unit.
             let japanese = doc.target_language.as_str().split('-').next() == Some("ja");
-            let readings = vocabulary_units(&v.pronunciation);
+            // A reading that only adds the polite お/ご (いけん / ごいけん) is the
+            // same word, not a second unit.
+            let mut readings = vocabulary_units(&v.pronunciation);
+            let all = readings.clone();
+            readings.retain(|r| {
+                !["お", "ご"].iter().any(|p| {
+                    r.strip_prefix(p)
+                        .is_some_and(|rest| all.iter().any(|o| o == rest))
+                })
+            });
             if japanese
                 && (vocabulary_units(&v.expression).len() > 1
                     || readings.len() > 1 && readings.iter().all(|r| is_kana(r)))
