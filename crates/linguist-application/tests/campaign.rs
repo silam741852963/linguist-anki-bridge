@@ -2188,3 +2188,36 @@ fn approving_a_revision_the_review_has_not_seen_reviews_it_first() {
     ctx.approve(1, "claude-agent").unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// 343 (唄): one agent decision in a batch of three is 33%, over the 30%
+/// limit; one decision is allowed there, two of three are not.
+#[test]
+fn one_agent_decision_never_trips_the_share_limit() {
+    for decided in [1, 2] {
+        let root = std::env::temp_dir().join(format!("lab-campaign-share-{}", Uuid::new_v4()));
+        let mut three = spec(false);
+        three.batch_size = 3;
+        let id = create(&root, three, world_notes()[..3].to_vec());
+        let cli = FakeCli {
+            world: Mutex::default(),
+            kill_after: AtomicU64::new(0),
+            clock: AtomicU64::new(1000),
+        };
+        let anki = FakeAnki(&cli);
+        let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+        let ctx = context(&root, id, &cli, &anki, &clock);
+        ctx.tick(600).unwrap();
+        assert_eq!(phases(&root, id), ["ready"]);
+        {
+            let mut w = cli.world.lock().unwrap();
+            let notes = w.plans.values().next().unwrap().notes.clone();
+            w.agent_decided.extend(notes.into_iter().take(decided));
+        }
+        let out = ctx.approve(1, "claude-agent");
+        match decided {
+            1 => assert_eq!(out.unwrap()["phase"], "approved"),
+            _ => assert!(out.unwrap_err().starts_with("CAMPAIGN_PAUSED_AGENT_SHARE")),
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

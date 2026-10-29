@@ -1705,7 +1705,13 @@ impl Context<'_> {
         }
         let active = data.active_notes().count().max(1);
         let share = agent_decided.len() as f64 / active as f64;
-        if share > self.definition.spec.limits.agent_share_max && !data.pilot {
+        // One agent decision is allowed in a batch of three or more: in 343
+        // (唄: an image role, three notes) it was already 33% and paused the
+        // campaign. In a batch of two it is still half.
+        let allowed = ((self.definition.spec.limits.agent_share_max * active as f64).floor()
+            as usize)
+            .max(usize::from(active >= 3));
+        if agent_decided.len() > allowed && !data.pilot {
             self.pause(
                 "CAMPAIGN_PAUSED_AGENT_SHARE",
                 &format!(
