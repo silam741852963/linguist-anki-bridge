@@ -149,7 +149,17 @@ struct World {
     /// The next apply runs halt because the companion lost its collection
     /// session, before writing anything.
     apply_halts: u32,
+    /// A split group of this note: its unit documents besides the anchor.
+    split: Option<(String, Vec<String>)>,
+    /// Split units that validation leaves with an open review issue.
+    split_review: BTreeSet<String>,
+    /// A unit left out of the recorded approval (an approval made before
+    /// the engine left out a group with an unapproved unit).
+    approve_drop: Option<String>,
+    approved_items: Vec<String>,
 }
+
+const GROUP: &str = "00000000-0000-4000-a000-000000000001";
 
 #[derive(Clone, Default)]
 struct Plan {
@@ -194,7 +204,8 @@ impl FakeCli {
                 .chain(p.notes.iter().filter(|n| w.undrafted.contains(*n))
                     .map(|n| json!({"issue": {"id": "REQUIRED_CONTENT:meaning", "code": "REQUIRED_CONTENT"}, "request_identity": {"document_id": doc(n)}})))
                 .collect();
-            let mut v = json!({"revision": p.revision, "digest": format!("d{}", p.revision), "issues": open, "grammar_groups": []});
+            let groups: Vec<Value> = w.split.iter().map(|(anchor, units)| json!({"id": GROUP, "anchor_document": doc(anchor), "units": units})).collect();
+            let mut v = json!({"revision": p.revision, "digest": format!("d{}", p.revision), "issues": open, "grammar_groups": groups});
             if !issues_only {
                 v["documents"] = p.notes.iter().map(|n| json!({"id": doc(n),
                     "issues": if w.outage.get(n).is_some_and(|left| *left > 0) { json!([{"code": "AUDIO_SYNTHESIS_FAILED", "message": "VOICEVOX_UNAVAILABLE: engine down; no audio candidate was staged. Audio is optional."}]) }
@@ -424,10 +435,36 @@ impl FakeCli {
             ["plans", "validate", plan, ..] => {
                 let p = &w.plans[*plan];
                 ok(
-                    json!({"evidence": {"items": p.notes.iter().map(|n| json!({"document_id": doc(n), "issues": [{"severity": "warning", "code": "SCHEMA_CHANGE"}]})).collect::<Vec<_>>()}}),
+                    json!({"evidence": {"items": p.notes.iter().map(|n| json!({"document_id": doc(n), "issues": [{"severity": "warning", "code": "SCHEMA_CHANGE"}]}))
+                        .chain(w.split.iter().flat_map(|(_, units)| units.iter().map(|u| json!({"document_id": u,
+                            "issues": if w.split_review.contains(u) { json!([{"severity": "review", "code": "GENERATED_FACT_REVIEW"}]) } else { json!([]) }}))))
+                        .collect::<Vec<_>>()}}),
                 )
             }
-            ["plans", "approve", ..] => ok(json!({"noop": false})),
+            ["plans", "approve", ..] => {
+                let drop = w.approve_drop.clone();
+                w.approved_items = args
+                    .windows(2)
+                    .filter(|p| p[0] == "--item-id" && Some(&p[1]) != drop.as_ref())
+                    .map(|p| p[1].clone())
+                    .collect();
+                ok(json!({"noop": false}))
+            }
+            ["apply", .., "--accept-schema-change", "--apply"] => {
+                let (anchor, units) = w.split.clone().unwrap();
+                if std::iter::once(doc(&anchor))
+                    .chain(units)
+                    .all(|u| w.approved_items.contains(&u))
+                {
+                    ok(json!({"split": {"state": "complete"}}))
+                } else {
+                    Output {
+                        code: 5,
+                        json: Value::Null,
+                        stderr: json!({"error": "APPLY_APPROVAL_MISSING: approve this exact revision for every selected item first"}).to_string(),
+                    }
+                }
+            }
             [
                 "jobs",
                 "create",
@@ -2047,4 +2084,71 @@ fn notes_anki_was_too_busy_to_read_are_read_again_before_any_is_left_out() {
     );
     assert!(data.deferred.contains_key("102"));
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// 277 (全く〜ない): a split unit redrafted after the review kept open review
+/// issues. It was left out of the approval while its group was approved, and
+/// the group's apply was refused (APPLY_APPROVAL_MISSING), pausing the
+/// campaign. The group's note is left out instead, at approval or at apply.
+#[test]
+fn a_split_group_with_an_unapproved_unit_is_left_out_not_paused() {
+    for at_apply in [false, true] {
+        let root = std::env::temp_dir().join(format!("lab-campaign-split-{}", Uuid::new_v4()));
+        let id = create(&root, spec(false), world_notes()[..2].to_vec());
+        let cli = FakeCli {
+            world: Mutex::default(),
+            kill_after: AtomicU64::new(0),
+            clock: AtomicU64::new(1000),
+        };
+        let unit = "00000000-0000-4000-b000-000000000001".to_owned();
+        {
+            let mut w = cli.world.lock().unwrap();
+            w.split = Some(("101".into(), vec![unit.clone()]));
+            if at_apply {
+                w.approve_drop = Some(unit.clone());
+            } else {
+                w.split_review.insert(unit.clone());
+            }
+        }
+        let anki = FakeAnki(&cli);
+        let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+        let ctx = context(&root, id, &cli, &anki, &clock);
+        ctx.tick(600).unwrap();
+        assert_eq!(phases(&root, id), ["ready"]);
+        ctx.approve(1, "claude-agent").unwrap();
+        let batch = || {
+            BatchData::from_value(
+                &linguist_store::Store::read_only(&root)
+                    .unwrap()
+                    .campaign_batch(id, 1)
+                    .unwrap()
+                    .data,
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            batch().approval.unwrap().groups.is_empty(),
+            !at_apply,
+            "the group is approved only when validation found its unit clean"
+        );
+        for _ in 0..10 {
+            ctx.tick(600).unwrap();
+        }
+        let record = linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign(id)
+            .unwrap();
+        assert_ne!(record.status, "paused", "{:?}", record.code);
+        assert_eq!(phases(&root, id), ["done"]);
+        let deferred = &batch().deferred["101"];
+        assert!(
+            deferred.starts_with(if at_apply {
+                "APPLY_APPROVAL_MISSING"
+            } else {
+                "VALIDATION: GENERATED_FACT_REVIEW"
+            }),
+            "{deferred}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

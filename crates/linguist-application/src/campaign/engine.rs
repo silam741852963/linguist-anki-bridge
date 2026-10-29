@@ -585,6 +585,18 @@ impl Context<'_> {
         }))
     }
 
+    /// The note a split group came from: the note of its anchor document.
+    fn group_note(&self, data: &BatchData, plan: &Value, group: &Uuid) -> Option<String> {
+        let group = group.to_string();
+        plan["grammar_groups"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|g| g["id"].as_str() == Some(group.as_str()))
+            .and_then(|g| g["anchor_document"].as_str())
+            .and_then(|document| self.note_of(data, document))
+    }
+
     fn note_of(&self, data: &BatchData, document: &str) -> Option<String> {
         data.documents
             .iter()
@@ -1079,9 +1091,22 @@ impl Context<'_> {
         }
         // Split groups, each with its own checkpoint, after the job items.
         let plan = data.plan.ok_or("CAMPAIGN_PLAN_MISSING")?.to_string();
+        let mut groups_plan = None;
         for group in &approval.groups {
             if data.groups_done.contains(group) {
                 continue;
+            }
+            if !data.deferred.is_empty() {
+                let plan = match &groups_plan {
+                    Some(plan) => plan,
+                    None => groups_plan.insert(self.plan_show(&data, false)?),
+                };
+                if self
+                    .group_note(&data, plan, group)
+                    .is_some_and(|note| data.deferred.contains_key(&note))
+                {
+                    continue;
+                }
             }
             let rev = approval.revision.to_string();
             let since = (self.clock)();
@@ -1104,7 +1129,18 @@ impl Context<'_> {
                 if out.unavailable() {
                     return Ok(Step::Waiting(out.error()));
                 }
-                return Err(out.error());
+                // An approval made before every unit of the group was
+                // approved: the group's note is left out and goes round again.
+                let error = out.error();
+                if error.contains("APPLY_APPROVAL_MISSING") {
+                    let plan = self.plan_show(&data, false)?;
+                    if let Some(note) = self.group_note(&data, &plan, group) {
+                        data.deferred
+                            .insert(note, format!("{error} (split group {group})"));
+                        return self.moved(record, "applying", &data, "split group left out");
+                    }
+                }
+                return Err(error);
             }
             self.record_checkpoints(record.batch, since, &data)?;
             match out.json["split"]["state"].as_str() {
@@ -1724,9 +1760,18 @@ impl Context<'_> {
                 .filter_map(|i| i["code"].as_str())
                 .collect();
             if !errors.is_empty() {
-                if let Some(note) = &note {
+                // A split unit is no note of its own: its group's note is
+                // left out, or the group was approved without the unit and
+                // its apply was refused (277 全く〜ない, redrafted after the
+                // review: APPLY_APPROVAL_MISSING).
+                let owner = note.clone().or_else(|| {
+                    in_group
+                        .get(document)
+                        .and_then(|group| self.group_note(&data, &plan, group))
+                });
+                if let Some(note) = owner {
                     data.deferred
-                        .insert(note.clone(), format!("VALIDATION: {}", errors.join(", ")));
+                        .insert(note, format!("VALIDATION: {}", errors.join(", ")));
                 }
                 continue;
             }
