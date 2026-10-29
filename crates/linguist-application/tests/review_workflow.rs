@@ -1017,6 +1017,19 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
             language: Language::try_from("en".to_owned()).unwrap(),
         });
     assert_eq!(chosen(&plan), second);
+    // WP-24 (遠い): a screenshot of the whole entry shows every sense. The
+    // longer definition shares more words but is no better covered, so
+    // dictionary order decides.
+    let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+        panic!()
+    };
+    vocab.dictionary[0].senses[1].definitions =
+        vec!["to live on (one's salary, income, savings)".into()];
+    plan.documents[0].regions[0].text =
+        "1. to eat 2. to live on (one's salary, income, savings)".into();
+    assert_eq!(chosen(&plan), first);
+    plan.documents[0].regions[0].text = "1. to live on (e.g. a salary)".into();
+    assert_eq!(chosen(&plan), second);
     // WP-24 (こらえる, やがて): a kana word with no reading or pronunciation
     // is its own reading.
     let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {

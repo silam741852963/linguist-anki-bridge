@@ -262,10 +262,14 @@ fn words(text: &str) -> std::collections::BTreeSet<String> {
         .collect()
 }
 
-/// The sense, among templates of equal reading, whose definitions share the
-/// most words with the OCR text of the note's own images (a dictionary
-/// screenshot the learner kept), when one shares strictly more than every
-/// other.
+/// The sense, among templates of equal reading, whose definitions the OCR
+/// text of the note's own images (a dictionary screenshot the learner kept)
+/// covers best, when one is covered strictly better than every other.
+/// Coverage is the share of the sense's words the text shows, not their
+/// count: a screenshot of the whole entry shows every sense, and counting
+/// words chose the longest definition (遠い got "far in quality, degree"
+/// instead of "far; distant"); with every sense covered, none wins and the
+/// first is taken.
 fn screenshot_sense<'a>(
     vocab: &linguist_core::Vocabulary,
     document: &LearningDocument,
@@ -285,7 +289,7 @@ fn screenshot_sense<'a>(
     if seen.is_empty() {
         return None;
     }
-    let mut scored: Vec<(usize, &'a Value)> = matching
+    let mut scored: Vec<(usize, usize, &'a Value)> = matching
         .iter()
         .map(|template| {
             let key = template["choice"]["value"]["key"]
@@ -300,11 +304,15 @@ fn screenshot_sense<'a>(
                 .map(String::as_str)
                 .collect::<Vec<_>>()
                 .join(" ");
-            (words(&definitions).intersection(&seen).count(), *template)
+            let own = words(&definitions);
+            let shared = own.intersection(&seen).count();
+            (shared, own.len().max(1), *template)
         })
         .collect();
-    scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
-    (scored[0].0 > 0 && scored[0].0 > scored[1].0).then_some(scored[0].1)
+    // Higher coverage first: a/b > c/d as a*d > c*b.
+    scored.sort_by(|(a, b, _), (c, d, _)| (c * b).cmp(&(a * d)));
+    let ((shared, total, best), (next, next_total, _)) = (scored[0], scored[1]);
+    (shared > 0 && shared * next_total > next * total).then_some(best)
 }
 
 /// A prefix, suffix or counter (副, 総, 代) is only ever written inside
