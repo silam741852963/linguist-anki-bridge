@@ -562,11 +562,24 @@ fn decide(
                     })
                     .collect()
             };
-            if let Some(matching) = own_readings
+            if let Some(mut matching) = own_readings
                 .iter()
                 .map(|tier| equal(tier))
                 .find(|matching| !matching.is_empty())
             {
+                // A sense the dictionary also lists under another reading
+                // belongs to that reading first: 杯 read はい took "sake cup"
+                // (さかずき's) over the counter for cupfuls, and its examples
+                // read さかずき. One of the reading's own senses is preferred.
+                let elsewhere = |t: &Value| {
+                    !t["definitions"].is_null()
+                        && templates.iter().any(|u| {
+                            u["reading"] != t["reading"] && u["definitions"] == t["definitions"]
+                        })
+                };
+                if matching.iter().any(|t| !elsewhere(t)) {
+                    matching.retain(|t| !elsewhere(t));
+                }
                 // Several senses share the reading: the one the learner's own
                 // dictionary screenshot names (its OCR text) wins outright;
                 // otherwise dictionary order (WP-24: 得意 took "pride" when

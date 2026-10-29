@@ -1040,6 +1040,19 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
     vocab.pronunciation.clear();
     plan.documents[0].regions.clear();
     assert_eq!(chosen(&plan), first);
+    // WP-24 (杯 はい): a first sense the dictionary also lists under another
+    // reading ("sake cup", さかずき's) gives way to one of the reading's own.
+    let shared = json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": [
+        {"document_id": plan.documents[0].id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
+         "options": {"issue": {"code": "DICTIONARY_SENSE_REVIEW"}, "templates": [
+            {"reading": "たべる", "definitions": ["sake cup"], "choice": sense(&first)},
+            {"reading": "たべる", "definitions": ["counter for cupfuls"], "choice": sense(&second)},
+            {"reading": "さかずき", "definitions": ["sake cup"], "choice": sense(&first)}]}}]});
+    let out = policy::fill(&policy::Policy::builtin(), &plan, &shared).unwrap();
+    assert_eq!(
+        out.batch.unwrap()["decisions"][0]["choice"]["value"]["key"],
+        json!(second)
+    );
 }
 
 #[test]
