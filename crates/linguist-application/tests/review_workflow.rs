@@ -1040,18 +1040,38 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
     vocab.pronunciation.clear();
     plan.documents[0].regions.clear();
     assert_eq!(chosen(&plan), first);
-    // WP-24 (杯 はい): a first sense the dictionary also lists under another
-    // reading ("sake cup", さかずき's) gives way to one of the reading's own.
-    let shared = json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": [
-        {"document_id": plan.documents[0].id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
+    // WP-24 (杯 はい): a one-kanji word whose first sense another reading
+    // shares ("sake cup", さかずき's) takes the reading's counter instead.
+    let id = plan.documents[0].id;
+    let templates = |first_defs: &str, second_defs: &str| {
+        json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": [
+        {"document_id": id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
          "options": {"issue": {"code": "DICTIONARY_SENSE_REVIEW"}, "templates": [
-            {"reading": "たべる", "definitions": ["sake cup"], "choice": sense(&first)},
-            {"reading": "たべる", "definitions": ["counter for cupfuls"], "choice": sense(&second)},
-            {"reading": "さかずき", "definitions": ["sake cup"], "choice": sense(&first)}]}}]});
-    let out = policy::fill(&policy::Policy::builtin(), &plan, &shared).unwrap();
+            {"reading": "たべる", "definitions": [first_defs], "choice": sense(&first)},
+            {"reading": "たべる", "definitions": [second_defs], "choice": sense(&second)},
+            {"reading": "さかずき", "definitions": [first_defs], "choice": sense(&first)}]}}]})
+    };
+    let pick = |plan: &PlanRevision, batch: serde_json::Value| {
+        policy::fill(&policy::Policy::builtin(), plan, &batch)
+            .unwrap()
+            .batch
+            .unwrap()["decisions"][0]["choice"]["value"]["key"]
+            .clone()
+    };
+    let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+        panic!()
+    };
+    vocab.expression = "杯".into();
+    vocab.reading = "たべる".into();
     assert_eq!(
-        out.batch.unwrap()["decisions"][0]["choice"]["value"]["key"],
+        pick(&plan, templates("sake cup", "counter for cupfuls")),
         json!(second)
+    );
+    // 兄 あに: "older brother" is shared with にい and けい, and the next
+    // sense is no counter: dictionary order stands.
+    assert_eq!(
+        pick(&plan, templates("older brother", "brother-in-law")),
+        json!(first)
     );
 }
 

@@ -567,18 +567,30 @@ fn decide(
                 .map(|tier| equal(tier))
                 .find(|matching| !matching.is_empty())
             {
-                // A sense the dictionary also lists under another reading
-                // belongs to that reading first: 杯 read はい took "sake cup"
-                // (さかずき's) over the counter for cupfuls, and its examples
-                // read さかずき. One of the reading's own senses is preferred.
-                let elsewhere = |t: &Value| {
+                // A one-kanji word read as a counter: 杯 read はい took
+                // "sake cup", a sense Jisho also lists under さかずき, so its
+                // examples read さかずき. Its first sense gives way to the
+                // reading's counter when another reading shares it. Only
+                // then: 兄 あに shares "older brother" with にい and けい, and
+                // dropping it left "brother-in-law".
+                let shared = |t: &Value| {
                     !t["definitions"].is_null()
                         && templates.iter().any(|u| {
                             u["reading"] != t["reading"] && u["definitions"] == t["definitions"]
                         })
                 };
-                if matching.iter().any(|t| !elsewhere(t)) {
-                    matching.retain(|t| !elsewhere(t));
+                let counter = |t: &Value| {
+                    t["definitions"]
+                        .as_array()
+                        .and_then(|d| d.first())
+                        .and_then(Value::as_str)
+                        .is_some_and(|d| d.starts_with("counter for"))
+                };
+                if expression.chars().count() == 1
+                    && shared(matching[0])
+                    && let Some(at) = matching.iter().position(|t| counter(t))
+                {
+                    matching.swap(0, at);
                 }
                 // Several senses share the reading: the one the learner's own
                 // dictionary screenshot names (its OCR text) wins outright;
