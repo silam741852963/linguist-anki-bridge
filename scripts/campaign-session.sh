@@ -88,6 +88,7 @@ HEARTBEAT_SECONDS=${HEARTBEAT_SECONDS:-2700}
 FAST_CAP_SECONDS=${FAST_CAP_SECONDS:-1800}    # a cap this soon after a start: careful mode
 CALM_WINDOW_SECONDS=${CALM_WINDOW_SECONDS:-7200}  # a run this long without a cap ends it
 RAMP_SECONDS=${RAMP_SECONDS:-900}              # careful mode: how often the pace is judged
+APPROVAL_SECONDS=${APPROVAL_SECONDS:-1200}      # after a start, ready batches hold the session this long
 RAMP_LADDER=${RAMP_LADDER:-"1 1,2 1,4 2,8 3"}  # careful mode: prepare-ahead prepare-parallel steps
 WINDOW=${XDG_STATE_HOME:-$HOME/.local/state}/linguist-anki-bridge/agents/window-codex.json
 QUOTA_REASON="Codex usage limit reached; driver resumes when the quota resets"
@@ -125,8 +126,14 @@ drafting_available() {  # false only when every provider of the chain cools down
 }
 writes_pending() {  # batches that still reach Anki without drafting
   # Not `ready`: a ready batch waits for the agent's approval, which no tick
-  # gives, so counting it kept an idle session from ever wrapping up.
-  [ "$(cli campaign status "$1" | json 'sum(d["phases"].get(p, 0) for p in ("approved", "applying", "verifying", "merging"))')" != 0 ]
+  # gives, so counting it kept an idle session from ever wrapping up. Only
+  # for APPROVAL_SECONDS after a start: a start during a drafting cooldown
+  # wrapped up at once, before the agent could approve what was ready (and
+  # approvals are refused while the campaign is paused).
+  local phases="approved applying verifying merging" started
+  started=$(cat "$SESSION/started-at" 2>/dev/null || echo 0)
+  [ $(( $(date +%s) - started )) -lt "$APPROVAL_SECONDS" ] && phases="$phases ready"
+  [ "$(cli campaign status "$1" | PHASES="$phases" json 'sum(d["phases"].get(p, 0) for p in __import__("os").environ["PHASES"].split())')" != 0 ]
 }
 agent_alive() {  # the Claude Code process with this pid still runs
   [ "$(cat "/proc/$1/comm" 2>/dev/null)" = claude ]
