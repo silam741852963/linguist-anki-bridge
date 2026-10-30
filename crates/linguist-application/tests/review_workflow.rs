@@ -1030,6 +1030,45 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
     assert_eq!(chosen(&plan), first);
     plan.documents[0].regions[0].text = "1. to live on (e.g. a salary)".into();
     assert_eq!(chosen(&plan), second);
+    // WP-24 (371, 円): the screenshot shows "yen" first and "circle" second.
+    // "circle" is one word and fully covered, "yen (currency of Japan)" a
+    // third; a shown first sense that no other sense outmatches stays.
+    let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+        panic!()
+    };
+    vocab.dictionary[0].senses[0].definitions = vec!["yen (currency of Japan)".into()];
+    vocab.dictionary[0].senses[1].definitions = vec!["circle".into()];
+    plan.documents[0].regions[0].text =
+        "1. yen; Japanese monetary unit 2. circle orig. meaning".into();
+    assert_eq!(chosen(&plan), first);
+    plan.documents[0].regions[0].text = "2. circle orig. meaning".into();
+    assert_eq!(chosen(&plan), second);
+    // WP-24 (382, 引き落とす): a screenshot that shows the word explained in
+    // Vietnamese matches no sense; dictionary order would guess "to pull
+    // down" for a direct debit, so the agent reads it.
+    let expression = match &plan.documents[0].content {
+        LearningContent::Vocabulary(v) => v.expression.clone(),
+        _ => unreachable!(),
+    };
+    plan.documents[0].regions[0].text =
+        format!("{expression} Tu dong ghi no (tr mot tai khoan ngan hang); kéo roi xuong");
+    let filled = policy::fill(
+        &policy::Policy::builtin(),
+        &plan,
+        &batch(&plan.documents[0]),
+    )
+    .unwrap();
+    assert!(
+        filled.undecided[0]
+            .reason
+            .starts_with("SENSE_SCREENSHOT_UNREAD"),
+        "{:?}",
+        filled.undecided
+    );
+    // Without the word it is no dictionary screenshot: dictionary order.
+    plan.documents[0].regions[0].text =
+        "Tu dong ghi no (tr mot tai khoan ngan hang); kéo roi xuong".into();
+    assert_eq!(chosen(&plan), first);
     // WP-24 (こらえる, やがて): a kana word with no reading or pronunciation
     // is its own reading.
     let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
