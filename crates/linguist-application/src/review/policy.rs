@@ -217,6 +217,15 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
     // 前もって連絡する, いつの間にか眠って, 思わず笑う).
     let inflecting = last.is_some_and(|c| "るうくすつぬぶむぐいてでにとずかもば".contains(c));
     let katakana = |c: char| matches!(c, '\u{30a1}'..='\u{30fa}' | 'ー');
+    // A number is written with its counter (384: 二十六人, 二十六歳); one
+    // numeral alone is also a word's first kanji (一緒).
+    if word.chars().count() > 1
+        && word
+            .chars()
+            .all(|c| "〇一二三四五六七八九十百千万億".contains(c))
+    {
+        return phrase.contains(word);
+    }
     phrase.match_indices(word).any(|(at, _)| {
         let before = phrase[..at].chars().last();
         let after = phrase[at + word.len()..].chars().next();
@@ -895,6 +904,9 @@ mod compound_tests {
         assert!(!stands_alone("物干し台", "物干し"));
         assert!(!stands_alone("物干しロープ", "物干し"));
         assert!(stands_alone("物干しに干す", "物干し"));
+        // A number takes its counter (384).
+        assert!(stands_alone("学生が二十六人います。", "二十六"));
+        assert!(stands_alone("来月、二十六歳になります。", "二十六"));
         // An adverb before a verb is a phrase (378: 前もって, いつの間にか).
         assert!(stands_alone("前もって連絡してね。", "前もって"));
         assert!(stands_alone("いつの間にか眠ってしまった。", "いつの間にか"));

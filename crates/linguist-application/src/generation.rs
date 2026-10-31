@@ -1241,21 +1241,21 @@ pub fn validate_output(
         return Err("GENERATION_COLLOCATION_GLOSS".into());
     }
     // A longer phrase is no gloss of the word alone: インスタントラーメンを食べる
-    // glossed "instant ramen" names the word, not the phrase (WP-24).
+    // glossed "instant ramen" names the word, not the phrase (WP-24). Only
+    // the first meaning: a later, narrower one is what a compound adds
+    // (385: バス乗り場 "bus stop" for 乗り場 "place for boarding vehicles;
+    // bus stop; ..." was refused three times).
     if let (Supplement::Vocabulary(v), LearningContent::Vocabulary(vocab)) = (&output, &doc.content)
-    {
-        let meanings: Vec<String> = vocab
+        && let Some(first) = vocab
             .meaning
             .split([';', '；'])
             .map(|m| m.trim().to_lowercase())
-            .filter(|m| !m.is_empty())
-            .collect();
-        if v.collocations.iter().any(|c| {
-            c.phrase.trim() != vocab.expression.trim()
-                && meanings.contains(&c.gloss.trim().to_lowercase())
-        }) {
-            return Err("GENERATION_COLLOCATION_GLOSS".into());
-        }
+            .find(|m| !m.is_empty())
+        && v.collocations.iter().any(|c| {
+            c.phrase.trim() != vocab.expression.trim() && c.gloss.trim().to_lowercase() == first
+        })
+    {
+        return Err("GENERATION_COLLOCATION_GLOSS".into());
     }
     // A phrase ending in kanji or katakana is a noun phrase (計算ミス, 入力ミス):
     // a gloss "to make a mistake in calculation" translates a verb it does

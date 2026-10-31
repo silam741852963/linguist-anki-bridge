@@ -260,6 +260,18 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         validate_output(&doc, &request, &own("To eat"), 10000, 10000).unwrap_err(),
         "GENERATION_COLLOCATION_GLOSS"
     );
+    // 乗り場: a later, narrower meaning is what the phrase adds (バス乗り場
+    // "bus stop" for "place for boarding vehicles; bus stop").
+    let mut narrower = doc.clone();
+    if let LearningContent::Vocabulary(v) = &mut narrower.content {
+        v.meaning = "to eat; to have a meal".into();
+    }
+    let later = build_request(&narrower, &settings()).unwrap();
+    assert!(validate_output(&narrower, &later, &own("to have a meal"), 10000, 10000).is_ok());
+    assert_eq!(
+        validate_output(&narrower, &later, &own("to eat"), 10000, 10000).unwrap_err(),
+        "GENERATION_COLLOCATION_GLOSS"
+    );
     // ミス: a noun phrase (計算ミス) is no "to ..." verb phrase.
     let noun = |gloss: &str| {
         serde_json::to_vec(
