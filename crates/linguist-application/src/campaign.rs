@@ -278,6 +278,9 @@ pub struct BatchData {
     /// Open issues the policy left, per note.
     pub needs: BTreeMap<String, Vec<String>>,
     pub checked_revision: Option<u32>,
+    /// The review rules (`engine::rules_digest`) that checked it: a batch
+    /// waiting for the agent is reviewed again under changed rules.
+    pub checked_rules: Option<String>,
     /// A batch held only by undrafted items is reviewed again no earlier
     /// than this (so a draft that never comes cannot loop).
     pub redraft_after_ms: Option<u64>,

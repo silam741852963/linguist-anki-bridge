@@ -1089,7 +1089,10 @@ fn a_batch_whose_drafts_failed_is_never_ready() {
     assert_eq!(phases(&root, id), ["reviewing"], "waits while drafts fail");
     // The tick says why the batch waits.
     assert!(
-        report.waiting.values().any(|w| w.contains("GENERATION_UNAVAILABLE")),
+        report
+            .waiting
+            .values()
+            .any(|w| w.contains("GENERATION_UNAVAILABLE")),
         "{:?}",
         report.waiting
     );
@@ -1198,6 +1201,45 @@ fn a_note_whose_every_draft_was_rejected_is_left_to_the_agent() {
         "{needs}"
     );
     assert!(needs.get("102").is_none(), "{needs}");
+    // Waiting for the agent, the batch is not reviewed again...
+    let generates = |cli: &FakeCli| {
+        cli.world
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|c| c.starts_with("plans generate"))
+            .count()
+    };
+    let before = generates(&cli);
+    ctx.tick(600).unwrap();
+    assert_eq!(generates(&cli), before);
+    // ...until the review rules change (394, 398: a policy fix).
+    {
+        let mut store = linguist_store::Store::open_existing(&root).unwrap();
+        let record = store.campaign_batch(id, 1).unwrap();
+        let mut data = BatchData::from_value(&record.data).unwrap();
+        assert_eq!(
+            data.checked_rules.as_deref(),
+            Some(campaign::engine::rules_digest())
+        );
+        data.checked_rules = Some("older rules".into());
+        store
+            .update_campaign_batch(
+                id,
+                1,
+                record.version,
+                &record.phase,
+                &data.to_value(),
+                "batch",
+                &json!("test"),
+                5,
+            )
+            .unwrap();
+    }
+    ctx.tick(600).unwrap();
+    assert!(generates(&cli) > before, "reviewed again");
+    assert_eq!(phases(&root, id), ["needs_agent"]);
     // Settled, the note is kept as it is.
     ctx.item(1, "101", ItemAction::Settled).unwrap();
     for _ in 0..3 {

@@ -617,6 +617,7 @@ impl Context<'_> {
         let revision = head["revision"].as_u64().unwrap_or(0) as u32;
         if record.phase == "needs_agent"
             && data.checked_revision == Some(revision)
+            && data.checked_rules.as_deref() == Some(rules_digest())
             && !needs_met(&data, &head)
         {
             // The review rounds can run out before every item is drafted (a
@@ -875,6 +876,7 @@ impl Context<'_> {
         }
         let head = self.plan_show(&data, true)?;
         data.checked_revision = evaluated.or(head["revision"].as_u64().map(|r| r as u32));
+        data.checked_rules = Some(rules_digest().to_owned());
         self.map_documents(&mut data)?;
         // Open issues left only on deferred notes do not hold the batch.
         let open_active = head["issues"].as_array().into_iter().flatten().any(|e| {
@@ -2281,6 +2283,21 @@ pub fn status(store: &Store, id: Uuid, now: u64) -> Result<Value, String> {
 /// review that raced the agent's decisions recorded needs already met).
 /// Needs that are no issue (a failed draft, a merge to confirm, a split
 /// candidate) always wait for the agent.
+/// A digest of the review policy and the generation checks this binary was
+/// built with. A policy fix (394, 398: a rule withdrawn) left batches waiting
+/// for the agent on needs the new rules no longer raise, since only a new
+/// plan revision reviewed them again.
+pub fn rules_digest() -> &'static str {
+    static DIGEST: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    DIGEST.get_or_init(|| {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        include_str!("../review/policy.rs").hash(&mut hasher);
+        include_str!("../generation.rs").hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    })
+}
+
 fn needs_met(data: &BatchData, head: &Value) -> bool {
     let open: BTreeSet<&str> = head["issues"]
         .as_array()
