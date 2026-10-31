@@ -89,6 +89,7 @@ FAST_CAP_SECONDS=${FAST_CAP_SECONDS:-1800}    # a cap this soon after a start: c
 CALM_WINDOW_SECONDS=${CALM_WINDOW_SECONDS:-7200}  # a run this long without a cap ends it
 RAMP_SECONDS=${RAMP_SECONDS:-900}              # careful mode: how often the pace is judged
 APPROVAL_SECONDS=${APPROVAL_SECONDS:-1200}      # after a start, ready batches hold the session this long
+BUSY_SECONDS=${BUSY_SECONDS:-300}              # a tool command this young counts as a heartbeat
 RAMP_LADDER=${RAMP_LADDER:-"1 1,2 1,4 2,8 3"}  # careful mode: prepare-ahead prepare-parallel steps
 WINDOW=${XDG_STATE_HOME:-$HOME/.local/state}/linguist-anki-bridge/agents/window-codex.json
 QUOTA_REASON="Codex usage limit reached; driver resumes when the quota resets"
@@ -242,6 +243,14 @@ session_gone() {  # the agent session closed, or stopped checking in
   agent=$(cat "$SESSION/driver.agent" 2>/dev/null)
   [ -n "$agent" ] && ! agent_alive "$agent" && return 0
   [ "$HEARTBEAT_SECONDS" = 0 ] && return 1
+  # Busy: a long agent turn (fixing a finding) runs no 15-minute check, since
+  # the check fires only between turns; a tool command the session started
+  # in the last BUSY_SECONDS counts as a heartbeat. Its background watchers
+  # run longer and do not.
+  if [ -n "$agent" ] && ps -o etimes= --ppid "$agent" 2>/dev/null |
+    awk -v busy="$BUSY_SECONDS" '$1 < busy { found = 1 } END { exit !found }'; then
+    touch "$SESSION/heartbeat"
+  fi
   beat=$(stat -c %Y "$SESSION/heartbeat" 2>/dev/null || echo 0)
   [ $(( $(date +%s) - beat )) -gt "$HEARTBEAT_SECONDS" ]
 }
