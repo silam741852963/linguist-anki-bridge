@@ -346,6 +346,20 @@ fn affix(vocab: &linguist_core::Vocabulary) -> bool {
         .any(|label| matches!(label.as_str(), "Prefix" | "Suffix" | "Counter"))
 }
 
+/// An adverb (一応, 結構) goes before any word, a kanji verb or noun
+/// included (394: 一応話せます was taken for a compound 一応話).
+fn adverb(vocab: &linguist_core::Vocabulary) -> bool {
+    let expression = spoken(&vocab.expression);
+    vocab
+        .dictionary
+        .iter()
+        .filter(|entry| entry.forms.iter().any(|form| spoken(form) == expression))
+        .flat_map(|entry| &entry.senses)
+        .any(|sense| {
+            sense.key == vocab.sense_key && sense.labels.iter().any(|l| l.starts_with("Adverb"))
+        })
+}
+
 /// True when a generated collocation or nuance list names the expression
 /// (or its reading) itself as a phrase or contrast.
 fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bool {
@@ -403,6 +417,7 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
             return true;
         }
         return !affix(vocab)
+            && !adverb(vocab)
             && expression.chars().any(is_kanji)
             && sentence.contains(&expression)
             && !stands_alone(&sentence, &expression);
@@ -467,6 +482,7 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
     let expression = spoken(&vocab.expression);
     if !expression.is_empty()
         && !affix(vocab)
+        && !adverb(vocab)
         && phrases
             .iter()
             .any(|p| p.contains(&expression) && !stands_alone(p, &expression))
@@ -910,6 +926,26 @@ mod compound_tests {
             &document,
             "examples",
             &example("彼は副社長になった。")
+        ));
+        // An adverb goes before a kanji verb (394: 一応話せます).
+        let linguist_core::LearningContent::Vocabulary(v) = &mut document.content else {
+            panic!()
+        };
+        v.expression = "一応".into();
+        v.reading = "いちおう".into();
+        v.sense_key = "1".into();
+        v.dictionary = vec![
+            serde_json::from_value(serde_json::json!({
+                "provider": "jisho", "source_url": "https://jisho.org/search/一応",
+                "language": "ja", "forms": ["一応"], "readings": ["いちおう"],
+                "senses": [{"key": "1", "definitions": ["more or less"], "labels": ["Noun", "Adverb (fukushi)"]}]
+            }))
+            .unwrap(),
+        ];
+        assert!(!super::repeats_the_word(
+            &document,
+            "examples",
+            &example("私は英語が一応話せます。")
         ));
     }
 }
