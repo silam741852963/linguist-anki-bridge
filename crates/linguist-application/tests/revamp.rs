@@ -1,5 +1,6 @@
 use linguist_application::{mapping::*, revamp::*, source_archive::*};
 use linguist_config::*;
+use linguist_core::records::{EvidenceTarget, MediaOwner, MediaRole};
 use linguist_core::{LearningContent, Provenance, Task, validation};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -1909,7 +1910,44 @@ fn a_note_holding_several_words_is_detected_and_split_one_note_per_word() {
     )
     .unwrap();
     let mut store = linguist_store::Store::open(&root).unwrap();
-    let plan = store.revision(prepared.plan_id, 1).unwrap();
+    let mut plan = store.revision(prepared.plan_id, 1).unwrap();
+    // 384: the original was enriched before the split, with a kanji stroke
+    // and dictionary evidence the units' empty content no longer has.
+    {
+        let doc = &mut plan.documents[0];
+        let mut stroke = doc.media[0].clone();
+        stroke.role = MediaRole::KanjiStroke;
+        stroke.mime = "image/gif".into();
+        stroke.digest = store.publish_asset(b"GIF89a", 1024).unwrap();
+        stroke.size_bytes = 6;
+        stroke.original_filename = Some("79c1.gif".into());
+        stroke.owner = MediaOwner::App;
+        doc.media.push(stroke.clone());
+        let mut evidence = doc.evidence[0].clone();
+        evidence.id = uuid::Uuid::new_v4();
+        evidence.target = Some(EvidenceTarget::MediaAsset {
+            digest: stroke.digest.clone(),
+        });
+        evidence.source_id = stroke.source_id;
+        doc.evidence.push(evidence.clone());
+        evidence.id = uuid::Uuid::new_v4();
+        evidence.provenance = Provenance::Dictionary;
+        evidence.target = Some(EvidenceTarget::DictionarySense {
+            entry_index: 0,
+            sense_index: 0,
+        });
+        doc.evidence.push(evidence);
+    }
+    plan.parent_digest = Some(
+        store
+            .revision(prepared.plan_id, 1)
+            .unwrap()
+            .approval_digest()
+            .unwrap(),
+    );
+    plan.revision = 2;
+    store.publish_revision(&plan).unwrap();
+    let plan = store.revision(prepared.plan_id, 2).unwrap();
     let original = plan.documents[0].clone();
     assert!(
         validation::validate(&original)
@@ -1983,10 +2021,17 @@ fn a_note_holding_several_words_is_detected_and_split_one_note_per_word() {
     assert_eq!(reviewed(sibling), ["b.mp3"]);
     for d in &child.documents {
         assert!(
-            !validation::validate(d)
+            !validation::validate(d).iter().any(|i| matches!(
+                i.code.as_str(),
+                "VOCAB_SPLIT_REQUIRED" | "INVALID_MEDIA_TYPE" | "EVIDENCE_TARGET_INVALID"
+            )),
+            "{:?}",
+            validation::validate(d)
                 .iter()
-                .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
+                .map(|i| &i.code)
+                .collect::<Vec<_>>()
         );
+        assert!(!d.media.iter().any(|m| m.role == MediaRole::KanjiStroke));
     }
 }
 

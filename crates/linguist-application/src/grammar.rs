@@ -240,6 +240,25 @@ pub(crate) fn publish_split(
                 ) && issue.field.as_ref().is_some_and(|f| !keep.contains(f)))
             });
         }
+        if kind == SplitKind::Vocabulary {
+            // A unit starts from empty content: enrichment looks its own word
+            // up again. The original's kanji strokes and the evidence of its
+            // senses and examples point at content the unit no longer has
+            // (384: 我々 / 私たち / 僕たち / 僕ら / 我ら, every unit invalid).
+            let strokes: Vec<String> = document
+                .media
+                .iter()
+                .filter(|m| m.role == MediaRole::KanjiStroke)
+                .map(|m| m.digest.clone())
+                .collect();
+            document.media.retain(|m| m.role != MediaRole::KanjiStroke);
+            document.evidence.retain(|e| match &e.target {
+                Some(EvidenceTarget::DictionarySense { .. })
+                | Some(EvidenceTarget::Example { .. }) => false,
+                Some(EvidenceTarget::MediaAsset { digest }) => !strokes.contains(digest),
+                _ => true,
+            });
+        }
         document.edits.clear();
         document.reviews.clear();
         // The split itself carries out the reviewed segmentation.
