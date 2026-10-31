@@ -333,44 +333,6 @@ fn screenshot_sense<'a>(
     (shared > 0 && shared * next_total > next * total).then_some(best)
 }
 
-/// True when the OCR text of the note's own images shows the word (its
-/// written form, or its stem for an inflected one) and at least five Latin
-/// words, none of them in any sense's definitions.
-fn unread_screenshot(vocab: &linguist_core::Vocabulary, document: &LearningDocument) -> bool {
-    let text = document
-        .regions
-        .iter()
-        .map(|region| region.text.as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
-    let expression = spoken(&vocab.expression);
-    let chars: Vec<char> = expression.chars().collect();
-    let stem: String = if chars.len() > 1
-        && chars
-            .last()
-            .is_some_and(|c| matches!(c, '\u{3040}'..='\u{309f}'))
-    {
-        chars[..chars.len() - 1].iter().collect()
-    } else {
-        expression.clone()
-    };
-    if stem.is_empty() || !spoken(&text).contains(&stem) {
-        return false;
-    }
-    let seen = words(&text);
-    let defined = words(
-        &vocab
-            .dictionary
-            .iter()
-            .flat_map(|entry| &entry.senses)
-            .flat_map(|sense| &sense.definitions)
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-            .join(" "),
-    );
-    seen.len() >= 5 && seen.is_disjoint(&defined)
-}
-
 /// A prefix, suffix or counter (副, 総, 代) is only ever written inside
 /// compounds (副社長, 総人口, 電気代): the compound rules do not apply.
 fn affix(vocab: &linguist_core::Vocabulary) -> bool {
@@ -652,19 +614,14 @@ fn decide(
                 // dictionary screenshot names (its OCR text) wins outright;
                 // otherwise dictionary order (WP-24: 得意 took "pride" when
                 // the screenshot said "one's strong point").
-                if let Some(sense) = screenshot_sense(vocab, document, &matching) {
-                    return Ok(choice(sense));
-                }
-                // A screenshot that shows the word and explains it in words
-                // none of the senses use is in the learner's own language
-                // (382, 引き落とす: Vietnamese "direct debit; pull down"):
-                // dictionary order would guess, so the agent reads it.
-                if matching.len() > 1 && unread_screenshot(vocab, document) {
-                    return Err(
-                        "SENSE_SCREENSHOT_UNREAD: the note's screenshot explains the word in words no sense uses; read it and choose the sense it names".into(),
-                    );
-                }
-                return Ok(choice(matching[0]));
+                // A screenshot in the learner's own language (Vietnamese
+                // dictionary pages on most notes) matches no English sense:
+                // dictionary order then decides. Sending those to the agent
+                // (382, 引き落とす "direct debit") put half of a batch on it
+                // for senses the first one got right (鋼, 鉄, 国家).
+                return Ok(choice(
+                    screenshot_sense(vocab, document, &matching).unwrap_or(matching[0]),
+                ));
             }
             if templates.iter().all(|t| t["reading"].is_null()) {
                 return Ok(choice(templates[0]));

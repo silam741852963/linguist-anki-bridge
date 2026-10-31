@@ -1043,29 +1043,8 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
     assert_eq!(chosen(&plan), first);
     plan.documents[0].regions[0].text = "2. circle orig. meaning".into();
     assert_eq!(chosen(&plan), second);
-    // WP-24 (382, 引き落とす): a screenshot that shows the word explained in
-    // Vietnamese matches no sense; dictionary order would guess "to pull
-    // down" for a direct debit, so the agent reads it.
-    let expression = match &plan.documents[0].content {
-        LearningContent::Vocabulary(v) => v.expression.clone(),
-        _ => unreachable!(),
-    };
-    plan.documents[0].regions[0].text =
-        format!("{expression} Tu dong ghi no (tr mot tai khoan ngan hang); kéo roi xuong");
-    let filled = policy::fill(
-        &policy::Policy::builtin(),
-        &plan,
-        &batch(&plan.documents[0]),
-    )
-    .unwrap();
-    assert!(
-        filled.undecided[0]
-            .reason
-            .starts_with("SENSE_SCREENSHOT_UNREAD"),
-        "{:?}",
-        filled.undecided
-    );
-    // Without the word it is no dictionary screenshot: dictionary order.
+    // WP-24 (394, 398): a screenshot that explains the word in Vietnamese
+    // matches no sense; dictionary order decides, not the agent.
     plan.documents[0].regions[0].text =
         "Tu dong ghi no (tr mot tai khoan ngan hang); kéo roi xuong".into();
     assert_eq!(chosen(&plan), first);
