@@ -91,6 +91,9 @@ pub struct TickReport {
     /// idle, deadline, paused, cancelled, closed, or the pause code.
     pub stopped: String,
     pub pruned: Vec<String>,
+    /// Why each batch that did not move waits, last reason per batch (an
+    /// idle tick with approved batches said nothing of why they waited).
+    pub waiting: BTreeMap<u32, String>,
 }
 
 /// State the lanes of one tick share.
@@ -98,6 +101,7 @@ struct Shared {
     /// Why the tick stops (the first lane to decide wins).
     stop: Mutex<Option<String>>,
     steps: Mutex<Vec<Value>>,
+    waiting: Mutex<BTreeMap<u32, String>>,
     /// Per lane: found nothing to do since the last move on any lane.
     idle: Mutex<Vec<bool>>,
 }
@@ -1376,6 +1380,8 @@ impl Context<'_> {
         let hold = self.agent_active(&store)?;
         let batches = store.campaign_batches(self.id)?;
         drop(store);
+        // A batch that waits is reported when nothing else moves.
+        let mut waited = None;
         for record in batches.iter().filter(|b| {
             PREP_PHASES.contains(&b.phase.as_str()) && !(hold && b.phase == "needs_agent")
         }) {
@@ -1390,7 +1396,8 @@ impl Context<'_> {
             let step = self.step_fresh(record.batch, phases);
             claims.lock().unwrap().remove(&record.batch);
             match step? {
-                Some(Step::Waiting(_)) | None => {}
+                Some(Step::Waiting(why)) => waited = Some((record.batch, Step::Waiting(why))),
+                None => {}
                 Some(step) => return Ok(Some((record.batch, step))),
             }
         }
@@ -1407,13 +1414,13 @@ impl Context<'_> {
                 })
                 .count() as u32;
             if in_flight >= self.definition.spec.limits.prepare_ahead {
-                return Ok(None);
+                return Ok(waited);
             }
             let Some(record) = batches
                 .iter()
                 .find(|b| b.phase == "selected" && !claims.contains(&b.batch))
             else {
-                return Ok(None);
+                return Ok(waited);
             };
             claims.insert(record.batch);
             record.batch
@@ -1491,7 +1498,15 @@ impl Context<'_> {
             }
             let moved = match step() {
                 Err(e) => return stop(format!("error: {e}")),
-                Ok(None) | Ok(Some((_, Step::Waiting(_)))) => false,
+                Ok(None) => false,
+                Ok(Some((batch, Step::Waiting(why)))) => {
+                    shared
+                        .waiting
+                        .lock()
+                        .unwrap()
+                        .insert(batch, why.chars().take(300).collect());
+                    false
+                }
                 Ok(Some((batch, step))) => {
                     shared
                         .steps
@@ -1600,6 +1615,7 @@ impl Context<'_> {
         let shared = Shared {
             stop: Mutex::new(None),
             steps: Mutex::new(Vec::new()),
+            waiting: Mutex::new(BTreeMap::new()),
             idle: Mutex::new(vec![false; workers + 1]),
         };
         let claims = Mutex::new(BTreeSet::new());
@@ -1664,6 +1680,7 @@ impl Context<'_> {
             steps: shared.steps.into_inner().unwrap(),
             stopped,
             pruned,
+            waiting: shared.waiting.into_inner().unwrap(),
         })
     }
 

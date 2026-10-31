@@ -1085,8 +1085,14 @@ fn a_batch_whose_drafts_failed_is_never_ready() {
     let anki = FakeAnki(&cli);
     let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
     let ctx = context(&root, id, &cli, &anki, &clock);
-    ctx.tick(600).unwrap();
+    let report = ctx.tick(600).unwrap();
     assert_eq!(phases(&root, id), ["reviewing"], "waits while drafts fail");
+    // The tick says why the batch waits.
+    assert!(
+        report.waiting.values().any(|w| w.contains("GENERATION_UNAVAILABLE")),
+        "{:?}",
+        report.waiting
+    );
     for _ in 0..4 {
         ctx.tick(600).unwrap();
     }
