@@ -1124,6 +1124,42 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
         pick(&plan, templates("grain", "counter for small round objects")),
         json!(first)
     );
+    // WP-24 (408, 遭う): Jisho notes the second sense "esp. 遭う when in
+    // kanji"; the word written 遭う takes it over 会う's "to meet".
+    {
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.expression = "遭う".into();
+        vocab.dictionary[0].metadata.insert(
+            format!("sense:{second}:raw_json"),
+            vec![r#"{"info":["esp. 遭う when in kanji"]}"#.into()],
+        );
+    }
+    assert_eq!(
+        pick(&plan, templates("to meet", "to have (e.g. an accident)")),
+        json!(second)
+    );
+    {
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.expression = "会う".into();
+    }
+    assert_eq!(
+        pick(&plan, templates("to meet", "to have (e.g. an accident)")),
+        json!(first),
+        "会う keeps the first sense"
+    );
+    {
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.expression = "杯".into();
+        vocab.dictionary[0]
+            .metadata
+            .remove(&format!("sense:{second}:raw_json"));
+    }
     // Restricted to the other reading only: the counter, as for 杯.
     plan.documents[0].content = {
         let LearningContent::Vocabulary(mut vocab) = plan.documents[0].content.clone() else {

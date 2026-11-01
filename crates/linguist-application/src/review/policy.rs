@@ -354,6 +354,27 @@ fn comments_header(text: &str) -> bool {
     plain.contains("kien dong gop")
 }
 
+/// Jisho's note on a sense marks it as this spelling's ("esp. 遭う when in
+/// kanji").
+fn spelled_sense(vocab: &linguist_core::Vocabulary, key: Option<&str>) -> bool {
+    let Some(key) = key else { return false };
+    let marker = format!("esp. {}", vocab.expression.trim());
+    vocab
+        .dictionary
+        .iter()
+        .filter_map(|entry| entry.metadata.get(&format!("sense:{key}:raw_json")))
+        .flatten()
+        .filter_map(|raw| serde_json::from_str::<Value>(raw).ok())
+        .any(|sense| {
+            sense["info"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .any(|info| info.contains(&marker))
+        })
+}
+
 /// The readings Jisho restricts a sense to (empty: every reading).
 fn restricted_to(vocab: &linguist_core::Vocabulary, key: &str) -> Vec<String> {
     vocab
@@ -687,8 +708,17 @@ fn decide(
                 // dictionary order then decides. Sending those to the agent
                 // (382, 引き落とす "direct debit") put half of a batch on it
                 // for senses the first one got right (鋼, 鉄, 国家).
+                // Jisho notes a sense as the spelling's own ("esp. 遭う when
+                // in kanji"): 遭う is "to have (an accident)", not 会う's
+                // "to meet" (408: 山道で見知らぬ人に遭った).
+                let spelled = matching
+                    .iter()
+                    .copied()
+                    .find(|t| spelled_sense(vocab, t["choice"]["value"]["key"].as_str()));
                 return Ok(choice(
-                    screenshot_sense(vocab, document, &matching).unwrap_or(matching[0]),
+                    screenshot_sense(vocab, document, &matching)
+                        .or(spelled)
+                        .unwrap_or(matching[0]),
                 ));
             }
             if templates.iter().all(|t| t["reading"].is_null()) {
