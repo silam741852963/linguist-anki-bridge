@@ -354,6 +354,26 @@ fn comments_header(text: &str) -> bool {
     plain.contains("kien dong gop")
 }
 
+/// The readings Jisho restricts a sense to (empty: every reading).
+fn restricted_to(vocab: &linguist_core::Vocabulary, key: &str) -> Vec<String> {
+    vocab
+        .dictionary
+        .iter()
+        .filter_map(|entry| entry.metadata.get(&format!("sense:{key}:raw_json")))
+        .flatten()
+        .filter_map(|raw| serde_json::from_str::<Value>(raw).ok())
+        .flat_map(|sense| {
+            sense["restrictions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 /// A prefix, suffix or counter (副, 総, 代) is only ever written inside
 /// compounds (副社長, 総人口, 電気代): the compound rules do not apply.
 fn affix(vocab: &linguist_core::Vocabulary) -> bool {
@@ -641,8 +661,19 @@ fn decide(
                         .and_then(Value::as_str)
                         .is_some_and(|d| d.starts_with("counter for"))
                 };
+                // A first sense Jisho restricts to this very reading is its
+                // own (406: 粒 "grain; bead; drop" for つぶ, つび and つぼ),
+                // whatever other reading lists it too.
+                let own = |t: &Value| {
+                    let key = t["choice"]["value"]["key"].as_str().unwrap_or_default();
+                    let reading = t["reading"].as_str().map(|r| hiragana(&spoken(r)));
+                    restricted_to(vocab, key)
+                        .iter()
+                        .any(|r| Some(hiragana(&spoken(r))) == reading)
+                };
                 if expression.chars().count() == 1
                     && shared(matching[0])
+                    && !own(matching[0])
                     && let Some(at) = matching.iter().position(|t| counter(t))
                 {
                     matching.swap(0, at);

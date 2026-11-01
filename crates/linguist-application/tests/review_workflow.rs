@@ -1110,6 +1110,35 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
         pick(&plan, templates("older brother", "brother-in-law")),
         json!(first)
     );
+    // WP-24 (406, 粒 つぶ): Jisho restricts "grain; bead; drop" to つぶ,
+    // つび and つぼ. Shared or not, a first sense restricted to the word's
+    // own reading stays.
+    let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+        panic!()
+    };
+    vocab.dictionary[0].metadata.insert(
+        format!("sense:{first}:raw_json"),
+        vec![r#"{"restrictions":["たべる","さかずき"]}"#.into()],
+    );
+    assert_eq!(
+        pick(&plan, templates("grain", "counter for small round objects")),
+        json!(first)
+    );
+    // Restricted to the other reading only: the counter, as for 杯.
+    plan.documents[0].content = {
+        let LearningContent::Vocabulary(mut vocab) = plan.documents[0].content.clone() else {
+            panic!()
+        };
+        vocab.dictionary[0].metadata.insert(
+            format!("sense:{first}:raw_json"),
+            vec![r#"{"restrictions":["さかずき"]}"#.into()],
+        );
+        LearningContent::Vocabulary(vocab)
+    };
+    assert_eq!(
+        pick(&plan, templates("sake cup", "counter for cupfuls")),
+        json!(second)
+    );
 }
 
 #[test]
