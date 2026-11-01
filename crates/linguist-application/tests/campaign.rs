@@ -124,6 +124,8 @@ struct World {
     /// and how many dictionary runs fail the same way.
     dictionary_outage: BTreeMap<String, (u32, String)>,
     redictionaried: Vec<String>,
+    /// Split units (`plans split-vocab`) whose word was never looked up.
+    unlooked: BTreeSet<String>,
     /// Notes whose read fails (Anki busy) this many more times.
     read_fail: BTreeMap<String, u32>,
     /// The code those reads fail with (None: SOURCE_READ_CONNECTION_FAILED).
@@ -215,9 +217,10 @@ impl FakeCli {
                     "issues": if w.outage.get(n).is_some_and(|left| *left > 0) { json!([{"code": "AUDIO_SYNTHESIS_FAILED", "message": "VOICEVOX_UNAVAILABLE: engine down; no audio candidate was staged. Audio is optional."}]) }
                         else if let Some((left, error)) = w.dictionary_outage.get(n).filter(|(left, _)| *left > 0) { let _ = left; json!([{"code": "DICTIONARY_ENTRY_GENERATION_FAILED", "message": format!("DICTIONARY_ENTRY_FAILED: codex: {error}; author the meaning instead.")}]) }
                         else { json!([]) },
-                    "content": {"kind": "vocabulary", "body": {"meaning": if w.dictionary_outage.get(n).is_some_and(|(left, _)| *left > 0) { "" } else { "meaning" }}},
+                    "content": {"kind": "vocabulary", "body": {"meaning": if w.dictionary_outage.get(n).is_some_and(|(left, _)| *left > 0) || w.unlooked.contains(n) { "" } else { "meaning" },
+                        "dictionary": if w.unlooked.contains(n) { json!([]) } else { json!([{"sense": "x"}]) }}},
                     "media": [],
-                    "sources": [{"location": format!("anki_note:{n}")}],
+                    "sources": if w.unlooked.contains(n) { json!([{"kind": "vocabulary_split_request_v1", "location": "local_split_request"}]) } else { json!([{"location": format!("anki_note:{n}")}]) },
                     "reviews": if p.decided.contains(n) { json!([{"actor": if w.agent_decided.contains(n) { "claude-agent" } else { "campaign-policy" }}]) } else { json!([]) }})).collect();
             }
             v
@@ -388,6 +391,7 @@ impl FakeCli {
                     .cloned()
                     .unwrap();
                 w.redictionaried.push(note.clone());
+                w.unlooked.remove(&note);
                 if let Some((left, _)) = w.dictionary_outage.get_mut(&note) {
                     *left = left.saturating_sub(1);
                 }
@@ -1704,6 +1708,28 @@ fn a_dictionary_entry_lost_to_a_usage_limit_is_written_again() {
         "three runs, then the agent"
     );
     assert!(!w.redictionaried.contains(&"103".to_owned()));
+}
+
+#[test]
+fn a_split_unit_never_looked_up_gets_its_dictionary_entry() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-split-lookup-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..3].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    // 384: 我々 / 私たち / 僕たち / 僕ら / 我ら kept empty meanings after the split.
+    cli.world.lock().unwrap().unlooked.insert("101".into());
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..6 {
+        ctx.tick(600).unwrap();
+    }
+    let w = cli.world.lock().unwrap();
+    assert_eq!(w.redictionaried, vec!["101".to_owned()]);
+    assert!(w.unlooked.is_empty());
 }
 
 #[test]

@@ -375,7 +375,12 @@ impl Context<'_> {
             // A dictionary entry the generation chain could not write while
             // its provider was at a usage limit or down (WP-24: notes prepared
             // during a Codex cooldown kept no meaning) is written again.
-            if dictionary_outage(document) && meaning_empty(document) {
+            // A unit `plans split-vocab` made starts with no dictionary entry
+            // and nothing else looks its word up (384: 我々 / 私たち / 僕たち /
+            // 僕ら / 我ら kept empty meanings and waited for the agent).
+            if (dictionary_outage(document) || unlooked_split_unit(document))
+                && meaning_empty(document)
+            {
                 targets.push((id.to_owned(), "dictionary"));
             }
         }
@@ -451,10 +456,10 @@ impl Context<'_> {
                 record,
                 &record.phase,
                 data,
-                json!(format!("{stage} run again after a service outage")),
+                json!(format!("{stage} run again")),
             )?;
             return Ok(Err(Step::Moved(format!(
-                "batch {}: item {id}: {stage} run again after a service outage",
+                "batch {}: item {id}: {stage} run again",
                 record.batch
             ))));
         }
@@ -2334,6 +2339,18 @@ fn dictionary_outage(document: &Value) -> bool {
                     .iter()
                     .any(|code| m.contains(code))
         })
+}
+
+/// A vocabulary split unit whose word was never looked up.
+fn unlooked_split_unit(document: &Value) -> bool {
+    document["content"]["body"]["dictionary"]
+        .as_array()
+        .is_none_or(|entries| entries.is_empty())
+        && document["sources"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|s| s["kind"] == linguist_core::records::VOCABULARY_SPLIT_SOURCE)
 }
 
 fn meaning_empty(document: &Value) -> bool {
