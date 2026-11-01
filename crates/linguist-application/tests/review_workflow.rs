@@ -1048,6 +1048,25 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
     plan.documents[0].regions[0].text =
         "Tu dong ghi no (tr mot tai khoan ngan hang); kéo roi xuong".into();
     assert_eq!(chosen(&plan), first);
+    // WP-24 (400, 祝い): under its Vietnamese entry the screenshot lists
+    // reader comments, one naming the second sense in English. Comments are
+    // not the entry: dictionary order decides.
+    plan.documents[0].regions[0].text = "Lé mirng; chuc mirng".into();
+    let mut comment = plan.documents[0].regions[0].clone();
+    comment.reading_order = 2;
+    comment.text = "Example: (e.g. a ring) = circle".into();
+    let mut header = comment.clone();
+    header.reading_order = 1;
+    header.text = "C6 9 y kién dong gop".into();
+    plan.documents[0].regions.extend([comment, header]);
+    assert_eq!(chosen(&plan), first);
+    plan.documents[0].regions.retain(|r| r.reading_order != 1);
+    assert_eq!(
+        chosen(&plan),
+        second,
+        "without the header the comment counts"
+    );
+    plan.documents[0].regions.truncate(1);
     // WP-24 (こらえる, やがて): a kana word with no reading or pronunciation
     // is its own reading.
     let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {

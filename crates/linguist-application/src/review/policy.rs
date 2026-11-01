@@ -289,10 +289,15 @@ fn screenshot_sense<'a>(
     if matching.len() < 2 {
         return None;
     }
+    // The entry, not what readers wrote under it: Mazii lists comments after
+    // "N ý kiến đóng góp", and one comment's "moving gift" outvoted the
+    // entry's "lễ mừng; chúc mừng" (400: 祝い got "congratulatory gift").
+    let mut regions: Vec<_> = document.regions.iter().collect();
+    regions.sort_by_key(|region| region.reading_order);
     let seen = words(
-        &document
-            .regions
+        &regions
             .iter()
+            .take_while(|region| !comments_header(&region.text))
             .map(|region| region.text.as_str())
             .collect::<Vec<_>>()
             .join(" "),
@@ -331,6 +336,18 @@ fn screenshot_sense<'a>(
     scored.sort_by(|(a, b, _), (c, d, _)| (c * b).cmp(&(a * d)));
     let ((shared, total, best), (next, next_total, _)) = (scored[0], scored[1]);
     (shared > 0 && shared * next_total > next * total).then_some(best)
+}
+
+/// The header of a dictionary page's reader comments ("Có 9 ý kiến đóng
+/// góp", OCR "C6 9 y kién dong gop"), read without diacritics.
+fn comments_header(text: &str) -> bool {
+    use unicode_normalization::UnicodeNormalization;
+    let plain: String = text
+        .nfd()
+        .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
+        .collect::<String>()
+        .to_lowercase();
+    plain.contains("kien dong gop")
 }
 
 /// A prefix, suffix or counter (副, 総, 代) is only ever written inside
