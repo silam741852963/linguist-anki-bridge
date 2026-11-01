@@ -226,10 +226,14 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
     {
         return phrase.contains(word);
     }
+    // A quantity's bound ends its phrase: 十年以上取引している (402) is
+    // "trade for over ten years", no compound 以上取引.
+    const BOUNDS: [&str; 7] = ["以上", "以下", "以内", "未満", "以来", "程度", "前後"];
     phrase.match_indices(word).any(|(at, _)| {
         let before = phrase[..at].chars().last();
         let after = phrase[at + word.len()..].chars().next();
-        !(first.is_some_and(is_kanji) && before.is_some_and(is_kanji))
+        let bounded = BOUNDS.iter().any(|b| phrase[..at].ends_with(b));
+        !(first.is_some_and(is_kanji) && before.is_some_and(is_kanji) && !bounded)
             && !(last.is_some_and(is_kanji) && after.is_some_and(is_kanji))
             && !(!inflecting
                 && last.is_some_and(|c| !is_kanji(c))
@@ -904,6 +908,10 @@ mod compound_tests {
         // A verb or adjective before a noun is a phrase.
         assert!(stands_alone("見る人", "見る"));
         assert!(stands_alone("高い山に登る", "高い"));
+        // WP-24 (402): a quantity's bound ends its phrase.
+        assert!(stands_alone("この会社とは十年以上取引しています。", "取引"));
+        assert!(stands_alone("三日以内返品できます。", "返品"));
+        assert!(!stands_alone("外国為替取引", "取引"));
     }
 
     #[test]
