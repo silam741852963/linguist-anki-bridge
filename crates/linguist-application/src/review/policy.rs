@@ -354,6 +354,28 @@ fn comments_header(text: &str) -> bool {
     plain.contains("kien dong gop")
 }
 
+/// A sense Jisho gives as a suffix after a verb's -masu stem (〜かねる).
+fn auxiliary(vocab: &linguist_core::Vocabulary, key: Option<&str>) -> bool {
+    let Some(key) = key else { return false };
+    vocab
+        .dictionary
+        .iter()
+        .filter_map(|entry| entry.metadata.get(&format!("sense:{key}:raw_json")))
+        .flatten()
+        .filter_map(|raw| serde_json::from_str::<Value>(raw).ok())
+        .any(|sense| {
+            let has = |field: &str, text: &str| {
+                sense[field]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .any(|v| v.contains(text))
+            };
+            has("parts_of_speech", "Suffix") && has("info", "-masu stem")
+        })
+}
+
 /// Jisho's note on a sense marks it as this spelling's ("esp. 遭う when in
 /// kanji").
 fn spelled_sense(vocab: &linguist_core::Vocabulary, key: Option<&str>) -> bool {
@@ -708,6 +730,18 @@ fn decide(
                 // dictionary order then decides. Sending those to the agent
                 // (382, 引き落とす "direct debit") put half of a batch on it
                 // for senses the first one got right (鋼, 鉄, 国家).
+                // A word read as a verb is not first its auxiliary use: Jisho
+                // lists 兼ねる's "to be unable to" (a suffix after a verb's
+                // -masu stem, 決めかねる) before "to serve two or more
+                // functions" (409: the learner's note says 兼, "combine").
+                if auxiliary(vocab, matching[0]["choice"]["value"]["key"].as_str())
+                    && let Some(at) = matching
+                        .iter()
+                        .position(|t| !auxiliary(vocab, t["choice"]["value"]["key"].as_str()))
+                {
+                    let main = matching.remove(at);
+                    matching.insert(0, main);
+                }
                 // Jisho notes a sense as the spelling's own ("esp. 遭う when
                 // in kanji"): 遭う is "to have (an accident)", not 会う's
                 // "to meet" (408: 山道で見知らぬ人に遭った).

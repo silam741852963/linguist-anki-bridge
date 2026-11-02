@@ -1160,6 +1160,34 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
             .metadata
             .remove(&format!("sense:{second}:raw_json"));
     }
+    // WP-24 (409, 兼ねる): Jisho lists the suffix "to be unable to" (after a
+    // verb's -masu stem) first; the verb's own sense comes before it.
+    {
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.expression = "兼ねる".into();
+        vocab.dictionary[0].metadata.insert(
+            format!("sense:{first}:raw_json"),
+            vec![r#"{"parts_of_speech":["Suffix","Ichidan verb"],"info":["after the -masu stem of verb"]}"#.into()],
+        );
+    }
+    assert_eq!(
+        pick(
+            &plan,
+            templates("to be unable to", "to serve two functions")
+        ),
+        json!(second)
+    );
+    {
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.expression = "杯".into();
+        vocab.dictionary[0]
+            .metadata
+            .remove(&format!("sense:{first}:raw_json"));
+    }
     // Restricted to the other reading only: the counter, as for 杯.
     plan.documents[0].content = {
         let LearningContent::Vocabulary(mut vocab) = plan.documents[0].content.clone() else {
