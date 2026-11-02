@@ -126,6 +126,8 @@ struct World {
     redictionaried: Vec<String>,
     /// Split units (`plans split-vocab`) whose word was never looked up.
     unlooked: BTreeSet<String>,
+    /// Notes whose every draft meets the provider's usage limit.
+    limited: BTreeSet<String>,
     /// Notes whose read fails (Anki busy) this many more times.
     read_fail: BTreeMap<String, u32>,
     /// The code those reads fail with (None: SOURCE_READ_CONNECTION_FAILED).
@@ -439,6 +441,9 @@ impl FakeCli {
                     .collect();
                 items.extend(w.spent.iter().map(
                     |n| json!({"document_id": doc(n), "skipped": "GENERATION_ATTEMPTS_EXHAUSTED"}),
+                ));
+                items.extend(w.limited.iter().map(
+                    |n| json!({"document_id": doc(n), "error": "AGENT_QUOTA_COOLDOWN: codex reported its usage limit; skipped until 9"}),
                 ));
                 ok(json!({ "items": items }))
             }
@@ -1774,6 +1779,52 @@ fn an_agent_step_on_a_waiting_batch_writes_a_lost_dictionary_entry_again_except_
     }
     let w = cli.world.lock().unwrap();
     assert_eq!(w.redictionaried, ["102"]);
+}
+
+#[test]
+fn a_deferred_note_at_the_usage_limit_does_not_hold_its_batch() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-limited-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..3].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    // 419: 当事者 was deferred, but its missing example was still drafted,
+    // and the usage limit held the batch until the window reset.
+    cli.world.lock().unwrap().limited.insert("103".into());
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    let phase_of = || {
+        linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign_batches(id)
+            .unwrap()
+            .into_iter()
+            .find(|b| {
+                BatchData::from_value(&b.data)
+                    .unwrap()
+                    .notes
+                    .contains(&"103".to_owned())
+            })
+            .unwrap()
+    };
+    let held = phase_of();
+    assert_eq!(held.phase, "reviewing", "the limit holds the batch");
+    ctx.item(held.batch, "103", ItemAction::Defer("AGENT: x".into()))
+        .unwrap();
+    for _ in 0..3 {
+        ctx.tick(600).unwrap();
+    }
+    let moved = phase_of().phase;
+    assert!(
+        !["reviewing", "needs_agent"].contains(&moved.as_str()),
+        "{moved}"
+    );
 }
 
 #[test]

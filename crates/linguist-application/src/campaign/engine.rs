@@ -779,6 +779,15 @@ impl Context<'_> {
                 {
                     spent.insert(note);
                 }
+                // A deferred note stays as it is in Anki: its draft is no
+                // reason to wait (419: 当事者, deferred, held the batch at the
+                // usage limit until the window reset).
+                if self
+                    .note_of(&data, item["document_id"].as_str().unwrap_or_default())
+                    .is_some_and(|note| data.deferred.contains_key(&note))
+                {
+                    continue;
+                }
                 let Some(error) = item.get("error").and_then(Value::as_str) else {
                     if item.get("result").is_some()
                         && let Some(note) =
@@ -805,9 +814,6 @@ impl Context<'_> {
                 let Some(note) = self.note_of(&data, document) else {
                     continue;
                 };
-                if data.deferred.contains_key(&note) {
-                    continue;
-                }
                 let failures = data.draft_failures.entry(note).or_default();
                 failures.0 += 1;
                 failures.1 = error.chars().take(300).collect();
