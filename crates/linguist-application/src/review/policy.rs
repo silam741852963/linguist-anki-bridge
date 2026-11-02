@@ -229,12 +229,27 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
     // A quantity's bound ends its phrase: 十年以上取引している (402) is
     // "trade for over ten years", no compound 以上取引.
     const BOUNDS: [&str; 7] = ["以上", "以下", "以内", "未満", "以来", "程度", "前後"];
+    // A quantity (a numeral and its counter: 一口, 一杯, 二度) goes before
+    // a verb: 一口食べる (417) is "eat a bite", no compound 一口食. A kanji
+    // followed by okurigana, not by a particle, starts that verb.
+    let quantity =
+        word.chars().count() > 1 && first.is_some_and(|c| "一二三四五六七八九十".contains(c));
+    let verb_after = |rest: &str| {
+        let mut chars = rest.chars();
+        chars.next().is_some_and(is_kanji)
+            && chars.next().is_some_and(|c| {
+                matches!(c, '\u{3041}'..='\u{3096}') && !"をがはのもへやにでとか".contains(c)
+            })
+    };
     phrase.match_indices(word).any(|(at, _)| {
         let before = phrase[..at].chars().last();
-        let after = phrase[at + word.len()..].chars().next();
+        let rest = &phrase[at + word.len()..];
+        let after = rest.chars().next();
         let bounded = BOUNDS.iter().any(|b| phrase[..at].ends_with(b));
         !(first.is_some_and(is_kanji) && before.is_some_and(is_kanji) && !bounded)
-            && !(last.is_some_and(is_kanji) && after.is_some_and(is_kanji))
+            && !(last.is_some_and(is_kanji)
+                && after.is_some_and(is_kanji)
+                && !(quantity && verb_after(rest)))
             && !(!inflecting
                 && last.is_some_and(|c| !is_kanji(c))
                 && after.is_some_and(|c| is_kanji(c) || katakana(c)))
@@ -1007,6 +1022,11 @@ mod compound_tests {
         assert!(stands_alone("この会社とは十年以上取引しています。", "取引"));
         assert!(stands_alone("三日以内返品できます。", "返品"));
         assert!(!stands_alone("外国為替取引", "取引"));
+        // WP-24 (417): a quantity goes before a verb, not before a noun.
+        assert!(stands_alone("このパン、一口食べてみて。", "一口"));
+        assert!(stands_alone("お茶を一杯飲んだ。", "一杯"));
+        assert!(!stands_alone("一口目に気づいた。", "一口"));
+        assert!(!stands_alone("一口坂を上る", "一口"));
     }
 
     #[test]
