@@ -2100,13 +2100,11 @@ fn requeue_with(
     if matches!(campaign.status.as_str(), "cancelled" | "closed") {
         return Err("CAMPAIGN_FINISHED".into());
     }
-    // No tick runs meanwhile: the new batch number is named in the old one.
-    let lease = store.acquire_lease(&Resource::Campaign(id), LEASE_SECONDS)?;
-    let result = requeue_locked(store, id, reasons, redo, why, now);
-    let released = store.release_lease(&lease);
-    let value = result?;
-    released?;
-    Ok(value)
+    // No campaign lease: a busy driver's ticks hold it for minutes on end,
+    // and requeue waited them out in vain (2026-11-02: two requeues failed
+    // LEASE_HELD for ten minutes). Each move is one versioned transaction;
+    // a batch number taken meanwhile is corrected in the old batch.
+    requeue_locked(store, id, reasons, redo, why, now)
 }
 
 fn requeue_locked(
@@ -2181,6 +2179,30 @@ fn requeue_locked(
             &json!({"notes": notes, "reasons": reasons}),
             now,
         )?;
+        // A tick created a batch meanwhile: name the batch the notes went to.
+        if batch != next {
+            let kept = store.campaign_batch(id, record.batch)?;
+            let mut data = BatchData::from_value(&kept.data)?;
+            let (old, new) = (
+                format!("REQUEUED to batch {next}: "),
+                format!("REQUEUED to batch {batch}: "),
+            );
+            for note in &notes {
+                if let Some(why) = data.deferred.get_mut(note) {
+                    *why = why.replacen(&old, &new, 1);
+                }
+            }
+            store.update_campaign_batch(
+                id,
+                record.batch,
+                kept.version,
+                &kept.phase,
+                &data.to_value(),
+                "requeued",
+                &json!({"renumbered": batch}),
+                now,
+            )?;
+        }
         created.push(json!({"from": record.batch, "batch": batch, "notes": notes.len()}));
     }
     let missing: Vec<&String> = redo.iter().filter(|n| !found.contains(*n)).collect();

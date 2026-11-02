@@ -1914,7 +1914,14 @@ fn deferred_notes_of_finished_batches_are_requeued_once() {
         .unwrap();
     let before = store.campaign_batches(id).unwrap().len() as u32;
     let reasons = ["AGENT:".to_owned()];
+    // A running tick holds the campaign lease for minutes: requeue does not
+    // wait for it (2026-11-02: LEASE_HELD for ten minutes).
+    let mut ticking = linguist_store::Store::open_existing(&root).unwrap();
+    let lease = ticking
+        .acquire_lease(&linguist_store::lease::Resource::Campaign(id), 120)
+        .unwrap();
     let out = campaign::engine::requeue(&mut store, id, &reasons, 6).unwrap();
+    ticking.release_lease(&lease).unwrap();
     assert_eq!(out["requeued"][0]["from"], 1, "{out}");
     let new = store.campaign_batch(id, before + 1).unwrap();
     assert_eq!(new.phase, "selected");
