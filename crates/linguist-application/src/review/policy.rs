@@ -229,6 +229,11 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
     // A quantity's bound ends its phrase: 十年以上取引している (402) is
     // "trade for over ten years", no compound 以上取引.
     const BOUNDS: [&str; 7] = ["以上", "以下", "以内", "未満", "以来", "程度", "前後"];
+    // Words written after any noun without making a compound with it:
+    // 当事者同士で解決する (419) is "settle among the parties".
+    const FOLLOWERS: [&str; 9] = [
+        "同士", "自身", "全員", "以外", "以上", "以下", "以内", "未満", "以来",
+    ];
     // A quantity (a numeral and its counter: 一口, 一杯, 二度) goes before
     // a verb: 一口食べる (417) is "eat a bite", no compound 一口食. A kanji
     // followed by okurigana, not by a particle, starts that verb.
@@ -249,7 +254,8 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
         !(first.is_some_and(is_kanji) && before.is_some_and(is_kanji) && !bounded)
             && !(last.is_some_and(is_kanji)
                 && after.is_some_and(is_kanji)
-                && !(quantity && verb_after(rest)))
+                && !(quantity && verb_after(rest))
+                && !FOLLOWERS.iter().any(|f| rest.starts_with(f)))
             && !(!inflecting
                 && last.is_some_and(|c| !is_kanji(c))
                 && after.is_some_and(|c| is_kanji(c) || katakana(c)))
@@ -1022,6 +1028,13 @@ mod compound_tests {
         assert!(stands_alone("この会社とは十年以上取引しています。", "取引"));
         assert!(stands_alone("三日以内返品できます。", "返品"));
         assert!(!stands_alone("外国為替取引", "取引"));
+        // WP-24 (419): 同士, 自身 and the like follow any noun.
+        assert!(stands_alone(
+            "この問題は当事者同士で解決してください。",
+            "当事者"
+        ));
+        assert!(stands_alone("社員以外は入れません。", "社員"));
+        assert!(!stands_alone("当事者能力がない", "当事者"));
         // WP-24 (417): a quantity goes before a verb, not before a noun.
         assert!(stands_alone("このパン、一口食べてみて。", "一口"));
         assert!(stands_alone("お茶を一杯飲んだ。", "一杯"));
