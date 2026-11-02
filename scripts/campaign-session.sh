@@ -42,10 +42,13 @@
 # write (approved, applying, verifying or merging; a batch ready for the
 # agent's approval does not hold the session), the session wraps up by itself: the campaign is paused for the
 # next `start` (checked every two minutes during a tick and before each tick). A pause because the
-# Careful mode: when the drafting cap comes within FAST_CAP_SECONDS (1800) of
-# a start, the next start tunes the campaign to prepare one batch at a time
-# (`campaign tune --prepare-ahead 1 --prepare-parallel 1`); a run that lasts
-# CALM_WINDOW_SECONDS (7200) before the cap restores the earlier limits.
+# Careful mode: when the drafting cap comes within FAST_CAP_SECONDS (7200) of
+# a start at full speed, the next start tunes the campaign to prepare one
+# batch at a time (`campaign tune --prepare-ahead 1 --prepare-parallel 1`).
+# Careful mode ends only when its ramp reaches the saved limits: a careful
+# run is long because it is careful, and ending it for that sent the next
+# start straight to 20 batches ahead, 4 at a time (2026-11-02: 7% to 71% of
+# the Codex window in 37 minutes, 6 points past the cap).
 # While the driver runs in careful mode, it speeds up again by itself: every
 # RAMP_SECONDS (900) between ticks it compares how fast Codex spends its own
 # five-hour window with what llm.agents.codex.max_window_percent leaves until
@@ -85,8 +88,7 @@ USAGE=$STATE/codex-usage.jsonl
 PROBE_SECONDS=${PROBE_SECONDS:-1800}
 TICK_SECONDS=${TICK_SECONDS:-3000}
 HEARTBEAT_SECONDS=${HEARTBEAT_SECONDS:-2700}
-FAST_CAP_SECONDS=${FAST_CAP_SECONDS:-1800}    # a cap this soon after a start: careful mode
-CALM_WINDOW_SECONDS=${CALM_WINDOW_SECONDS:-7200}  # a run this long without a cap ends it
+FAST_CAP_SECONDS=${FAST_CAP_SECONDS:-7200}    # a cap this soon after a full-speed start: careful mode
 RAMP_SECONDS=${RAMP_SECONDS:-900}              # careful mode: how often the pace is judged
 APPROVAL_SECONDS=${APPROVAL_SECONDS:-1200}      # after a start, ready batches hold the session this long
 BUSY_SECONDS=${BUSY_SECONDS:-300}              # a tool command this young counts as a heartbeat
@@ -139,16 +141,14 @@ writes_pending() {  # batches that still reach Anki without drafting
 agent_alive() {  # the Claude Code process with this pid still runs
   [ "$(cat "/proc/$1/comm" 2>/dev/null)" = claude ]
 }
-careful_judge() {  # the drafting cap came: fast after the start means careful mode, a long run ends it
+careful_judge() {  # the drafting cap came: soon after a full-speed start means careful mode
   local started ran
   started=$(cat "$SESSION/started-at" 2>/dev/null || echo 0)
   ran=$(( $(date +%s) - started ))
-  if [ "$ran" -lt "$FAST_CAP_SECONDS" ]; then
-    [ -f "$SESSION/careful" ] || say "drafting cap ${ran}s after the start: careful mode (one batch at a time) from the next start"
+  # In careful mode the ramp alone ends it (at the saved limits).
+  if [ ! -f "$SESSION/careful" ] && [ "$ran" -lt "$FAST_CAP_SECONDS" ]; then
+    say "drafting cap ${ran}s after the start: careful mode (one batch at a time) from the next start"
     touch "$SESSION/careful"
-  elif [ "$ran" -ge "$CALM_WINDOW_SECONDS" ] && [ -f "$SESSION/careful" ]; then
-    say "the last run lasted ${ran}s before the cap: careful mode ends at the next start"
-    rm -f "$SESSION/careful"
   fi
 }
 ramp_decide() {  # careful mode: the ladder step the Codex window's pace has room for
