@@ -257,10 +257,16 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
         let before = phrase[..at].chars().last();
         let rest = &phrase[at + word.len()..];
         let after = rest.chars().next();
-        let bounded = BOUNDS
-            .iter()
-            .chain(TIMES.iter())
-            .any(|b| phrase[..at].ends_with(b));
+        // A verbal noun conjugated with する is the word used as a verb,
+        // whatever kanji modifies it: 三人解雇した, 突然解雇されて (431).
+        let verbal = word.chars().count() > 1
+            && last.is_some_and(is_kanji)
+            && after.is_some_and(|c| "しさすせ".contains(c));
+        let bounded = verbal
+            || BOUNDS
+                .iter()
+                .chain(TIMES.iter())
+                .any(|b| phrase[..at].ends_with(b));
         !(first.is_some_and(is_kanji) && before.is_some_and(is_kanji) && !bounded)
             && !(last.is_some_and(is_kanji)
                 && after.is_some_and(is_kanji)
@@ -1070,6 +1076,12 @@ mod compound_tests {
         assert!(!stands_alone("一口坂を上る", "一口"));
         assert!(stands_alone("ご注文の商品は明日発送します。", "発送"));
         assert!(!stands_alone("海外発送は別料金です。", "発送"));
+        assert!(stands_alone("会社は従業員を三人解雇した。", "解雇"));
+        assert!(stands_alone(
+            "彼は突然解雇されて、次の仕事を探している。",
+            "解雇"
+        ));
+        assert!(!stands_alone("解雇者の数が増えた。", "雇"));
     }
 
     #[test]
