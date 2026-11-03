@@ -229,6 +229,13 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
     // A quantity's bound ends its phrase: 十年以上取引している (402) is
     // "trade for over ten years", no compound 以上取引.
     const BOUNDS: [&str; 7] = ["以上", "以下", "以内", "未満", "以来", "程度", "前後"];
+    // A time word is written right before a verbal noun without making a
+    // compound with it: 明日発送します (428) is "ship tomorrow", no 日発送.
+    const TIMES: [&str; 24] = [
+        "明日", "今日", "昨日", "毎日", "毎朝", "毎晩", "今朝", "今晩", "今夜", "来週", "先週",
+        "今週", "毎週", "来月", "先月", "今月", "毎月", "来年", "去年", "今年", "毎年", "翌日",
+        "当日", "即日",
+    ];
     // Words written after any noun without making a compound with it:
     // 当事者同士で解決する (419) is "settle among the parties".
     const FOLLOWERS: [&str; 9] = [
@@ -250,7 +257,10 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
         let before = phrase[..at].chars().last();
         let rest = &phrase[at + word.len()..];
         let after = rest.chars().next();
-        let bounded = BOUNDS.iter().any(|b| phrase[..at].ends_with(b));
+        let bounded = BOUNDS
+            .iter()
+            .chain(TIMES.iter())
+            .any(|b| phrase[..at].ends_with(b));
         !(first.is_some_and(is_kanji) && before.is_some_and(is_kanji) && !bounded)
             && !(last.is_some_and(is_kanji)
                 && after.is_some_and(is_kanji)
@@ -1044,6 +1054,8 @@ mod compound_tests {
         assert!(stands_alone("お茶を一杯飲んだ。", "一杯"));
         assert!(!stands_alone("一口目に気づいた。", "一口"));
         assert!(!stands_alone("一口坂を上る", "一口"));
+        assert!(stands_alone("ご注文の商品は明日発送します。", "発送"));
+        assert!(!stands_alone("海外発送は別料金です。", "発送"));
     }
 
     #[test]
@@ -1069,7 +1081,9 @@ mod compound_tests {
             v.reading = "さっする".into();
         }
         let rejected = |s: &str| super::repeats_the_word(&document, "examples", &example(s));
-        assert!(!rejected("店員は客が急いでいることを察して、すぐに会計を済ませた。"));
+        assert!(!rejected(
+            "店員は客が急いでいることを察して、すぐに会計を済ませた。"
+        ));
         assert!(!rejected("彼女の表情から、何かあったのだと察した。"));
         {
             let linguist_core::LearningContent::Vocabulary(v) = &mut document.content else {
