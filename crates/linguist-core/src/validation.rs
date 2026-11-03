@@ -163,9 +163,17 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
                         .is_some_and(|rest| all.iter().any(|o| o == rest))
                 })
             });
+            // Readings the dictionary gives in one entry of the word are one
+            // word read two ways (415: 続柄 ぞくがら / つづきがら); words with
+            // entries of their own (おどかす / おびやかす) still split.
+            let one_entry = readings.len() > 1
+                && v.dictionary.iter().any(|entry| {
+                    crate::review::dictionary_readings(entry, v.expression.trim())
+                        .is_ok_and(|own| readings.iter().all(|r| own.contains(r)))
+                });
             if japanese
                 && (vocabulary_units(&v.expression).len() > 1
-                    || readings.len() > 1 && readings.iter().all(|r| is_kana(r)))
+                    || readings.len() > 1 && !one_entry && readings.iter().all(|r| is_kana(r)))
             {
                 add(
                     "VOCAB_SPLIT_REQUIRED",

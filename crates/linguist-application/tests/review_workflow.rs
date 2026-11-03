@@ -1455,8 +1455,11 @@ fn spellings_of_one_word_are_one_note_and_separate_words_still_split() {
         ) -> Result<linguist_dictionary::JishoPage, String> {
             let body = r#"{"meta":{"status":200},"data":[
                 {"slug":"お勧め","japanese":[{"word":"お勧め","reading":"おすすめ"},{"word":"お薦め","reading":"おすすめ"},{"word":"お奨め","reading":"おすすめ"}],"senses":[{"english_definitions":["recommendation"],"parts_of_speech":["Noun"]}]},
-                {"slug":"祖父","japanese":[{"word":"祖父","reading":"そふ"}],"senses":[{"english_definitions":["grandfather"],"parts_of_speech":["Noun"]}]}]}"#;
-            linguist_dictionary::parse_jisho(query, target, body.as_bytes(), 8192, 10)
+                {"slug":"祖父","japanese":[{"word":"祖父","reading":"そふ"}],"senses":[{"english_definitions":["grandfather"],"parts_of_speech":["Noun"]}]},
+                {"slug":"続柄","japanese":[{"word":"続柄","reading":"つづきがら"},{"word":"続柄","reading":"ぞくがら"}],"senses":[{"english_definitions":["relationship"],"parts_of_speech":["Noun"]}]},
+                {"slug":"脅かす","japanese":[{"word":"脅かす","reading":"おびやかす"}],"senses":[{"english_definitions":["to threaten"],"parts_of_speech":["Godan verb with 'su' ending"]}]},
+                {"slug":"脅かす-1","japanese":[{"word":"脅かす","reading":"おどかす"}],"senses":[{"english_definitions":["to scare"],"parts_of_speech":["Godan verb with 'su' ending"]}]}]}"#;
+            linguist_dictionary::parse_jisho(query, target, body.as_bytes(), 16384, 10)
                 .map_err(|e| e.to_string())
         }
     }
@@ -1508,6 +1511,24 @@ fn spellings_of_one_word_are_one_note_and_separate_words_still_split() {
     let document = prepare("意見", "い けん\n\nご い けん");
     assert!(
         !document
+            .issues
+            .iter()
+            .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
+    );
+    // Two readings of one dictionary entry are one word (415: 続柄).
+    let document = prepare("続柄", "ぞくがら/つづきがら");
+    assert!(
+        !document
+            .issues
+            .iter()
+            .any(|i| i.code == "VOCAB_SPLIT_REQUIRED"),
+        "{:?}",
+        document.issues
+    );
+    // Readings with entries of their own are two words.
+    let document = prepare("脅かす", "おびやかす/おどかす");
+    assert!(
+        document
             .issues
             .iter()
             .any(|i| i.code == "VOCAB_SPLIT_REQUIRED")
