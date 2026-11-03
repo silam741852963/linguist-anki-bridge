@@ -483,9 +483,13 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
         else {
             return false;
         };
+        // A する verb conjugates its する (察して, 察した): its stem is
+        // what comes before it.
         let stem = |t: &str| -> String {
             let chars: Vec<char> = t.chars().collect();
-            if chars.len() > 1
+            if chars.len() > 2 && (t.ends_with("する") || t.ends_with("ずる")) {
+                chars[..chars.len() - 2].iter().collect()
+            } else if chars.len() > 1
                 && chars
                     .last()
                     .is_some_and(|c| matches!(c, '\u{3040}'..='\u{309f}'))
@@ -1056,6 +1060,25 @@ mod compound_tests {
         let example = |s: &str| format!(r#"{{"sentence":"{s}","translation":"x"}}"#);
         let rejected = |s: &str| super::repeats_the_word(&document, "examples", &example(s));
         assert!(rejected("球場は観客で埋め尽くされた。"));
+        // A する verb used in a conjugated form (察する: 察して).
+        {
+            let linguist_core::LearningContent::Vocabulary(v) = &mut document.content else {
+                panic!()
+            };
+            v.expression = "察する".into();
+            v.reading = "さっする".into();
+        }
+        let rejected = |s: &str| super::repeats_the_word(&document, "examples", &example(s));
+        assert!(!rejected("店員は客が急いでいることを察して、すぐに会計を済ませた。"));
+        assert!(!rejected("彼女の表情から、何かあったのだと察した。"));
+        {
+            let linguist_core::LearningContent::Vocabulary(v) = &mut document.content else {
+                panic!()
+            };
+            v.expression = "球".into();
+            v.reading = "たま".into();
+        }
+        let rejected = |s: &str| super::repeats_the_word(&document, "examples", &example(s));
         assert!(!rejected("彼は野球の球を投げた。"));
         // No form of the word at all (直ちに: a sentence with たちまち).
         assert!(rejected("大雨で、たちまち水浸しになった。"));
