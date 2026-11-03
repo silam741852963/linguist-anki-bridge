@@ -1151,6 +1151,17 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
         json!(first),
         "会う keeps the first sense"
     );
+    // WP-24 (414, 桁): a sense already chosen (by the agent) stays when its
+    // review goes stale after a redraft.
+    let kept = {
+        let mut plan = plan.clone();
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.sense_key = second.clone();
+        pick(&plan, templates("to meet", "to have (e.g. an accident)"))
+    };
+    assert_eq!(kept, json!(second), "the chosen sense stays");
     {
         let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
             panic!()

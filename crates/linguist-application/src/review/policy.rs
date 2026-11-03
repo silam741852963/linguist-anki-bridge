@@ -720,6 +720,20 @@ fn decide(
                 .map(|tier| equal(tier))
                 .find(|matching| !matching.is_empty())
             {
+                // A sense already chosen stays: a redraft of the examples
+                // leaves the sense review stale, and deciding it again by
+                // dictionary order undid the agent's choice (414: 桁 went
+                // back from "digit" to "column; beam"). A new or requeued
+                // note has no sense key, so the rules below decide it.
+                let current = vocab.sense_key.trim();
+                if !current.is_empty()
+                    && let Some(kept) = matching
+                        .iter()
+                        .copied()
+                        .find(|t| t["choice"]["value"]["key"].as_str() == Some(current))
+                {
+                    return Ok(choice(kept));
+                }
                 // A one-kanji word read as a counter: 杯 read はい took
                 // "sake cup", a sense Jisho also lists under さかずき, so its
                 // examples read さかずき. Its first sense gives way to the
