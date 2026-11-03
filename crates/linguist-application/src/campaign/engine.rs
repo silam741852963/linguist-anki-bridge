@@ -2362,6 +2362,11 @@ pub fn rules_digest() -> &'static str {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         include_str!("../review/policy.rs").hash(&mut hasher);
         include_str!("../generation.rs").hash(&mut hasher);
+        // Validation decides which issues stay open and whether a note
+        // renders: a change there (続柄, 415: one dictionary entry is one
+        // word) must reach the waiting batches too.
+        include_str!("../../../linguist-core/src/validation.rs").hash(&mut hasher);
+        include_str!("../../../linguist-core/src/plan_validation.rs").hash(&mut hasher);
         format!("{:016x}", hasher.finish())
     })
 }
