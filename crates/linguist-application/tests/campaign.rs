@@ -128,6 +128,9 @@ struct World {
     unlooked: BTreeSet<String>,
     /// Notes whose every draft meets the provider's usage limit.
     limited: BTreeSet<String>,
+    /// Notes whose staged render is stale (STAGED_RENDER_MISMATCH).
+    stale_render: BTreeSet<String>,
+    restaged: Vec<String>,
     /// Notes whose read fails (Anki busy) this many more times.
     read_fail: BTreeMap<String, u32>,
     /// The code those reads fail with (None: SOURCE_READ_CONNECTION_FAILED).
@@ -211,6 +214,8 @@ impl FakeCli {
                 .map(|n| json!({"issue": {"id": format!("DICTIONARY_SENSE_REVIEW:{n}")}, "request_identity": {"document_id": doc(n)}}))
                 .chain(p.notes.iter().filter(|n| w.undrafted.contains(*n))
                     .map(|n| json!({"issue": {"id": "REQUIRED_CONTENT:meaning", "code": "REQUIRED_CONTENT"}, "request_identity": {"document_id": doc(n)}})))
+                .chain(p.notes.iter().filter(|n| w.stale_render.contains(*n))
+                    .map(|n| json!({"issue": {"id": "STAGED_RENDER_MISMATCH:document", "code": "STAGED_RENDER_MISMATCH"}, "request_identity": {"document_id": doc(n)}})))
                 .collect();
             let groups: Vec<Value> = w.split.iter().map(|(anchor, units)| json!({"id": GROUP, "anchor_document": doc(anchor), "units": units})).collect();
             let mut v = json!({"revision": p.revision, "digest": format!("d{}", p.revision), "issues": open, "grammar_groups": groups});
@@ -304,6 +309,20 @@ impl FakeCli {
             ["plans", "show", plan, rest @ ..] => {
                 let p = w.plans[*plan].clone();
                 ok(plan_view(&p, rest.contains(&"--issues-only")))
+            }
+            ["plans", "edit", plan, "--base-revision", _, "--restage"] => {
+                let notes = w.plans[*plan].notes.clone();
+                let stale: Vec<String> = notes
+                    .into_iter()
+                    .filter(|n| w.stale_render.remove(n))
+                    .collect();
+                let changed = !stale.is_empty();
+                w.restaged.extend(stale);
+                let p = w.plans.get_mut(*plan).unwrap();
+                if changed {
+                    p.revision += 1;
+                }
+                ok(json!({"revision": p.revision, "changed": changed, "ready": true}))
             }
             ["plans", "merge-notes", plan, "--item", _, rest @ ..] => {
                 let merged: Vec<String> = rest.chunks(2).map(|c| c[1].to_owned()).collect();
@@ -1713,6 +1732,28 @@ fn a_dictionary_entry_lost_to_a_usage_limit_is_written_again() {
         "three runs, then the agent"
     );
     assert!(!w.redictionaried.contains(&"103".to_owned()));
+}
+
+#[test]
+fn a_stale_staged_render_is_staged_again() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-restage-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..3].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    // 415: 続柄 rendered only after a validation fix; nothing staged it.
+    cli.world.lock().unwrap().stale_render.insert("101".into());
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..6 {
+        ctx.tick(600).unwrap();
+    }
+    let w = cli.world.lock().unwrap();
+    assert_eq!(w.restaged, vec!["101".to_owned()]);
+    assert!(w.stale_render.is_empty());
 }
 
 #[test]

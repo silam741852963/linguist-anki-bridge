@@ -363,6 +363,25 @@ fn typed_plan_edits_preserve_parent_and_invalidate_content_reviews() {
     assert!(!noop.changed);
     assert!(noop.ready);
     assert_eq!(noop.revision, base);
+    // A stale staged render (a validation rule changed) is staged again in a
+    // child revision; the content and its reviews stay.
+    let mut stale = base.clone();
+    stale.rendered.clear();
+    let restaged = apply_patch(
+        &stale,
+        &PlanPatch {
+            schema_version: 2,
+            base_digest: stale.approval_digest().unwrap(),
+            items: vec![],
+        },
+        false,
+    )
+    .unwrap();
+    assert!(restaged.changed);
+    assert_eq!(restaged.revision.revision, base.revision + 1);
+    assert_eq!(restaged.revision.rendered, base.rendered);
+    assert_eq!(restaged.revision.documents, base.documents);
+    assert!(restaged.invalidated_review_ids.is_empty());
 }
 
 #[test]

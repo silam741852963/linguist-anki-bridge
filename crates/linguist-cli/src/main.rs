@@ -1287,11 +1287,19 @@ enum PlanCommand {
         #[arg(long)]
         base_revision: u32,
         /// Typed JSON patch file.
-        #[arg(long, required_unless_present = "editor", conflicts_with = "editor")]
+        #[arg(
+            long,
+            required_unless_present_any = ["editor", "restage"],
+            conflicts_with_all = ["editor", "restage"]
+        )]
         patch: Option<PathBuf>,
         /// Edit a private typed draft in editing.editor_argv, VISUAL or EDITOR.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "restage")]
         editor: bool,
+        /// Change no content; stage the current render when the staged one is
+        /// stale (STAGED_RENDER_MISMATCH after a validation rule changed).
+        #[arg(long)]
+        restage: bool,
         /// Keep invalid edited content as a marked draft with issues.
         #[arg(long)]
         save_draft: bool,
@@ -3231,13 +3239,20 @@ fn run(cli: Cli) -> Result<u8, String> {
                     base_revision,
                     patch,
                     editor,
+                    restage,
                     save_draft,
                 } => {
                     if store.latest_revision(plan)? != base_revision {
                         return Err("PLAN_EDIT_BASE_CONFLICT: select the latest revision".into());
                     }
                     let base = store.revision(plan, base_revision)?;
-                    let patch: linguist_core::editing::PlanPatch = if editor {
+                    let patch: linguist_core::editing::PlanPatch = if restage {
+                        linguist_core::editing::PlanPatch {
+                            schema_version: 2,
+                            base_digest: base.approval_digest().map_err(|e| e.to_string())?,
+                            items: vec![],
+                        }
+                    } else if editor {
                         let environment: BTreeMap<String, String> = std::env::vars().collect();
                         let configured: Vec<String> = settings.values["editing.editor_argv"]
                             .as_array()

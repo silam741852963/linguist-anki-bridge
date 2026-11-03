@@ -620,6 +620,36 @@ impl Context<'_> {
         let plan = data.plan.ok_or("CAMPAIGN_PLAN_MISSING")?.to_string();
         let head = self.plan_show(&data, true)?;
         let revision = head["revision"].as_u64().unwrap_or(0) as u32;
+        // A validation rule that changed after the plan was made can let a
+        // note render that did not (続柄, 415): its staged output is then
+        // missing, and no decision is left that would stage it. Stage it.
+        if head["issues"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|i| i["issue"]["code"] == "STAGED_RENDER_MISMATCH")
+        {
+            let out = self.cli(
+                &data,
+                s(&[
+                    "plans",
+                    "edit",
+                    &plan,
+                    "--base-revision",
+                    &revision.to_string(),
+                    "--restage",
+                ]),
+            )?;
+            if out.unavailable() {
+                return Ok(Step::Waiting(out.error()));
+            }
+            if out.code != 0 && out.code != 4 {
+                return Err(out.error());
+            }
+            if out.json["changed"] == true {
+                return self.moved(record, &record.phase, &data, "staged output renewed");
+            }
+        }
         if record.phase == "needs_agent"
             && data.checked_revision == Some(revision)
             && data.checked_rules.as_deref() == Some(rules_digest())

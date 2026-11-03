@@ -119,6 +119,29 @@ pub fn apply_patch(
         }
     }
     let changed = candidate.documents != base.documents;
+    // No content changed, but the staged output is stale: a validation rule
+    // changed after the revision was made (続柄, 415: a split no longer
+    // required, so the note renders now and nothing staged it). Stage the
+    // current render in a child revision; content and reviews stay.
+    if !changed && crate::render::render_ready(&candidate.documents) != base.rendered {
+        candidate.revision = base
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| ContractError("REVISION_LIMIT".into()))?;
+        candidate.parent_digest = Some(patch.base_digest.clone());
+        candidate.rendered = crate::render::render_ready(&candidate.documents);
+        let ready = candidate.documents.iter().all(|doc| {
+            crate::validation::validate(doc)
+                .iter()
+                .all(|issue| issue.severity == Severity::Warning)
+        }) && candidate.rendered.len() == candidate.documents.len();
+        return Ok(EditResult {
+            revision: candidate,
+            ready,
+            changed: true,
+            invalidated_review_ids,
+        });
+    }
     if !changed {
         return Ok(EditResult {
             revision: candidate,
