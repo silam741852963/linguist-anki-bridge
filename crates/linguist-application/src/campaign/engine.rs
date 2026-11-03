@@ -805,9 +805,14 @@ impl Context<'_> {
                         detail: error.chars().take(300).collect(),
                     });
                 }
-                // Only when every provider of the chain hit its usage limit:
-                // a fallback that failed otherwise counts as a failed draft.
-                if error.split("; fallback ").all(crate::agents::usage_limited) {
+                // Only when every provider of the chain hit its usage limit
+                // or was busy for everyone (421: "Selected model is at
+                // capacity" three times went to the agent): a fallback that
+                // failed otherwise counts as a failed draft.
+                if error
+                    .split("; fallback ")
+                    .all(|e| crate::agents::usage_limited(e) || crate::agents::provider_busy(e))
+                {
                     return Ok(Step::Waiting(format!("GENERATION_UNAVAILABLE: {error}")));
                 }
                 let document = item["document_id"].as_str().unwrap_or_default();

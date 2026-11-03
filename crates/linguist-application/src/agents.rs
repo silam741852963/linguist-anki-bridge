@@ -179,6 +179,15 @@ pub fn usage_limited(error: &str) -> bool {
     error.to_lowercase().contains("usage limit")
 }
 
+/// The provider is busy for everyone for a moment ("Selected model is at
+/// capacity"): the same request succeeds later, so it is no failed draft.
+pub fn provider_busy(error: &str) -> bool {
+    let error = error.to_lowercase();
+    ["at capacity", "overloaded", "temporarily unavailable"]
+        .iter()
+        .any(|k| error.contains(k))
+}
+
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

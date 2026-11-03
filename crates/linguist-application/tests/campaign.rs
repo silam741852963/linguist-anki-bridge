@@ -1782,6 +1782,35 @@ fn an_agent_step_on_a_waiting_batch_writes_a_lost_dictionary_entry_again_except_
 }
 
 #[test]
+fn a_model_at_capacity_is_no_failed_draft() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-capacity-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes()[..3].to_vec());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    // 421: three drafts met "Selected model is at capacity" and the note
+    // went to the agent as GENERATION_FAILED.
+    cli.world.lock().unwrap().draft_fail = Some((
+        5,
+        r#"AGENT_FAILED: exit Some(1): {"type":"turn.failed","error":{"message":"Selected model is at capacity. Please try a different model."}}"#.into(),
+    ));
+    let anki = FakeAnki(&cli);
+    let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+    let ctx = context(&root, id, &cli, &anki, &clock);
+    for _ in 0..8 {
+        ctx.tick(600).unwrap();
+    }
+    let store = linguist_store::Store::read_only(&root).unwrap();
+    for batch in store.campaign_batches(id).unwrap() {
+        let data = BatchData::from_value(&batch.data).unwrap();
+        assert!(data.draft_failures.is_empty(), "{:?}", data.draft_failures);
+        assert_ne!(batch.phase, "needs_agent");
+    }
+}
+
+#[test]
 fn a_deferred_note_at_the_usage_limit_does_not_hold_its_batch() {
     let root = std::env::temp_dir().join(format!("lab-campaign-limited-{}", Uuid::new_v4()));
     let id = create(&root, spec(false), world_notes()[..3].to_vec());
