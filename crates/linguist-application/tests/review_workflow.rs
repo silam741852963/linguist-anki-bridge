@@ -1171,6 +1171,30 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
             .metadata
             .remove(&format!("sense:{second}:raw_json"));
     }
+    // WP-24 (442, 治安 read じあん): the reading matches only an era name;
+    // the policy does not take it.
+    {
+        let mut plan = plan.clone();
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.expression = "治安".into();
+        vocab.sense_key.clear();
+        let batch = json!({"schema_version": 2, "base_revision": 1, "base_digest": "x", "decisions": [
+            {"document_id": id, "issue_id": "DICTIONARY_SENSE_REVIEW:x", "input_digest": "d", "choice": null,
+             "options": {"issue": {"code": "DICTIONARY_SENSE_REVIEW"}, "templates": [
+                {"reading": "ちあん", "definitions": ["public order"], "choice": sense(&first)},
+                {"reading": "たべる", "definitions": ["Jian era (1021.2.2-1024.7.13)"], "choice": sense(&second)}]}}]});
+        let filled = policy::fill(&policy::Policy::builtin(), &plan, &batch).unwrap();
+        let taken = filled
+            .batch
+            .map(|b| b["decisions"][0]["choice"]["value"]["key"].clone());
+        assert_ne!(
+            taken,
+            Some(json!(second)),
+            "an era name is no sense by reading"
+        );
+    }
     // WP-24 (409, 兼ねる): Jisho lists the suffix "to be unable to" (after a
     // verb's -masu stem) first; the verb's own sense comes before it.
     {

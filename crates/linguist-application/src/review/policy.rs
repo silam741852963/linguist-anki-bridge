@@ -725,10 +725,25 @@ fn decide(
                     .collect();
                 own_readings.extend(stems);
             }
+            // An era name (治安 read じあん: "Jian era (1021.2.2-1024.7.13)")
+            // is no word a learner studies: a reading that only it matches
+            // is a misread one (442: the word is ちあん, "public order"),
+            // so the agent decides.
+            let era = |t: &Value| {
+                t["definitions"]
+                    .as_array()
+                    .and_then(|d| d.first())
+                    .and_then(Value::as_str)
+                    .is_some_and(|d| {
+                        d.split_once(" era (")
+                            .is_some_and(|(_, rest)| rest.starts_with(|c: char| c.is_ascii_digit()))
+                    })
+            };
             let equal = |wanted: &[String]| -> Vec<&Value> {
                 templates
                     .iter()
                     .copied()
+                    .filter(|t| !era(t))
                     .filter(|t| {
                         t["reading"].as_str().is_some_and(|r| {
                             let r = hiragana(&spoken(r));
