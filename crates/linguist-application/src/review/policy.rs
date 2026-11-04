@@ -259,10 +259,22 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
         let after = rest.chars().next();
         // A verbal noun conjugated with する is the word used as a verb,
         // whatever kanji modifies it: 三人解雇した, 突然解雇されて (431).
+        // A quantity, a numeral and its counter, modifies the word after
+        // it: 三歳年長 (440) is "three years older", no compound 歳年長.
+        let counted = {
+            let mut back = phrase[..at].chars().rev();
+            back.next().is_some_and(is_kanji)
+                && back.next().is_some_and(|c| {
+                    "一二三四五六七八九十百千万".contains(c)
+                        || c.is_ascii_digit()
+                        || ('０'..='９').contains(&c)
+                })
+        };
         let verbal = word.chars().count() > 1
             && last.is_some_and(is_kanji)
             && after.is_some_and(|c| "しさすせ".contains(c));
         let bounded = verbal
+            || counted
             || BOUNDS
                 .iter()
                 .chain(TIMES.iter())
@@ -626,6 +638,10 @@ fn repeats_the_word(document: &LearningDocument, field: &str, claim: &str) -> bo
         .flat_map(|w| {
             let mut forms = vec![w.to_lowercase()];
             let chars: Vec<char> = w.chars().collect();
+            // A する verb's stem is what comes before する (察して).
+            if chars.len() > 2 && (w.ends_with("する") || w.ends_with("ずる")) {
+                forms.push(chars[..chars.len() - 2].iter().collect());
+            }
             if chars.len() > 1
                 && chars
                     .last()
@@ -1082,6 +1098,10 @@ mod compound_tests {
             "解雇"
         ));
         assert!(!stands_alone("解雇者の数が増えた。", "雇"));
+        assert!(stands_alone("彼は私より三歳年長です。", "年長"));
+        assert!(stands_alone("五歳年長", "年長"));
+        assert!(stands_alone("2歳年長", "年長"));
+        assert!(!stands_alone("最年長の選手", "年長"));
     }
 
     #[test]
