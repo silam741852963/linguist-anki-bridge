@@ -1099,13 +1099,36 @@ impl Context<'_> {
             }
             let items = self.cli(&data, s(&["jobs", "items", &job_text, "--limit", "10000"]))?;
             let mut pending = Vec::new();
+            // An item that failed before writing because Anki did not answer
+            // in time (440, 442: ANKI_READ_TIMEOUT) is applied once more in a
+            // follow-up job; only a second failure defers its note.
+            let mut retry = Vec::new();
+            let retried = data
+                .needs
+                .get("#apply_retried")
+                .cloned()
+                .unwrap_or_default();
             for item in items.json["items"].as_array().into_iter().flatten() {
                 let state = item["state"].as_str().unwrap_or_default();
                 let document = item["item_id"].as_str().unwrap_or_default();
                 let note = self.note_of(&data, document);
+                let code = item["error_code"]
+                    .as_str()
+                    .or(item["code"].as_str())
+                    .unwrap_or("");
+                let transient = ["TIMEOUT", "CONNECTION", "UNAVAILABLE"]
+                    .iter()
+                    .any(|t| code.contains(t));
                 match (state, note) {
                     ("committed", Some(note)) if !data.committed.contains(&note) => {
                         data.committed.push(note)
+                    }
+                    ("failed_before_write", Some(note))
+                        if transient
+                            && !retried.contains(&note)
+                            && !data.deferred.contains_key(&note) =>
+                    {
+                        retry.push((note, document.to_owned()));
                     }
                     ("failed" | "failed_before_write", Some(note)) => {
                         data.deferred.entry(note).or_insert(format!(
@@ -1129,6 +1152,22 @@ impl Context<'_> {
                     "applying",
                     &data,
                     "session ended; follow-up job intent recorded",
+                );
+            }
+            if !retry.is_empty() && pending.is_empty() && run["stop"] != "halted" {
+                let entry = data.needs.entry("#apply_retried".into()).or_default();
+                entry.extend(retry.iter().map(|(note, _)| note.clone()));
+                data.needs.insert(
+                    "#pending".into(),
+                    retry.into_iter().map(|(_, document)| document).collect(),
+                );
+                data.finished_jobs.push(job);
+                data.apply_intent_ms = Some((self.clock)());
+                return self.moved(
+                    record,
+                    "applying",
+                    &data,
+                    "items Anki did not answer for; follow-up apply job intent recorded",
                 );
             }
             // A companion without its collection session (Anki reopening the

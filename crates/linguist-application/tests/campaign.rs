@@ -160,6 +160,10 @@ struct World {
     /// The next apply runs halt because the companion lost its collection
     /// session, before writing anything.
     apply_halts: u32,
+    /// Notes whose apply item fails before writing (ANKI_READ_TIMEOUT) this
+    /// many more times, and the failed items of each job.
+    apply_timeouts: BTreeMap<String, u32>,
+    job_failed: BTreeMap<String, BTreeSet<String>>,
     /// A split group of this note: its unit documents besides the anchor.
     split: Option<(String, Vec<String>)>,
     /// Split units that validation leaves with an open review issue.
@@ -576,6 +580,14 @@ impl FakeCli {
                 let notes = w.plans[&plan].notes.clone();
                 // Like the executor: committed items are never dispatched again.
                 for n in notes.iter().filter(|n| !ran && items.contains(&doc(n))) {
+                    if let Some(left) = w.apply_timeouts.get_mut(n).filter(|l| **l > 0) {
+                        *left -= 1;
+                        w.job_failed
+                            .entry((*job).to_owned())
+                            .or_default()
+                            .insert(doc(n));
+                        continue;
+                    }
                     *w.applied.entry(n.clone()).or_default() += 1;
                 }
                 w.apply_jobs.get_mut(*job).unwrap().2 = true;
@@ -585,9 +597,12 @@ impl FakeCli {
             }
             ["jobs", "items", job, ..] => {
                 let (_, items, _) = w.apply_jobs[*job].clone();
-                ok(
-                    json!({"items": items.iter().map(|i| json!({"item_id": i, "state": "committed"})).collect::<Vec<_>>()}),
-                )
+                let failed = w.job_failed.get(*job).cloned().unwrap_or_default();
+                ok(json!({"items": items.iter().map(|i| if failed.contains(i) {
+                        json!({"item_id": i, "state": "failed_before_write", "error_code": "ANKI_READ_TIMEOUT"})
+                    } else {
+                        json!({"item_id": i, "state": "committed"})
+                    }).collect::<Vec<_>>()}))
             }
             ["notes", "delete-merged", note, ..] => {
                 w.deleted.insert((*note).to_owned());
@@ -1365,6 +1380,55 @@ fn an_apply_halted_by_a_lost_collection_session_waits_and_never_pauses() {
     }
     assert!(phases(&root, id).iter().all(|p| p == "done"));
     assert_eq!(cli.world.lock().unwrap().apply_halts, 0);
+}
+
+#[test]
+fn an_apply_item_anki_did_not_answer_for_is_applied_again_once() {
+    let run = |timeouts: u32| {
+        let root = std::env::temp_dir().join(format!("lab-campaign-timeout-{}", Uuid::new_v4()));
+        let id = create(&root, spec(false), world_notes()[..2].to_vec());
+        let cli = FakeCli {
+            world: Mutex::default(),
+            kill_after: AtomicU64::new(0),
+            clock: AtomicU64::new(1000),
+        };
+        // 440, 442: one note's item failed before writing, ANKI_READ_TIMEOUT.
+        cli.world
+            .lock()
+            .unwrap()
+            .apply_timeouts
+            .insert("101".into(), timeouts);
+        let anki = FakeAnki(&cli);
+        let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
+        let ctx = context(&root, id, &cli, &anki, &clock);
+        for _ in 0..40 {
+            ctx.tick(600).unwrap();
+            let store = linguist_store::Store::read_only(&root).unwrap();
+            for b in store.campaign_batches(id).unwrap() {
+                if b.phase == "ready" {
+                    ctx.approve(b.batch, "claude-agent").unwrap();
+                }
+            }
+            if phases(&root, id).iter().all(|p| p == "done") {
+                break;
+            }
+        }
+        assert!(phases(&root, id).iter().all(|p| p == "done"));
+        let store = linguist_store::Store::read_only(&root).unwrap();
+        let deferred = store
+            .campaign_batches(id)
+            .unwrap()
+            .iter()
+            .any(|b| b.data["deferred"].get("101").is_some());
+        let applied = cli.world.lock().unwrap().applied.get("101").copied();
+        (applied, deferred)
+    };
+    assert_eq!(
+        run(1),
+        (Some(1), false),
+        "one timeout: applied by the follow-up job"
+    );
+    assert_eq!(run(2), (None, true), "a second timeout defers the note");
 }
 
 #[test]
