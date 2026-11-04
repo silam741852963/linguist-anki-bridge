@@ -713,7 +713,12 @@ pub fn validate(doc: &LearningDocument) -> Vec<Issue> {
             .collect();
         issues.push(issue);
         for field in ["Meaning", "Reading", "Pronunciation"] {
-            if doc.edits.contains_key(field) {
+            // A Keep intent is no edit (a patch that withdrew one, 442).
+            if doc
+                .edits
+                .get(field)
+                .is_some_and(|intent| !matches!(intent, crate::FieldIntent::Keep))
+            {
                 issues.push(Issue::new("DICTIONARY_FACT_OVERRIDE",Severity::Error,Some(field),"Dictionary facts require a typed content correction, not a generic rendered-field edit."));
             }
         }

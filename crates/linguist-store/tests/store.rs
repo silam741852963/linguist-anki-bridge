@@ -433,6 +433,23 @@ fn invalid_edits_require_explicit_draft_and_typed_controls_cannot_be_patched() {
             .all(|issue| issue.code != "EFFECTIVE_RENDER_BLOCKED")
     );
     store.publish_revision(&repaired.revision).unwrap();
+    // Keep withdraws an edit (442: a Pronunciation edit that validation
+    // refuses as a dictionary fact override is taken back).
+    let withdraw = PlanPatch {
+        schema_version: 2,
+        base_digest: repaired.revision.approval_digest().unwrap(),
+        items: vec![ItemPatch {
+            document_id: base.documents[0].id,
+            fields: BTreeMap::from([("Meaning".into(), FieldIntent::Keep)]),
+            personal_notes: FieldIntent::Keep,
+        }],
+    };
+    let withdrawn = apply_patch(&repaired.revision, &withdraw, true).unwrap();
+    assert!(
+        !withdrawn.revision.documents[0]
+            .edits
+            .contains_key("Meaning")
+    );
     patch.items[0].fields =
         BTreeMap::from([("EnableSpelling".into(), FieldIntent::Set("1".into()))]);
     assert!(

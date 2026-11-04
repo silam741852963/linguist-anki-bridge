@@ -107,7 +107,12 @@ pub fn apply_patch(
             {
                 return Err(ContractError(format!("PATCH_TYPED_FIELD_REQUIRED:{key}")));
             }
-            document.edits.insert(key.clone(), intent.clone());
+            // Keep withdraws an edit: the field renders from its source.
+            if matches!(intent, FieldIntent::Keep) {
+                document.edits.remove(key);
+            } else {
+                document.edits.insert(key.clone(), intent.clone());
+            }
         }
         document.personal_notes = item
             .personal_notes
