@@ -179,6 +179,50 @@ pub fn usage_limited(error: &str) -> bool {
     error.to_lowercase().contains("usage limit")
 }
 
+/// The time a usage-limit message names ("try again at Nov 6th, 2026 8:32
+/// AM"), read as local time, in seconds since the epoch.
+pub fn retry_at(error: &str) -> Option<u64> {
+    let rest = &error[error.find("try again at ")? + "try again at ".len()..];
+    let mut words = rest.split_whitespace();
+    const MONTHS: [&str; 12] = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
+    let month = words.next()?.to_lowercase();
+    let month = MONTHS.iter().position(|m| month.starts_with(m))? as i32;
+    let day: i32 = words
+        .next()?
+        .trim_end_matches(',')
+        .trim_end_matches(|c: char| c.is_ascii_alphabetic())
+        .parse()
+        .ok()?;
+    let year: i32 = words.next()?.trim_end_matches(',').parse().ok()?;
+    let (hour, minute) = words.next()?.split_once(':')?;
+    let (mut hour, minute): (i32, i32) = (hour.parse().ok()?, minute.parse().ok()?);
+    match words
+        .next()
+        .map(|w| w.trim_end_matches(['.', '"', '\\']).to_uppercase())
+        .as_deref()
+    {
+        Some("PM") if hour < 12 => hour += 12,
+        Some("AM") if hour == 12 => hour = 0,
+        _ => {}
+    }
+    if !(1..=31).contains(&day) || !(0..24).contains(&hour) || !(0..60).contains(&minute) {
+        return None;
+    }
+    // SAFETY: `tm` is a plain C struct, zeroed, then filled; mktime only reads
+    // and normalises it.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    tm.tm_year = year - 1900;
+    tm.tm_mon = month;
+    tm.tm_mday = day;
+    tm.tm_hour = hour;
+    tm.tm_min = minute;
+    tm.tm_isdst = -1;
+    let at = unsafe { libc::mktime(&mut tm) };
+    (at > 0).then_some(at as u64)
+}
+
 /// The provider is busy for everyone for a moment ("Selected model is at
 /// capacity"): the same request succeeds later, so it is no failed draft.
 pub fn provider_busy(error: &str) -> bool {
@@ -479,8 +523,12 @@ fn cool_down(
         .get("llm.quota_cooldown_seconds")
         .and_then(Value::as_u64)
         .unwrap_or(1800);
+    // A limit that names its end ("try again at Nov 6th, 2026 8:32 AM.",
+    // a weekly Codex limit 2026-11-05) cools down until then: the fixed
+    // cooldown resumed the session every half hour into the same refusal.
+    let until = (now() + seconds).max(retry_at(error).unwrap_or(0));
     let cooldown = Cooldown {
-        until: now() + seconds,
+        until,
         said: error.chars().take(300).collect(),
     };
     let Ok(bytes) = serde_json::to_vec(&cooldown) else {
@@ -916,6 +964,27 @@ fn api(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_usage_limit_names_when_to_try_again() {
+        let said = "You’ve hit your usage limit. Upgrade to Pro, visit … or try again at Nov 6th, 2026 8:32 AM.";
+        let at = super::retry_at(said).unwrap();
+        let pm = super::retry_at("try again at Nov 6th, 2026 8:32 PM.").unwrap();
+        assert_eq!(pm - at, 12 * 3600);
+        let next = super::retry_at("try again at Nov 7th, 2026 8:32 AM").unwrap();
+        assert_eq!(next - at, 86_400);
+        assert!(super::retry_at("You've hit your usage limit.").is_none());
+        // Local time: the same wall clock as the system's own conversion.
+        let local = std::process::Command::new("date")
+            .args(["-d", "2026-11-06 08:32", "+%s"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|t| t.trim().parse::<u64>().ok());
+        if let Some(local) = local {
+            assert_eq!(at, local);
+        }
+    }
+
     use super::*;
 
     #[test]
