@@ -355,8 +355,18 @@ fn produce(
                 |external| {
                     external
                         .map(|e| {
-                            merge_external_response(parent, settings, &request, &e).inspect_err(
-                                |error| {
+                            // A thin draft is kept too: 痙攣 (448) failed three
+                            // drafts with GENERATION_FEW_EXAMPLES and nothing
+                            // showed what the model had sent.
+                            merge_external_response(parent, settings, &request, &e)
+                                .and_then(|draft| {
+                                    if thin(parent, &draft.document, &request) {
+                                        Err("GENERATION_FEW_EXAMPLES".to_owned())
+                                    } else {
+                                        Ok(draft)
+                                    }
+                                })
+                                .inspect_err(|error| {
                                     crate::agents::keep_rejected(
                                         other,
                                         settings,
@@ -365,8 +375,7 @@ fn produce(
                                         error,
                                         e.content.as_bytes(),
                                     )
-                                },
-                            )
+                                })
                         })
                         .transpose()
                 },
@@ -1940,4 +1949,66 @@ pub fn generate_pending(
         }
     }
     Ok(results)
+}
+
+#[cfg(test)]
+mod thin_tests {
+    use super::*;
+
+    #[test]
+    fn a_thin_agent_draft_is_kept_with_its_error() {
+        use linguist_config::{ConfigFile, Registry, ResolveOptions, resolve};
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::env::temp_dir().join(format!("lab-thin-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        // Writes one example to the file after `-o` (shell builtins only).
+        let answer = r#"{"kind":"vocabulary","body":{"usage":"Everyday meals.","examples":[{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#;
+        let script = directory.join("codex");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\n[ \"$1\" = --version ] && exit 0\nwhile [ $# -gt 0 ]; do [ \"$1\" = -o ] && out=\"$2\"; shift; done\nwhile read -r line; do :; done\necho '{answer}' > \"$out\"\n"
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let env = BTreeMap::from([("PATH".into(), directory.display().to_string())]);
+        let mut parent = LearningDocument::from_json(include_bytes!(
+            "../../../contracts/v2/fixtures/vocabulary.json"
+        ))
+        .unwrap();
+        if let LearningContent::Vocabulary(v) = &mut parent.content {
+            v.usage.clear();
+        }
+        let mut settings = resolve(
+            &Registry::builtin(),
+            &ConfigFile::default(),
+            &ResolveOptions::default(),
+        )
+        .unwrap();
+        for (key, value) in [
+            (
+                "storage.state_dir",
+                json!(directory.join("state").display().to_string()),
+            ),
+            ("llm.provider", json!("codex")),
+            ("llm.fallback", json!([])),
+        ] {
+            settings.values.insert(key.into(), value);
+        }
+        let request = build_request(&parent, &settings).unwrap();
+        assert!(
+            request.examples_requested >= 2,
+            "{}",
+            request.examples_requested
+        );
+        let client = crate::ollama::transport::Client::from_settings(&settings, &env).unwrap();
+        let error = produce(&parent, &settings, &env, &client).err().unwrap();
+        assert!(error.starts_with("GENERATION_FEW_EXAMPLES"), "{error}");
+        let kept =
+            std::fs::read_to_string(directory.join("state/agents/rejected-codex.jsonl")).unwrap();
+        assert!(kept.contains("GENERATION_FEW_EXAMPLES"), "{kept}");
+        assert!(kept.contains("朝ご飯"), "{kept}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
 }
