@@ -502,7 +502,7 @@ pub fn resolve(
                 if readings.len() != 1 {
                     return Err(ContractError("CAPABILITY_UNAVAILABLE: multiple dictionary readings require a typed reading selection".into()));
                 }
-                vocab.reading = readings.iter().next().unwrap().clone();
+                vocab.reading = readings[0].clone();
             } else if !readings.contains(&vocab.reading) {
                 return Err(ContractError("DICTIONARY_READING_CONFLICT".into()));
             }
@@ -1232,16 +1232,19 @@ pub fn dictionary_form(vocab: &crate::Vocabulary) -> String {
         .map_or_else(|| expression.to_owned(), str::to_owned)
 }
 
+/// The readings `entry` gives `expression`, in the dictionary's order: its
+/// first is its main one (WP-24 453: 翌年 is よくねん before よくとし; sorted
+/// by kana, the policy took よくとし from a note that listed both).
 pub fn dictionary_readings(
     entry: &crate::DictionaryEntry,
     expression: &str,
-) -> Result<BTreeSet<String>, ContractError> {
+) -> Result<Vec<String>, ContractError> {
     if let Some(values) = entry.metadata.get("written_form_pairs_json") {
         if values.len() != 1 {
             return Err(ContractError("DICTIONARY_FORM_MAPPING_INVALID".into()));
         }
         let pairs: Vec<serde_json::Value> = crate::canonical::parse(values[0].as_bytes())?;
-        let mut readings = BTreeSet::new();
+        let mut readings = Vec::new();
         for pair in pairs {
             let reading = pair
                 .get("reading")
@@ -1253,8 +1256,9 @@ pub fn dictionary_readings(
                 .unwrap_or("");
             if (same_spelling(word, expression) || same_spelling(reading, expression))
                 && !reading.is_empty()
+                && !readings.iter().any(|r| r == reading)
             {
-                readings.insert(reading.to_owned());
+                readings.push(reading.to_owned());
             }
         }
         Ok(readings)
@@ -1263,8 +1267,14 @@ pub fn dictionary_readings(
         .iter()
         .any(|reading| same_spelling(reading, expression))
     {
-        Ok(BTreeSet::from([expression.to_owned()]))
+        Ok(vec![expression.to_owned()])
     } else {
-        Ok(entry.readings.iter().cloned().collect())
+        let mut readings: Vec<String> = Vec::new();
+        for reading in &entry.readings {
+            if !readings.contains(reading) {
+                readings.push(reading.clone());
+            }
+        }
+        Ok(readings)
     }
 }

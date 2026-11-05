@@ -1546,3 +1546,32 @@ fn a_drill_with_broken_build_data_or_facts_is_not_ready() {
     d.translation.clear();
     assert!(codes(&doc).contains(&"REQUIRED_CONTENT".to_string()));
 }
+
+#[test]
+fn a_words_readings_keep_the_dictionarys_order() {
+    // WP-24 453: 翌年 is よくねん first; sorted by kana, よくとし came first
+    // and the campaign took it from a note listing both.
+    let entry = |pairs: Option<&str>| DictionaryEntry {
+        provider: "jisho-api-v1".into(),
+        source_url: String::new(),
+        language: Language::try_from("ja".to_owned()).unwrap(),
+        forms: vec!["翌年".into()],
+        readings: vec!["よくねん".into(), "よくとし".into()],
+        senses: Vec::new(),
+        metadata: pairs
+            .map(|p| BTreeMap::from([("written_form_pairs_json".to_owned(), vec![p.to_owned()])]))
+            .unwrap_or_default(),
+        related_entries: Vec::new(),
+    };
+    let paired = entry(Some(
+        r#"[{"word":"翌年","reading":"よくねん"},{"word":"翌年","reading":"よくとし"},{"word":"翌年","reading":"よくねん"}]"#,
+    ));
+    assert_eq!(
+        linguist_core::review::dictionary_readings(&paired, "翌年").unwrap(),
+        ["よくねん", "よくとし"]
+    );
+    assert_eq!(
+        linguist_core::review::dictionary_readings(&entry(None), "翌年").unwrap(),
+        ["よくねん", "よくとし"]
+    );
+}
