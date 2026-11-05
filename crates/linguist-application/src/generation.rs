@@ -1208,20 +1208,29 @@ pub fn validate_output(
     // different phrases never share one gloss (血脈が通う and 血脈を流れる
     // both drew "blood vessel", 多彩な色 and 多彩な色彩 both "colorful":
     // the gloss named the word, not the phrase).
+    // The refusal names the phrase and its gloss: 夜更け (447) failed three
+    // drafts with the bare code, and nothing showed what was refused.
+    let refused = |c: &GeneratedCollocation| {
+        format!(
+            "GENERATION_COLLOCATION_GLOSS: {} \"{}\"",
+            c.phrase.trim(),
+            c.gloss.trim()
+        )
+    };
     if let Supplement::Vocabulary(v) = &output
-        && v.collocations.iter().enumerate().any(|(i, c)| {
+        && let Some((_, c)) = v.collocations.iter().enumerate().find(|(i, c)| {
             let gloss = c.gloss.trim().to_lowercase();
             !gloss.is_empty()
                 && (v
                     .examples
                     .iter()
                     .any(|e| e.translation.trim().to_lowercase() == gloss)
-                    || v.collocations[..i].iter().any(|o| {
+                    || v.collocations[..*i].iter().any(|o| {
                         o.gloss.trim().to_lowercase() == gloss && o.phrase.trim() != c.phrase.trim()
                     }))
         })
     {
-        return Err("GENERATION_COLLOCATION_GLOSS".into());
+        return Err(refused(c));
     }
     // A する-verb phrase that goes on to a noun is a noun modified by the
     // verb (リセットする機械, "a machine that resets"); glossed "to reset a
@@ -1229,7 +1238,7 @@ pub fn validate_output(
     // 機械をリセットする (WP-24: リセット, 拡大解釈).
     if let (Supplement::Vocabulary(v), LearningContent::Vocabulary(vocab)) = (&output, &doc.content)
         && doc.target_language.as_str().split('-').next() == Some("ja")
-        && v.collocations.iter().any(|c| {
+        && let Some(c) = v.collocations.iter().find(|c| {
             c.phrase
                 .trim()
                 .strip_prefix(vocab.expression.trim())
@@ -1238,7 +1247,7 @@ pub fn validate_output(
                 && c.gloss.trim().to_lowercase().starts_with("to ")
         })
     {
-        return Err("GENERATION_COLLOCATION_GLOSS".into());
+        return Err(refused(c));
     }
     // A longer phrase is no gloss of the word alone: インスタントラーメンを食べる
     // glossed "instant ramen" names the word, not the phrase (WP-24). Only
@@ -1251,24 +1260,24 @@ pub fn validate_output(
             .split([';', '；'])
             .map(|m| m.trim().to_lowercase())
             .find(|m| !m.is_empty())
-        && v.collocations.iter().any(|c| {
+        && let Some(c) = v.collocations.iter().find(|c| {
             c.phrase.trim() != vocab.expression.trim() && c.gloss.trim().to_lowercase() == first
         })
     {
-        return Err("GENERATION_COLLOCATION_GLOSS".into());
+        return Err(refused(c));
     }
     // A phrase ending in kanji or katakana is a noun phrase (計算ミス, 入力ミス):
     // a gloss "to make a mistake in calculation" translates a verb it does
     // not hold (WP-24: ミス).
     if let Supplement::Vocabulary(v) = &output
         && doc.target_language.as_str().split('-').next() == Some("ja")
-        && v.collocations.iter().any(|c| {
+        && let Some(c) = v.collocations.iter().find(|c| {
             c.phrase.trim().chars().last().is_some_and(|last| {
                 matches!(last, '\u{30a1}'..='\u{30fa}' | '\u{30fc}' | '\u{4e00}'..='\u{9fff}')
             }) && c.gloss.trim().to_lowercase().starts_with("to ")
         })
     {
-        return Err("GENERATION_COLLOCATION_GLOSS".into());
+        return Err(refused(c));
     }
     if examples.iter().any(|example| {
         example.sentence.trim().is_empty()

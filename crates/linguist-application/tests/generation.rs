@@ -230,9 +230,15 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         "examples":[{"sentence":"ご飯を食べました。","translation":"I ate a meal."}],
         "collocations":[{"phrase":"ご飯を食べる","gloss":"I ate a meal."}]}}))
     .unwrap();
+    assert!(
+        validate_output(&doc, &request, &copied, 10000, 10000)
+            .unwrap_err()
+            .starts_with("GENERATION_COLLOCATION_GLOSS")
+    );
+    // The refusal names the phrase and its gloss (447: 夜更け).
     assert_eq!(
         validate_output(&doc, &request, &copied, 10000, 10000).unwrap_err(),
-        "GENERATION_COLLOCATION_GLOSS"
+        "GENERATION_COLLOCATION_GLOSS: ご飯を食べる \"I ate a meal.\""
     );
     // 血脈: two phrases glossed alike name the word, not the phrases.
     let shared = |second: &str| {
@@ -243,9 +249,10 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         )
         .unwrap()
     };
-    assert_eq!(
-        validate_output(&doc, &request, &shared("Eat a meal"), 10000, 10000).unwrap_err(),
-        "GENERATION_COLLOCATION_GLOSS"
+    assert!(
+        validate_output(&doc, &request, &shared("Eat a meal"), 10000, 10000)
+            .unwrap_err()
+            .starts_with("GENERATION_COLLOCATION_GLOSS")
     );
     assert!(validate_output(&doc, &request, &shared("cook rice"), 10000, 10000).is_ok());
     // インスタントラーメン: a phrase glossed with the word's own meaning.
@@ -256,9 +263,10 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         )
         .unwrap()
     };
-    assert_eq!(
-        validate_output(&doc, &request, &own("To eat"), 10000, 10000).unwrap_err(),
-        "GENERATION_COLLOCATION_GLOSS"
+    assert!(
+        validate_output(&doc, &request, &own("To eat"), 10000, 10000)
+            .unwrap_err()
+            .starts_with("GENERATION_COLLOCATION_GLOSS")
     );
     // 乗り場: a later, narrower meaning is what the phrase adds (バス乗り場
     // "bus stop" for "place for boarding vehicles; bus stop").
@@ -268,9 +276,10 @@ fn a_collocation_gloss_must_translate_the_phrase() {
     }
     let later = build_request(&narrower, &settings()).unwrap();
     assert!(validate_output(&narrower, &later, &own("to have a meal"), 10000, 10000).is_ok());
-    assert_eq!(
-        validate_output(&narrower, &later, &own("to eat"), 10000, 10000).unwrap_err(),
-        "GENERATION_COLLOCATION_GLOSS"
+    assert!(
+        validate_output(&narrower, &later, &own("to eat"), 10000, 10000)
+            .unwrap_err()
+            .starts_with("GENERATION_COLLOCATION_GLOSS")
     );
     // ミス: a noun phrase (計算ミス) is no "to ..." verb phrase.
     let noun = |gloss: &str| {
@@ -280,9 +289,10 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         )
         .unwrap()
     };
-    assert_eq!(
-        validate_output(&doc, &request, &noun("to eat an amount"), 10000, 10000).unwrap_err(),
-        "GENERATION_COLLOCATION_GLOSS"
+    assert!(
+        validate_output(&doc, &request, &noun("to eat an amount"), 10000, 10000)
+            .unwrap_err()
+            .starts_with("GENERATION_COLLOCATION_GLOSS")
     );
     assert!(validate_output(&doc, &request, &noun("the amount one eats"), 10000, 10000).is_ok());
     // リセット: 食べる人 is "a person who eats", never "to eat a person".
@@ -293,9 +303,10 @@ fn a_collocation_gloss_must_translate_the_phrase() {
         )
         .unwrap()
     };
-    assert_eq!(
-        validate_output(&doc, &request, &relative("to eat a person"), 10000, 10000).unwrap_err(),
-        "GENERATION_COLLOCATION_GLOSS"
+    assert!(
+        validate_output(&doc, &request, &relative("to eat a person"), 10000, 10000)
+            .unwrap_err()
+            .starts_with("GENERATION_COLLOCATION_GLOSS")
     );
     assert!(validate_output(&doc, &request, &relative("a person who eats"), 10000, 10000).is_ok());
 }
