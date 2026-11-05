@@ -339,6 +339,23 @@ fn screenshot_sense<'a>(
     document: &LearningDocument,
     matching: &[&'a Value],
 ) -> Option<&'a Value> {
+    // A Wikipedia definition is an article title ("Soba"), no meaning: its
+    // one word matches a screenshot better than "soba; Japanese buckwheat
+    // noodles" does (444: 蕎麦 got "Soba"). It counts only alone.
+    let wikipedia = |template: &Value| {
+        let key = template["choice"]["value"]["key"]
+            .as_str()
+            .unwrap_or_default();
+        vocab
+            .dictionary
+            .iter()
+            .flat_map(|entry| &entry.senses)
+            .any(|sense| {
+                sense.key == key && sense.labels.iter().any(|l| l == "Wikipedia definition")
+            })
+    };
+    let kept: Vec<&'a Value> = matching.iter().copied().filter(|t| !wikipedia(t)).collect();
+    let matching: &[&'a Value] = if kept.is_empty() { matching } else { &kept };
     if matching.len() < 2 {
         return None;
     }

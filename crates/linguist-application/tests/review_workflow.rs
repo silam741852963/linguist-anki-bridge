@@ -1043,6 +1043,19 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
     assert_eq!(chosen(&plan), first);
     plan.documents[0].regions[0].text = "2. circle orig. meaning".into();
     assert_eq!(chosen(&plan), second);
+    // WP-24 (444, 蕎麦): a Wikipedia definition ("Soba") is an article title;
+    // a screenshot that names its word does not choose it.
+    {
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.dictionary[0].senses[1].labels = vec!["Wikipedia definition".into()];
+        assert_eq!(chosen(&plan), first);
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.dictionary[0].senses[1].labels.clear();
+    }
     // WP-24 (394, 398): a screenshot that explains the word in Vietnamese
     // matches no sense; dictionary order decides, not the agent.
     plan.documents[0].regions[0].text =
