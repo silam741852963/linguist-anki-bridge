@@ -238,8 +238,11 @@ fn stands_alone(phrase: &str, word: &str) -> bool {
     ];
     // Words written after any noun without making a compound with it:
     // 当事者同士で解決する (419) is "settle among the parties".
-    const FOLLOWERS: [&str; 9] = [
-        "同士", "自身", "全員", "以外", "以上", "以下", "以内", "未満", "以来",
+    // A title after a role (教頭先生, 448: "the vice principal") is a form
+    // of address, no compound either.
+    const FOLLOWERS: [&str; 14] = [
+        "同士", "自身", "全員", "以外", "以上", "以下", "以内", "未満", "以来", "先生", "様", "殿",
+        "氏", "達",
     ];
     // A quantity (a numeral and its counter: 一口, 一杯, 二度) goes before
     // a verb: 一口食べる (417) is "eat a bite", no compound 一口食. A kanji
@@ -1134,6 +1137,9 @@ mod compound_tests {
         assert!(stands_alone("五歳年長", "年長"));
         assert!(stands_alone("2歳年長", "年長"));
         assert!(!stands_alone("最年長の選手", "年長"));
+        assert!(stands_alone("教頭先生に相談してみます。", "教頭"));
+        assert!(stands_alone("部長様からお電話です。", "部長"));
+        assert!(!stands_alone("教頭職に就いた。", "教頭"));
     }
 
     #[test]
