@@ -361,10 +361,25 @@ fn produce(
                             merge_external_response(parent, settings, &request, &e)
                                 .and_then(|draft| {
                                     if thin(parent, &draft.document, &request) {
-                                        Err("GENERATION_FEW_EXAMPLES".to_owned())
-                                    } else {
-                                        Ok(draft)
+                                        return Err("GENERATION_FEW_EXAMPLES".to_owned());
                                     }
+                                    // A full draft kept without one example
+                                    // is kept for review as well (465: 臭う
+                                    // came back three times with three empty
+                                    // sentences, and nothing logged them).
+                                    if added_examples(parent, &draft.document) == Some(0)
+                                        && request.allowed_fields.iter().any(|f| f == "examples")
+                                    {
+                                        crate::agents::keep_rejected(
+                                            other,
+                                            settings,
+                                            environment,
+                                            &parent.id.to_string(),
+                                            "GENERATION_EXAMPLES_DROPPED",
+                                            e.content.as_bytes(),
+                                        );
+                                    }
+                                    Ok(draft)
                                 })
                                 .inspect_err(|error| {
                                     crate::agents::keep_rejected(
@@ -421,15 +436,22 @@ fn produce(
     Ok((draft, provider, attempts))
 }
 
+/// The examples a vocabulary draft adds to its parent (None: not vocabulary).
+fn added_examples(parent: &LearningDocument, draft: &LearningDocument) -> Option<usize> {
+    match (&parent.content, &draft.content) {
+        (LearningContent::Vocabulary(before), LearningContent::Vocabulary(after)) => {
+            Some(after.examples.len().saturating_sub(before.examples.len()))
+        }
+        _ => None,
+    }
+}
+
 /// True when a vocabulary draft that was asked for examples added fewer than
 /// `min(2, examples_requested)` of them.
 fn thin(parent: &LearningDocument, draft: &LearningDocument, request: &GenerationRequest) -> bool {
-    let (LearningContent::Vocabulary(before), LearningContent::Vocabulary(after)) =
-        (&parent.content, &draft.content)
-    else {
+    let Some(added) = added_examples(parent, draft) else {
         return false;
     };
-    let added = after.examples.len().saturating_sub(before.examples.len());
     // A full draft whose examples were dropped asks for them alone next.
     let salvaged = added == 0 && full_draft(request);
     request
@@ -1955,14 +1977,14 @@ pub fn generate_pending(
 mod thin_tests {
     use super::*;
 
-    #[test]
-    fn a_thin_agent_draft_is_kept_with_its_error() {
+    /// `produce` with a fake Codex that answers `answer`; the result and the
+    /// rejected-drafts log.
+    fn with_fake_codex(answer: &str) -> (Result<Produced, String>, String) {
         use linguist_config::{ConfigFile, Registry, ResolveOptions, resolve};
         use std::os::unix::fs::PermissionsExt;
         let directory = std::env::temp_dir().join(format!("lab-thin-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
-        // Writes one example to the file after `-o` (shell builtins only).
-        let answer = r#"{"kind":"vocabulary","body":{"usage":"Everyday meals.","examples":[{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#;
+        // Writes the answer to the file after `-o` (shell builtins only).
         let script = directory.join("codex");
         std::fs::write(
             &script,
@@ -2003,12 +2025,31 @@ mod thin_tests {
             request.examples_requested
         );
         let client = crate::ollama::transport::Client::from_settings(&settings, &env).unwrap();
-        let error = produce(&parent, &settings, &env, &client).err().unwrap();
+        let result = produce(&parent, &settings, &env, &client);
+        let kept = std::fs::read_to_string(directory.join("state/agents/rejected-codex.jsonl"))
+            .unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&directory);
+        (result, kept)
+    }
+
+    #[test]
+    fn a_thin_agent_draft_is_kept_with_its_error() {
+        let (result, kept) = with_fake_codex(
+            r#"{"kind":"vocabulary","body":{"usage":"Everyday meals.","examples":[{"sentence":"朝ご飯を食べました。","translation":"I ate breakfast."}],"nuance":[],"collocations":[]}}"#,
+        );
+        let error = result.err().unwrap();
         assert!(error.starts_with("GENERATION_FEW_EXAMPLES"), "{error}");
-        let kept =
-            std::fs::read_to_string(directory.join("state/agents/rejected-codex.jsonl")).unwrap();
         assert!(kept.contains("GENERATION_FEW_EXAMPLES"), "{kept}");
         assert!(kept.contains("朝ご飯"), "{kept}");
-        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_full_draft_kept_without_examples_is_logged_too() {
+        // 465: 臭う came back with three empty sentences.
+        let (result, kept) = with_fake_codex(
+            r#"{"kind":"vocabulary","body":{"usage":"Everyday meals.","examples":[{"sentence":"","translation":""},{"sentence":"","translation":""}],"nuance":[],"collocations":[]}}"#,
+        );
+        assert!(result.is_ok(), "{:?}", result.err());
+        assert!(kept.contains("GENERATION_EXAMPLES_DROPPED"), "{kept}");
     }
 }
