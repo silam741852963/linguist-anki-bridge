@@ -163,6 +163,9 @@ struct World {
     /// Notes whose apply item fails before writing (ANKI_READ_TIMEOUT) this
     /// many more times, and the failed items of each job.
     apply_timeouts: BTreeMap<String, u32>,
+    /// Those items are reported `failed` and retry-eligible, as the
+    /// executor did for 463, instead of `failed_before_write`.
+    apply_timeouts_eligible: bool,
     job_failed: BTreeMap<String, BTreeSet<String>>,
     /// A split group of this note: its unit documents besides the anchor.
     split: Option<(String, Vec<String>)>,
@@ -598,11 +601,16 @@ impl FakeCli {
             ["jobs", "items", job, ..] => {
                 let (_, items, _) = w.apply_jobs[*job].clone();
                 let failed = w.job_failed.get(*job).cloned().unwrap_or_default();
-                ok(json!({"items": items.iter().map(|i| if failed.contains(i) {
+                let eligible = w.apply_timeouts_eligible;
+                ok(
+                    json!({"items": items.iter().map(|i| if failed.contains(i) && eligible {
+                        json!({"item_id": i, "state": "failed", "error_code": "ANKI_READ_TIMEOUT", "retry": "transient", "retry_eligible": true})
+                    } else if failed.contains(i) {
                         json!({"item_id": i, "state": "failed_before_write", "error_code": "ANKI_READ_TIMEOUT"})
                     } else {
                         json!({"item_id": i, "state": "committed"})
-                    }).collect::<Vec<_>>()}))
+                    }).collect::<Vec<_>>()}),
+                )
             }
             ["notes", "delete-merged", note, ..] => {
                 w.deleted.insert((*note).to_owned());
@@ -1384,7 +1392,7 @@ fn an_apply_halted_by_a_lost_collection_session_waits_and_never_pauses() {
 
 #[test]
 fn an_apply_item_anki_did_not_answer_for_is_applied_again_once() {
-    let run = |timeouts: u32| {
+    let run = |timeouts: u32, eligible: bool| {
         let root = std::env::temp_dir().join(format!("lab-campaign-timeout-{}", Uuid::new_v4()));
         let id = create(&root, spec(false), world_notes()[..2].to_vec());
         let cli = FakeCli {
@@ -1398,6 +1406,7 @@ fn an_apply_item_anki_did_not_answer_for_is_applied_again_once() {
             .unwrap()
             .apply_timeouts
             .insert("101".into(), timeouts);
+        cli.world.lock().unwrap().apply_timeouts_eligible = eligible;
         let anki = FakeAnki(&cli);
         let clock = || cli.clock.fetch_add(10, Ordering::SeqCst);
         let ctx = context(&root, id, &cli, &anki, &clock);
@@ -1423,12 +1432,18 @@ fn an_apply_item_anki_did_not_answer_for_is_applied_again_once() {
         let applied = cli.world.lock().unwrap().applied.get("101").copied();
         (applied, deferred)
     };
-    assert_eq!(
-        run(1),
-        (Some(1), false),
-        "one timeout: applied by the follow-up job"
-    );
-    assert_eq!(run(2), (None, true), "a second timeout defers the note");
+    for eligible in [false, true] {
+        assert_eq!(
+            run(1, eligible),
+            (Some(1), false),
+            "one timeout: applied by the follow-up job (eligible {eligible})"
+        );
+        assert_eq!(
+            run(2, eligible),
+            (None, true),
+            "a second timeout defers the note (eligible {eligible})"
+        );
+    }
 }
 
 #[test]

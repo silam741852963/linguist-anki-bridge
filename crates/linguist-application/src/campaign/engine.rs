@@ -1101,7 +1101,9 @@ impl Context<'_> {
             let mut pending = Vec::new();
             // An item that failed before writing because Anki did not answer
             // in time (440, 442: ANKI_READ_TIMEOUT) is applied once more in a
-            // follow-up job; only a second failure defers its note.
+            // follow-up job; only a second failure defers its note. So is a
+            // failed item the job itself calls safe to retry (463: `failed`,
+            // `retry: transient`, `retry_eligible: true`).
             let mut retry = Vec::new();
             let retried = data
                 .needs
@@ -1123,8 +1125,10 @@ impl Context<'_> {
                     ("committed", Some(note)) if !data.committed.contains(&note) => {
                         data.committed.push(note)
                     }
-                    ("failed_before_write", Some(note))
+                    ("failed_before_write" | "failed", Some(note))
                         if transient
+                            && (state == "failed_before_write"
+                                || item["retry_eligible"] == true)
                             && !retried.contains(&note)
                             && !data.deferred.contains_key(&note) =>
                     {
