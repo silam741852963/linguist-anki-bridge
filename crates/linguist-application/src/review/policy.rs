@@ -449,7 +449,10 @@ fn auxiliary(vocab: &linguist_core::Vocabulary, key: Option<&str>) -> bool {
 /// kanji").
 fn spelled_sense(vocab: &linguist_core::Vocabulary, key: Option<&str>) -> bool {
     let Some(key) = key else { return false };
-    let marker = format!("esp. {}", vocab.expression.trim());
+    // Jisho writes it "esp. 遭う" or "usu. 臭う" (465: 臭う took 匂う's
+    // "to be fragrant" over its own "to stink").
+    let expression = vocab.expression.trim();
+    let markers = [format!("esp. {expression}"), format!("usu. {expression}")];
     vocab
         .dictionary
         .iter()
@@ -462,7 +465,7 @@ fn spelled_sense(vocab: &linguist_core::Vocabulary, key: Option<&str>) -> bool {
                 .into_iter()
                 .flatten()
                 .filter_map(Value::as_str)
-                .any(|info| info.contains(&marker))
+                .any(|info| markers.iter().any(|marker| info.contains(marker.as_str())))
         })
 }
 

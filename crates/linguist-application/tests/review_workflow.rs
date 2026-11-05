@@ -1164,6 +1164,39 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
         json!(first),
         "会う keeps the first sense"
     );
+    // WP-24 (465, 臭う): Jisho writes "usu. 臭う" on "to stink" and
+    // "usu. 匂う" on "to be fragrant"; 臭う takes its own.
+    {
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.expression = "臭う".into();
+        vocab.dictionary[0].metadata.insert(
+            format!("sense:{first}:raw_json"),
+            vec![r#"{"info":["usu. 匂う"]}"#.into()],
+        );
+        vocab.dictionary[0].metadata.insert(
+            format!("sense:{second}:raw_json"),
+            vec![r#"{"info":["usu. 臭う"]}"#.into()],
+        );
+    }
+    assert_eq!(
+        pick(&plan, templates("to be fragrant", "to stink")),
+        json!(second)
+    );
+    {
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.expression = "会う".into();
+        vocab.dictionary[0]
+            .metadata
+            .remove(&format!("sense:{first}:raw_json"));
+        vocab.dictionary[0].metadata.insert(
+            format!("sense:{second}:raw_json"),
+            vec![r#"{"info":["esp. 遭う when in kanji"]}"#.into()],
+        );
+    }
     // WP-24 (414, 桁): a sense already chosen (by the agent) stays when its
     // review goes stale after a redraft.
     let kept = {
