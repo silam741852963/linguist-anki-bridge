@@ -377,10 +377,22 @@ resume_when_ready() {  # while the agent session lives: after each automatic wra
   while true; do
     session_open || { say "resume when ready: agent session $agent closed; not resuming"; return 1; }
     alive driver && { sleep 60; continue; }
-    # Only an automatic wrap-up for a cooldown: the user's wrap-up, a lost
-    # heartbeat or any other stop waits for an explicit start.
+    # The user resumed a campaign the driver stopped for (469: a guardrail
+    # pause, then `campaign resume` by hand, and no driver ran): start it.
+    if status_of "$C" | head -n 1 | grep -qx running; then
+      say "resume when ready: the campaign was resumed; starting"
+      AGENT_PID=$agent start "$C" || return 1
+      told=""; sleep 60; continue
+    fi
+    # The user's own wrap-up ends the waiter.
+    if [ ! -f "$SESSION/auto-wrapped" ] && status_of "$C" | grep -q "$WRAPPED"; then
+      say "resume when ready: wrapped up by the user; stopping"; return 1
+    fi
+    # Any other pause (a guardrail, a lost heartbeat, a step failure) is the
+    # user's to lift: wait for their `campaign resume`.
     if [ ! -f "$SESSION/auto-wrapped" ] || ! status_of "$C" | grep -q "$WRAPPED"; then
-      say "resume when ready: not an automatic wrap-up ($(status_of "$C" | tr '\n' ' ')); stopping"; return 1
+      [ "$told" = paused ] || say "resume when ready: paused ($(status_of "$C" | tr '\n' ' ')); waiting for the user to resume"
+      told=paused; sleep 60; continue
     fi
     end=$(cooldown_end "$C") now=$(date +%s)
     if [ "${end:-0}" -gt "$now" ]; then
