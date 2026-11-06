@@ -991,10 +991,12 @@ fn the_agent_settles_or_defers_what_the_policy_left_and_too_many_agent_decisions
         calls + 1,
         "one plans show, nothing else"
     );
-    // The agent decides the sense: half the batch is now agent-decided.
+    // The agent decides the sense, and an image role of the other note:
+    // the whole batch is now agent-decided (one decision alone passes).
     {
         let mut w = cli.world.lock().unwrap();
         w.hard.clear();
+        w.agent_decided.insert("101".into());
         w.agent_decided.insert("102".into());
         let plan = w.plans.values_mut().next().unwrap();
         plan.decided.insert("102".into());
@@ -2599,14 +2601,15 @@ fn approving_a_revision_the_review_has_not_seen_reviews_it_first() {
 }
 
 /// 343 (唄): one agent decision in a batch of three is 33%, over the 30%
-/// limit; one decision is allowed there, two of three are not.
+/// limit; 469 (差出人): in a batch of two it is half. One decision is allowed
+/// in a batch of any size, two are not.
 #[test]
 fn one_agent_decision_never_trips_the_share_limit() {
-    for decided in [1, 2] {
+    for (size, decided) in [(3, 1), (3, 2), (2, 1), (2, 2), (1, 1)] {
         let root = std::env::temp_dir().join(format!("lab-campaign-share-{}", Uuid::new_v4()));
-        let mut three = spec(false);
-        three.batch_size = 3;
-        let id = create(&root, three, world_notes()[..3].to_vec());
+        let mut batch = spec(false);
+        batch.batch_size = size;
+        let id = create(&root, batch, world_notes()[..size as usize].to_vec());
         let cli = FakeCli {
             world: Mutex::default(),
             kill_after: AtomicU64::new(0),

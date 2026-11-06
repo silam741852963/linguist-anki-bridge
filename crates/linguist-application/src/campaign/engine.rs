@@ -1832,12 +1832,12 @@ impl Context<'_> {
         }
         let active = data.active_notes().count().max(1);
         let share = agent_decided.len() as f64 / active as f64;
-        // One agent decision is allowed in a batch of three or more: in 343
-        // (唄: an image role, three notes) it was already 33% and paused the
-        // campaign. In a batch of two it is still half.
-        let allowed = ((self.definition.spec.limits.agent_share_max * active as f64).floor()
-            as usize)
-            .max(usize::from(active >= 3));
+        // One agent decision is always allowed: in 343 (唄: an image role,
+        // three notes) it was already 33% and paused the campaign, and in 469
+        // (差出人's postcard screenshot, two notes) half. A batch of one or
+        // two (careful mode, a requeued note) could never pass otherwise.
+        let allowed =
+            ((self.definition.spec.limits.agent_share_max * active as f64).floor() as usize).max(1);
         if agent_decided.len() > allowed && !data.pilot {
             self.pause(
                 "CAMPAIGN_PAUSED_AGENT_SHARE",
