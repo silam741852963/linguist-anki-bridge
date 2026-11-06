@@ -408,7 +408,11 @@ fn screenshot_sense<'a>(
     // Higher coverage first: a/b > c/d as a*d > c*b.
     scored.sort_by(|(a, b, _), (c, d, _)| (c * b).cmp(&(a * d)));
     let ((shared, total, best), (next, next_total, _)) = (scored[0], scored[1]);
-    (shared > 0 && shared * next_total > next * total).then_some(best)
+    // One word in common names a sense only when it is the whole definition
+    // ("circle"): a Vietnamese page's stray "sin" (OCR of "sẵn") gave 造る
+    // "to commit (a sin, etc.)" over "to make" (474).
+    let named = shared >= 2 || shared == total;
+    (shared > 0 && named && shared * next_total > next * total).then_some(best)
 }
 
 /// The header of a dictionary page's reader comments ("Có 9 ý kiến đóng

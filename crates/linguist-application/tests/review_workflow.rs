@@ -1056,6 +1056,23 @@ fn the_sense_a_screenshot_names_is_chosen_among_equal_readings() {
         };
         vocab.dictionary[0].senses[1].labels.clear();
     }
+    // WP-24 (474, 造る): a Vietnamese page whose OCR has a stray English
+    // word ("sin", from "sẵn") names no sense by that one word.
+    {
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.dictionary[0].senses[0].definitions = vec!["to make".into(), "to produce".into()];
+        vocab.dictionary[0].senses[1].definitions = vec!["to commit (a sin, etc.)".into()];
+        plan.documents[0].regions[0].text =
+            "Me bao gio cling chuan bi sin d6 an va doi toi ve".into();
+        assert_eq!(chosen(&plan), first);
+        let LearningContent::Vocabulary(vocab) = &mut plan.documents[0].content else {
+            panic!()
+        };
+        vocab.dictionary[0].senses[0].definitions = vec!["yen (currency of Japan)".into()];
+        vocab.dictionary[0].senses[1].definitions = vec!["circle".into()];
+    }
     // WP-24 (394, 398): a screenshot that explains the word in Vietnamese
     // matches no sense; dictionary order decides, not the agent.
     plan.documents[0].regions[0].text =
