@@ -298,7 +298,9 @@ fn a_restored_note_still_in_the_collection_keeps_its_operation_state() {
 }
 
 #[test]
-fn a_render_that_changes_media_references_is_skipped() {
+fn a_render_that_drops_media_references_is_written() {
+    // WP-24 上司: the frame's kanji left the Kanji section with their stroke
+    // images; the note referenced more files than the current render.
     let mut s = setup(Kind::Update);
     let mut anki = Anki::new(&s, Kind::Update);
     applied(&mut s, &mut anki);
@@ -309,9 +311,9 @@ fn a_render_that_changes_media_references_is_skipped() {
     );
     let observed = anki.notes.get_mut(&10).unwrap();
     observed.fields = old.desired.fields.clone();
-    let skipped = proposal(&s, &mut anki, 10, old);
+    let written = proposal(&s, &mut anki, 10, old);
     assert!(
-        matches!(&skipped.verdict, Verdict::Skip { code } if code.starts_with("RETAG_MEDIA_CHANGED")),
-        "{skipped:?}"
+        !matches!(&written.verdict, Verdict::Skip { .. }),
+        "{written:?}"
     );
 }

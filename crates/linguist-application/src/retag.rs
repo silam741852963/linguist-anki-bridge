@@ -217,6 +217,14 @@ impl Revisions {
 
 /// The tags apply would write today: the user's own tags (outside `lab::`)
 /// from the document and the note, and every tag the renderer derives.
+/// The render references no media file the note does not already reference.
+fn keeps_media(
+    rendered: &BTreeMap<String, String>,
+    note: &BTreeMap<String, String>,
+) -> Result<bool> {
+    Ok(media_names(rendered)?.is_subset(&media_names(note)?))
+}
+
 fn media_names(fields: &BTreeMap<String, String>) -> Result<BTreeSet<String>> {
     Ok(
         crate::capture::discover_media(fields, 100 * 1024 * 1024, 10000)?
@@ -309,8 +317,10 @@ pub fn propose(
         ));
     }
     // The write's snapshot archives no media, so it may only keep the media
-    // the note already references.
-    if media_names(&rendered.fields)? != media_names(&note.fields)? {
+    // the note already references. It may drop some (WP-24 上司: the frame's
+    // kanji 職 and 場 left the Kanji section with their stroke images); their
+    // files stay in the collection's media folder.
+    if !keeps_media(&rendered.fields, &note.fields)? {
         return Ok(Proposal::skip(
             note_id,
             operation,
@@ -591,4 +601,20 @@ pub fn retag(
         receipt_digest,
         issues: j.issues.clone(),
     })
+}
+
+#[cfg(test)]
+mod media_tests {
+    use super::keeps_media;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn a_render_may_drop_media_references_but_not_add_them() {
+        let fields = |html: &str| BTreeMap::from([("Kanji".to_owned(), html.to_owned())]);
+        let both = fields("<img src=\"lab_a.gif\"><img src=\"lab_b.gif\">");
+        let one = fields("<img src=\"lab_a.gif\">");
+        assert!(keeps_media(&one, &both).unwrap(), "dropping is kept");
+        assert!(!keeps_media(&both, &one).unwrap(), "adding is refused");
+        assert!(keeps_media(&both, &both).unwrap());
+    }
 }
