@@ -115,7 +115,8 @@ fn url_filename(s: &str) -> String {
 /// Expression occurrences in example text, highlighted after escaping.
 fn highlighted(text: &str, expression: &str) -> String {
     let text = escape(text);
-    let expression = escape(expression.trim());
+    // A bracketed frame is not in the text: its head word is ((職場の)上司).
+    let expression = escape(&crate::review::head_word(expression));
     if expression.is_empty() {
         text
     } else {
@@ -319,7 +320,14 @@ fn kanji(v: &Vocabulary, media: &[crate::records::MediaAsset]) -> String {
         return String::new();
     }
     let mut html = String::from("<div class=\"lab-kanji-grid\">");
-    for detail in &v.kanji_details {
+    // Only the head word's kanji: a frame's (職場 in (職場の)上司) is not
+    // the word's.
+    let head = crate::review::head_word(&v.expression);
+    for detail in v
+        .kanji_details
+        .iter()
+        .filter(|d| head.contains(d.character.as_str()))
+    {
         let stroke = detail.stroke_digest.as_deref().and_then(|digest| {
             media
                 .iter()
@@ -820,7 +828,13 @@ pub fn render(
     }
     match &doc.content {
         LearningContent::Vocabulary(v) => {
-            fields.insert("Expression".into(), escape(&v.expression));
+            // The card teaches the head word: a bracketed frame
+            // ((職場の)上司) is the word's first collocation, never part of
+            // what is shown or spelled (WP-24 上司).
+            fields.insert(
+                "Expression".into(),
+                escape(&crate::review::head_word(&v.expression)),
+            );
             fields.insert("Pronunciation".into(), escape(&compact_kana(spoken_cue(v))));
             fields.insert(
                 "Meaning".into(),

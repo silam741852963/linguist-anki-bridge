@@ -338,7 +338,10 @@ fn enrich_kanji(
     let LearningContent::Vocabulary(vocab) = &document.content else {
         return Ok(());
     };
-    let characters = linguist_dictionary::kanji::characters(&vocab.expression);
+    // The head word's kanji only: not a bracketed frame's ((職場の)上司).
+    let characters = linguist_dictionary::kanji::characters(&linguist_core::review::head_word(
+        &vocab.expression,
+    ));
     if characters.len() > linguist_dictionary::kanji::MAX_CHARACTERS {
         warning(
             document,

@@ -1575,3 +1575,36 @@ fn a_words_readings_keep_the_dictionarys_order() {
         ["よくねん", "よくとし"]
     );
 }
+
+#[test]
+fn a_framed_expression_shows_and_spells_its_head_word() {
+    // WP-24 (上司): the card showed "(職場の)上司", to be spelled with its
+    // brackets, and listed 職 and 場 among its kanji.
+    let mut doc = vocabulary();
+    doc.requested_tasks = vec![Task::Comprehension, Task::Spelling];
+    let detail = |c: &str| KanjiDetail {
+        character: c.into(),
+        meanings: vec!["x".into()],
+        on_readings: vec![],
+        kun_readings: vec![],
+        strokes: None,
+        radical: None,
+        parts: vec![],
+        jlpt: None,
+        stroke_digest: None,
+    };
+    if let LearningContent::Vocabulary(v) = &mut doc.content {
+        v.expression = "(ご飯を)食べる".into();
+        v.kanji_details = vec![detail("飯"), detail("食")];
+        v.examples[0].sentence = "パンを食べる。".into();
+    }
+    let rendered = render::render(&doc, &BTreeMap::new()).unwrap();
+    assert_eq!(rendered.fields["Expression"], "食べる");
+    let kanji = &rendered.fields["Kanji"];
+    assert!(kanji.contains("食") && !kanji.contains("飯"), "{kanji}");
+    assert!(
+        rendered.fields["UsageExamples"].contains("<b class=\"lab-hl\">食べる</b>"),
+        "{}",
+        rendered.fields["UsageExamples"]
+    );
+}
