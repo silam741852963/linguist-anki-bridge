@@ -494,7 +494,9 @@ fn restricted_to(vocab: &linguist_core::Vocabulary, key: &str) -> Vec<String> {
 }
 
 /// A prefix, suffix or counter (副, 総, 代) is only ever written inside
-/// compounds (副社長, 総人口, 電気代): the compound rules do not apply.
+/// compounds (副社長, 総人口, 電気代): the compound rules do not apply. Jisho
+/// also labels a noun "used as a suffix" (485: 同士 in 友達同士, every
+/// example of which was refused as a compound).
 fn affix(vocab: &linguist_core::Vocabulary) -> bool {
     let expression = spoken(&vocab.expression);
     vocab
@@ -503,7 +505,11 @@ fn affix(vocab: &linguist_core::Vocabulary) -> bool {
         .filter(|entry| entry.forms.iter().any(|form| spoken(form) == expression))
         .flat_map(|entry| &entry.senses)
         .flat_map(|sense| &sense.labels)
-        .any(|label| matches!(label.as_str(), "Prefix" | "Suffix" | "Counter"))
+        .any(|label| {
+            matches!(label.as_str(), "Prefix" | "Suffix" | "Counter")
+                || label.ends_with("used as a suffix")
+                || label.ends_with("used as a prefix")
+        })
 }
 
 /// An adverb (一応, 結構) goes before any word, a kanji verb or noun
@@ -1207,6 +1213,25 @@ mod compound_tests {
             &document,
             "examples",
             &example("彼は副社長になった。")
+        ));
+        // A noun used as a suffix too (485: 友達同士).
+        let linguist_core::LearningContent::Vocabulary(v) = &mut document.content else {
+            panic!()
+        };
+        v.expression = "同士".into();
+        v.reading = "どうし".into();
+        v.dictionary = vec![
+            serde_json::from_value(serde_json::json!({
+                "provider": "jisho", "source_url": "https://jisho.org/search/同士",
+                "language": "ja", "forms": ["同士"], "readings": ["どうし"],
+                "senses": [{"key": "1", "definitions": ["fellow"], "labels": ["Noun", "Noun, used as a suffix"]}]
+            }))
+            .unwrap(),
+        ];
+        assert!(!super::repeats_the_word(
+            &document,
+            "examples",
+            &example("二人は友達同士です。")
         ));
         // An adverb goes before a kanji verb (394: 一応話せます).
         let linguist_core::LearningContent::Vocabulary(v) = &mut document.content else {
