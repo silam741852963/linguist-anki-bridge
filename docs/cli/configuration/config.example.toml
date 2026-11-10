@@ -291,6 +291,9 @@ llm.agents.budget_window_seconds = 18000
 # Share of Codex's own five-hour usage window drafting may use (0 = no limit). Codex runs keep their session so its reported rate limit can be read (the session file is then removed); once the window is this full, Codex is skipped like one at its usage limit until the window resets.
 llm.agents.codex.max_window_percent = 0
 
+# Share of Claude Code's own five-hour usage window drafting may use (0 = no limit). Claude Code runs stream their events (`--output-format stream-json`) so the rate limit it reports can be read; once the window is this full, Claude Code is skipped like one at its usage limit until the window resets.
+llm.agents.claude_code.max_window_percent = 0
+
 # Claude Code executable (name looked up on PATH, or an absolute path); run as `claude -p` with no tools and a JSON schema.
 llm.agents.claude_code.executable = "claude"
 

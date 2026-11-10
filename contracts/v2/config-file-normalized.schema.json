@@ -574,6 +574,16 @@
           "x-scope": "purpose",
           "x-sensitive": false
         },
+        "llm.agents.claude_code.max_window_percent": {
+          "default": 0,
+          "description": "Share of Claude Code's own five-hour usage window drafting may use (0 = no limit). Claude Code runs stream their events so its reported rate limit can be read; once the window is this full, Claude Code is skipped like one at its usage limit until the window resets.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "generation",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
         "llm.agents.claude_code.model": {
           "default": null,
           "description": "Model for Claude Code (--model); null uses its default.",
@@ -1990,6 +2000,16 @@
           "type": "string",
           "x-consumer": "generation",
           "x-runtime-format": "executable",
+          "x-scope": "purpose",
+          "x-sensitive": false
+        },
+        "llm.agents.claude_code.max_window_percent": {
+          "default": 0,
+          "description": "Share of Claude Code's own five-hour usage window drafting may use (0 = no limit). Claude Code runs stream their events so its reported rate limit can be read; once the window is this full, Claude Code is skipped like one at its usage limit until the window resets.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer",
+          "x-consumer": "generation",
           "x-scope": "purpose",
           "x-sensitive": false
         },
@@ -3583,6 +3603,16 @@
       "type": "string",
       "x-consumer": "generation",
       "x-runtime-format": "executable",
+      "x-scope": "purpose",
+      "x-sensitive": false
+    },
+    "llm.agents.claude_code.max_window_percent": {
+      "default": 0,
+      "description": "Share of Claude Code's own five-hour usage window drafting may use (0 = no limit). Claude Code runs stream their events so its reported rate limit can be read; once the window is this full, Claude Code is skipped like one at its usage limit until the window resets.",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer",
+      "x-consumer": "generation",
       "x-scope": "purpose",
       "x-sensitive": false
     },

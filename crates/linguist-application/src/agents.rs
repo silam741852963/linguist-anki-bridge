@@ -273,11 +273,7 @@ pub fn cooling(
         .filter(|cooldown| cooldown.until > now());
     reported
         .or_else(|| budget_spent(provider, settings, environment))
-        .or_else(|| {
-            (provider == Provider::Codex)
-                .then(|| window_spent(settings, environment))
-                .flatten()
-        })
+        .or_else(|| window_spent(provider, settings, environment))
 }
 
 fn budget(settings: &Effective) -> Option<(u64, u64)> {
@@ -330,21 +326,70 @@ fn budget_spent(
     })
 }
 
-/// `llm.agents.codex.max_window_percent`, when set.
-fn window_limit(settings: &Effective) -> Option<f64> {
+/// `llm.agents.codex.max_window_percent` or
+/// `llm.agents.claude_code.max_window_percent`, when set.
+fn window_limit(provider: Provider, settings: &Effective) -> Option<f64> {
+    let key = match provider {
+        Provider::Codex => "llm.agents.codex.max_window_percent",
+        Provider::ClaudeCode => "llm.agents.claude_code.max_window_percent",
+        _ => return None,
+    };
     settings
         .values
-        .get("llm.agents.codex.max_window_percent")
+        .get(key)
         .and_then(Value::as_u64)
         .filter(|percent| *percent > 0)
         .map(|percent| percent as f64)
 }
 
-/// `<storage.state_dir>/agents/window-codex.json`: the share of Codex's
-/// five-hour window it last reported, and when that window resets.
-fn window_path(settings: &Effective, environment: &BTreeMap<String, String>) -> Option<PathBuf> {
-    cooldown_path(Provider::Codex, settings, environment)
-        .map(|path| path.with_file_name("window-codex.json"))
+/// `<storage.state_dir>/agents/window-<provider>.json`: the share of the
+/// provider's five-hour window it last reported, and when that window resets.
+fn window_path(
+    provider: Provider,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) -> Option<PathBuf> {
+    cooldown_path(provider, settings, environment).map(|path| {
+        let name = match provider {
+            Provider::Codex => "window-codex.json".to_owned(),
+            other => format!("window-{}.json", other.name()),
+        };
+        path.with_file_name(name)
+    })
+}
+
+/// The five-hour window a Claude Code run reported: `--output-format
+/// stream-json --verbose` carries a `rate_limit_event` whose
+/// `unifiedWindows.five_hour.utilization` is the used share (0 to 1).
+fn record_claude_window(
+    stdout: &[u8],
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) {
+    let found = String::from_utf8_lossy(stdout)
+        .lines()
+        .rev()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|event| event["type"] == "rate_limit_event")
+        .find_map(|event| {
+            let info = &event["rate_limit_info"];
+            let five = info["unifiedWindows"]["five_hour"].clone();
+            let used = five["utilization"].as_f64()?;
+            let resets = five["resetsAt"]
+                .as_u64()
+                .or_else(|| info["resetsAt"].as_u64())?;
+            Some((used * 100.0, resets))
+        });
+    let Some((used, resets)) = found else {
+        return;
+    };
+    if let Some(path) = window_path(Provider::ClaudeCode, settings, environment) {
+        let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new("/")));
+        let _ = std::fs::write(
+            &path,
+            json!({"used_percent": used, "resets_at": resets, "at": now()}).to_string(),
+        );
+    }
 }
 
 /// The rate limit a Codex run reported (`--json` names the thread; its
@@ -424,7 +469,7 @@ fn record_window(stdout: &[u8], settings: &Effective, environment: &BTreeMap<Str
     ) else {
         return;
     };
-    if let Some(path) = window_path(settings, environment) {
+    if let Some(path) = window_path(Provider::Codex, settings, environment) {
         let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new("/")));
         let _ = std::fs::write(
             &path,
@@ -433,18 +478,25 @@ fn record_window(stdout: &[u8], settings: &Effective, environment: &BTreeMap<Str
     }
 }
 
-/// Codex's own window is as full as `llm.agents.codex.max_window_percent`
-/// allows: skipped until the window resets.
-fn window_spent(settings: &Effective, environment: &BTreeMap<String, String>) -> Option<Cooldown> {
-    let limit = window_limit(settings)?;
-    let window: Value =
-        serde_json::from_slice(&std::fs::read(window_path(settings, environment)?).ok()?).ok()?;
+/// The provider's own five-hour window is as full as its
+/// `max_window_percent` allows: skipped until the window resets.
+fn window_spent(
+    provider: Provider,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) -> Option<Cooldown> {
+    let limit = window_limit(provider, settings)?;
+    let window: Value = serde_json::from_slice(
+        &std::fs::read(window_path(provider, settings, environment)?).ok()?,
+    )
+    .ok()?;
     let used = window["used_percent"].as_f64()?;
     let resets = window["resets_at"].as_u64()?;
     (used >= limit && resets > now()).then(|| Cooldown {
         until: resets,
         said: format!(
-            "its own usage limit: {used}% of its five-hour window used (llm.agents.codex.max_window_percent {limit})"
+            "its own usage limit: {used}% of its five-hour window used (llm.agents.{}.max_window_percent {limit})",
+            provider.name()
         ),
     })
 }
@@ -760,10 +812,16 @@ fn claude_code(
         serde_json::to_string(&agent_schema(&request.output_schema)).map_err(|e| e.to_string())?;
     let workdir = private_workdir()?;
     let mut command = Command::new(&executable);
+    // Watching the five-hour window needs the stream, which carries the
+    // rate limit event; the last `result` line is the plain reply.
+    let watch_window = window_limit(Provider::ClaudeCode, settings).is_some();
+    command.args(["-p", "--output-format"]);
+    if watch_window {
+        command.args(["stream-json", "--verbose"]);
+    } else {
+        command.arg("json");
+    }
     command.args([
-        "-p",
-        "--output-format",
-        "json",
         "--json-schema",
         &schema,
         "--tools",
@@ -783,8 +841,19 @@ fn claude_code(
         timeout,
         limit,
     )?;
-    let reply: Value =
-        serde_json::from_slice(&output.stdout).map_err(|_| "AGENT_OUTPUT_INVALID")?;
+    if watch_window {
+        record_claude_window(&output.stdout, settings, environment);
+    }
+    let reply: Value = if watch_window {
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .rev()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .find(|event| event["type"] == "result")
+            .ok_or("AGENT_OUTPUT_INVALID")?
+    } else {
+        serde_json::from_slice(&output.stdout).map_err(|_| "AGENT_OUTPUT_INVALID")?
+    };
     if reply["is_error"] != false || reply["subtype"] != "success" {
         return Err("AGENT_REPORTED_ERROR".into());
     }
@@ -833,7 +902,7 @@ fn codex(
     .map_err(|_| "AGENT_WORKDIR_UNAVAILABLE")?;
     // Watching Codex's own five-hour window needs its session file, which
     // holds the rate limit it reports; the file is removed once read.
-    let watch_window = window_limit(settings).is_some();
+    let watch_window = window_limit(Provider::Codex, settings).is_some();
     let mut command = Command::new(&executable);
     command.args(["exec", "--skip-git-repo-check"]);
     if watch_window {
@@ -1202,7 +1271,7 @@ mod tests {
             json!(directory.join("state").display().to_string()),
         );
         // No limit set: nothing is watched.
-        assert!(window_spent(&settings, &env).is_none());
+        assert!(window_spent(Provider::Codex, &settings, &env).is_none());
         settings
             .values
             .insert("llm.agents.codex.max_window_percent".into(), json!(75));
@@ -1220,6 +1289,44 @@ mod tests {
             .values
             .insert("llm.agents.codex.max_window_percent".into(), json!(90));
         assert!(cooling(Provider::Codex, &settings, &env).is_none());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn claude_cools_down_once_its_own_window_is_as_full_as_allowed() {
+        use linguist_config::{ConfigFile, Registry, ResolveOptions, resolve};
+        let directory =
+            std::env::temp_dir().join(format!("lab-claude-window-{}", uuid::Uuid::new_v4()));
+        let env = BTreeMap::new();
+        let mut settings = resolve(
+            &Registry::builtin(),
+            &ConfigFile::default(),
+            &ResolveOptions::default(),
+        )
+        .unwrap();
+        settings.values.insert(
+            "storage.state_dir".into(),
+            json!(directory.display().to_string()),
+        );
+        let resets = now() + 3600;
+        let stream = format!(
+            "{{\"type\":\"system\"}}\n{{\"type\":\"rate_limit_event\",\"rate_limit_info\":{{\"status\":\"allowed\",\"unifiedWindows\":{{\"five_hour\":{{\"utilization\":0.7,\"resetsAt\":{resets},\"status\":\"allowed\"}}}}}}}}\n{{\"type\":\"result\"}}\n"
+        );
+        // No limit set: nothing is watched.
+        assert!(cooling(Provider::ClaudeCode, &settings, &env).is_none());
+        settings
+            .values
+            .insert("llm.agents.claude_code.max_window_percent".into(), json!(65));
+        record_claude_window(stream.as_bytes(), &settings, &env);
+        let spent = cooling(Provider::ClaudeCode, &settings, &env).unwrap();
+        assert_eq!(spent.until, resets);
+        assert!(spent.said.contains("llm.agents.claude_code.max_window_percent"));
+        // Codex has its own window: untouched.
+        assert!(cooling(Provider::Codex, &settings, &env).is_none());
+        settings
+            .values
+            .insert("llm.agents.claude_code.max_window_percent".into(), json!(80));
+        assert!(cooling(Provider::ClaudeCode, &settings, &env).is_none());
         let _ = std::fs::remove_dir_all(&directory);
     }
 

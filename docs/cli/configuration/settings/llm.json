@@ -302,6 +302,19 @@
       "sensitive": false
     },
     {
+      "key": "llm.agents.claude_code.max_window_percent",
+      "type": "integer",
+      "default": 0,
+      "constraints": {
+        "min": 0,
+        "max": 100
+      },
+      "scope": "purpose",
+      "consumer": "generation",
+      "description": "Share of Claude Code's own five-hour usage window drafting may use (0 = no limit). Claude Code runs stream their events so its reported rate limit can be read; once the window is this full, Claude Code is skipped like one at its usage limit until the window resets.",
+      "sensitive": false
+    },
+    {
       "key": "llm.agents.claude_code.executable",
       "type": "string",
       "default": "claude",
