@@ -55,7 +55,8 @@
 # Code; each with its own max_window_percent) with what those caps leave until
 # the windows reset, pooled, and steps the limits along RAMP_LADDER ("1 1,2
 # 1,3 2,5 2,8 3", then the saved limits): up to three steps at once as far as
-# the pooled pace has room for (the first look in a window uses the window's
+# the pooled pace has room for (one step only while a provider is at its cap or the pace is
+# unmeasured; the first look in a window uses the window's
 # own average, and the pace per prepare-ahead batch is kept in session/pace
 # across runs), one step down when it spends faster. At the saved limits
 # careful mode ends.
@@ -203,18 +204,24 @@ total = len(pool)
 if capped == total:
     to, why = 0, "every provider at its window cap"
 else:
-    cur = rate if measured_all else max(avg, per_ahead * ahead(level))
+    # A provider that hit its cap handed its demand to the next one: the pace
+    # learnt per prepare-ahead batch (or the window averages) stands in for a
+    # pace the pool has not measured yet.
+    cur = rate if measured_all and not capped else max(rate, avg, per_ahead * ahead(level))
     if rate > room:
         to, why = max(level - 1, 0), "spending faster than the budget"
     else:
         to = level
         # Throughput grows with prepare-ahead: the highest step whose pace
         # still leaves a fifth of the budget, three steps at most per look.
-        while to + 1 < len(ladder) and to + 1 <= level + 3 and cur * ahead(to + 1) / ahead(level) * 1.2 <= room:
+        reach = 3 if measured_all and not capped else 1  # one step only on a guess
+        while to + 1 < len(ladder) and to + 1 <= level + reach and cur * ahead(to + 1) / ahead(level) * 1.2 <= room:
             to += 1
         why = ("the pooled budget has room" if to > level else "pace fits the budget") + ("" if measured_all else " (window average)")
-    if measured_all and rate > 0:
+    if measured_all and rate > 0 and not capped:
         json.dump({"per_ahead": rate / ahead(level)}, open(pace_path, "w"))
+    elif per_ahead == 0 and avg > 0:
+        json.dump({"per_ahead": avg / ahead(level)}, open(pace_path, "w"))
 json.dump({"level": to, "providers": state}, open(ramp_path, "w"))
 used_txt = ", ".join(f"{n} {state[n]['used']:.0f}%" for n, _, _ in pool)
 print(to, " ".join(ladder[to]), "top" if to == len(ladder) - 1 else "", f"| {why}; pooled windows {used_txt}, {rate*3600:.1f}%/h spent, {('%.1f' % (room*3600)) if room != math.inf else 'any'}%/h allowed")
