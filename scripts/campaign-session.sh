@@ -50,11 +50,15 @@
 # start straight to 20 batches ahead, 4 at a time (2026-11-02: 7% to 71% of
 # the Codex window in 37 minutes, 6 points past the cap).
 # While the driver runs in careful mode, it speeds up again by itself: every
-# RAMP_SECONDS (900) between ticks it compares how fast Codex spends its own
-# five-hour window with what llm.agents.codex.max_window_percent leaves until
-# the window resets, and steps the limits along RAMP_LADDER ("1 1,2 1,4 2,8
-# 3", then the saved limits): up as far as the pace has room for, one step
-# down when it spends faster. At the saved limits careful mode ends.
+# RAMP_SECONDS (300) between ticks it compares how fast the drafting chain
+# spends its five-hour windows (Codex and, when it is in llm.fallback, Claude
+# Code; each with its own max_window_percent) with what those caps leave until
+# the windows reset, pooled, and steps the limits along RAMP_LADDER ("1 1,2
+# 1,3 2,5 2,8 3", then the saved limits): up to three steps at once as far as
+# the pooled pace has room for (the first look in a window uses the window's
+# own average, and the pace per prepare-ahead batch is kept in session/pace
+# across runs), one step down when it spends faster. At the saved limits
+# careful mode ends.
 # A one-window override of llm.agents.codex.max_window_percent (the user's
 # "this time only") is recorded in session/window-override as "VALUE
 # RESETS_AT"; start and the driver put VALUE back once that window resets.
@@ -89,11 +93,12 @@ PROBE_SECONDS=${PROBE_SECONDS:-1800}
 TICK_SECONDS=${TICK_SECONDS:-3000}
 HEARTBEAT_SECONDS=${HEARTBEAT_SECONDS:-2700}
 FAST_CAP_SECONDS=${FAST_CAP_SECONDS:-7200}    # a cap this soon after a full-speed start: careful mode
-RAMP_SECONDS=${RAMP_SECONDS:-900}              # careful mode: how often the pace is judged
+RAMP_SECONDS=${RAMP_SECONDS:-300}              # careful mode: how often the pace is judged
 APPROVAL_SECONDS=${APPROVAL_SECONDS:-1200}      # after a start, ready batches hold the session this long
 BUSY_SECONDS=${BUSY_SECONDS:-300}              # a tool command this young counts as a heartbeat
-RAMP_LADDER=${RAMP_LADDER:-"1 1,2 1,4 2,8 3"}  # careful mode: prepare-ahead prepare-parallel steps
+RAMP_LADDER=${RAMP_LADDER:-"1 1,2 1,3 2,5 2,8 3"}  # careful mode: prepare-ahead prepare-parallel steps
 WINDOW=${XDG_STATE_HOME:-$HOME/.local/state}/linguist-anki-bridge/agents/window-codex.json
+WINDOW_CLAUDE=${XDG_STATE_HOME:-$HOME/.local/state}/linguist-anki-bridge/agents/window-claude_code.json
 QUOTA_REASON="Codex usage limit reached; driver resumes when the quota resets"
 WRAPPED="wrapped up at the end of a session"
 KEY=$HOME/.config/linguist-anki-bridge/ankiconnect-api-key
@@ -151,46 +156,68 @@ careful_judge() {  # the drafting cap came: soon after a full-speed start means 
     touch "$SESSION/careful"
   fi
 }
-ramp_decide() {  # careful mode: the ladder step the Codex window's pace has room for
-  python3 - "$WINDOW" "$SESSION/ramp" "$(setting llm.agents.codex.max_window_percent)" \
-    "$RAMP_LADDER,$(cat "$SESSION/limits-before")" "$(date +%s)" <<'PY'
+ramp_decide() {  # careful mode: the ladder step the pooled five-hour windows have room for
+  python3 - "$WINDOW" "$WINDOW_CLAUDE" "$SESSION/ramp" \
+    "$(setting llm.agents.codex.max_window_percent)" "$(setting llm.agents.claude_code.max_window_percent)" \
+    "$(setting llm.provider)" "$(setting llm.fallback)" \
+    "$RAMP_LADDER,$(cat "$SESSION/limits-before")" "$(date +%s)" "$SESSION/pace" <<'PY'
 import json, math, sys
-window_path, ramp_path, limit, ladder, now = sys.argv[1:]
+cx_path, cl_path, ramp_path, cx_lim, cl_lim, primary, fallback, ladder, now, pace_path = sys.argv[1:]
 now, ladder = int(now), [s.split() for s in ladder.split(",")]
-try: limit = float(json.loads(limit))
-except Exception: limit = 0
+def num(v):
+    try: return float(json.loads(v))
+    except Exception: return 0.0
+try: chain = [json.loads(primary)] + list(json.loads(fallback))
+except Exception: chain = ["codex"]
+# The pool: every provider of the drafting chain that has its own window cap.
+pool = []
+if "codex" in chain and num(cx_lim) > 0: pool.append(("codex", cx_path, num(cx_lim)))
+if "claude_code" in chain and num(cl_lim) > 0: pool.append(("claude_code", cl_path, num(cl_lim)))
+if not pool: pool = [("codex", cx_path, 0.0)]
 try: ramp = json.load(open(ramp_path))
 except Exception: ramp = {}
 level = min(int(ramp.get("level", 0)), len(ladder) - 1)
-try: w = json.load(open(window_path))
-except Exception: w = {}
-used, resets = float(w.get("used_percent", 0)), int(w.get("resets_at", 0))
-if resets <= now: used = 0.0  # the window reset since Codex last reported it
-left = max(resets - now, 60)
-# Spent per second since the last judgment in the same window. The first
-# look only measures: the window's own average holds use from before.
-measured = ramp.get("resets") == resets and now - ramp.get("at", now) >= 300
-rate = max(used - ramp["used"], 0) / (now - ramp["at"]) if measured else 0.0
-room = (limit - used) / left if limit and resets > now else math.inf
+prev = ramp.get("providers", {})
 ahead = lambda l: max(int(ladder[l][0]), 1)
-if limit and resets > now and used >= limit:
-    to, why = 0, f"window at {used:.0f}% of {limit:.0f}%"
-elif not measured and resets > now:
-    to, why = level, "first look in this window: measuring the pace"
-elif rate > room:
-    to, why = max(level - 1, 0), "spending faster than the budget"
-elif rate == 0:
-    to, why = min(level + 1, len(ladder) - 1), "nothing spent since the last look"
+state, room, rate, avg, measured_all, capped = {}, 0.0, 0.0, 0.0, True, 0
+for name, path, limit in pool:
+    try: w = json.load(open(path))
+    except Exception: w = {}
+    used, resets = float(w.get("used_percent", 0)), int(w.get("resets_at", 0))
+    if resets <= now: used, resets = 0.0, 0  # the window reset since the provider last reported it
+    left = max(resets - now, 60) if resets else 18000
+    state[name] = {"used": used, "resets": resets, "at": now}
+    p = prev.get(name, {})
+    measured = bool(resets) and p.get("resets") == resets and now - p.get("at", now) >= 240
+    if not measured and resets: measured_all = False
+    if limit and used >= limit and resets > now:
+        capped += 1  # at its cap: no room, no spend to count
+        continue
+    room += (limit - used) / left if limit else math.inf
+    if measured: rate += max(used - p["used"], 0) / (now - p["at"])
+    elif resets: avg += used / max(18000 - left, 600)  # the window's own average pace
+try: pace = json.load(open(pace_path))  # %/s spent per prepare-ahead batch, learnt over runs
+except Exception: pace = {}
+per_ahead = pace.get("per_ahead", 0.0)
+total = len(pool)
+if capped == total:
+    to, why = 0, "every provider at its window cap"
 else:
-    # Throughput grows with prepare-ahead: the highest step whose pace still
-    # leaves a quarter of the budget, two steps at most per judgment.
-    to = level
-    while to + 1 < len(ladder) and to + 1 <= level + 2 and rate * ahead(to + 1) / ahead(level) * 1.25 <= room:
-        to += 1
-    why = "the budget has room" if to > level else "pace fits the budget"
-json.dump({"level": to, "used": used, "resets": resets, "at": now}, open(ramp_path, "w"))
-pace = f"{used:.0f}% of {limit:.0f}% used, {rate*3600:.1f}%/h spent, {('%.1f' % (room*3600)) if room != math.inf else 'any'}%/h allowed"
-print(to, " ".join(ladder[to]), "top" if to == len(ladder) - 1 else "", f"| {why}; {pace}")
+    cur = rate if measured_all else max(avg, per_ahead * ahead(level))
+    if rate > room:
+        to, why = max(level - 1, 0), "spending faster than the budget"
+    else:
+        to = level
+        # Throughput grows with prepare-ahead: the highest step whose pace
+        # still leaves a fifth of the budget, three steps at most per look.
+        while to + 1 < len(ladder) and to + 1 <= level + 3 and cur * ahead(to + 1) / ahead(level) * 1.2 <= room:
+            to += 1
+        why = ("the pooled budget has room" if to > level else "pace fits the budget") + ("" if measured_all else " (window average)")
+    if measured_all and rate > 0:
+        json.dump({"per_ahead": rate / ahead(level)}, open(pace_path, "w"))
+json.dump({"level": to, "providers": state}, open(ramp_path, "w"))
+used_txt = ", ".join(f"{n} {state[n]['used']:.0f}%" for n, _, _ in pool)
+print(to, " ".join(ladder[to]), "top" if to == len(ladder) - 1 else "", f"| {why}; pooled windows {used_txt}, {rate*3600:.1f}%/h spent, {('%.1f' % (room*3600)) if room != math.inf else 'any'}%/h allowed")
 PY
 }
 careful_ramp() {  # careful mode while the driver runs: speed up as the Codex window allows
