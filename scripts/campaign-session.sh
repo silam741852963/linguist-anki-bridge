@@ -383,8 +383,8 @@ watch() {
 }
 
 # --- commands -------------------------------------------------------------------
-cooldown_end() {  # epoch seconds when the last cooling provider is back, or 0
-  cli campaign status "$1" | json 'max([int(c["until"]) for c in (d.get("agent_cooldowns") or {}).values()] or [0])'
+cooldown_end() {  # epoch seconds when the first cooling provider is back (it drafts alone), or 0
+  cli campaign status "$1" | json 'min([int(c["until"]) for c in (d.get("agent_cooldowns") or {}).values()] or [0])'
 }
 agent_session() {  # pid of the Claude Code process this command runs under, if any
   local p=$$
