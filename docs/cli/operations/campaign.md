@@ -147,6 +147,19 @@ With `--note NOTE` (repeatable, with `--why TEXT`) the named notes are applied n
 
 Ends a session cleanly so the next one picks the campaign up where it stopped. Effects: local. A `running` campaign is paused (`CAMPAIGN_PAUSED_BY_REQUEST`, "wrapped up at the end of a session"); a campaign already paused keeps its reason (a guardrail, a quota). The command then waits up to `--wait-seconds` (default 900) for the running tick to finish its step and release the campaign lease; it never kills a tick, so an apply in progress completes under its journal. Once no tick runs, agent processes (`codex exec`, `claude -p`) left in their private `linguist-agent-*` directories by a generation process that is gone are ended with their process group. An open agent turn (`agent-slot` without `agent-done`) is closed. A `wrapped_up` event records the handoff (status, notes by phase, applied and deferred counts, batches waiting for the agent, providers cooling down after their usage limit, the commands to resume) and the command prints it. Exit 5 while a tick still runs after the wait; run it again. Resuming stays the user's step (`campaign resume`). `scripts/campaign-session.sh wrap-up` runs it after stopping the session's driver and watchers. The session driver also wraps up by itself once no provider can draft and no batch is approved, applying, verifying or merging (a batch ready for the agent's approval does not hold it, except for `APPROVAL_SECONDS`, default 1200, after a `start`: a start during a drafting cooldown used to wrap up at once, before the agent could approve what was ready). `scripts/campaign-session.sh resume-when-ready` waits for that wrap-up and for the first provider's cooldown to end (one provider drafts alone), then runs `start`; an agent session runs it in its background, so the campaign resumes only while that session lives. It resumes only a wrapped-up campaign by itself; any other pause is left for the user, and once the user runs `campaign resume` the waiter starts the driver again. The agent wrapper denies it.
 
+## Setting presets — `scripts/campaign-preset.sh`
+
+`scripts/campaign-preset.sh list|show|PRESET [CAMPAIGN] [--no-restart]` switches the drafting provider, its fallback, the five-hour window caps and the prepare workers in one step. Effects: local (the configuration file, after a timestamped `config.toml.bak-preset-*`; `config validate` must pass or the file is restored). A campaign driver runs the settings it started with, so with a running driver the command wraps it up and starts it again, then tunes prepare-ahead and prepare-parallel for presets that fix them (careful mode would otherwise climb from one batch). Run it from a Claude Code session so `start` can bind the resume waiter; afterwards restart the session's `wait-change` task and set the check cron. The preset in force is kept in `session/preset`.
+
+| preset | provider / fallback | caps (Codex / Claude Code) | workers | limits |
+|---|---|---|---|---|
+| `normal` | Codex / Claude Code | 65% / 65% | 6 | ramp |
+| `claude-main` | Claude Code / Codex | 65% / 65% | 6 | ramp |
+| `claude-rapid` | Claude Code / Codex | 65% / 100% | 10 | 24 / 8 |
+| `all-out` | Claude Code / Codex | 100% / 100% | 10 | 24 / 8 |
+
+`normal` is the standing policy; the others are for a session the user asks to speed up, and go back with `normal`.
+
 ## Session run policy
 
 The live campaign runs only from an interactive agent session, through `scripts/campaign-session.sh`. Nothing runs between sessions: no systemd timer, no cron job that outlives the session, and Anki is never launched (it must already be open). Each rule below closes a way a campaign could run, or sit, unwatched.
