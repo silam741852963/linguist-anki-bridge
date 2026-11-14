@@ -32,6 +32,21 @@ pub fn system_prompt(kind: &str) -> &'static str {
     })
 }
 
+/// The prompt for one request: the full prompt when the request asks for the
+/// domain fields, the prompt file alone when `domain` is not an allowed field
+/// (a profiled note keeps its domain): the leaf list is then ~76 KB of input
+/// tokens a call cannot use. Its digest differs, and each request records it.
+fn request_prompt(kind: &str, with_domains: bool) -> &'static str {
+    if with_domains {
+        return system_prompt(kind);
+    }
+    if kind == "grammar" {
+        GRAMMAR_PROMPT_V3
+    } else {
+        VOCABULARY_PROMPT_V3
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ModelIdentity {
     pub name: String,
@@ -777,7 +792,7 @@ pub fn build_request(
             allowed.push(name.to_owned());
         }
     };
-    let (kind, prompt_key, prompt_ref, prompt, example_count) = match &doc.content {
+    let (kind, prompt_key, prompt_ref, _full_prompt, example_count) = match &doc.content {
         LearningContent::Vocabulary(v) => {
             if v.expression.trim().is_empty() || v.meaning.trim().is_empty() {
                 return Err("GENERATION_ACCEPTED_ANSWER_REQUIRED".into());
@@ -928,7 +943,12 @@ pub fn build_request(
     let user = json!({"schema_version":2,"kind":kind,"domain_hints":domain_hints,"target_language":doc.target_language,"explanation_language":doc.explanation_language,
         "accepted_content":content,"context":doc.context,"sources":sources,"regions":doc.regions,"evidence":evidence,
         "allowed_fields":allowed,"examples_requested":examples_requested});
-    let output_schema = constrained_schema(kind, &allowed, examples_requested)?;
+    let cjk = matches!(
+        doc.target_language.as_str().split('-').next(),
+        Some("ja" | "zh" | "ko")
+    );
+    let output_schema = constrained_schema(kind, &allowed, examples_requested, cjk)?;
+    let prompt = request_prompt(kind, allowed.iter().any(|f| f == "domain"));
     Ok(GenerationRequest {
         system_prompt: prompt.into(),
         user_json: String::from_utf8(canonical::bytes(&user).map_err(|e| e.to_string())?)
@@ -947,7 +967,12 @@ pub fn build_request(
 /// fields that are not allowed must be empty, and at most `examples` new
 /// examples. Constrained decoding then cannot produce output that
 /// `validate_output` must reject; validation still runs on every reply.
-fn constrained_schema(kind: &str, allowed: &[String], examples: usize) -> Result<Value, String> {
+fn constrained_schema(
+    kind: &str,
+    allowed: &[String],
+    examples: usize,
+    cjk: bool,
+) -> Result<Value, String> {
     let mut schema =
         serde_json::to_value(schema_for!(Supplement)).map_err(|_| "GENERATION_SCHEMA_INVALID")?;
     let branch = schema["oneOf"]
@@ -1015,6 +1040,20 @@ fn constrained_schema(kind: &str, allowed: &[String], examples: usize) -> Result
         }
     }
     schema["$defs"][definition]["required"] = Value::Array(names);
+    // An example is never empty, and on a Japanese, Chinese or Korean card its
+    // sentence carries the target script: a model left free echoed the schema's
+    // own placeholder (`x = x`). `x-script` is turned into a `pattern` for the
+    // agents that enforce one (`agents::agent_schema`).
+    if let Some(example) = schema["$defs"]["GeneratedExample"]["properties"].as_object_mut() {
+        for field in ["sentence", "translation"] {
+            if let Some(property) = example.get_mut(field) {
+                property["minLength"] = json!(1);
+            }
+        }
+        if cjk && let Some(property) = example.get_mut("sentence") {
+            property["x-script"] = json!("cjk");
+        }
+    }
     Ok(schema)
 }
 

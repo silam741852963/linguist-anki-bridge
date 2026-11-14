@@ -4,6 +4,12 @@
 
 Faster campaigns.
 
+- **Pipeline audit fixes (drafting cost and pace)**:
+  - A Japanese, Chinese or Korean card's example schema now requires a non-empty translation and a sentence with a CJK character (`x-script: cjk` in the generation schema, turned into a `pattern` for agents; Codex enforces it). A model left free had echoed the schema's placeholder (`x = x`), and about one call in five was rejected for it.
+  - A request that does not ask for `domain` (a profiled note keeps its domain) no longer sends the domains-v1 leaf list (~76 KB): the prompt file alone is sent, with its own digest recorded on the request.
+  - `scripts/codex-meter.sh` logs real token counts (`input`, `cached`, `output`) read from `codex exec --json`'s `turn.completed` event, not only the total, to `agents/` usage log.
+  - The careful-mode ramp no longer flaps (5/3/2/1): it steps down only when spending is 30% over the budget and does not step up for 30 minutes after a step down.
+  - `campaign-session.sh watch` looks every 45 s (`WATCH_SECONDS`, was 120); the agent session runs it in its background so ready batches are approved within a minute.
 - **`llm.agents.claude_code.max_window_percent`**: drafting uses at most this share of Claude Code's own five-hour window, the way `llm.agents.codex.max_window_percent` caps Codex. With it set, Claude Code runs use `--output-format stream-json --verbose`; the `rate_limit_event`'s `unifiedWindows.five_hour.utilization` is kept in `agents/window-claude_code.json`, and at the limit Claude Code cools down until the window resets (`campaign status` lists it in `agent_cooldowns`). Put `claude_code` in `llm.fallback` to draft with it when Codex is at its cap.
 - **Campaign setting presets**: `scripts/campaign-preset.sh normal|claude-main|claude-rapid|all-out` switches the drafting provider and fallback, the Codex and Claude Code window caps, the prepare workers and (for the fast presets) prepare-ahead/parallel in one command, restarting a running driver so it takes them; `list` and `show` print the presets and the settings in force. Before, each switch was a hand edit of `config.toml` plus a driver restart and a `campaign tune`.
 - **The resume waiter starts with the first provider back**: after both providers hit their caps it waited for the last cooldown (Codex 22:48) while Claude Code, the fallback, was back at 22:40 and could draft alone. `resume-when-ready` now waits for the earliest cooldown end.

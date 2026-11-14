@@ -178,6 +178,8 @@ if not pool: pool = [("codex", cx_path, 0.0)]
 try: ramp = json.load(open(ramp_path))
 except Exception: ramp = {}
 level = min(int(ramp.get("level", 0)), len(ladder) - 1)
+down_at = int(ramp.get("down_at", 0))  # when the ramp last stepped down
+HOLD, MARGIN = 1800, 1.3  # no step up for 30 min after a step down; down only when 30% over budget
 prev = ramp.get("providers", {})
 ahead = lambda l: max(int(ladder[l][0]), 1)
 state, room, rate, avg, measured_all, capped = {}, 0.0, 0.0, 0.0, True, 0
@@ -208,8 +210,11 @@ else:
     # learnt per prepare-ahead batch (or the window averages) stands in for a
     # pace the pool has not measured yet.
     cur = rate if measured_all and not capped else max(rate, avg, per_ahead * ahead(level))
-    if rate > room:
+    if rate > room * MARGIN:
         to, why = max(level - 1, 0), "spending faster than the budget"
+        if to < level: down_at = now
+    elif rate > room or now - down_at < HOLD:
+        to, why = level, "holding (near the budget or just stepped down)"
     else:
         to = level
         # Throughput grows with prepare-ahead: the highest step whose pace
@@ -222,7 +227,7 @@ else:
         json.dump({"per_ahead": rate / ahead(level)}, open(pace_path, "w"))
     elif per_ahead == 0 and avg > 0:
         json.dump({"per_ahead": avg / ahead(level)}, open(pace_path, "w"))
-json.dump({"level": to, "providers": state}, open(ramp_path, "w"))
+json.dump({"level": to, "down_at": down_at, "providers": state}, open(ramp_path, "w"))
 used_txt = ", ".join(f"{n} {state[n]['used']:.0f}%" for n, _, _ in pool)
 print(to, " ".join(ladder[to]), "top" if to == len(ladder) - 1 else "", f"| {why}; pooled windows {used_txt}, {rate*3600:.1f}%/h spent, {('%.1f' % (room*3600)) if room != math.inf else 'any'}%/h allowed")
 PY
@@ -378,7 +383,7 @@ watch() {
     new=$(snapshot "$C" | grep -vxF -f "$seen")
     [ -n "$new" ] && { echo "AGENT $new" | tr '\n' ' '; echo; return; }
     alive driver || { echo "NO_DRIVER"; return; }
-    sleep 120
+    sleep "${WATCH_SECONDS:-45}"
   done
 }
 

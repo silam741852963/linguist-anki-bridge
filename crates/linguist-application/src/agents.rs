@@ -788,7 +788,27 @@ pub fn agent_schema(schema: &Value) -> Value {
         object.remove("oneOf");
         object.extend(branch);
     }
+    script_patterns(&mut schema);
     schema
+}
+
+/// `x-script: "cjk"` (set by the generation schema) becomes a `pattern`
+/// requiring one Japanese, Chinese or Korean character: Codex enforces it, so
+/// a placeholder sentence cannot come back.
+fn script_patterns(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if map.remove("x-script").as_ref().and_then(Value::as_str) == Some("cjk") {
+                map.insert(
+                    "pattern".into(),
+                    json!("[\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uf900-\\ufaff\\uff66-\\uff9f\\uac00-\\ud7af]"),
+                );
+            }
+            map.values_mut().for_each(script_patterns);
+        }
+        Value::Array(items) => items.iter_mut().for_each(script_patterns),
+        _ => {}
+    }
 }
 
 fn setting<'a>(settings: &'a Effective, key: &str) -> Option<&'a str> {
@@ -1033,6 +1053,22 @@ fn api(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_cjk_script_marker_becomes_a_pattern_agents_enforce() {
+        let schema = agent_schema(&json!({"$defs":{"E":{"properties":{
+            "sentence":{"type":"string","minLength":1,"x-script":"cjk"},
+            "translation":{"type":"string","minLength":1}}}}}));
+        let sentence = &schema["$defs"]["E"]["properties"]["sentence"];
+        assert!(sentence.get("x-script").is_none());
+        let pattern = regex_lite_check(sentence["pattern"].as_str().unwrap());
+        assert!(pattern, "pattern names the CJK ranges");
+        assert!(schema["$defs"]["E"]["properties"]["translation"].get("pattern").is_none());
+    }
+
+    fn regex_lite_check(pattern: &str) -> bool {
+        pattern.contains("\\u3040") && pattern.contains("\\u4e00-\\u9fff")
+    }
+
     #[test]
     fn a_usage_limit_names_when_to_try_again() {
         let said = "You’ve hit your usage limit. Upgrade to Pro, visit … or try again at Nov 6th, 2026 8:32 AM.";
