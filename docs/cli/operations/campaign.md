@@ -154,11 +154,12 @@ Ends a session cleanly so the next one picks the campaign up where it stopped. E
 | preset | provider / fallback | caps (Codex / Claude Code) | workers | limits |
 |---|---|---|---|---|
 | `normal` | Codex / Claude Code | 65% / 65% | 6 | ramp |
+| `codex-only` | Codex only, no fallback | 65% / 65% (Claude Code unused) | 6 | ramp |
 | `claude-main` | Claude Code / Codex | 65% / 65% | 6 | ramp |
 | `claude-rapid` | Claude Code / Codex | 65% / 100% | 10 | 24 / 8 |
 | `all-out` | Claude Code / Codex | 100% / 100% | 10 | 24 / 8 |
 
-`normal` is the standing policy; the others are for a session the user asks to speed up, and go back with `normal`.
+`normal` is the standing policy; `codex-only` leaves `llm.fallback` empty, so Claude Code never drafts and the campaign waits at the Codex cap; the others are for a session the user asks to speed up, and go back with `normal`.
 
 ## Session run policy
 

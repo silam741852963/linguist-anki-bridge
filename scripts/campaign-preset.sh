@@ -18,6 +18,8 @@
 # Presets:
 #   normal        Codex main, Claude Code fallback, both capped at 65%, 6 workers,
 #                 limits from the careful-mode ramp (the standing policy)
+#   codex-only    Codex only, no fallback (Claude Code never drafts), cap 65%, 6
+#                 workers, ramp; the campaign waits at the Codex cap
 #   claude-main   Claude Code main, Codex fallback, both 65%, ramp
 #   claude-rapid  Claude Code main, Codex fallback, Claude Code 100%, Codex 65%,
 #                 10 workers, prepare-ahead 24 / parallel 8
@@ -39,8 +41,9 @@ CONFIG=${LAB_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/linguist-anki-bridge/conf
 KEY_FILE=${XDG_CONFIG_HOME:-$HOME/.config}/linguist-anki-bridge/ankiconnect-api-key
 [ -n "${ANKICONNECT_API_KEY:-}" ] || { [ -r "$KEY_FILE" ] && export ANKICONNECT_API_KEY="$(cat "$KEY_FILE")"; }
 
-# name|provider|fallback|codex cap|claude cap|workers|prepare-ahead|prepare-parallel ("-" = ramp)
+# name|provider|fallback ("none" = []) |codex cap|claude cap|workers|prepare-ahead|prepare-parallel ("-" = ramp)
 PRESETS="normal|codex|claude_code|65|65|6|-|-
+codex-only|codex|none|65|65|6|-|-
 claude-main|claude_code|codex|65|65|6|-|-
 claude-rapid|claude_code|codex|65|100|10|24|8
 all-out|claude_code|codex|100|100|10|24|8"
@@ -88,7 +91,7 @@ apply() {
   local backup="$CONFIG.bak-preset-$(date +%Y%m%d-%H%M%S)"
   cp "$CONFIG" "$backup"
   set_key llm.provider "\"$provider\"" \
-    && set_key llm.fallback "[\"$fallback\"]" \
+    && set_key llm.fallback "$([ "$fallback" = none ] && echo '[]' || echo "[\"$fallback\"]")" \
     && set_key llm.agents.codex.max_window_percent "$codex" \
     && set_key llm.agents.claude_code.max_window_percent "$claude" \
     && set_key jobs.prepare_workers "$workers" \
