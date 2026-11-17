@@ -1040,6 +1040,17 @@ fn constrained_schema(
         }
     }
     schema["$defs"][definition]["required"] = Value::Array(names);
+    // The other kind's definition is unused, and its defaulted fields are not
+    // listed as required: Codex validates every definition and refused the
+    // whole schema ("required must include declared property domain").
+    let other = if kind == "vocabulary" {
+        "GrammarSupplement"
+    } else {
+        "VocabularySupplement"
+    };
+    if let Some(defs) = schema["$defs"].as_object_mut() {
+        defs.remove(other);
+    }
     // An example is never empty, and on a Japanese, Chinese or Korean card its
     // sentence carries the target script: a model left free echoed the schema's
     // own placeholder (`x = x`). `x-script` is turned into a `pattern` for the

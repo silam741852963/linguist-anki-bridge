@@ -1168,3 +1168,26 @@ fn a_draft_carries_the_judged_domain() {
         "GENERATION_FIELD_NOT_ALLOWED"
     );
 }
+
+#[test]
+fn every_definition_in_the_agent_schema_lists_all_its_properties_as_required() {
+    // Codex validates unused definitions too and refuses the whole schema.
+    let grammar = LearningDocument::from_json(include_bytes!(
+        "../../../contracts/v2/fixtures/grammar.json"
+    ))
+    .unwrap();
+    for doc in [document(), grammar] {
+        let request = build_request(&doc, &settings()).unwrap();
+        let schema = linguist_application::agents::agent_schema(&request.output_schema);
+        for (name, def) in schema["$defs"].as_object().unwrap() {
+            let Some(properties) = def["properties"].as_object() else { continue };
+            let required: Vec<&str> = def["required"]
+                .as_array()
+                .map(|r| r.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            for property in properties.keys() {
+                assert!(required.contains(&property.as_str()), "{name}.{property}");
+            }
+        }
+    }
+}
