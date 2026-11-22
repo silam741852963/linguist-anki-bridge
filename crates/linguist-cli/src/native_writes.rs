@@ -9,7 +9,7 @@
 //! orchestration (apply, split, restore, rollback, reconcile, model install).
 use linguist_application::{
     apply::{self, ApplyRequest, ReconcileRequest},
-    backup::{self, CheckpointRequest, ScopePreference},
+    backup::{self, CheckpointRequest, DependentScope, ScopePreference},
     checkpoint::CoverageRequirement,
     model_install,
     native_port::{NativeDeadlines, NativePort},
@@ -155,6 +155,58 @@ impl<'a> Writer<'a> {
             )
         })?;
         Ok((outcome.record.receipt.id, protected))
+    }
+
+    /// A recent full-collection checkpoint with no group of its own that the
+    /// reuse gate accepts for these notes: `(id, its protected manifest)`.
+    fn reusable_checkpoint(
+        &mut self,
+        settings: &linguist_config::Effective,
+        notes: &[i64],
+        reuse_seconds: u64,
+    ) -> Result<Option<(Uuid, String)>, String> {
+        let now = now_ms()?;
+        let binding = self.port.refresh()?;
+        let since = now.saturating_sub(reuse_seconds.saturating_mul(1000));
+        for record in self
+            .store
+            .list_checkpoints(Some("collection"), Some(since), 50)?
+        {
+            if record.evidence["group_id"].as_str().is_some() {
+                continue;
+            }
+            let Some(manifest) = record.evidence["protected_manifest_digest"]
+                .as_str()
+                .map(str::to_owned)
+            else {
+                continue;
+            };
+            let accepted = backup::require_checkpoint(
+                &self.store,
+                record.receipt.id,
+                &DependentScope {
+                    binding: &binding,
+                    requirement: CoverageRequirement {
+                        scheduling: true,
+                        media: true,
+                        schema: false,
+                    },
+                    note_ids: notes,
+                    card_ids: &[],
+                    model_ids: &[],
+                    media_names: &[],
+                    group_id: None,
+                    protected_manifest_digest: &manifest,
+                    now_ms: now,
+                    reuse_max_age_seconds: reuse_seconds,
+                    max_package_bytes: max_package(settings),
+                },
+            );
+            if accepted.is_ok() {
+                return Ok(Some((record.receipt.id, manifest)));
+            }
+        }
+        Ok(None)
     }
 
     fn renew(&mut self) -> Result<(), String> {
@@ -1140,18 +1192,55 @@ pub(crate) fn run_apply_job(
 /// `jobs create --mode apply --create-checkpoint`: one verified checkpoint
 /// over every selected item's source notes, created for a new group that the
 /// job then adopts as its ID, so every item shares it.
+///
+/// With `backup.reuse_max_age_seconds` above zero the checkpoint is looser: a
+/// verified full-collection checkpoint younger than that, whose scope holds
+/// this job's notes, is used again (the gate checks binding, restoration,
+/// scope, age, protected manifest and the artifact hash, exactly as for any
+/// reused checkpoint). A new one covers this job's notes and those of every
+/// `--cover PLAN:REVISION` plan (the campaign's other approved batches), so
+/// the next jobs find it. The campaign wrote one 5.3 GB package, 3.5 minutes,
+/// per batch before.
 pub(crate) fn job_checkpoint(
     settings: &linguist_config::Effective,
     plan: Uuid,
     revision: u32,
     items: &[Uuid],
+    cover: &[String],
 ) -> Result<(Uuid, String), String> {
     let client = crate::anki_client(settings)?;
     let port = connect(&client, settings)?;
     let mut writer = Writer::open(port, settings)?;
     let result = (|| {
-        let notes = source_note_ids(&writer.store, plan, revision, items)?;
-        writer.checkpoint(settings, &notes, &[], Some(Uuid::new_v4()))
+        let own = source_note_ids(&writer.store, plan, revision, items)?;
+        let reuse = reuse_seconds(settings);
+        if reuse == 0 {
+            return writer.checkpoint(settings, &own, &[], Some(Uuid::new_v4()));
+        }
+        if let Some(found) = writer.reusable_checkpoint(settings, &own, reuse)? {
+            return Ok(found);
+        }
+        let mut notes: BTreeSet<i64> = own.into_iter().collect();
+        for spec in cover {
+            let (other, other_revision) = spec
+                .split_once(':')
+                .and_then(|(p, r)| Some((p.parse::<Uuid>().ok()?, r.parse::<u32>().ok()?)))
+                .ok_or("JOB_COVER_INVALID: --cover takes PLAN:REVISION")?;
+            let documents: Vec<Uuid> = match writer.store.revision(other, other_revision) {
+                Ok(revision) => revision.documents.iter().map(|d| d.id).collect(),
+                // A plan that changed or vanished is only left out of the cover.
+                Err(_) => continue,
+            };
+            notes.extend(source_note_ids(
+                &writer.store,
+                other,
+                other_revision,
+                &documents,
+            )?);
+        }
+        let notes: Vec<i64> = notes.into_iter().collect();
+        // No group: later jobs use it through the cross-group reuse rule.
+        writer.checkpoint(settings, &notes, &[], None)
     })();
     writer.finish();
     result

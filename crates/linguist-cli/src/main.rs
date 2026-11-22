@@ -539,6 +539,11 @@ enum JobCommand {
         /// notes through the companion; the job adopts its group as its ID.
         #[arg(long, requires = "plan", conflicts_with = "checkpoint")]
         create_checkpoint: bool,
+        /// With `--create-checkpoint` and `backup.reuse_max_age_seconds`: also
+        /// cover this plan's notes (PLAN:REVISION) so a later job reuses the
+        /// checkpoint instead of writing its own.
+        #[arg(long = "cover", requires = "create_checkpoint")]
+        cover: Vec<String>,
     },
     /// List jobs, newest first.
     List {
@@ -2219,6 +2224,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                 item_ids,
                 accept_schema_change,
                 create_checkpoint,
+                cover,
             } = command
             {
                 if mode != JobModeArg::Prepare {
@@ -2237,6 +2243,7 @@ fn run(cli: Cli) -> Result<u8, String> {
                         item_ids,
                         accept_schema_change,
                         create_checkpoint,
+                        cover,
                     );
                 }
                 if plan.is_some() {
@@ -4588,6 +4595,7 @@ fn run_create_apply_job(
     item_ids: Vec<uuid::Uuid>,
     accept_schema_change: bool,
     create_checkpoint: bool,
+    cover: Vec<String>,
 ) -> Result<u8, String> {
     use linguist_application::job_executor;
     let frozen = linguist_application::freeze_settings(settings, env)?;
@@ -4625,7 +4633,7 @@ fn run_create_apply_job(
     }
     let (checkpoint, protected_manifest) = if create_checkpoint {
         let (checkpoint, protected) =
-            native_writes::job_checkpoint(settings, plan, revision, &selected)?;
+            native_writes::job_checkpoint(settings, plan, revision, &selected, &cover)?;
         (Some(checkpoint), Some(protected))
     } else {
         (checkpoint, protected_manifest)

@@ -947,7 +947,9 @@ pub fn build_request(
         doc.target_language.as_str().split('-').next(),
         Some("ja" | "zh" | "ko")
     );
-    let output_schema = constrained_schema(kind, &allowed, examples_requested, cjk)?;
+    let translated = doc.target_language.as_str().split('-').next()
+        != doc.explanation_language.as_str().split('-').next();
+    let output_schema = constrained_schema(kind, &allowed, examples_requested, cjk, translated)?;
     let prompt = request_prompt(kind, allowed.iter().any(|f| f == "domain"));
     Ok(GenerationRequest {
         system_prompt: prompt.into(),
@@ -972,6 +974,7 @@ fn constrained_schema(
     allowed: &[String],
     examples: usize,
     cjk: bool,
+    translated: bool,
 ) -> Result<Value, String> {
     let mut schema =
         serde_json::to_value(schema_for!(Supplement)).map_err(|_| "GENERATION_SCHEMA_INVALID")?;
@@ -1056,7 +1059,12 @@ fn constrained_schema(
     // own placeholder (`x = x`). `x-script` is turned into a `pattern` for the
     // agents that enforce one (`agents::agent_schema`).
     if let Some(example) = schema["$defs"]["GeneratedExample"]["properties"].as_object_mut() {
+        // A monolingual card has no translation: demanding one made a model
+        // pad it with junk (`/final`, `,`), so only a translated card needs it.
         for field in ["sentence", "translation"] {
+            if field == "translation" && !translated {
+                continue;
+            }
             if let Some(property) = example.get_mut(field) {
                 property["minLength"] = json!(1);
             }
@@ -1646,7 +1654,10 @@ fn merge_checked_output(
             .find_map(|article| text.strip_prefix(article).map(str::to_owned))
             .unwrap_or(text)
     };
-    let echo = |a: &str, b: &str| monolingual && bare(a) == bare(b);
+    // Padding without a letter or digit (`/final`, `,`) is no translation either.
+    let echo = |a: &str, b: &str| {
+        monolingual && (bare(a) == bare(b) || !a.chars().any(char::is_alphanumeric))
+    };
     match &mut output {
         Supplement::Vocabulary(s) => {
             for example in &mut s.examples {

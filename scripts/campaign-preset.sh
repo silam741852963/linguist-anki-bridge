@@ -18,10 +18,13 @@
 # Presets:
 #   normal        Codex main, Claude Code fallback, both capped at 65%, 6 workers,
 #                 limits from the careful-mode ramp (the standing policy)
+#   normal-rapid  Codex main, Claude Code fallback, both capped at 65%, 10 workers,
+#                 prepare-ahead 24 / parallel 8
 #   codex-only    Codex only, no fallback (Claude Code never drafts), cap 65%, 6
 #                 workers, ramp; the campaign waits at the Codex cap
 #   codex-rapid   Codex only, no fallback, cap 65%, 10 workers, prepare-ahead 24 /
 #                 parallel 8 (top speed within the Codex cap)
+#   codex-full    As codex-rapid but Codex cap 100% (temporary, until told to revert).
 #   claude-main   Claude Code main, Codex fallback, both 65%, ramp
 #   claude-rapid  Claude Code main, Codex fallback, Claude Code 100%, Codex 65%,
 #                 10 workers, prepare-ahead 24 / parallel 8
@@ -45,8 +48,10 @@ KEY_FILE=${XDG_CONFIG_HOME:-$HOME/.config}/linguist-anki-bridge/ankiconnect-api-
 
 # name|provider|fallback ("none" = []) |codex cap|claude cap|workers|prepare-ahead|prepare-parallel ("-" = ramp)
 PRESETS="normal|codex|claude_code|65|65|6|-|-
+normal-rapid|codex|claude_code|65|65|10|24|8
 codex-only|codex|none|65|65|6|-|-
 codex-rapid|codex|none|65|65|10|24|8
+codex-full|codex|none|100|65|10|24|8
 claude-main|claude_code|codex|65|65|6|-|-
 claude-rapid|claude_code|codex|65|100|10|24|8
 all-out|claude_code|codex|100|100|10|24|8"

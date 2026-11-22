@@ -331,6 +331,14 @@ impl Client {
         let response = loop {
             match self.http.post(self.endpoint.clone()).json(&request).send() {
                 Ok(response) => break response,
+                // Anki answers late while it closes and reopens the collection
+                // (a checkpoint export) or indexes: a read is asked again after
+                // a pause (campaign: ANKI_READ_TIMEOUT on approve and on a
+                // checkpoint export). A write is never resent here.
+                Err(e) if e.is_timeout() && action.read_only() && attempt < 3 => {
+                    attempt += 1;
+                    std::thread::sleep(std::time::Duration::from_secs(5 * attempt as u64));
+                }
                 Err(e) if e.is_timeout() => return Err("ANKI_READ_TIMEOUT".into()),
                 Err(_) if action.read_only() && attempt < 3 => {
                     attempt += 1;

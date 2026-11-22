@@ -1180,7 +1180,9 @@ fn every_definition_in_the_agent_schema_lists_all_its_properties_as_required() {
         let request = build_request(&doc, &settings()).unwrap();
         let schema = linguist_application::agents::agent_schema(&request.output_schema);
         for (name, def) in schema["$defs"].as_object().unwrap() {
-            let Some(properties) = def["properties"].as_object() else { continue };
+            let Some(properties) = def["properties"].as_object() else {
+                continue;
+            };
             let required: Vec<&str> = def["required"]
                 .as_array()
                 .map(|r| r.iter().filter_map(|v| v.as_str()).collect())

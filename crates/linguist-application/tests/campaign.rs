@@ -2633,3 +2633,17 @@ fn one_agent_decision_never_trips_the_share_limit() {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[test]
+fn a_rejection_wrapping_a_late_anki_read_is_a_wait_not_a_failure() {
+    let failed = |error: &str| Output {
+        code: 1,
+        json: serde_json::Value::Null,
+        stderr: format!("{{\"error\":\"{error}\"}}\n"),
+    };
+    assert!(failed("CHECKPOINT_EXPORT_REJECTED: ANKI_READ_TIMEOUT").unavailable());
+    assert!(failed("CAPABILITY_UNAVAILABLE: no collection session").unavailable());
+    // An unknown outcome goes through recovery, never a plain retry.
+    assert!(!failed("CHECKPOINT_EXPORT_UNKNOWN: ANKI_NATIVE_TIMEOUT: still Running").unavailable());
+    assert!(!failed("PLAN_NOT_READY: open issues remain").unavailable());
+}

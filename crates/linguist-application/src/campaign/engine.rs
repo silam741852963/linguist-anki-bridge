@@ -47,6 +47,26 @@ impl Output {
             || ["UNAVAILABLE", "CONNECTION", "TIMEOUT", "ANKI_HTTP_FAILURE"]
                 .iter()
                 .any(|k| self.code_name().contains(k))
+            || self.wraps_transient_read()
+    }
+    /// A rejection that only wraps a read Anki answered late
+    /// (`CHECKPOINT_EXPORT_REJECTED: ANKI_READ_TIMEOUT`): nothing was written,
+    /// the same step is asked again later. `ANKI_NATIVE_TIMEOUT` is not
+    /// listed: that outcome is unknown and goes through recovery.
+    pub fn wraps_transient_read(&self) -> bool {
+        let error = self.error();
+        !self.json_ok()
+            && [
+                "ANKI_READ_TIMEOUT",
+                "ANKI_DEPENDENCY_UNAVAILABLE",
+                "CAPABILITY_UNAVAILABLE",
+            ]
+            .iter()
+            .any(|k| error.contains(k))
+            && !error.contains("UNKNOWN")
+    }
+    fn json_ok(&self) -> bool {
+        !self.json.is_null()
     }
 }
 
@@ -127,6 +147,21 @@ impl Context<'_> {
     }
     fn cli(&self, data: &BatchData, args: Vec<String>) -> Result<Output, String> {
         Ok(self.runner.run(self.source(data)?, &args))
+    }
+    /// As `cli`, but a command that failed only because Anki did not answer
+    /// (busy, or reopening its collection for a checkpoint export) is run
+    /// again after a pause, up to six times: `campaign approve` read Anki in
+    /// `plans bind` and failed with ANKI_READ_TIMEOUT or CAPABILITY_UNAVAILABLE.
+    fn cli_patient(&self, data: &BatchData, args: Vec<String>) -> Result<Output, String> {
+        let mut attempt = 0u64;
+        loop {
+            let out = self.cli(data, args.clone())?;
+            if !out.json.is_null() || !out.unavailable() || attempt >= 6 {
+                return Ok(out);
+            }
+            attempt += 1;
+            std::thread::sleep(std::time::Duration::from_secs(10 * attempt));
+        }
     }
     fn store(&self) -> Result<Store, String> {
         Store::open_existing(self.root)
@@ -987,6 +1022,19 @@ impl Context<'_> {
             args.extend(["--item-id".into(), item.to_string()]);
         }
         args.extend(s(&["--accept-schema-change", "--create-checkpoint"]));
+        // The checkpoint is a full-collection package (~3.5 minutes): it also
+        // covers the batches approved behind this one, whose jobs then reuse it.
+        for sibling in self.store()?.campaign_batches(self.id)? {
+            if sibling.batch == record.batch || sibling.phase != "approved" {
+                continue;
+            }
+            let other = BatchData::from_value(&sibling.data)?;
+            if let (Some(plan), Some(approval), true) =
+                (other.plan, &other.approval, other.apply_jobs.is_empty())
+            {
+                args.extend(["--cover".into(), format!("{plan}:{}", approval.revision)]);
+            }
+        }
         let out = self.cli(&data, args)?;
         if out.unavailable() && out.json.is_null() {
             return Ok(Step::Waiting(out.error()));
@@ -1854,7 +1902,8 @@ impl Context<'_> {
         }
         let head = self.plan_show(&data, true)?;
         let digest = head["digest"].as_str().unwrap_or_default().to_owned();
-        let bound = self.cli(&data, s(&["plans", "bind", &plan_id, "--digest", &digest]))?;
+        let bound =
+            self.cli_patient(&data, s(&["plans", "bind", &plan_id, "--digest", &digest]))?;
         if bound.json.is_null() {
             return Err(bound.error());
         }
@@ -1862,7 +1911,7 @@ impl Context<'_> {
         let revision = head["revision"].as_u64().ok_or("CAMPAIGN_PLAN_INVALID")? as u32;
         let digest = head["digest"].as_str().unwrap_or_default().to_owned();
         let rev = revision.to_string();
-        let validated = self.cli(
+        let validated = self.cli_patient(
             &data,
             s(&["plans", "validate", &plan_id, "--revision", &rev]),
         )?;

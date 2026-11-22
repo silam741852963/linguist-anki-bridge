@@ -486,10 +486,9 @@ fn window_spent(
     environment: &BTreeMap<String, String>,
 ) -> Option<Cooldown> {
     let limit = window_limit(provider, settings)?;
-    let window: Value = serde_json::from_slice(
-        &std::fs::read(window_path(provider, settings, environment)?).ok()?,
-    )
-    .ok()?;
+    let window: Value =
+        serde_json::from_slice(&std::fs::read(window_path(provider, settings, environment)?).ok()?)
+            .ok()?;
     let used = window["used_percent"].as_f64()?;
     let resets = window["resets_at"].as_u64()?;
     (used >= limit && resets > now()).then(|| Cooldown {
@@ -899,6 +898,30 @@ fn claude_code(
     }))
 }
 
+/// Codex features a schema-bound draft never uses; each one adds tool
+/// definitions or instructions to every request.
+const CODEX_UNUSED_FEATURES: [&str; 19] = [
+    "apps",
+    "plugins",
+    "multi_agent",
+    "image_generation",
+    "browser_use",
+    "computer_use",
+    "in_app_browser",
+    "goals",
+    "hooks",
+    "skill_search",
+    "tool_suggest",
+    "view_image",
+    "shell_tool",
+    "unified_exec",
+    "write_stdin_approval",
+    "sleep_tool",
+    "collaboration_modes",
+    "deferred_tool_world_state",
+    "shell_snapshot",
+];
+
 fn codex(
     request: &GenerationRequest,
     settings: &Effective,
@@ -932,6 +955,33 @@ fn codex(
     }
     command.args(["--sandbox", "read-only", "--output-schema"]);
     command.arg(&schema_path).arg("-o").arg(&answer_path);
+    // A draft needs no tools, no agent persona and no project context, yet
+    // `codex exec` sent ~20k input tokens of them with every call (measured
+    // on a bare call: 20.4k; tools off 14.5k; one-line instructions 10.4k;
+    // no environment, permission or AGENTS.md context 7.8k).
+    let instructions_path = workdir.path().join("instructions.md");
+    std::fs::write(
+        &instructions_path,
+        "You write only the JSON answer that the output schema asks for, following the task in the user message.\n",
+    )
+    .map_err(|_| "AGENT_WORKDIR_UNAVAILABLE")?;
+    for feature in CODEX_UNUSED_FEATURES {
+        command.args(["--disable", feature]);
+    }
+    command.arg("-c").arg(format!(
+        "model_instructions_file={}",
+        serde_json::to_string(&instructions_path.display().to_string())
+            .map_err(|e| e.to_string())?
+    ));
+    for setting in [
+        "include_environment_context=false",
+        "include_permissions_instructions=false",
+        "include_apps_instructions=false",
+        "project_doc_max_bytes=0",
+        "web_search=\"disabled\"",
+    ] {
+        command.args(["-c", setting]);
+    }
     if let Some(model) = model {
         command.args(["-m", model]);
     }
@@ -1062,7 +1112,11 @@ mod tests {
         assert!(sentence.get("x-script").is_none());
         let pattern = regex_lite_check(sentence["pattern"].as_str().unwrap());
         assert!(pattern, "pattern names the CJK ranges");
-        assert!(schema["$defs"]["E"]["properties"]["translation"].get("pattern").is_none());
+        assert!(
+            schema["$defs"]["E"]["properties"]["translation"]
+                .get("pattern")
+                .is_none()
+        );
     }
 
     fn regex_lite_check(pattern: &str) -> bool {
@@ -1350,18 +1404,24 @@ mod tests {
         );
         // No limit set: nothing is watched.
         assert!(cooling(Provider::ClaudeCode, &settings, &env).is_none());
-        settings
-            .values
-            .insert("llm.agents.claude_code.max_window_percent".into(), json!(65));
+        settings.values.insert(
+            "llm.agents.claude_code.max_window_percent".into(),
+            json!(65),
+        );
         record_claude_window(stream.as_bytes(), &settings, &env);
         let spent = cooling(Provider::ClaudeCode, &settings, &env).unwrap();
         assert_eq!(spent.until, resets);
-        assert!(spent.said.contains("llm.agents.claude_code.max_window_percent"));
+        assert!(
+            spent
+                .said
+                .contains("llm.agents.claude_code.max_window_percent")
+        );
         // Codex has its own window: untouched.
         assert!(cooling(Provider::Codex, &settings, &env).is_none());
-        settings
-            .values
-            .insert("llm.agents.claude_code.max_window_percent".into(), json!(80));
+        settings.values.insert(
+            "llm.agents.claude_code.max_window_percent".into(),
+            json!(80),
+        );
         assert!(cooling(Provider::ClaudeCode, &settings, &env).is_none());
         let _ = std::fs::remove_dir_all(&directory);
     }
