@@ -330,7 +330,7 @@ drive() {
           [ -f "$SESSION/stop" ] && return
         done
         say "requeue + resume"
-        cli campaign requeue "$C" --reason AGENT: --reason APPLY_FAILED: --reason PREPARE_FAILED: >> "$LOG" 2>&1
+        cli campaign requeue "$C" --reason AGENT: --reason APPLY_FAILED: --reason PREPARE_FAILED: --except "hand look" >> "$LOG" 2>&1
         cli campaign resume "$C" >> "$LOG" 2>&1
         continue
       fi
@@ -471,7 +471,7 @@ start() {
   mapfile -t s < <(status_of "$C")
   if [ "${s[0]:-}" = paused ] && grep -q "$WRAPPED" <<<"${s[1]:-}"; then
     say "resuming the wrapped-up campaign"
-    cli campaign requeue "$C" --reason AGENT: --reason APPLY_FAILED: --reason PREPARE_FAILED: >> "$LOG" 2>&1
+    cli campaign requeue "$C" --reason AGENT: --reason APPLY_FAILED: --reason PREPARE_FAILED: --except "hand look" >> "$LOG" 2>&1
     cli campaign resume "$C" >> "$LOG" 2>&1
   elif [ "${s[0]:-}" = paused ]; then
     # Any other pause (a step failure, a guardrail): the session's operator

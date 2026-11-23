@@ -401,13 +401,17 @@ pub fn enrich_document(
                     )
                 })
             });
-            // English: Cambridge's search lands on the entry holding a phrase
-            // (`palm something off` on `palm off`), so only no entry at all
-            // is missing (`have the time of your life`).
+            // English: Cambridge's search lands on the entry of another
+            // spelling or inflection (`wooly` on `woolly`, `witnesses`,
+            // `stake something out`): no entry lists the word itself, so no
+            // sense is offered and the meaning stayed empty (WP-24: ten notes
+            // deferred). Such a word, like one with no entry at all (`have
+            // the time of your life`), gets an entry written in the
+            // dictionary's style, labelled generated.
             let missing = if japanese {
                 !listed
             } else {
-                english && vocab.dictionary.is_empty()
+                english && (vocab.dictionary.is_empty() || !listed)
             };
             if missing
                 && settings.values.get("dictionary.generate_missing")

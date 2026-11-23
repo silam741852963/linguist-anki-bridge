@@ -121,6 +121,17 @@ fn dictionary_marker(result: &OcrResult) -> Option<&'static str> {
     {
         return Some("text-strip");
     }
+    // A page of running text: three lines or more and 80 letters. A picture
+    // that helps recall a word carries a caption of a few words at most
+    // (WP-24: every Mixed or Uncertain image the agent looked at was a
+    // dictionary page, archived each time).
+    let letters: usize = lines
+        .iter()
+        .map(|l| l.chars().filter(|c| c.is_alphabetic()).count())
+        .sum();
+    if lines.len() >= 3 && letters >= 80 {
+        return Some("long-text");
+    }
     for line in lines {
         let lower = line.to_lowercase();
         if let Some((_, name)) = DICTIONARY_MARKERS.iter().find(|(m, _)| lower.contains(m)) {
@@ -854,6 +865,30 @@ mod tests {
         }
         (found.source_width, found.source_height) = (width, height);
         found
+    }
+
+    #[test]
+    fn a_page_of_text_is_a_dictionary_screenshot_a_caption_is_not() {
+        let vocab = document(false);
+        let page = lines(
+            &[
+                "a person who walks a long way for pleasure",
+                "She was a keen rambler and joined a walking club",
+                "Ramblers have the right to cross private land",
+            ],
+            500,
+            400,
+        );
+        let page = classify(&page, &vocab, 0.5, 0.12);
+        assert_eq!(page.marker, Some("long-text"));
+        assert_eq!(page.class, ImageClass::Dictionary);
+        let caption = classify(
+            &lines(&["Rambler", "Hiking club"], 500, 400),
+            &vocab,
+            0.5,
+            0.12,
+        );
+        assert_ne!(caption.marker, Some("long-text"));
     }
 
     #[test]

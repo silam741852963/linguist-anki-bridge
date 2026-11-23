@@ -209,6 +209,12 @@ pub fn generate_pending_chained(
             .unwrap_or(1)
             .max(1) as usize,
     };
+    // Codex answers several notes in one call; the other providers draft one
+    // note per call, so a window of them stays one thread per note.
+    let per_call = match crate::agents::chain(settings)?.first() {
+        Some(crate::agents::Provider::Codex) => crate::agents::NOTES_PER_CALL,
+        _ => 1,
+    };
     let mut eligible = Vec::new();
     for id in base.documents.iter().map(|d| d.id) {
         let parent = current
@@ -264,18 +270,28 @@ pub fn generate_pending_chained(
             } else {
                 std::thread::scope(|scope| {
                     let handles = parents
-                        .iter()
-                        .map(|parent| {
-                            scope.spawn(move || produce(parent, settings, environment, client))
+                        .chunks(per_call)
+                        .map(|group| {
+                            let group: Vec<&LearningDocument> = group.iter().collect();
+                            let size = group.len();
+                            (
+                                size,
+                                scope.spawn(move || {
+                                    produce_group(&group, settings, environment, client)
+                                }),
+                            )
                         })
                         .collect::<Vec<_>>();
                     handles
                         .into_iter()
-                        .map(|handle| {
-                            Some(handle.join().unwrap_or_else(|_| {
-                                Err("GENERATION_WORKER_PANICKED".to_owned())
-                            }))
+                        .flat_map(|(size, handle)| {
+                            handle.join().unwrap_or_else(|_| {
+                                (0..size)
+                                    .map(|_| Err("GENERATION_WORKER_PANICKED".to_owned()))
+                                    .collect()
+                            })
                         })
+                        .map(Some)
                         .collect()
                 })
             };
@@ -359,6 +375,56 @@ fn produce(
     environment: &BTreeMap<String, String>,
     client: &crate::ollama::transport::Client,
 ) -> Result<Produced, String> {
+    produce_with(parent, settings, environment, client, None)
+}
+
+/// Several items drafted together: the head provider answers them in as few
+/// calls as it can (Codex: `NOTES_PER_CALL` notes in one), then each item is
+/// checked and merged as if it had been drafted alone. An item the shared
+/// call did not answer is drafted on its own, so a bad answer for one note
+/// costs one more call, not the batch.
+fn produce_group(
+    parents: &[&LearningDocument],
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    client: &crate::ollama::transport::Client,
+) -> Vec<Result<Produced, String>> {
+    let alone = |parent: &LearningDocument, prefetched| {
+        produce_with(parent, settings, environment, client, prefetched)
+    };
+    let head = crate::agents::chain(settings)
+        .ok()
+        .and_then(|chain| chain.first().copied());
+    let requests: Option<Vec<GenerationRequest>> = parents
+        .iter()
+        .map(|parent| build_request(parent, settings).ok())
+        .collect();
+    let (Some(head), Some(requests)) = (head, requests) else {
+        return parents.iter().map(|p| alone(p, None)).collect();
+    };
+    let refs: Vec<&GenerationRequest> = requests.iter().collect();
+    match crate::agents::generate_many(head, &refs, settings, environment) {
+        Ok(Some(answers)) => parents
+            .iter()
+            .zip(answers)
+            .map(|(parent, answer)| alone(parent, answer))
+            .collect(),
+        // A usage limit is the same for every note: one call, one answer.
+        Err(error) if crate::agents::usage_limited(&error) => {
+            parents.iter().map(|_| Err(error.clone())).collect()
+        }
+        _ => parents.iter().map(|p| alone(p, None)).collect(),
+    }
+}
+
+fn produce_with(
+    parent: &LearningDocument,
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+    client: &crate::ollama::transport::Client,
+    prefetched: Option<crate::agents::External>,
+) -> Result<Produced, String> {
+    let mut prefetched = prefetched;
     let request = build_request(parent, settings)?;
     let mut attempts = Vec::new();
     let mut errors: Vec<String> = Vec::new();
@@ -366,50 +432,52 @@ fn produce(
     for provider in crate::agents::chain(settings)? {
         let result = match provider {
             crate::agents::Provider::Ollama => client.generate_draft(parent).map(Some),
-            other => crate::agents::generate(other, &request, settings, environment).and_then(
-                |external| {
-                    external
-                        .map(|e| {
-                            // A thin draft is kept too: 痙攣 (448) failed three
-                            // drafts with GENERATION_FEW_EXAMPLES and nothing
-                            // showed what the model had sent.
-                            merge_external_response(parent, settings, &request, &e)
-                                .and_then(|draft| {
-                                    if thin(parent, &draft.document, &request) {
-                                        return Err("GENERATION_FEW_EXAMPLES".to_owned());
-                                    }
-                                    // A full draft kept without one example
-                                    // is kept for review as well (465: 臭う
-                                    // came back three times with three empty
-                                    // sentences, and nothing logged them).
-                                    if added_examples(parent, &draft.document) == Some(0)
-                                        && request.allowed_fields.iter().any(|f| f == "examples")
-                                    {
-                                        crate::agents::keep_rejected(
-                                            other,
-                                            settings,
-                                            environment,
-                                            &parent.id.to_string(),
-                                            "GENERATION_EXAMPLES_DROPPED",
-                                            e.content.as_bytes(),
-                                        );
-                                    }
-                                    Ok(draft)
-                                })
-                                .inspect_err(|error| {
+            other => match prefetched.take().filter(|e| e.provider == other) {
+                Some(answer) => Ok(Some(answer)),
+                None => crate::agents::generate(other, &request, settings, environment),
+            }
+            .and_then(|external| {
+                external
+                    .map(|e| {
+                        // A thin draft is kept too: 痙攣 (448) failed three
+                        // drafts with GENERATION_FEW_EXAMPLES and nothing
+                        // showed what the model had sent.
+                        merge_external_response(parent, settings, &request, &e)
+                            .and_then(|draft| {
+                                if thin(parent, &draft.document, &request) {
+                                    return Err("GENERATION_FEW_EXAMPLES".to_owned());
+                                }
+                                // A full draft kept without one example
+                                // is kept for review as well (465: 臭う
+                                // came back three times with three empty
+                                // sentences, and nothing logged them).
+                                if added_examples(parent, &draft.document) == Some(0)
+                                    && request.allowed_fields.iter().any(|f| f == "examples")
+                                {
                                     crate::agents::keep_rejected(
                                         other,
                                         settings,
                                         environment,
                                         &parent.id.to_string(),
-                                        error,
+                                        "GENERATION_EXAMPLES_DROPPED",
                                         e.content.as_bytes(),
-                                    )
-                                })
-                        })
-                        .transpose()
-                },
-            ),
+                                    );
+                                }
+                                Ok(draft)
+                            })
+                            .inspect_err(|error| {
+                                crate::agents::keep_rejected(
+                                    other,
+                                    settings,
+                                    environment,
+                                    &parent.id.to_string(),
+                                    error,
+                                    e.content.as_bytes(),
+                                )
+                            })
+                    })
+                    .transpose()
+            }),
         };
         // A vocabulary draft asked for examples adds at least two (or all
         // it was asked for): one sentence is too thin a card, so the next

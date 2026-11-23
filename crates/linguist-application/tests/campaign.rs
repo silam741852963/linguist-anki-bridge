@@ -1242,47 +1242,32 @@ fn a_note_whose_every_draft_was_rejected_is_left_to_the_agent() {
     for _ in 0..3 {
         ctx.tick(600).unwrap();
     }
-    assert_eq!(phases(&root, id), ["needs_agent"]);
-    let status =
-        campaign::engine::status(&linguist_store::Store::read_only(&root).unwrap(), id, 0).unwrap();
-    let needs = &status["agent"][0]["needs"];
+    // A note that ran out of drafts is kept as it is, without an agent turn.
+    assert_eq!(phases(&root, id), ["ready"]);
+    let record = linguist_store::Store::read_only(&root)
+        .unwrap()
+        .campaign_batch(id, 1)
+        .unwrap();
+    let data = BatchData::from_value(&record.data).unwrap();
     assert!(
-        needs["101"][0]
-            .as_str()
-            .unwrap()
-            .starts_with("GENERATION_ATTEMPTS_EXHAUSTED"),
-        "{needs}"
+        data.settled.iter().any(|n| n == "101"),
+        "{:?}",
+        data.settled
     );
-    assert!(needs.get("102").is_none(), "{needs}");
-    // Waiting for the agent, the batch is not reviewed again...
-    let generates = |cli: &FakeCli| {
-        cli.world
-            .lock()
-            .unwrap()
-            .calls
-            .iter()
-            .filter(|c| c.starts_with("plans generate"))
-            .count()
-    };
-    let before = generates(&cli);
-    ctx.tick(600).unwrap();
-    assert_eq!(generates(&cli), before);
-    // ...until the review rules change (394, 398: a policy fix).
+    assert!(data.needs.is_empty(), "{:?}", data.needs);
+    // Drafting runs again (the review rules changed) and the note runs out
+    // again: it is deferred for a hand look.
     {
         let mut store = linguist_store::Store::open_existing(&root).unwrap();
         let record = store.campaign_batch(id, 1).unwrap();
         let mut data = BatchData::from_value(&record.data).unwrap();
-        assert_eq!(
-            data.checked_rules.as_deref(),
-            Some(campaign::engine::rules_digest())
-        );
         data.checked_rules = Some("older rules".into());
         store
             .update_campaign_batch(
                 id,
                 1,
                 record.version,
-                &record.phase,
+                "reviewing",
                 &data.to_value(),
                 "batch",
                 &json!("test"),
@@ -1290,15 +1275,26 @@ fn a_note_whose_every_draft_was_rejected_is_left_to_the_agent() {
             )
             .unwrap();
     }
-    ctx.tick(600).unwrap();
-    assert!(generates(&cli) > before, "reviewed again");
-    assert_eq!(phases(&root, id), ["needs_agent"]);
-    // Settled, the note is kept as it is.
-    ctx.item(1, "101", ItemAction::Settled).unwrap();
     for _ in 0..3 {
         ctx.tick(600).unwrap();
     }
-    assert_eq!(phases(&root, id), ["ready"]);
+    let data = BatchData::from_value(
+        &linguist_store::Store::read_only(&root)
+            .unwrap()
+            .campaign_batch(id, 1)
+            .unwrap()
+            .data,
+    )
+    .unwrap();
+    assert!(
+        data.deferred
+            .get("101")
+            .is_some_and(|r| r.contains("hand look")),
+        "phase {:?} settled {:?} deferred {:?}",
+        phases(&root, id),
+        data.settled,
+        data.deferred
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -2140,6 +2136,61 @@ fn deferred_notes_of_finished_batches_are_requeued_once() {
     // The requeued note is prepared and applied again.
     drive(&root, id, &cli, None);
     assert_eq!(cli.world.lock().unwrap().applied[&note], 2);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_note_held_back_for_a_hand_look_is_not_requeued() {
+    let root = std::env::temp_dir().join(format!("lab-campaign-requeue-except-{}", Uuid::new_v4()));
+    let id = create(&root, spec(false), world_notes());
+    let cli = FakeCli {
+        world: Mutex::default(),
+        kill_after: AtomicU64::new(0),
+        clock: AtomicU64::new(1000),
+    };
+    drive(&root, id, &cli, None);
+    let mut store = linguist_store::Store::open_existing(&root).unwrap();
+    let done = store.campaign_batch(id, 1).unwrap();
+    let mut data = BatchData::from_value(&done.data).unwrap();
+    let held = data.notes[0].clone();
+    let again = data.notes[1].clone();
+    data.deferred.insert(
+        held.clone(),
+        "AGENT: empty meaning, needs a hand look".into(),
+    );
+    data.deferred.insert(
+        again.clone(),
+        "AGENT: spot-check: invented collocation".into(),
+    );
+    store
+        .update_campaign_batch(
+            id,
+            1,
+            done.version,
+            "done",
+            &data.to_value(),
+            "batch",
+            &json!("test"),
+            5,
+        )
+        .unwrap();
+    let out = campaign::engine::requeue_except(
+        &mut store,
+        id,
+        &["AGENT:".to_owned()],
+        &["hand look".to_owned()],
+        6,
+    )
+    .unwrap();
+    assert_eq!(out["requeued"].as_array().unwrap().len(), 1, "{out}");
+    let new = store
+        .campaign_batch(id, out["requeued"][0]["batch"].as_u64().unwrap() as u32)
+        .unwrap();
+    assert_eq!(BatchData::from_value(&new.data).unwrap().notes, vec![again]);
+    let old = BatchData::from_value(&store.campaign_batch(id, 1).unwrap().data).unwrap();
+    assert!(old.deferred[&held].contains("hand look"));
+    assert!(!old.deferred[&held].starts_with("REQUEUED"));
+    drop(store);
     std::fs::remove_dir_all(root).unwrap();
 }
 

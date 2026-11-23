@@ -1193,3 +1193,110 @@ fn every_definition_in_the_agent_schema_lists_all_its_properties_as_required() {
         }
     }
 }
+
+#[test]
+fn several_notes_are_drafted_in_one_codex_call_and_split_by_task() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("lab-codex-many-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let seen = dir.join("seen-schema.json");
+    let script = format!(
+        "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo 'codex 9.9'; exit 0; }}\n\
+         while [ $# -gt 0 ]; do case \"$1\" in --output-schema) s=$2;; -o) o=$2;; esac; shift; done\n\
+         cat > /dev/null\ncp \"$s\" '{}'\n\
+         printf '%s' '{{\"d0\":{{\"kind\":\"vocabulary\",\"body\":{{\"n\":0}}}},\"d1\":{{\"kind\":\"vocabulary\",\"body\":{{\"n\":1}}}},\"d2\":\"not an object\"}}' > \"$o\"\n",
+        seen.display()
+    );
+    std::fs::write(dir.join("codex"), script).unwrap();
+    std::fs::set_permissions(dir.join("codex"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let environment = std::collections::BTreeMap::from([
+        ("HOME".to_owned(), dir.display().to_string()),
+        (
+            "PATH".to_owned(),
+            format!("{}:/usr/bin:/bin", dir.display()),
+        ),
+    ]);
+    let config = settings();
+    let request = build_request(&document(), &config).unwrap();
+    let refs = [&request, &request, &request];
+    let answers = linguist_application::agents::generate_many(
+        linguist_application::agents::Provider::Codex,
+        &refs,
+        &config,
+        &environment,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(answers.len(), 3);
+    let first = answers[0].as_ref().unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&first.content).unwrap(),
+        json!({"kind":"vocabulary","body":{"n":0}})
+    );
+    assert!(answers[1].is_some());
+    // A task whose answer is not an object is left to be drafted alone.
+    assert!(answers[2].is_none());
+    // One schema holds a property per task, each with its own definitions.
+    let schema: serde_json::Value = serde_json::from_slice(&std::fs::read(&seen).unwrap()).unwrap();
+    assert_eq!(schema["required"], json!(["d0", "d1", "d2"]));
+    let text = schema.to_string();
+    assert!(
+        text.contains("#/$defs/t0_") && text.contains("#/$defs/t2_"),
+        "{text}"
+    );
+    assert!(!text.contains("\"#/$defs/VocabularySupplement\""));
+    let defs = schema["$defs"].as_object().unwrap();
+    assert!(defs.keys().any(|k| k.starts_with("t1_")));
+    // One task or a provider that does not batch: no shared call.
+    assert!(
+        linguist_application::agents::generate_many(
+            linguist_application::agents::Provider::Codex,
+            &refs[..1],
+            &config,
+            &environment
+        )
+        .unwrap()
+        .is_none()
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_hung_codex_call_is_asked_once_more() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("lab-codex-hang-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ran = dir.join("ran");
+    // The first call hangs past the deadline; the second answers.
+    let script = format!(
+        "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo 'codex 9.9'; exit 0; }}\n\
+         while [ $# -gt 0 ]; do case \"$1\" in -o) o=$2;; esac; shift; done\n\
+         cat > /dev/null\nif [ ! -f '{r}' ]; then touch '{r}'; sleep 30; fi\n\
+         printf '%s' '{{\"kind\":\"vocabulary\",\"body\":{{}}}}' > \"$o\"\n",
+        r = ran.display()
+    );
+    std::fs::write(dir.join("codex"), script).unwrap();
+    std::fs::set_permissions(dir.join("codex"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let environment = std::collections::BTreeMap::from([
+        ("HOME".to_owned(), dir.display().to_string()),
+        (
+            "PATH".to_owned(),
+            format!("{}:/usr/bin:/bin", dir.display()),
+        ),
+    ]);
+    let mut config = settings();
+    config
+        .values
+        .insert("llm.agents.timeout_seconds".into(), json!(2));
+    let request = build_request(&document(), &config).unwrap();
+    let answer = linguist_application::agents::generate(
+        linguist_application::agents::Provider::Codex,
+        &request,
+        &config,
+        &environment,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(answer.content.contains("vocabulary"));
+    std::fs::remove_dir_all(dir).unwrap();
+}

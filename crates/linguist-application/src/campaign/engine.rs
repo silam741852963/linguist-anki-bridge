@@ -935,10 +935,23 @@ impl Context<'_> {
             }
         }
         for note in spent {
-            if !data.settled.contains(&note) && !data.deferred.contains_key(&note) {
-                data.needs.entry(note).or_default().push(
-                    "GENERATION_ATTEMPTS_EXHAUSTED: the review rejected every draft of a generated field (examples, usage); defer it, mark it settled to keep it as it is, or `campaign reopen --fresh` the batch".into(),
+            if data.deferred.contains_key(&note) {
+                continue;
+            }
+            // The agent settled every such note in WP-24 (about ten times, and
+            // each passed): the first time a note runs out of drafts it is
+            // kept as it is, without an agent turn. Drafting ran again and the
+            // note ran out again: it is left unchanged in Anki for a hand look.
+            let marker = format!("autosettle:{note}");
+            if data.settled.contains(&marker) {
+                data.deferred.insert(
+                    note.clone(),
+                    "AGENT: every draft of a generated field was rejected twice (hand look)".into(),
                 );
+                data.needs.remove(&note);
+            } else if !data.settled.contains(&note) {
+                data.settled.push(marker);
+                data.settled.push(note);
             }
         }
         for note in exhausted {
@@ -2208,7 +2221,21 @@ pub enum ItemAction {
 /// generation settings. The finished batch keeps them as deferred with the
 /// new batch named, so a note is requeued at most once per pass.
 pub fn requeue(store: &mut Store, id: Uuid, reasons: &[String], now: u64) -> Result<Value, String> {
-    requeue_with(store, id, reasons, &[], "", now)
+    requeue_with(store, id, reasons, &[], &[], "", now)
+}
+
+/// As `requeue`, but a deferral whose reason contains any of `except` stays
+/// deferred: a note an agent left out on purpose (empty meaning, a wrong
+/// fact: "needs a hand look") came back with every session start, was drafted
+/// again and failed the same way.
+pub fn requeue_except(
+    store: &mut Store,
+    id: Uuid,
+    reasons: &[String],
+    except: &[String],
+    now: u64,
+) -> Result<Value, String> {
+    requeue_with(store, id, reasons, except, &[], "", now)
 }
 
 /// Send applied notes of finished batches back round in new batches, to be
@@ -2224,13 +2251,14 @@ pub fn redo(
     if why.trim().is_empty() {
         return Err("CAMPAIGN_REASON_EMPTY".into());
     }
-    requeue_with(store, id, &[], notes, why, now)
+    requeue_with(store, id, &[], &[], notes, why, now)
 }
 
 fn requeue_with(
     store: &mut Store,
     id: Uuid,
     reasons: &[String],
+    except: &[String],
     redo: &[String],
     why: &str,
     now: u64,
@@ -2243,13 +2271,14 @@ fn requeue_with(
     // and requeue waited them out in vain (2026-11-02: two requeues failed
     // LEASE_HELD for ten minutes). Each move is one versioned transaction;
     // a batch number taken meanwhile is corrected in the old batch.
-    requeue_locked(store, id, reasons, redo, why, now)
+    requeue_locked(store, id, reasons, except, redo, why, now)
 }
 
 fn requeue_locked(
     store: &mut Store,
     id: Uuid,
     reasons: &[String],
+    except: &[String],
     redo: &[String],
     why: &str,
     now: u64,
@@ -2269,7 +2298,10 @@ fn requeue_locked(
         let mut notes: Vec<String> = data
             .deferred
             .iter()
-            .filter(|(_, why)| reasons.iter().any(|r| why.starts_with(r.as_str())))
+            .filter(|(_, why)| {
+                reasons.iter().any(|r| why.starts_with(r.as_str()))
+                    && !except.iter().any(|e| why.contains(e.as_str()))
+            })
             .map(|(note, _)| note.clone())
             .collect();
         // An applied note: in a done batch and never left out of it.

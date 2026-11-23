@@ -164,6 +164,10 @@ pub(crate) enum CampaignCommand {
         /// Deferral reason prefixes to requeue (repeatable).
         #[arg(long = "reason", default_values_t = ["AGENT:".to_owned(), "APPLY_FAILED:".to_owned()])]
         reasons: Vec<String>,
+        /// Leave deferrals alone whose reason contains this text (repeatable),
+        /// for example `hand look` for notes an agent held back on purpose.
+        #[arg(long = "except")]
+        except: Vec<String>,
         /// An applied note to prepare and apply again (repeatable), instead
         /// of deferred ones; needs --why.
         #[arg(long = "note", requires = "why")]
@@ -972,6 +976,7 @@ pub(crate) fn handle(
         CampaignCommand::Requeue {
             campaign,
             reasons,
+            except,
             notes,
             why,
         } => {
@@ -981,7 +986,13 @@ pub(crate) fn handle(
             }
             let mut store = linguist_store::Store::open_existing(&root)?;
             if notes.is_empty() {
-                emit(&engine::requeue(&mut store, campaign, &reasons, now())?)?;
+                emit(&engine::requeue_except(
+                    &mut store,
+                    campaign,
+                    &reasons,
+                    &except,
+                    now(),
+                )?)?;
             } else {
                 let why = why.unwrap_or_default();
                 emit(&engine::redo(&mut store, campaign, &notes, &why, now())?)?;

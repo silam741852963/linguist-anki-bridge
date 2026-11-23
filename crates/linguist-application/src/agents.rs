@@ -137,18 +137,134 @@ pub fn generate(
         return Err(cooldown.error(provider));
     }
     count_call(provider, settings, environment);
-    let result = match provider {
+    let call = || match provider {
         Provider::Ollama => Err("GENERATION_PROVIDER_INVALID".into()),
         Provider::ClaudeCode => claude_code(request, settings, environment, timeout, limit),
         Provider::Codex => codex(request, settings, environment, timeout, limit),
         Provider::OpenAiCompatible => api(request, settings, environment, timeout, limit),
     };
+    let mut result = call();
+    // A call that hung is asked once more: the median draft takes 12 s, so a
+    // call at the deadline is a stuck process, not a slow answer (WP-24: 71
+    // calls past 170 s). Only the first hang is retried.
+    if matches!(&result, Err(e) if e == "AGENT_TIMEOUT") {
+        count_call(provider, settings, environment);
+        result = call();
+    }
     if let Err(error) = &result
         && usage_limited(error)
     {
         cool_down(provider, error, settings, environment);
     }
     result
+}
+
+/// Notes drafted in one Codex call. Every `codex exec` carries ~7.8k tokens
+/// of its own (tools, persona), and the prompt and the schema repeat on
+/// every note: four notes in one call cost about half the tokens each.
+pub const NOTES_PER_CALL: usize = 4;
+
+/// Several independent requests with one system prompt answered by one call:
+/// the task of each is a key (`d0`, `d1`, ...) of the input and of the
+/// answer, and each key has its own output schema. `Ok(None)`: the provider
+/// does not batch (only Codex does) or is not installed. The answers come
+/// back in the order of the requests; a task the answer lacks is `None`, to
+/// be drafted on its own.
+pub fn generate_many(
+    provider: Provider,
+    requests: &[&GenerationRequest],
+    settings: &Effective,
+    environment: &BTreeMap<String, String>,
+) -> Result<Option<Vec<Option<External>>>, String> {
+    let Some(first) = requests.first() else {
+        return Ok(Some(Vec::new()));
+    };
+    if provider != Provider::Codex
+        || requests.len() < 2
+        || requests
+            .iter()
+            .any(|r| r.system_prompt != first.system_prompt)
+    {
+        return Ok(None);
+    }
+    let mut tasks = serde_json::Map::new();
+    let mut properties = serde_json::Map::new();
+    let mut definitions = serde_json::Map::new();
+    for (index, request) in requests.iter().enumerate() {
+        let key = format!("d{index}");
+        let input: Value = serde_json::from_str(&request.user_json).map_err(|e| e.to_string())?;
+        tasks.insert(key.clone(), input);
+        let mut schema = agent_schema(&request.output_schema);
+        let defs = schema
+            .as_object_mut()
+            .and_then(|object| object.remove("$defs"));
+        let prefix = format!("t{index}_");
+        rename_refs(&mut schema, &prefix);
+        for (name, mut definition) in defs
+            .and_then(|d| d.as_object().cloned())
+            .into_iter()
+            .flatten()
+        {
+            rename_refs(&mut definition, &prefix);
+            definitions.insert(format!("{prefix}{name}"), definition);
+        }
+        properties.insert(key, schema);
+    }
+    let keys: Vec<Value> = properties.keys().map(|k| json!(k)).collect();
+    let combined = GenerationRequest {
+        system_prompt: format!(
+            "{}\n\nThe input holds {} independent tasks, d0 to d{}. Do each one exactly as described above, and answer with one JSON object that holds each task's answer under its key.",
+            first.system_prompt,
+            requests.len(),
+            requests.len() - 1
+        ),
+        user_json: Value::Object(tasks).to_string(),
+        output_schema: json!({
+            "type": "object",
+            "properties": properties,
+            "required": keys,
+            "additionalProperties": false,
+            "$defs": definitions,
+        }),
+        prompt_digest: first.prompt_digest.clone(),
+        schema_digest: first.schema_digest.clone(),
+        input_digest: first.input_digest.clone(),
+        allowed_fields: first.allowed_fields.clone(),
+        examples_requested: first.examples_requested,
+    };
+    let Some(whole) = generate(provider, &combined, settings, environment)? else {
+        return Ok(None);
+    };
+    let answer: Value = serde_json::from_str(&whole.content).map_err(|e| e.to_string())?;
+    Ok(Some(
+        (0..requests.len())
+            .map(|index| {
+                let part = answer.get(format!("d{index}"))?;
+                part.is_object().then(|| External {
+                    provider: whole.provider,
+                    identity: whole.identity.clone(),
+                    content: part.to_string(),
+                    raw: whole.raw.clone(),
+                })
+            })
+            .collect(),
+    ))
+}
+
+/// Point the `#/$defs/NAME` references of one task at its prefixed copy.
+fn rename_refs(value: &mut Value, prefix: &str) {
+    match value {
+        Value::Object(map) => {
+            if let Some(Value::String(reference)) = map.get_mut("$ref")
+                && let Some(name) = reference.strip_prefix("#/$defs/")
+            {
+                *reference = format!("#/$defs/{prefix}{name}");
+            }
+            map.values_mut().for_each(|v| rename_refs(v, prefix));
+        }
+        Value::Array(items) => items.iter_mut().for_each(|v| rename_refs(v, prefix)),
+        _ => {}
+    }
 }
 
 /// A provider that reported its usage limit, skipped until `until`.

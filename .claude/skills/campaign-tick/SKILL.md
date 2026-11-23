@@ -63,7 +63,7 @@ path or `cd` (only that exact command prefix is allowed).
      separate words or readings (`祖父 お祖父さん`, `治る; 直る`): do not
      split inside a campaign (split units get no dictionary meaning or
      enrichment there); defer the note with
-     `AGENT: multi-word note, split outside the campaign`. Spellings of
+     `AGENT: multi-word note, split outside the campaign (hand look)`. Spellings of
      one word (`お勧め お奨め おすすめ オススメ`) are merged by the dictionary
      stage (`VOCAB_SPELLINGS_MERGED`: the first is the word, the others its
      spellings): check the merge, then settle the note. A collocation
@@ -75,7 +75,9 @@ path or `cd` (only that exact command prefix is allowed).
      `plans edit` before verifying; when the page holds several patterns,
      split with `plans split-grammar`.
    - `PLAN_NOT_READY` or anything else you cannot settle: defer the note
-     with the issue code as the reason.
+     with the issue code as the reason. A note you hold back on purpose
+     (empty meaning, a wrong fact) gets a reason ending `(hand look)`, so
+     the session's requeue leaves it alone.
 3. For each entry with phase `ready`: spot-check the notes in
    `spot_check_notes` — open each document and read its meaning, examples,
    collocations and nuance. A wrong or invented fact: reject that fact
