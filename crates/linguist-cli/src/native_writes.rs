@@ -1222,10 +1222,23 @@ pub(crate) fn job_checkpoint(
         }
         let mut notes: BTreeSet<i64> = own.into_iter().collect();
         for spec in cover {
-            let (other, other_revision) = spec
-                .split_once(':')
-                .and_then(|(p, r)| Some((p.parse::<Uuid>().ok()?, r.parse::<u32>().ok()?)))
-                .ok_or("JOB_COVER_INVALID: --cover takes PLAN:REVISION")?;
+            // `PLAN:REVISION`, or just `PLAN` for its latest revision.
+            let (plan_text, revision_text) = match spec.split_once(':') {
+                Some((p, r)) => (p, Some(r)),
+                None => (spec.as_str(), None),
+            };
+            let other = plan_text
+                .parse::<Uuid>()
+                .map_err(|_| "JOB_COVER_INVALID: --cover takes PLAN or PLAN:REVISION")?;
+            let other_revision = match revision_text {
+                Some(r) => r
+                    .parse::<u32>()
+                    .map_err(|_| "JOB_COVER_INVALID: --cover takes PLAN or PLAN:REVISION")?,
+                None => match writer.store.latest_revision(other) {
+                    Ok(r) => r,
+                    Err(_) => continue,
+                },
+            };
             let documents: Vec<Uuid> = match writer.store.revision(other, other_revision) {
                 Ok(revision) => revision.documents.iter().map(|d| d.id).collect(),
                 // A plan that changed or vanished is only left out of the cover.

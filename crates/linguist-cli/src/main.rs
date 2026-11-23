@@ -540,7 +540,7 @@ enum JobCommand {
         #[arg(long, requires = "plan", conflicts_with = "checkpoint")]
         create_checkpoint: bool,
         /// With `--create-checkpoint` and `backup.reuse_max_age_seconds`: also
-        /// cover this plan's notes (PLAN:REVISION) so a later job reuses the
+        /// cover this plan's notes (PLAN or PLAN:REVISION) so a later job reuses the
         /// checkpoint instead of writing its own.
         #[arg(long = "cover", requires = "create_checkpoint")]
         cover: Vec<String>,

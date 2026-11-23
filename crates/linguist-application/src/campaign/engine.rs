@@ -1023,16 +1023,22 @@ impl Context<'_> {
         }
         args.extend(s(&["--accept-schema-change", "--create-checkpoint"]));
         // The checkpoint is a full-collection package (~3.5 minutes): it also
-        // covers the batches approved behind this one, whose jobs then reuse it.
+        // covers the batches still behind this one (approved, ready or in
+        // review: their notes exist in Anki already), so the jobs approved
+        // later reuse it instead of each writing their own.
+        let mut covered = 0;
         for sibling in self.store()?.campaign_batches(self.id)? {
-            if sibling.batch == record.batch || sibling.phase != "approved" {
+            if covered >= 40
+                || sibling.batch == record.batch
+                || !["approved", "ready", "needs_agent", "reviewing"]
+                    .contains(&sibling.phase.as_str())
+            {
                 continue;
             }
             let other = BatchData::from_value(&sibling.data)?;
-            if let (Some(plan), Some(approval), true) =
-                (other.plan, &other.approval, other.apply_jobs.is_empty())
-            {
-                args.extend(["--cover".into(), format!("{plan}:{}", approval.revision)]);
+            if let (Some(plan), true) = (other.plan, other.apply_jobs.is_empty()) {
+                args.extend(["--cover".into(), plan.to_string()]);
+                covered += 1;
             }
         }
         let out = self.cli(&data, args)?;
